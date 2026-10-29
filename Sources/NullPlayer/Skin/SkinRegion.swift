@@ -27,13 +27,6 @@ enum PlayerAction: Equatable {
     case setVolume(CGFloat)     // 0.0 - 1.0
     case setBalance(CGFloat)    // -1.0 to 1.0
     
-    // EQ controls
-    case toggleEQOn
-    case toggleEQAuto
-    case openEQPresets
-    case setEQBand(Int, CGFloat)  // band index (0-9), gain (-12 to +12)
-    case setEQPreamp(CGFloat)     // gain (-12 to +12)
-    
     // Playlist actions
     case playlistAdd
     case playlistAddDir
@@ -85,7 +78,6 @@ enum CursorType {
     case normal
     case pointer    // Hand cursor for buttons
     case hResize    // Horizontal resize for sliders
-    case vResize    // Vertical resize for EQ sliders
     case move       // Move cursor for window dragging
 }
 
@@ -221,60 +213,6 @@ class RegionManager {
         return regions
     }()
     
-    // MARK: - Equalizer Window Regions
-    
-    /// All clickable regions for the equalizer window (275x116)
-    lazy var equalizerRegions: [ClickableRegion] = {
-        var regions: [ClickableRegion] = []
-        
-        // Window control buttons
-        regions.append(ClickableRegion(
-            rect: NSRect(x: 264, y: 3, width: 9, height: 9),
-            action: .close,
-            cursor: .pointer
-        ))
-        
-        // ON button
-        regions.append(ClickableRegion(
-            rect: NSRect(x: 14, y: 18, width: 26, height: 12),
-            action: .toggleEQOn,
-            cursor: .pointer
-        ))
-        
-        // AUTO button
-        regions.append(ClickableRegion(
-            rect: NSRect(x: 40, y: 18, width: 32, height: 12),
-            action: .toggleEQAuto,
-            cursor: .pointer
-        ))
-        
-        // Presets button
-        regions.append(ClickableRegion(
-            rect: NSRect(x: 217, y: 18, width: 44, height: 12),
-            action: .openEQPresets,
-            cursor: .pointer
-        ))
-        
-        // Preamp slider
-        let sliders = SkinElements.Equalizer.Sliders.self
-        regions.append(ClickableRegion(
-            rect: sliders.column(atX: sliders.preampX),
-            action: .setEQPreamp(0),
-            cursor: .vResize
-        ))
-
-        // 10 EQ band sliders
-        for i in 0..<10 {
-            regions.append(ClickableRegion(
-                rect: sliders.column(atX: sliders.bandX(i)),
-                action: .setEQBand(i, 0),
-                cursor: .vResize
-            ))
-        }
-        
-        return regions
-    }()
-    
     // MARK: - Playlist Window Regions
     
     /// Clickable regions for playlist window (dynamically sized)
@@ -329,11 +267,9 @@ class RegionManager {
         switch windowType {
         case .main:
             regions = mainWindowRegions
-        case .equalizer:
-            regions = equalizerRegions
         case .playlist:
             regions = playlistRegions(for: NSRect(origin: .zero, size: windowSize))
-        case .mediaLibrary:
+        case .equalizer, .mediaLibrary:
             return nil
         }
         
@@ -357,11 +293,9 @@ class RegionManager {
         switch windowType {
         case .main:
             regions = mainWindowRegions
-        case .equalizer:
-            regions = equalizerRegions
         case .playlist:
             regions = playlistRegions(for: NSRect(origin: .zero, size: windowSize))
-        case .mediaLibrary:
+        case .equalizer, .mediaLibrary:
             return .arrow
         }
         
@@ -376,8 +310,6 @@ class RegionManager {
                     return .pointingHand
                 case .hResize:
                     return .resizeLeftRight
-                case .vResize:
-                    return .resizeUpDown
                 case .move:
                     return .openHand
                 }
@@ -406,17 +338,6 @@ class RegionManager {
             let normalized = (point.x - region.rect.minX) / region.rect.width
             let value = (normalized * 2.0) - 1.0  // Convert to -1...1
             return .setBalance(min(1.0, max(-1.0, value)))
-            
-        case .setEQBand(let band, _):
-            // EQ sliders are vertical, value increases upward
-            let normalized = 1.0 - (point.y - region.rect.minY) / region.rect.height
-            let gain = (normalized * 24.0) - 12.0  // Convert to -12...+12
-            return .setEQBand(band, min(12.0, max(-12.0, gain)))
-            
-        case .setEQPreamp:
-            let normalized = 1.0 - (point.y - region.rect.minY) / region.rect.height
-            let gain = (normalized * 24.0) - 12.0
-            return .setEQPreamp(min(12.0, max(-12.0, gain)))
             
         default:
             return region.action
@@ -455,8 +376,6 @@ class RegionManager {
              (.setVolume, .setVolume),
              (.setBalance, .setBalance):
             return true
-        case (.setEQBand(let a, _), .setEQBand(let b, _)):
-            return a == b
         default:
             return false
         }
@@ -475,11 +394,9 @@ class RegionManager {
         switch windowType {
         case .main:
             regions = mainWindowRegions
-        case .equalizer:
-            regions = equalizerRegions
         case .playlist:
             regions = playlistRegions(for: NSRect(origin: .zero, size: windowSize))
-        case .mediaLibrary:
+        case .equalizer, .mediaLibrary:
             return false
         }
 

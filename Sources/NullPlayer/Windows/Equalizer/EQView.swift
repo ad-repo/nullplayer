@@ -540,12 +540,11 @@ class EQView: NSView {
         renderer.drawButton(.eqPresets, state: presetsState,
                            at: SkinElements.Equalizer.Positions.presetsButton, in: context)
         
-        // Draw preamp slider
-        renderer.drawEQSlider(bandIndex: -1, value: CGFloat(preamp), isPreamp: true, in: context)
-        
-        // Draw EQ band sliders
-        for i in 0..<10 {
-            renderer.drawEQSlider(bandIndex: i, value: CGFloat(bands[i]), isPreamp: false, in: context)
+        // Draw preamp and band sliders where hit testing finds them
+        let metrics = self.metrics
+        renderer.drawEQSlider(in: metrics.preamp, value: CGFloat(preamp), in: context)
+        for (index, rect) in metrics.bands.enumerated() {
+            renderer.drawEQSlider(in: rect, value: CGFloat(bands[index]), in: context)
         }
         
         // Draw EQ curve graph over the skin-provided graph well.
