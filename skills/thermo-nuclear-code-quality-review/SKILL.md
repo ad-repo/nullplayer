@@ -67,6 +67,15 @@ Apply the baseline prompt above, plus these explicit review rules:
    - If related updates can leave state half-applied, push for a more atomic structure.
    - Do not over-index on micro-optimizations, but do flag avoidable orchestration complexity that makes the implementation more brittle.
 
+8. **Know which thread every new line runs on, and keep work off the main thread.**
+   - For each changed function, trace who calls it and on what thread/queue/actor: main, a background queue, an actor, or an audio tap / render callback.
+   - Tap and render callbacks run off main. None may touch main-thread state (views, `@MainActor` properties, window/UI models, non-thread-safe engine state) or `DispatchQueue.main.sync` / otherwise block on main; hand data out through the existing handoff, not by reaching into main-owned objects.
+   - Check the specific API and mode for real-time constraints: `installTap` blocks run on a non-real-time thread, while render blocks (`AVAudioSourceNode` in real-time mode, `AUAudioUnit` render) and Core Audio IO procs run on the real-time audio thread. Real-time callbacks must not allocate, lock, log, or do I/O per buffer — their producer-side handoff must be lock-free, with any locking on the consumer side.
+   - The reverse holds too: main-thread code must not read state the tap or a background queue mutates without the synchronization that state already uses.
+   - Flag blocking work on the main thread: file or network I/O, decoding, `AVAudioFile`/`AVAsset` opens, synchronous `AVAsset` property loads (`tracks`, `duration`), full-file scans, heavy image/geometry work. Push it to the background queue or actor that already owns that kind of work, and hop back to main only to publish results.
+   - A helper that is now reachable from both main and background callers (or newly called from main) must be checked at every call site, not just the one the PR was written for.
+   - Prefer making the threading contract explicit (`@MainActor`, actor isolation, a named queue, a `dispatchPrecondition`) over a comment or an assumption.
+
 ## Primary Review Questions
 
 For every meaningful change, ask:
@@ -84,6 +93,7 @@ For every meaningful change, ask:
 - Did the diff introduce casts, optionality, or ad-hoc object shapes that obscure the real invariant?
 - Is this logic living in the canonical layer, or did the diff leak details across a boundary?
 - Is this orchestration more sequential or less atomic than it needs to be?
+- What thread does this run on, does it touch state owned by another thread, and does any of it block the main thread?
 
 ## What to Flag Aggressively
 
@@ -106,6 +116,8 @@ Escalate findings when you see:
 - Logic added in the wrong layer/package when it should live somewhere more central.
 - Sequential async flow where obviously independent work could stay simpler and clearer with parallel execution.
 - Partial-update logic that leaves state less atomic than necessary.
+- Audio tap or render callbacks that read or write main-thread/UI state, block on main, or allocate/lock/do I/O per buffer.
+- Blocking I/O, decoding, or synchronous `AVAsset` loads added to (or newly reachable from) the main thread.
 
 ## Preferred Remedies
 
@@ -187,5 +199,6 @@ Treat these as presumptive blockers unless the author can justify them clearly:
 - the PR solves a local problem by scattering feature checks across shared code
 - the PR adds an unnecessary abstraction, wrapper, or cast-heavy contract that makes the design more indirect
 - the PR duplicates an existing helper or puts logic in the wrong layer when there is a clear canonical home
+- the PR touches main-thread state from a tap/render callback or background queue, or adds blocking work to the main thread
 
 If those conditions are not met, leave explicit, actionable feedback and push for a cleaner decomposition.
