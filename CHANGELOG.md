@@ -168,6 +168,12 @@
 - **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
   visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
   letter (#611, thanks @tmichelbrink).
+- **Classic skins no longer draw lines from neighbouring sprites at scaled window sizes.** At UI sizes
+  such as 125% or 200%, a sliver of the next sprite on the skin's sheet could show at a sprite's edge,
+  such as Militarized's pink divider line above the volume and pan sliders, or beside the pan
+  thumb (#612, thanks @tmichelbrink).
+- **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
+  quit while refreshing the rooms' volumes; volumes are now read one room at a time.
 - **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
   between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
   2 px left of its knob.

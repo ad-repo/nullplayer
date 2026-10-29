@@ -56,7 +56,7 @@ final class SonosRoomMixerTests: XCTestCase {
         XCTAssertEqual(mixer.volumes["kitchen"], 67)
     }
 
-    func testManyRoomsUseAtMostFourReadsAndKeepPerRoomErrors() async {
+    func testManyRoomsReadOneAtATimeAndKeepPerRoomErrors() async {
         let ids = (0..<32).map { "room-\($0)" }
         var active = 0
         var maximum = 0
@@ -72,8 +72,7 @@ final class SonosRoomMixerTests: XCTestCase {
         }, writeVolume: { _, _ in XCTFail("Polling must never change speaker volume") })
         await mixer.refreshVolumes()
         XCTAssertEqual(read, Set(ids))
-        XCTAssertLessThanOrEqual(maximum, 4)
-        XCTAssertGreaterThan(maximum, 1)
+        XCTAssertEqual(maximum, 1)
         XCTAssertEqual(mixer.volumes.count, 31)
         XCTAssertNotNil(mixer.errors["room-5"])
         XCTAssertNil(mixer.volumes["room-5"])
