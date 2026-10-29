@@ -116,9 +116,9 @@ class MarqueeLayer: CALayer {
         contentLayer?.contentsScale = contentsScale
         // Use resize gravity so content fills the frame properly
         contentLayer?.contentsGravity = .resize
-        // Bitmap-font text is pixel art: never smooth it when the layer is scaled
+        // Bitmap-font text is pixel art: the scroll animation lands it on fractional points, so
+        // sample it nearest rather than smoothing it between device pixels
         contentLayer?.magnificationFilter = .nearest
-        contentLayer?.minificationFilter = .nearest
         // Disable implicit animations on content layer to prevent unexpected changes
         contentLayer?.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "contents": NSNull()]
         addSublayer(contentLayer!)
@@ -476,8 +476,16 @@ class MarqueeLayer: CALayer {
     func updateContentsScale(_ scale: CGFloat) {
         guard contentsScale != scale else { return }
         contentsScale = scale
-        contentLayer?.contentsScale = scale
         scheduleRenderText()
+    }
+
+    /// Scales the layer up from base skin size with a transform and renders its text at device
+    /// pixels for that size; at backing scale alone it is stretched on the GPU and blurs (#611).
+    /// `scale` is clamped to 1 only for the zero-bounds pass before the first layout — the window's
+    /// minimum size is never below base size.
+    func applyDisplayScale(_ scale: CGFloat, backingScale: CGFloat) {
+        transform = CATransform3DMakeScale(scale, scale, 1)
+        updateContentsScale(backingScale * max(scale, 1))
     }
 
     private func scheduleRenderText() {
