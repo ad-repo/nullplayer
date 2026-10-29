@@ -1282,13 +1282,8 @@ class SkinRenderer {
     
     /// Draw EQ slider knob at current value position with colored level indicator
     func drawEQSlider(bandIndex: Int, value: CGFloat, isPreamp: Bool, in context: CGContext) {
-        let xPos: CGFloat
-        if isPreamp {
-            xPos = SkinElements.Equalizer.Sliders.preampX
-        } else {
-            xPos = SkinElements.Equalizer.Sliders.firstBandX + CGFloat(bandIndex) * SkinElements.Equalizer.Sliders.bandSpacing
-        }
-        
+        let xPos = isPreamp ? SkinElements.Equalizer.Sliders.preampX : SkinElements.Equalizer.Sliders.bandX(bandIndex)
+
         let sliderHeight = SkinElements.Equalizer.Sliders.sliderHeight
         let sliderY = SkinElements.Equalizer.Sliders.sliderY
         let thumbSize: CGFloat = 11  // 11x11 pixels per skin spec
@@ -1301,20 +1296,17 @@ class SkinRenderer {
         let thumbY = sliderY + (sliderHeight - thumbSize) * (1 - normalizedValue)
         
         let thumbSource = SkinElements.Equalizer.sliderThumbNormal
-        let thumbRect = NSRect(x: xPos, y: thumbY, width: thumbSize, height: thumbSize)
+        // Centre the thumb on the bar, floored to stay pixel-aligned
+        let thumbX = xPos + floor((SkinElements.Equalizer.Sliders.width - thumbSize) / 2)
+        let thumbRect = NSRect(x: thumbX, y: thumbY, width: thumbSize, height: thumbSize)
 
         if let eqImage = skin.eqmain {
             let sliderState = Int(round(normalizedValue * CGFloat(SkinElements.Equalizer.sliderBarStateCount - 1)))
             let trackSource = SkinElements.Equalizer.sliderBarSource(state: sliderState)
 
             if skinImage(eqImage, containsSourceRect: trackSource) {
-                let trackRect = NSRect(
-                    x: xPos + (thumbSize - trackSource.width) / 2,
-                    y: sliderY,
-                    width: trackSource.width,
-                    height: sliderHeight
-                )
-                drawSprite(from: eqImage, sourceRect: trackSource, to: trackRect, in: context)
+                drawSprite(from: eqImage, sourceRect: trackSource,
+                           to: SkinElements.Equalizer.Sliders.column(atX: xPos), in: context)
             } else {
                 drawFallbackEQSliderTrack(at: xPos,
                                           sliderY: sliderY,
@@ -1488,9 +1480,8 @@ class SkinRenderer {
                                            sliderHeight: CGFloat,
                                            normalizedValue: CGFloat,
                                            in context: CGContext) {
-        let thumbSize: CGFloat = 11
         let barWidth: CGFloat = 4
-        let barX = xPos + (thumbSize - barWidth) / 2
+        let barX = xPos + (SkinElements.Equalizer.Sliders.width - barWidth) / 2
         let colorStops: [(position: CGFloat, color: NSColor)] = [
             (0.0, NSColor(calibratedRed: 0.0, green: 0.85, blue: 0.0, alpha: 1.0)),
             (0.33, NSColor(calibratedRed: 0.5, green: 0.85, blue: 0.0, alpha: 1.0)),
@@ -1534,7 +1525,7 @@ class SkinRenderer {
     
     /// Draw fallback EQ slider knob when skin not available
     private func drawFallbackEQSliderKnob(at position: NSPoint, value: CGFloat, in context: CGContext) {
-        let knobRect = NSRect(x: position.x, y: position.y, width: 14, height: 11)
+        let knobRect = NSRect(x: position.x, y: position.y, width: SkinElements.Equalizer.Sliders.width, height: 11)
         
         // Knob background
         NSColor(calibratedRed: 0.3, green: 0.5, blue: 0.6, alpha: 1.0).setFill()
@@ -4047,8 +4038,7 @@ class SkinRenderer {
         ]
         
         for (i, freq) in freqs.enumerated() {
-            let x = SkinElements.Equalizer.Sliders.firstBandX + CGFloat(i) * SkinElements.Equalizer.Sliders.bandSpacing
-            freq.draw(at: NSPoint(x: x, y: 20), withAttributes: smallAttrs)
+            freq.draw(at: NSPoint(x: SkinElements.Equalizer.Sliders.bandX(i), y: 20), withAttributes: smallAttrs)
         }
     }
 }

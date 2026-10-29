@@ -256,20 +256,17 @@ class RegionManager {
         ))
         
         // Preamp slider
-        let preampX: CGFloat = 21
+        let sliders = SkinElements.Equalizer.Sliders.self
         regions.append(ClickableRegion(
-            rect: NSRect(x: preampX, y: 38, width: 14, height: 63),
+            rect: sliders.column(atX: sliders.preampX),
             action: .setEQPreamp(0),
             cursor: .vResize
         ))
-        
+
         // 10 EQ band sliders
-        let firstBandX: CGFloat = 78
-        let bandSpacing: CGFloat = 18
         for i in 0..<10 {
-            let x = firstBandX + CGFloat(i) * bandSpacing
             regions.append(ClickableRegion(
-                rect: NSRect(x: x, y: 38, width: 14, height: 63),
+                rect: sliders.column(atX: sliders.bandX(i)),
                 action: .setEQBand(i, 0),
                 cursor: .vResize
             ))

@@ -168,6 +168,9 @@
 - **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
   visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
   letter (#611, thanks @tmichelbrink).
+- **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
+  between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
+  2 px left of its knob.
 
 ## 0.33.1
 
