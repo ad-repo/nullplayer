@@ -33,6 +33,8 @@
 - **Browse NullPlayer Certified Skins** — at the bottom of the Skins menu, it opens the
   [nullplayer.fyi skin gallery](https://nullplayer.fyi/skins/), the record of every skin tested
   working on NullPlayer.
+- **Report a Skin Bug** — below Browse NullPlayer Certified Skins in the Skins menu, it opens the
+  [nullplayer.fyi bug report page](https://nullplayer.fyi/report-a-bug/).
 
 ### Fixes
 

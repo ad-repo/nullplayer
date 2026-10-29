@@ -880,6 +880,10 @@ class ContextMenuBuilder {
                                         action: #selector(MenuActions.browseCertifiedSkins), keyEquivalent: "")
         certifiedSkins.target = MenuActions.shared
         uiMenu.addItem(certifiedSkins)
+        let reportSkinBug = NSMenuItem(title: "Report a Skin Bug...",
+                                       action: #selector(MenuActions.reportSkinBug), keyEquivalent: "")
+        reportSkinBug.target = MenuActions.shared
+        uiMenu.addItem(reportSkinBug)
         return uiMenu
     }
 
@@ -4116,6 +4120,11 @@ class MenuActions: NSObject {
     /// The site's skin gallery is the master record of every skin tested on NullPlayer.
     @objc func browseCertifiedSkins() {
         guard let url = URL(string: "https://nullplayer.fyi/skins/") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc func reportSkinBug() {
+        guard let url = URL(string: "https://nullplayer.fyi/report-a-bug/") else { return }
         NSWorkspace.shared.open(url)
     }
 
