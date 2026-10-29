@@ -168,6 +168,8 @@
 - **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
   visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
   letter (#611, thanks @tmichelbrink).
+- **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
+  quit while refreshing the rooms' volumes; volumes are now read one room at a time.
 
 ## 0.33.1
 

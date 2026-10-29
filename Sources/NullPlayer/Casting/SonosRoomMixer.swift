@@ -54,26 +54,18 @@ final class SonosRoomMixer {
         reading = true
         defer { reading = false }
         let candidates = roomIDs().filter { !writing.contains($0) }.map { ($0, revisions[$0, default: 0]) }
-        var remaining = candidates.makeIterator()
-        let read = readVolume
-        await withTaskGroup(of: (String, UInt, Result<Int, Error>).self) { group in
-            func enqueue(_ candidate: (String, UInt)) {
-                let (id, revision) = candidate
-                group.addTask { @MainActor in
-                    do { return (id, revision, .success(try await read(id))) }
-                    catch { return (id, revision, .failure(error)) }
-                }
-            }
-            for _ in 0..<4 { if let id = remaining.next() { enqueue(id) } }
-            for await (id, revision, result) in group {
-                if !Task.isCancelled, revision == revisions[id, default: 0], !writing.contains(id) {
-                    switch result {
-                    case .success(let value): volumes[id] = value; errors[id] = nil
-                    case .failure(let error): volumes[id] = nil; errors[id] = error.localizedDescription
-                    }
-                }
-                if Task.isCancelled { group.cancelAll() }
-                else if let id = remaining.next() { enqueue(id) }
+        // Sequential on purpose: a task group of @MainActor reads aborted the native-build-system
+        // release binary in the Swift runtime ("Pure virtual function called" in completeFuture,
+        // a child offered to a destroyed group) whenever the Sonos window was open. The cost: each
+        // unreachable room holds the poll for its full 10 s SOAP timeout.
+        for (id, revision) in candidates {
+            let result: Result<Int, Error>
+            do { result = .success(try await readVolume(id)) } catch { result = .failure(error) }
+            guard !Task.isCancelled else { return }
+            guard revision == revisions[id, default: 0], !writing.contains(id) else { continue }
+            switch result {
+            case .success(let value): volumes[id] = value; errors[id] = nil
+            case .failure(let error): volumes[id] = nil; errors[id] = error.localizedDescription
             }
         }
     }
