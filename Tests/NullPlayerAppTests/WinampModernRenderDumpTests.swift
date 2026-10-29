@@ -1008,6 +1008,14 @@ final class WinampModernRenderDumpTests: XCTestCase {
                               + "travel=\(max(0, extent - node.frame.minY - node.frame.height))")
                     }
                 }
+                // WINAMP_MODERN_RENDER_TITLES=1 — the window's own title as the B282 fit sees it:
+                // its box, how many pixels its clip cuts at this canvas, and the width the fit asks for.
+                if env["WINAMP_MODERN_RENDER_TITLES"] != nil, let title = renderer.titleShortfall(atCanvas: size) {
+                    print("TITLE \(info.id)/\(layoutID) window=\(Int(size.width)) "
+                          + "max=\(Int(maximum.width)) box=\(Int(title.box)) "
+                          + "cut=\(Int(title.shortfall)) fit=\(Int(renderer.titleFittedSize(size).width)) "
+                          + "text=\(title.text)")
+                }
                 if env["WINAMP_MODERN_RENDER_PROBE"] == "\(info.id)/\(layoutID)" {
                     for node in renderer.sceneNodes() {
                         print("PROBE \(node.object.typeName) id=\(node.object.xmlID ?? "-") "

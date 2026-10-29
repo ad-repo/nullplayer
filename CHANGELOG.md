@@ -181,6 +181,8 @@
   2 px left of its knob.
 - **Winamp Modern skins dim the Media Library's selection when the player loses focus**, the same
   way the playlist panel beside it already did, on skins that declare an unfocused selection colour.
+- **Winamp Modern windows open wide enough to show their whole title.** Silverskin_3's playlist and
+  help windows read `AYLIST EDITO` and `VERSKIN HE`; they now open at the width their titles need.
 
 ## 0.33.1
 

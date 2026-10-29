@@ -63,6 +63,7 @@ export OUT=/tmp/walreport && mkdir -p $OUT
 | 4 | add `WINAMP_MODERN_RENDER_CLICKABLE=1` | Objects a script hooks the mouse on that the hit test rejects |
 | 5 | `WINAMP_MODERN_RENDER_SETTLE=3 WINAMP_MODERN_RENDER_CLOCK=<t>` at t = 0, 0.25, 1, 4 into separate dirs | Motion: does anything actually move |
 | 6 | `WINAMP_MODERN_RENDER_CLICK=<container>/<layout>@x,y[;x,y]` + `WINAMP_MODERN_RENDER_SETTLE=1` | Per control: hit, handler chain, attribute deltas, post-report. Right-click for menus |
+| 6b | add `WINAMP_MODERN_RENDER_TITLES=1` | Per layout: the window's own title — box, pixels its clip cuts, the width the title fit (B282) asks for |
 | 7 | `WINAMP_MODERN_RENDER_PROBE=<container>/<layout>` | Full node list when something above is ambiguous |
 | 8 | `WINAMP_MODERN_RENDER_DISASM=@<source>` | Only when semantics are in question — read the skin's own bytecode |
 
