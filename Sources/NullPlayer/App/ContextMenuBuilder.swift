@@ -875,6 +875,11 @@ class ContextMenuBuilder {
                                       keyEquivalent: "[")
         previousSkin.target = MenuActions.shared
         uiMenu.addItem(previousSkin)
+        uiMenu.addItem(.separator())
+        let certifiedSkins = NSMenuItem(title: "Browse NullPlayer Certified Skins...",
+                                        action: #selector(MenuActions.browseCertifiedSkins), keyEquivalent: "")
+        certifiedSkins.target = MenuActions.shared
+        uiMenu.addItem(certifiedSkins)
         return uiMenu
     }
 
@@ -4106,6 +4111,12 @@ class MenuActions: NSObject {
         let directory = WinampModernSkinImporter.shared.destinationDirectory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(directory)
+    }
+
+    /// The site's skin gallery is the master record of every skin tested on NullPlayer.
+    @objc func browseCertifiedSkins() {
+        guard let url = URL(string: "https://nullplayer.fyi/skins/") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     @objc func getMoreClassicSkins() {
