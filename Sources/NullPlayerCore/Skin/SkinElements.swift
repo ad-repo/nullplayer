@@ -437,24 +437,6 @@ public struct SkinElements {
         public static let sliderThumbNormal = NSRect(x: 0, y: 164, width: 11, height: 11)
         public static let sliderThumbPressed = NSRect(x: 0, y: 176, width: 11, height: 11)
         
-        /// Colored slider bar sprites - 28 fill states horizontally arranged
-        /// Located in eqmain.bmp at y=164, each state shows different fill level
-        /// Colors: green (top/boost) → yellow → orange → red (bottom/cut)
-        public static let sliderBarSpriteX: CGFloat = 13
-        public static let sliderBarSpriteY: CGFloat = 164
-        public static let sliderBarSpriteWidth: CGFloat = 209
-        public static let sliderBarStateWidth: CGFloat = 209.0 / 28.0  // ~7.46 pixels per state
-        public static let sliderBarStateCount: Int = 28
-        public static let sliderBarHeight: CGFloat = 63
-        
-        /// Get source rect for a specific fill state (0-27)
-        /// State 0 = minimal fill (knob at top), State 27 = full fill (knob at bottom)
-        public static func sliderBarSource(state: Int) -> NSRect {
-            let clampedState = min(27, max(0, state))
-            let x = sliderBarSpriteX + CGFloat(clampedState) * sliderBarStateWidth
-            return NSRect(x: x, y: sliderBarSpriteY, width: sliderBarStateWidth, height: sliderBarHeight)
-        }
-        
         /// Positions on EQ window
         struct Positions {
             public static let onButton = NSRect(x: 14, y: 18, width: 26, height: 12)

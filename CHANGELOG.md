@@ -174,6 +174,9 @@
   thumb (#612, thanks @tmichelbrink).
 - **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
   quit while refreshing the rooms' volumes; volumes are now read one room at a time.
+- **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
+  between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
+  2 px left of its knob.
 
 ## 0.33.1
 

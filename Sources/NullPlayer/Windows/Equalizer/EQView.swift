@@ -57,16 +57,6 @@ class EQView: NSView {
         // Presets button
         static let presetsRect = NSRect(x: 217, y: 18, width: 44, height: 12)
         
-        // Preamp slider
-        static let preampRect = NSRect(x: 21, y: 38, width: 14, height: 63)
-        
-        // EQ band sliders (left to right: 60Hz to 16kHz)
-        static let bandStartX: CGFloat = 78
-        static let bandSpacing: CGFloat = 18
-        static let bandWidth: CGFloat = 14
-        static let bandHeight: CGFloat = 63
-        static let bandY: CGFloat = 38
-        
         // Frequency labels
         static let frequencies = ["60", "170", "310", "600", "1K", "3K", "6K", "12K", "14K", "16K"]
         
@@ -325,20 +315,19 @@ class EQView: NSView {
             presets = NSRect(x: max(auto.maxX, width - rightMargin - Layout.presetsRect.width),
                              y: Layout.presetsRect.minY,
                              width: Layout.presetsRect.width, height: Layout.presetsRect.height)
-            preamp = Layout.preampRect
+            let sliders = SkinElements.Equalizer.Sliders.self
+            preamp = sliders.column(atX: sliders.preampX)
             let graphGap = SkinElements.Equalizer.graphRect.minX - Layout.autoRect.maxX
             graph = NSRect(x: SkinElements.Equalizer.graphRect.minX,
                            y: SkinElements.Equalizer.graphRect.minY,
                            width: max(0, presets.minX - graphGap - SkinElements.Equalizer.graphRect.minX),
                            height: SkinElements.Equalizer.graphRect.height)
-            let lastClassicBandX = Layout.bandStartX + 9 * Layout.bandSpacing
-            let bandsRightMargin = Skin.baseEQSize.width - (lastClassicBandX + Layout.bandWidth)
-            let lastX = max(Layout.bandStartX,
-                            width - bandsRightMargin - Layout.bandWidth)
-            let spacing = (lastX - Layout.bandStartX) / 9
+            let bandsRightMargin = Skin.baseEQSize.width - (sliders.bandX(9) + sliders.width)
+            let lastX = max(sliders.firstBandX,
+                            width - bandsRightMargin - sliders.width)
+            let spacing = (lastX - sliders.firstBandX) / 9
             bands = (0..<10).map { index in
-                NSRect(x: Layout.bandStartX + CGFloat(index) * spacing, y: Layout.bandY,
-                       width: Layout.bandWidth, height: Layout.bandHeight)
+                sliders.column(atX: sliders.firstBandX + CGFloat(index) * spacing)
             }
         }
     }
@@ -551,12 +540,11 @@ class EQView: NSView {
         renderer.drawButton(.eqPresets, state: presetsState,
                            at: SkinElements.Equalizer.Positions.presetsButton, in: context)
         
-        // Draw preamp slider
-        renderer.drawEQSlider(bandIndex: -1, value: CGFloat(preamp), isPreamp: true, in: context)
-        
-        // Draw EQ band sliders
-        for i in 0..<10 {
-            renderer.drawEQSlider(bandIndex: i, value: CGFloat(bands[i]), isPreamp: false, in: context)
+        // Draw preamp and band sliders where hit testing finds them
+        let metrics = self.metrics
+        renderer.drawEQSlider(in: metrics.preamp, value: CGFloat(preamp), in: context)
+        for (index, rect) in metrics.bands.enumerated() {
+            renderer.drawEQSlider(in: rect, value: CGFloat(bands[index]), in: context)
         }
         
         // Draw EQ curve graph over the skin-provided graph well.

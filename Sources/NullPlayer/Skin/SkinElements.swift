@@ -550,6 +550,16 @@ struct SkinElements {
             static let sliderY: CGFloat = 38
             /// Slider height (travel distance)
             static let sliderHeight: CGFloat = 63
+            /// Slider column width; the bar sprite is drawn 1:1 into it
+            static let width: CGFloat = 14
+
+            static func bandX(_ index: Int) -> CGFloat {
+                firstBandX + CGFloat(index) * bandSpacing
+            }
+
+            static func column(atX x: CGFloat) -> NSRect {
+                NSRect(x: x, y: sliderY, width: width, height: sliderHeight)
+            }
         }
         
         /// Slider thumb states (vertical EQ sliders) - 11x11 pixels
@@ -564,7 +574,8 @@ struct SkinElements {
         static let sliderBarFirstRowY: CGFloat = 164
         static let sliderBarSecondRowY: CGFloat = 229
         static let sliderBarColumns: Int = 14
-        static let sliderBarStateWidth: CGFloat = 15
+        /// 14-px state + 1-px gap column, which some skins paint
+        static let sliderBarStride: CGFloat = 15
         static let sliderBarStateCount: Int = 28
         static let sliderBarHeight: CGFloat = 63
         
@@ -573,9 +584,9 @@ struct SkinElements {
             let clampedState = min(sliderBarStateCount - 1, max(0, state))
             let row = clampedState / sliderBarColumns
             let col = clampedState % sliderBarColumns
-            let x = sliderBarSpriteX + CGFloat(col) * sliderBarStateWidth
+            let x = sliderBarSpriteX + CGFloat(col) * sliderBarStride
             let y = row == 0 ? sliderBarFirstRowY : sliderBarSecondRowY
-            return NSRect(x: x, y: y, width: sliderBarStateWidth, height: sliderBarHeight)
+            return NSRect(x: x, y: y, width: Sliders.width, height: sliderBarHeight)
         }
 
         /// Graph display in the EQ window.
