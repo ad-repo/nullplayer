@@ -116,6 +116,9 @@ class MarqueeLayer: CALayer {
         contentLayer?.contentsScale = contentsScale
         // Use resize gravity so content fills the frame properly
         contentLayer?.contentsGravity = .resize
+        // Bitmap-font text is pixel art: never smooth it when the layer is scaled
+        contentLayer?.magnificationFilter = .nearest
+        contentLayer?.minificationFilter = .nearest
         // Disable implicit animations on content layer to prevent unexpected changes
         contentLayer?.actions = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "contents": NSNull()]
         addSublayer(contentLayer!)

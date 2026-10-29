@@ -162,6 +162,9 @@
 - **Labels on Winamp Modern skins' text buttons are readable.** Where the skin's button colour would
   vanish into its button art (MMD3's Switch, Nebular's About, meridian's OK and a dozen others), the
   label is drawn in black or white instead.
+- **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
+  visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
+  letter (#611, thanks @tmichelbrink).
 
 ## 0.33.1
 
