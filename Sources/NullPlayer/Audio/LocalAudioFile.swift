@@ -4,17 +4,22 @@ import AVFoundation
 /// MPEG-4 container yet report zero frames (and fail on read); AVAssetReader can decode it.
 /// Full preparation is async, cancellable, and must never run on the main queue.
 enum LocalAudioFile {
-    static func open(_ url: URL) async throws -> AVAudioFile {
+    static func open(_ url: URL, sourceURL: URL? = nil) async throws -> AVAudioFile {
         try Task.checkCancellation()
-        if let file = try openNatively(url) { return file }
+        if let file = try openNatively(url, sourceURL: sourceURL) { return file }
         dispatchPrecondition(condition: .notOnQueue(.main))
-        return try await decodeOpusAsset(url)
+        return try await decodeOpusAsset(url, sourceURL: sourceURL ?? url)
     }
 
     /// nil means preparation is required. Synchronous transport paths must defer to `open`.
-    static func openNatively(_ url: URL) throws -> AVAudioFile? {
+    static func openNatively(_ url: URL, sourceURL: URL? = nil) throws -> AVAudioFile? {
         do {
-            let file = try AVAudioFile(forReading: url)
+            let file: AVAudioFile
+            if let sourceURL, sourceURL != url {
+                file = try LocalPlaybackFile(backingURL: url, sourceURL: sourceURL)
+            } else {
+                file = try AVAudioFile(forReading: url)
+            }
             guard isMPEG4(url), file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus else {
                 return file
             }
@@ -34,7 +39,7 @@ enum LocalAudioFile {
 
     /// The backing CAF is an implementation detail, never a playlist/library identity.
     static func sourceURL(of file: AVAudioFile) -> URL {
-        (file as? DecodedAudioFile)?.sourceURL ?? file.url
+        (file as? LocalPlaybackFile)?.sourceURL ?? file.url
     }
 
     private static let cleanupQueue = DispatchQueue(label: "com.nullplayer.audio-file-cleanup", qos: .utility)
@@ -51,7 +56,7 @@ enum LocalAudioFile {
         NSError(domain: "LocalAudioFile", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    private static func decodeOpusAsset(_ url: URL) async throws -> AVAudioFile {
+    private static func decodeOpusAsset(_ url: URL, sourceURL: URL) async throws -> AVAudioFile {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first,
               let description = try await track.load(.formatDescriptions).first,
@@ -87,7 +92,7 @@ enum LocalAudioFile {
         let decodedURL = directory.appendingPathComponent("decoded.caf")
         try writePCM(from: output, reader: reader, duration: duration, to: decodedURL)
         try Task.checkCancellation()
-        let file = try DecodedAudioFile(decodedURL: decodedURL, sourceURL: url, directory: directory)
+        let file = try LocalPlaybackFile(backingURL: decodedURL, sourceURL: sourceURL, directory: directory)
         transferred = true
         return file
     }
@@ -146,15 +151,15 @@ enum LocalAudioFile {
 
 /// Like AVAudioFile, the mutable reader is handed off to one consumer, not used concurrently.
 /// Only immutable source/directory metadata is added; deletion is dispatched to a utility queue.
-private final class DecodedAudioFile: AVAudioFile, @unchecked Sendable {
+private final class LocalPlaybackFile: AVAudioFile, @unchecked Sendable {
     let sourceURL: URL
-    private let directory: URL
+    private let directory: URL?
 
-    init(decodedURL: URL, sourceURL: URL, directory: URL) throws {
+    init(backingURL: URL, sourceURL: URL, directory: URL? = nil) throws {
         self.sourceURL = sourceURL
         self.directory = directory
-        try super.init(forReading: decodedURL, commonFormat: .pcmFormatFloat32, interleaved: false)
+        try super.init(forReading: backingURL, commonFormat: .pcmFormatFloat32, interleaved: false)
     }
 
-    deinit { LocalAudioFile.removeBackingDirectory(directory) }
+    deinit { if let directory { LocalAudioFile.removeBackingDirectory(directory) } }
 }

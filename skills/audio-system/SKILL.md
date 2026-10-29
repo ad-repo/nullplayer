@@ -168,7 +168,9 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 but `AVAudioFile` returns zero frames and throws on read. `openNatively` performs only a native
 header/readability probe and returns nil when preparation is needed; synchronous transports must
 then use the existing deferred local load path. The fallback enforces `.notOnQueue(.main)`, loads
-asset metadata asynchronously, and checks cancellation between decoded buffers.
+asset metadata asynchronously, and checks cancellation between decoded buffers. Staged NAS
+inputs pass their original playlist URL separately from the decoding URL, including the native
+fast path; normalization compares that original identity.
 
 Prepared Float32 CAFs keep existing segment-based seek, cue, gapless and normalization behavior.
 The source URL/bytes remain unchanged. File owners queue directory deletion on a utility queue,
@@ -182,7 +184,10 @@ Pause intent, skip bounds and Play Now rollback, and rejoin `loadTrack` with the
 Sweet Fades prepares the next local file at playback start/queue changes, before the fade window.
 If it is not ready at the boundary, decline the fade and keep the outgoing audio through EOF;
 never start a late fade over silence. Local Opus waveform generation streams samples straight from
-`AVAssetReader` into buckets instead of creating a second full PCM backing file.
+`AVAssetReader` into buckets instead of creating a second full PCM backing file. The frame
+limit and cache record use the full local backing asset duration, while each cue request gets its
+own presentation duration on generation, in-flight joins and cache hits. The local-v2 cache-key
+namespace invalidates records created with cue-limited decode/duration.
 
 Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
 playback. Compressed Opus-in-CAF passthrough was tested but not adopted: its duration/full reads

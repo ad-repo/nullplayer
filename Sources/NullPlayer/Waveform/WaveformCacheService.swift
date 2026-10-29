@@ -64,7 +64,7 @@ actor WaveformCacheService {
             if forceRegeneration {
                 try? fileManager.removeItem(at: cacheURL)
             } else if let cached = try loadCachedRecord(from: cacheURL, expectedKey: descriptor.cacheKey) {
-                return WaveformSnapshot(
+                return presentationSnapshot(WaveformSnapshot(
                     sourcePath: cached.sourcePath,
                     duration: cached.duration,
                     samples: cached.samples,
@@ -75,7 +75,7 @@ actor WaveformCacheService {
                     modificationDate: cached.modificationDate,
                     allowsSeeking: true,
                     isStreaming: descriptor.isStreaming
-                )
+                ), descriptor: descriptor)
             }
 
             // **One generation per track at a time.** The window reloads on every track change, on
@@ -86,7 +86,7 @@ actor WaveformCacheService {
             // finishes, is cached, and the next load is a cache hit. It is cancelled only when a
             // different track is loaded (above). A cancelled task still winding down is not joined.
             if let running = inFlight[descriptor.cacheKey], !running.isCancelled {
-                return await running.value
+                return presentationSnapshot(await running.value, descriptor: descriptor)
             }
             let task = Task { await self.generateAndPersist(descriptor: descriptor, cacheURL: cacheURL) }
             inFlight[descriptor.cacheKey] = task
@@ -94,12 +94,22 @@ actor WaveformCacheService {
             if inFlight[descriptor.cacheKey] == task {
                 inFlight[descriptor.cacheKey] = nil
             }
-            return result
+            return presentationSnapshot(result, descriptor: descriptor)
         } catch is CancellationError {
             return .failed("Waveform generation cancelled")
         } catch {
             return .failed("Waveform unavailable: \(error.localizedDescription)")
         }
+    }
+
+    /// Cache entries describe the complete backing asset; cue tracks share that cache but
+    /// retain their individual presentation durations for progress and seeking.
+    private func presentationSnapshot(_ snapshot: WaveformSnapshot, descriptor: CacheDescriptor) -> WaveformSnapshot {
+        guard !descriptor.isStreaming, snapshot.state == .ready,
+              let duration = descriptor.durationHint, duration > 0 else { return snapshot }
+        var presented = snapshot
+        presented.duration = duration
+        return presented
     }
 
     func clearCache(for track: Track?) async {
@@ -128,7 +138,7 @@ actor WaveformCacheService {
     }
 
     static func cacheKey(canonicalPath: String, fileSize: Int64, modificationDate: Date) -> String {
-        let source = "\(canonicalPath)|\(fileSize)|\(modificationDate.timeIntervalSinceReferenceDate)"
+        let source = "local-v2|\(canonicalPath)|\(fileSize)|\(modificationDate.timeIntervalSinceReferenceDate)"
         let digest = SHA256.hash(data: Data(source.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
@@ -279,7 +289,7 @@ actor WaveformCacheService {
         }
         let totalFrames = try Self.catchingObjCException { max(audioFile.length, 1) }
         let processingFormat = try Self.catchingObjCException { audioFile.processingFormat }
-        let fileDuration = descriptor.durationHint ?? (Double(totalFrames) / processingFormat.sampleRate)
+        let fileDuration = Double(totalFrames) / processingFormat.sampleRate
         let channelCount = Int(processingFormat.channelCount)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: 16_384) else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
@@ -369,12 +379,11 @@ actor WaveformCacheService {
 
         let asset = AVURLAsset(url: descriptor.sourceURL)
         let duration: TimeInterval
-        if let hint = descriptor.durationHint, hint > 0 {
-            duration = hint
-        } else if descriptor.sourceURL.isFileURL {
+        if descriptor.sourceURL.isFileURL {
+            // A cue duration is presentation metadata, never the backing asset's decode limit.
             duration = try await asset.load(.duration).seconds
         } else {
-            duration = 0
+            duration = descriptor.durationHint ?? 0
         }
         guard duration > 0 else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [

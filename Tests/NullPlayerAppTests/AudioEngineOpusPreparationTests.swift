@@ -9,7 +9,18 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
             .appendingPathComponent("Fixtures/Audio/opus-in-m4a.m4a")
     }
 
-    private func engine() -> AudioEngine {
+    private func makeEngine() -> (AudioEngine, () -> Void) {
+        let preferences = UserDefaults.standard
+        let keys = ["sweetFadeEnabled", "sweetFadeDuration", "gaplessPlaybackEnabled", "volumeNormalizationEnabled"]
+        let saved = keys.reduce(into: [String: Any]()) { values, key in
+            if let value = preferences.object(forKey: key) { values[key] = value }
+        }
+        let restore = {
+            for key in keys {
+                if let value = saved[key] { preferences.set(value, forKey: key) }
+                else { preferences.removeObject(forKey: key) }
+            }
+        }
         let engine = AudioEngine()
         engine.volume = 0
         engine.sweetFadeEnabled = false
@@ -17,7 +28,7 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         engine.volumeNormalizationEnabled = false
         engine.shuffleEnabled = false
         engine.repeatEnabled = false
-        return engine
+        return (engine, restore)
     }
 
     private func loaded(_ engine: AudioEngine, url: URL) {
@@ -28,8 +39,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testNormalizationAppliesToTheOriginalOpusTrackWhilePaused() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         engine.volumeNormalizationEnabled = true
         engine.playNow([Track(url: opusURL)])
         engine.pause()
@@ -42,8 +53,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testPausedNavigationThroughEveryTransportEntryPoint() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
         engine.setPlaylistTracks([Track(url: opusURL), Track(url: aac)])
         engine.playTrack(at: 1)
@@ -61,8 +72,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testPlayWithAnEmptyPipelineAndOpenFilesBothPrepareAsynchronously() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         engine.setPlaylistTracks([Track(url: opusURL)])
         engine.play()
         engine.pause()
@@ -76,8 +87,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testStopDiscardsAnInFlightPreparationAndPlayCanRetry() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         engine.playNow([Track(url: opusURL)])
         engine.stop()
         let unexpectedPlay = expectation(forNotification: .audioPlaybackStateChanged, object: engine) { _ in
@@ -94,8 +105,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testReplacingTheQueueDiscardsAnInFlightPreparation() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         engine.playNow([Track(url: opusURL)])
         let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
         engine.setPlaylistTracks([Track(url: aac)])
@@ -110,8 +121,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testQueueMoveDiscardsTheOldPositionAndPlayCanReloadTheMovedTrack() {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
         engine.setPlaylistTracks([Track(url: opusURL), Track(url: aac)])
         engine.playTrack(at: 0)
@@ -129,8 +140,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testFailedPlayNowRollsBackOnlyItsInsertedRange() throws {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let old = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
         let corrupt = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
         let secondBad = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
@@ -155,8 +166,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testPlayNowSkipsBadM4AWithinItsBoundAndStartsTheOpusSuccessor() throws {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let corrupt = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
         defer { try? FileManager.default.removeItem(at: corrupt) }
         try Data("not MPEG-4".utf8).write(to: corrupt)
@@ -168,8 +179,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
     }
 
     func testCrossfadePreparesBeforeTheFadeWindowAndUsesTheReadyFile() throws {
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let first = try TestAudioFile.temporaryWAV(seconds: 3, tone: true)
         defer { try? FileManager.default.removeItem(at: first) }
         let incoming = Track(url: opusURL)
@@ -195,8 +206,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["NULLPLAYER_LONG_OPUS_FILE"] else {
             throw XCTSkip("Set NULLPLAYER_LONG_OPUS_FILE to a generated long Opus M4A")
         }
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let first = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
         defer { try? FileManager.default.removeItem(at: first) }
         let long = URL(fileURLWithPath: path)
@@ -221,8 +232,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         guard let path = ProcessInfo.processInfo.environment["NULLPLAYER_LONG_OPUS_FILE"] else {
             throw XCTSkip("Set NULLPLAYER_LONG_OPUS_FILE to a generated long Opus M4A")
         }
-        let engine = engine()
-        defer { engine.clearPlaylist() }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
         let first = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
         defer { try? FileManager.default.removeItem(at: first) }
         let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")

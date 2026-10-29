@@ -4730,7 +4730,7 @@ class AudioEngine {
                 )
                 let playbackURL = tempURL ?? track.url
 
-                let newAudioFile = try await LocalAudioFile.open(playbackURL)
+                let newAudioFile = try await LocalAudioFile.open(playbackURL, sourceURL: track.url)
                 try Task.checkCancellation()
                 let openElapsed = CFAbsoluteTimeGetCurrent() - openStart
                 NSLog(
@@ -5781,7 +5781,7 @@ class AudioEngine {
                     )
 
                     let playbackURL = gaplessTempURL ?? nextTrackURL
-                    let nextFile = try await LocalAudioFile.open(playbackURL)
+                    let nextFile = try await LocalAudioFile.open(playbackURL, sourceURL: nextTrackURL)
                     try Task.checkCancellation()
                     let elapsed = CFAbsoluteTimeGetCurrent() - openStart
                     NSLog("Gapless: Opened next track '%@' in %.3fs", nextTrackTitle, elapsed)
