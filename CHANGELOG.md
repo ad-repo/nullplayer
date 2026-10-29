@@ -172,6 +172,8 @@
   such as 125% or 200%, a sliver of the next sprite on the skin's sheet could show at a sprite's edge,
   such as Militarized's pink divider line above the volume and pan sliders, or beside the pan
   thumb (#612, thanks @tmichelbrink).
+- **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
+  quit while refreshing the rooms' volumes; volumes are now read one room at a time.
 
 ## 0.33.1
 

@@ -106,7 +106,9 @@ sliders use the skin's text color.
   renderer. `UPnPManager.getSonosRoomVolume` / `setSonosRoomVolume` do not require an active session
   and never send `SetGroupVolume`. The player's existing group-volume path is unchanged.
 - Writes are single-flight and latest-value-wins **per room**, with SOAP retries disabled for
-  superseded writes. Polling uses at most four concurrent reads; per-room revision checks prevent
+  superseded writes. Polling reads rooms one at a time (a task group of `@MainActor` reads crashed
+  the release binary in the Swift runtime), so each unreachable room holds a poll for its 10 s SOAP
+  timeout and Refresh is a no-op meanwhile; per-room revision checks prevent
   a read begun before a slider edit from replacing the new value. One failed room does not disable
   other rooms. Refresh retries discovery as well as topology and levels.
 - `Windows/Sonos/` owns the controller and shared controls; `Windows/Shared/AuxiliaryWindowChrome.swift` (with
