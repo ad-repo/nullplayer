@@ -212,7 +212,8 @@ extension WasabiSceneRenderer {
     }
 
     /// The palette the rows this renderer paints draw with: `palette`, or its `unfocused()` projection
-    /// while the window is not key (#603). NullPlayer's AppKit surfaces keep `palette` itself.
+    /// while the window is not key (#603). The main view's embedded AppKit surfaces draw with it too
+    /// (B267); the fallback windows' style is built from `palette` itself.
     var rowPalette: WasabiPalette { isWindowActive ? palette : palette.unfocused() }
 
     /// The playing row's colour, which has to stay distinguishable from an ordinary row's.

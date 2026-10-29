@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B267 — The Media Library and hosted windows follow focus with the skin's inactive selection pair — closed 2026-10-29
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B267 | **The Media Library and hosted windows keep the active selection colours when their window loses focus.** #603 made the rows the renderer draws (playlist panel, colour-theme picker, `<list>`) swap in the skin's `wasabi.list.text.selected{,.background}.inactive` pair through `rowPalette` / `WasabiPalette.unfocused()` (`colour.md`). NullPlayer's AppKit surfaces get a `WinampModernSurfaceStyle` built from the plain `palette` once, on a palette change (`WinampModernLibrarySurfaceView.applyPalette`, `WinampModernMainView` `librarySurfaces`, hosted windows), and nothing re-applies it on key/resign, so the library next to a dimmed playlist panel stays in the active colours. Build each surface's style from its own window's focus (`palette.unfocused()` when not key), re-apply it from the existing key/resign observers, and make sure the style's selected-text guard measures the inactive bar. Done when, on iTunes Miniplayer, clicking away from the player dims the library's selection the same way it dims the playlist panel, and a skin that declares neither id is unchanged | zip scan of the archives' XML for either id (raw archive counts, duplicates included): gold 71/106, silver 26/33, bronze 391/802, quarantine 29/54 | M | 2 |
+
+**Closed 2026-10-29**. `WinampModernMainView.applySurfacePalette` pushes `renderer.rowPalette` — the palette the renderer's own rows draw with — to every embedded surface (library, video, visualization, hosted windows), on a palette change and from the key/resign observer, which now sets `renderer.isWindowActive` first so both read one focus state. Surfaces made later take `rowPalette` too, and the push is skipped when the palette did not change, so a skin declaring neither id never re-styles on focus. A library or playlist in a `.wal` *fallback* window still takes the un-projected palette; that moved to M54 (`tasks/MISC_TASKS.md`).
+
 ## B294 — A texted `<Wasabi:Button>` on the skin's button art reads: the label falls back to black or white — closed 2026-10-28
 
 | Id | Item | Reach | Effort | Tier |

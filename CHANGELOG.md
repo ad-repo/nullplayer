@@ -179,6 +179,8 @@
 - **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
   between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
   2 px left of its knob.
+- **Winamp Modern skins dim the Media Library's selection when the player loses focus**, the same
+  way the playlist panel beside it already did, on skins that declare an unfocused selection colour.
 
 ## 0.33.1
 
