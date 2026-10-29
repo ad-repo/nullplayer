@@ -3765,6 +3765,24 @@ class SkinRenderer {
     ///   - destRect: Destination rectangle (already in transformed context coordinates)
     ///   - context: The graphics context to draw into
     func drawSprite(from image: NSImage, sourceRect: NSRect, to destRect: NSRect, in context: CGContext) {
+        // Crop to the sprite first: NSImage.draw(in:from:) samples just outside `sourceRect` when a
+        // fractional window scale puts the sprite edge on a fractional device pixel, pulling in the
+        // neighbouring sprite row (#612). The cropped sprite still draws through NSImage, which the
+        // 1x title-bar fixes depend on (see non-retina-fixes). A sprite reaching past an undersized
+        // bitmap stays uncropped so its in-bounds part draws unstretched.
+        if let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let pixelScale = CGFloat(cgImage.width) / image.size.width
+            let pixelRect = CGRect(x: sourceRect.minX * pixelScale, y: sourceRect.minY * pixelScale,
+                                   width: sourceRect.width * pixelScale, height: sourceRect.height * pixelScale).integral
+            if CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height).contains(pixelRect),
+               pixelRect != CGRect(x: 0, y: 0, width: cgImage.width, height: cgImage.height),
+               let cropped = cgImage.cropping(to: pixelRect) {
+                let sprite = NSImage(cgImage: cropped, size: sourceRect.size)
+                drawSprite(from: sprite, sourceRect: NSRect(origin: .zero, size: sourceRect.size), to: destRect, in: context)
+                return
+            }
+        }
+
         // The context is already flipped (Y-axis inverted) to match skin's top-down coordinate system.
         // Source rect is in skin coordinates (origin top-left).
         // NSImage source coordinates use origin at bottom-left.

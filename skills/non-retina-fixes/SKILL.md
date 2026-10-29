@@ -175,6 +175,22 @@ at 1x (#611).
 **Solution**: Render the marquee at backing scale × window scale and use `.nearest` filtering on its
 content layer. See `ui-guide` § *Main Window Marquee → Scaling*.
 
+### 7. Neighbouring Sprite Bleed at Scaled Sizes
+
+**Problem**: At fractional device scales (125% at 1x, 200%/300% at 2x), `NSImage.draw(in:from:)` samples
+just outside its source rect, so a sprite edge picks up the next sprite on the sheet. Militarized
+showed it as a pink line above the volume/pan sliders (the `#FBB0FF` divider row between states) and
+beside the pan thumb (the divider column between thumbs) (#612).
+
+**Solution**: `SkinRenderer.drawSprite(from: NSImage, …)` crops the sheet's `CGImage` to the sprite
+first, then draws the cropped piece through the same NSImage call, so the drawing behaviour that §2 relies
+on is unchanged. Don't fix it by switching to the CGImage `drawSprite` overload. A sprite reaching past an
+undersized bitmap stays uncropped so its in-bounds part draws unstretched. Covered by
+`SkinSpriteBleedTests`.
+
+Not part of this: Militarized's opaque olive thumb rows, which differ slightly from the track behind
+them, and the thumb covering the track's end cap near max volume. Both are the skin's art drawn as-is.
+
 ## Files Changed
 
 1. **`Skin/SkinRenderer.swift`** - NSImage rendering for title bars, playlist tile fixes
