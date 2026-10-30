@@ -242,7 +242,8 @@ Library Browser → **Source: YouTube**. Subscribe to channels (**+ADD**, or fin
 - Downloads go to `<folder>/<Channel>/<Title> [<id>].<ext>`, play locally, and cast like local files.
 
 ### Local Files
-Drag & drop or use File menu. Supports: MP3, M4A, AAC, WAV, AIFF, FLAC, OGG, ALAC
+Drag & drop or use File menu. Supports: MP3, M4A (AAC, ALAC or Opus), AAC, WAV, AIFF, FLAC, OGG, ALAC.
+A bare `.opus` (Ogg Opus) file is not supported.
 
 Local M4A files containing Opus audio also play without converting or renaming your music files.
 On macOS versions whose native file reader cannot decode this combination, NullPlayer prepares

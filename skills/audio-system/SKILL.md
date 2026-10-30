@@ -610,7 +610,8 @@ When audio isn't playing:
 ## File Support
 
 ### Local Playback (AVAudioEngine)
-MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
+MP3, M4A (AAC, ALAC, or Opus via the decode fallback in *Opus in MPEG-4 local files*), AAC, WAV,
+AIFF, FLAC, ALAC, OGG. Bare `.opus` (Ogg Opus) is not in `AudioFileValidator.supportedExtensions`.
 
 Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. `AudioGraphRecoveryCoordinator` owns the typed deferred/retry lifecycle and pending playback intent; `AudioEngine` owns only AVFoundation graph mutation and playback restoration. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. If the saved output device is gone, replacement falls back to the system default rather than failing every retry. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
 
