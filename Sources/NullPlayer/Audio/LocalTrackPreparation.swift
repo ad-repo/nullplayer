@@ -4,15 +4,8 @@ import AVFoundation
 /// `CancellablePreparation`; staging, decoding and the failure filesystem checks run in `prepare`,
 /// off main.
 enum LocalTrackPreparation {
-    /// A transport load's skip bound and Play Now rollback, carried through any failed-file skip.
-    struct Transport {
-        var lastSkippable: Int? = nil
-        var playNow: PlayNowRequest? = nil
-        var firstFailure: TrackLoadFailure? = nil
-    }
-
     enum Policy {
-        case transport(Transport)
+        case transport(TrackLoadTransport)
         case immediate(userInitiated: Bool)
     }
 
@@ -25,21 +18,28 @@ enum LocalTrackPreparation {
         var intent: PlaybackState
     }
 
+    /// A local file that would not open, with the filesystem checks its skip/stop policy needs.
+    /// Building one stats the file's volume, so build it on the thread that just touched it.
     struct Failure: Error {
         let underlying: Error
         let folderIsPresent: Bool
         let fileIsMissing: Bool
+
+        init(_ underlying: Error, url: URL) {
+            self.underlying = underlying
+            folderIsPresent = AudioEngine.containingFolderIsPresent(url)
+            fileIsMissing = !FileManager.default.fileExists(atPath: url.path)
+        }
     }
 
-    static func prepare(_ url: URL) async throws -> AVAudioFile {
+    /// Throws only `CancellationError`, which `CancellablePreparation` never publishes.
+    static func prepare(_ url: URL) async throws -> Result<AVAudioFile, Failure> {
         do {
-            return try await LocalAudioFile.prepareForPlayback(url)
+            return .success(try await LocalAudioFile.prepareForPlayback(url))
         } catch is CancellationError {
             throw CancellationError()
         } catch {
-            throw Failure(underlying: error,
-                          folderIsPresent: AudioEngine.containingFolderIsPresent(url),
-                          fileIsMissing: !FileManager.default.fileExists(atPath: url.path))
+            return .failure(Failure(error, url: url))
         }
     }
 }

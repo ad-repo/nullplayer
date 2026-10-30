@@ -101,7 +101,7 @@ final class LocalAudioFileTests: XCTestCase {
             let source = opusURL.deletingLastPathComponent().appendingPathComponent(name)
             let staged = directory.appendingPathComponent(name)
             try FileManager.default.copyItem(at: source, to: staged)
-            let file = try await LocalAudioFile.open(staged, sourceURL: source)
+            let file = try await LocalAudioFile.open(source, stagedCopy: staged)
             XCTAssertEqual(LocalAudioFile.sourceURL(of: file), source)
             XCTAssertGreaterThan(try readAll(file)[0].count, 25_000)
         }
@@ -112,7 +112,7 @@ final class LocalAudioFileTests: XCTestCase {
             let source = opusURL.deletingLastPathComponent().appendingPathComponent(name)
             let staged = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
             try FileManager.default.copyItem(at: source, to: staged)
-            var file: AVAudioFile? = try await LocalAudioFile.open(staged, sourceURL: source, stagedCopyURL: staged)
+            var file: AVAudioFile? = try await LocalAudioFile.open(source, stagedCopy: staged)
             let backing = try XCTUnwrap(file).url
             var analysis: LocalAudioAnalysisSource? = LocalAudioFile.analysisSource(of: try XCTUnwrap(file))
             file = nil
@@ -134,7 +134,7 @@ final class LocalAudioFileTests: XCTestCase {
         let staged = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
         try Data("not audio".utf8).write(to: staged)
         do {
-            _ = try await LocalAudioFile.open(staged, sourceURL: opusURL, stagedCopyURL: staged)
+            _ = try await LocalAudioFile.open(opusURL, stagedCopy: staged)
             XCTFail("A corrupt staged source must fail")
         } catch { /* Expected. */ }
         let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in

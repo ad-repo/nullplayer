@@ -5,7 +5,7 @@ enum AudioGraphRecoveryIntent {
     case play
     case playTrack(index: Int)
     case playNow(PlayNowRequest)
-    case loadTrack(index: Int, intent: PlaybackState = .stopped, transport: LocalTrackPreparation.Transport = .init())
+    case loadTrack(index: Int, intent: PlaybackState = .stopped, transport: TrackLoadTransport = .init())
     case loadLocalImmediate(index: Int)
 }
 
@@ -25,6 +25,15 @@ struct PlayNowRequest {
     func isInPlace(in playlist: [Track]) -> Bool {
         insertedRange.upperBound <= playlist.count && playlist[insertedRange].map(\.id) == insertedTrackIDs
     }
+}
+
+/// A transport load's skip bound and Play Now rollback, carried through any failed-file skip
+/// on whichever route the skip lands (local, video).
+struct TrackLoadTransport {
+    var lastSkippable: Int? = nil
+    var playNow: PlayNowRequest? = nil
+    /// The track that was asked for, reported if every skip after it also fails.
+    var firstFailure: UserPlayRequestFailure? = nil
 }
 
 /// Owns the recovery lifecycle for the local AVAudioEngine graph.
