@@ -21,7 +21,7 @@ X-Theme.wal	ea09d71efe057522f9ae7c58a61c917b53fdf0a7abacf0ba436d722ca64f7a1b	hea
 The_XP_Style_WinaMP3_Player.wal	f0a2e7304734040ce58b353a93752bca33d5bc53e50f91b3357e212ada1d01a0	headless	2026-10-30	-	headless clean; SERIFE.FON unresolved, Arial fallback (D)
 QL2.wal	f457134cfcc367ac0985896d2c0620172b631a9c782a3ad1de549d8127320cac	headless	2026-10-30	-	headless clean
 Official_Midnight_Club_2_skin.wal	009fd9aecd5ec9fddd77609b80e509a288cb94d8c7932ebf2f06b76fbaef2b02	headless	2026-10-30	B317	headless clean; volume/seek anims via B317; changeCity, launchrstar navigateUrl, eqclose covered (H)
-GoldenBeauty.wal	0acbe496ccaa6705c4d0926598f43797ac8ab387a9fc7076105064d27b7cd43f	headless	2026-10-30	-	headless clean; window_menus.xml not in archive (D); no hooked control, live drive
+GoldenBeauty.wal	0acbe496ccaa6705c4d0926598f43797ac8ab387a9fc7076105064d27b7cd43f	headless	2026-10-30	B327(open)	fix list: B327 (floating text below the main window, user 2026-10-30); window_menus.xml not in archive (D); no hooked control, live drive
 SpongeBob_Squarepants.wal	230f8dc97d14459566723550e744d5271be0ba6de679d7ced86de09f5055f656	headless	2026-10-30	B317	headless clean; seek layer via B317 (seek at rest)
 MD_-_Iwakura_Lain_the_Fourth_v1.wal	27b61f5fc1583709dab02c4605c3a71b268ca9e7643ae6edafadf817641a6191	headless	2026-10-30	-	headless clean; wb.site is navigateUrl (H); studio-elements.xml, thinger/eq ticker art not in archive (D)
 i-Skin.wal	3f3dcdd1f457fa82903a10a7126fc16f2a84892b40830fea84b8b86756af773a	headless	2026-10-30	B317,B320(open)	fix list: B320 (GitHub #643, title scrolls two ways at once), user: fix B320 this round despite the budget line (2026-10-30); FF, volup via B317; text#SongTicker click (H)
