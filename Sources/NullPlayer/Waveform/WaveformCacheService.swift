@@ -109,12 +109,12 @@ actor WaveformCacheService {
         guard !descriptor.isStreaming, snapshot.state == .ready else { return snapshot }
         let backingDuration = snapshot.duration
         let start = min(max(0, descriptor.cueStartOffset ?? 0), backingDuration)
-        let duration = descriptor.durationHint.flatMap { $0 > 0 ? $0 : nil }
-            ?? max(0, backingDuration - start)
+        let remaining = max(0, backingDuration - start)
         var presented = snapshot
-        presented.duration = duration
+        presented.duration = descriptor.durationHint.flatMap { $0 > 0 ? $0 : nil } ?? remaining
         guard descriptor.cueStartOffset != nil, backingDuration > 0, !snapshot.samples.isEmpty else { return presented }
-        presented.duration = min(duration, max(0, backingDuration - start))
+        // A cue's hint cannot run past the end of the backing file.
+        presented.duration = min(presented.duration, remaining)
         // The renderer spreads all returned buckets over presentation duration. Select the
         // cue's source window first; preserve the canonical whole-source record on disk.
         // Round outward to retain a partial bucket at either boundary (one source bucket's
@@ -291,18 +291,18 @@ actor WaveformCacheService {
     private nonisolated func generateLocalSnapshot(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         try Task.checkCancellation()
 
-        let audioFile: AVAudioFile
+        let nativeFile: AVAudioFile?
         do {
-            audioFile = try Self.catchingObjCException { try AVAudioFile(forReading: descriptor.sourceURL) }
-            if audioFile.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus,
-               audioFile.length == 0 {
-                return try await generateServiceSnapshotViaAssetReader(with: descriptor)
-            }
+            nativeFile = try Self.catchingObjCException { try LocalAudioFile.openNatively(descriptor.sourceURL) }
         } catch {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Failed to open audio file: \((error as NSError).localizedDescription)",
                 NSUnderlyingErrorKey: error
             ])
+        }
+        // MPEG-4 Opus that Core Audio cannot read: the same check playback uses for its fallback.
+        guard let audioFile = nativeFile else {
+            return try await generateServiceSnapshotViaAssetReader(with: descriptor)
         }
         let totalFrames = try Self.catchingObjCException { max(audioFile.length, 1) }
         let processingFormat = try Self.catchingObjCException { audioFile.processingFormat }
