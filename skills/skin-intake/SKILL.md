@@ -96,8 +96,8 @@ a headless dump (`corpus-runner-plan.md` § *Done: the B169 intake*).
 
 No skin moves to `live` without it, whether or not it says `headless clean`. A clean sweep is a
 regression result. Intake #3's user round still found see-through panes, text drawn over text and
-controls run into each other (`corpus-runner-plan.md` § *Done: intake #3*). This review exists to
-catch those three.
+controls run into each other (`corpus-runner-plan.md` § *Done: intake #3*); intake #5's found
+Bubble_Tea's spectrum drawn outside its cup (B323). This review exists to catch those four.
 
 1. Run `skills/app-control/scripts/window-census.sh <skin> --shots` with a track playing. That
    captures every window live, main included, with hosted components and cover art, after the skin
@@ -107,7 +107,7 @@ catch those three.
 2. Run `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale <s>`, with `<s>` the
    `screen0_scale` in the census's `meta.tsv` (2 on Retina), then
    **open the sheet**. Each window is drawn over magenta under the author's screenshot.
-3. Judge every window against the three classes, and write one verdict per class:
+3. Judge every window against the four classes, and write one verdict per class:
    - **Transparent background**: magenta inside the body that the reference fills. Open every
      `HOLES` line first. A window that is mostly magenta has no enclosed hole, so read its
      `transparent=` share as well.
@@ -115,7 +115,11 @@ catch those three.
      font, or ids/`@TOKEN@` drawn as text.
    - **Layout**: controls overlapping or out of place against the reference, gaps, content past the
      edge, a window cut short or stretched.
-4. Each defect is a fix-list entry: Phase 5, then review again. The stage moves only when all three
+   - **Visualization**: every spectrum, oscilloscope or vis drawn inside the area the skin
+     defines for it (its frame, mask, region or art), aligned to it and the shape it gives. Bars
+     past that area, offset from it or the wrong size are a defect. Capture with a track playing,
+     or there is nothing to judge.
+4. Each defect is a fix-list entry: Phase 5, then review again. The stage moves only when all four
    classes read clean. The commit's ledger `note` says so: `visual: clean (<n> windows)`.
 
 A skin with no `screenshot.png` is judged against its own artwork, and the note says `no ref`.
@@ -156,7 +160,7 @@ naturally stops:
 |---|---|
 | no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the three visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
+| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
 | `accepted` | Promote · the code-quality review · the PR |
 
 **The loop:**
@@ -192,7 +196,7 @@ naturally stops:
      visual-review verdicts where they ran, the sheet's path, and the `next:` line.
 4. Check the report before passing it on. The status script must exit 0, and `git log -1` must
    be the worker's commit. After a visual review, **open the sheet yourself**: a second look at
-   the three classes is the reason the review exists.
+   the four classes is the reason the review exists.
 5. Pass the report to the user.
 6. **Start the next phase's worker as soon as the report checks out.** Do not stop at phase
    or skin boundaries, and never ask the user whether to continue. The turn ends only while a
