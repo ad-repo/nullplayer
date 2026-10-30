@@ -556,9 +556,11 @@ so a corpus run can't lose lines, not *what* is measured.
   exercise — what it is worth as a test case.
 - **Admission is greedy set cover on value**, from the gold+silver feature union, ties to lowest sha256.
   Deterministic: a pure function of (candidate sha256s, corpus sha256s, git rev).
-- **Tiers.** Gold = the `skins.md` set. Silver = admitted by value, budgeted per intake: **≤ 25 skins, gain ≥ 3
-  features** (agreed 2026-10-19). Re-open it only after the first intake, from its measured gain curve in
-  `intake.tsv` and the sweep time it added — the budget is the sweep's cost. Bronze =
+- **Tiers.** Gold = the `skins.md` set. Silver = admitted by value, budgeted per intake: **25 skins, the
+  first 25 of the greedy order, no gain floor**. Agreed 2026-10-19 as ≤ 25 at gain ≥ 3; the floor was
+  dropped 2026-10-30 (rev `adfef300`), when intake #5's run over 806 bronze found only 21 at gain ≥ 3
+  (gain 2: 51, 1: 99, 0: 635). Every candidate goes through an intake; past the floor, rank only
+  orders the batches. The budget is the sweep's cost. Bronze =
   the rest, census-only. Quarantine = does-not-load, crash or hang — a trap on real input is a security
   bug first (S1).
 - **Tier decides which actions run.** Pre-merge render sweep = gold+silver. Impact-selected sweep

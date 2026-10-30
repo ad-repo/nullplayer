@@ -9,7 +9,7 @@ Three levels, each finished by the one below it:
 
 | Level | Is | Done when | Recorded in |
 |---|---|---|---|
-| **Corpus** | ~900 candidates in Bronze | every candidate is Gold, or Bronze below the gain floor (certified by the census and the pre-merge sweep, plan §8) | `corpus-manifest.tsv` tiers |
+| **Corpus** | ~900 candidates in Bronze | every candidate is Gold or quarantined (certified by the census and the pre-merge sweep, plan §8) | `corpus-manifest.tsv` tiers |
 | **Batch** | 25 skins, one branch, one ledger, one run store | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
 | **Session** | one unit of work on the open batch | its result is in the ledger and committed | the ledger and the commit |
 
@@ -73,7 +73,8 @@ Only the batch rides on its branch; an unrelated backlog row gets its own `fix/�
 `git push -u origin <branch>`. A batch past about a week PRs its `promoted` skins and continues on a
 fresh branch with the same ledger. Merge `origin/main` in every few days; never rebase a pushed branch.
 
-**Stop admitting batches** when a batch no longer clears the gain floor (plan §8 *Decisions*).
+**Every candidate goes through an intake**: there is no gain floor, so batches continue, 25 in rank
+order, until bronze is empty (plan §8 *Decisions*).
 
 ## The batch pass
 
@@ -217,7 +218,7 @@ back in its report and ends the turn the same way.
 |---|---|
 | The per-skin pass, Phases 0–9 | `skills/skin-triage` (its record, `template.md`, lives in the scratchpad: what must outlive the session goes in the ledger, the backlog and the run store) |
 | `wal_intake.sh`, the crawler, the run store, every sweep | `winamp-modern-skin-guide/reference/harness.md` |
-| Budget (25, gain ≥ 3), tiers, why | `corpus-runner-plan.md` §8 *Decisions* |
+| Budget (25, no gain floor), tiers, why | `corpus-runner-plan.md` §8 *Decisions* |
 | Backlog rows | `tasks/WINAMP5_TASKS.md`, closed into `backlog-archive.md` |
 | Grades after promotion | `docs/winamp-modern/skin-compatibility.md`, rubric in `/wal-skin-report` |
 

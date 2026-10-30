@@ -605,7 +605,7 @@ corpus and every earlier pick lack (`added` lists the first 40). A new tag count
 (re-weighted for intake #2, 2026-10-22). Pointed at `WinampModernCorpus/bronze`, `--admit` re-tiers
 the picks in place — their manifest rows' tier and rev are rewritten and only they move. Rank is greedy set cover, ties to
 the lowest sha256, so the file is a pure function of the two sha256 sets and the rev — two runs from
-a clean outdir are byte-identical. Silver is the first 25 of the order with gain ≥ 3 (the constants
+a clean outdir are byte-identical. Silver is the first 25 of the order, no gain floor (the constants
 at the top of the script); does-not-load is quarantine; the rest is bronze. A skin the census never
 reached stops the run instead of being quarantined, because that is a crashed pass, not a verdict.
 
