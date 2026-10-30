@@ -192,6 +192,10 @@
   way the playlist panel beside it already did, on skins that declare an unfocused selection colour.
 - **Winamp Modern windows open wide enough to show their whole title.** Silverskin_3's playlist and
   help windows read `AYLIST EDITO` and `VERSKIN HE`; they now open at the width their titles need.
+- **Waveforms for Opus M4A files and cue tracks.** Local `.m4a` files holding Opus audio now show
+  a waveform instead of none. A track from a cue sheet shows only its own part of the file's
+  waveform, with its cue markers, instead of the whole file squeezed into one track's length
+  (#631, thanks @infinity-dump).
 
 ## 0.33.1
 
