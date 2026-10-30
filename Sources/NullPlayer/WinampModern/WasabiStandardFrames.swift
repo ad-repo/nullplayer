@@ -321,12 +321,28 @@ extension WasabiStandardFrames {
         var ancestor = object.parent
         while let current = ancestor {
             if current.tag.is(.container) {
-                let declared = current.attributes["component"] ?? current.attributes["hold"]
-                return declared.flatMap(WinampModernComponentRegistry.kind(for:)) == .playlist
+                guard let declared = current.attributes["component"] ?? current.attributes["hold"] else {
+                    return holdsOnlyThePlaylist(current)
+                }
+                return WinampModernComponentRegistry.kind(for: declared) == .playlist
             }
             ancestor = current.parent
         }
         return false
+    }
+
+    /// A container that declares no component is the playlist's window when the one component it
+    /// hosts is the playlist: Bubble_Tea_-_Updated's `Pledit` is a status frame around a
+    /// `<component param="guid:pl">` and names nothing itself (B324).
+    private static func holdsOnlyThePlaylist(_ container: WasabiObject) -> Bool {
+        var held: Set<WinampModernComponentKind> = []
+        func collect(_ object: WasabiObject) {
+            if WinampModernComponentRegistry.isHolderElement(object.tag),
+               let kind = WasabiSceneRenderer.componentKind(of: object) { held.insert(kind) }
+            object.children.forEach(collect)
+        }
+        collect(container)
+        return held == [.playlist]
     }
 
     /// The playlist `<LayoutStatus>` slots beneath `roots` that get the host's command bar. A

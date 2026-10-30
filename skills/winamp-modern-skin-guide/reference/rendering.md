@@ -1377,14 +1377,21 @@ rather than its own height: an `autoheightsource="<id>"` naming a descendant, el
 child reaches (`contentBottom`).
 
 
-### Two seams that decide what a region window or a standard frame draws
+### Three seams that decide what a region window or a standard frame draws
 
 - **A `<vis>` never shapes a region window (B323).** On a layout with no `desktopalpha` every painted
   pixel is window, so a vis wider than the art grew the window and drew bars over the desktop
   (Bubble_Tea's cup). `WasabiDrawList.recordingRegionExcluded` tags the vis draw; the canvas replays
-  without it to read the region and keeps only the vis pixels inside it. A dirty rect where nothing
-  else paints keeps its vis. The idle vis draws nothing in a dump, so the sweeps cannot see this: drive
-  the app with a track playing.
+  without it to read the region, replays whole, and empties what the vis left outside it
+  (`clearOutside`: the inverted region plane as an alpha-only picture drawn with the `clear` blend; never a
+  Swift per-pixel loop, which cost about a point of whole-app CPU in a release build). A dirty rect where
+  nothing else paints keeps its vis, so the clip is per rect, not per window. The idle vis draws nothing in
+  a dump, so the sweeps cannot see this: drive the app with a track playing. 20 gold+silver region
+  layouts draw a vis and all sit wholly over art, so only a skin whose vis overhangs its art changes.
+- **A container that hosts only the playlist gets the playlist's command bar (B324).**
+  `WasabiStandardFrames.hostsPlaylistCommandBar` reads a declared `component=`/`hold=`, and for a container
+  declaring neither, the components it holds (`holdsOnlyThePlaylist`). Bubble_Tea's `Pledit` and LCDx's
+  embedded `main/plus` playlist are the two gold+silver windows it reaches.
 - **Only a script that calls `newGroup` instantiates a standard frame's content (B322).**
   `WasabiStandardFrames.needsHostedContent` reads the bytecode, as the surface synthesizer does:
   a frame declaring chrome scripts (`fade`, `standstraw`) and no `standardframe.maki` still needs the

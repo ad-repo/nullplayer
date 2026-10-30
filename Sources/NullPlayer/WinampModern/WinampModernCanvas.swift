@@ -107,7 +107,7 @@ final class WinampModernCanvas {
             for rect in job.rects { context.clear(rect) }
         }
         replayScene(skippingRegionExcluded: false)
-        for (rect, plane) in zip(job.rects, regions) { clearOutside(plane, rect: rect, data: data, in: context) }
+        for (rect, plane) in zip(job.rects, regions) { clearOutside(plane, rect: rect, in: context) }
 
         if job.promotesAlpha {
             for rect in job.rects {
@@ -182,22 +182,33 @@ final class WinampModernCanvas {
         return plane
     }
 
-    /// Empty every pixel of `rect` that `plane` says is outside the region.
-    private func clearOutside(_ plane: [UInt8], rect: CGRect, data: UnsafeMutableRawPointer,
-                              in context: CGContext) {
+    /// Empty every pixel of `rect` that `plane` says is outside the region: the plane, inverted to
+    /// all-or-nothing, is an alpha-only picture drawn with the `clear` blend, which empties the canvas
+    /// under whatever the picture covers (`destinationIn` would leave the uncovered part alone).
+    /// (Not a Swift loop over the pixels; see `updateAlpha`.)
+    private func clearOutside(_ plane: [UInt8], rect: CGRect, in context: CGContext) {
         let width = Int(rect.width), height = Int(rect.height)
         // A rect where nothing else paints has no region to clip to: a window made of its vis alone
         // (a bare analyzer) keeps it. ponytail: judged per dirty rect, not per window; a rect wholly
         // past the art would keep stray bars. Take the window's whole-frame region if one shows.
         guard width > 0, height > 0, plane.contains(where: { $0 != 0 }) else { return }
-        let pixels = buffer(data, rect: rect, in: context)
-        for row in 0..<height {
-            let line = pixels.data.advanced(by: row * pixels.rowBytes).assumingMemoryBound(to: UInt8.self)
-            for column in 0..<width where plane[row * width + column] == 0 {
-                (line + column * 4).update(repeating: 0, count: 4)
-            }
+        var binary = plane
+        binary.withUnsafeMutableBytes { bytes in
+            var buffer = vImage_Buffer(data: bytes.baseAddress, height: vImagePixelCount(height),
+                                       width: vImagePixelCount(width), rowBytes: width)
+            _ = vImageTableLookUp_Planar8(&buffer, &buffer, Self.outsideTheRegion, vImage_Flags(kvImageNoFlags))
+            guard let mask = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
+                                       bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                                       bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue)?.makeImage() else { return }
+            context.saveGState()
+            context.setBlendMode(.clear)
+            context.draw(mask, in: rect)
+            context.restoreGState()
         }
     }
+
+    /// 0 becomes 255 (outside), every other alpha 0.
+    private static let outsideTheRegion: [Pixel_8] = (0..<256).map { $0 == 0 ? 255 : 0 }
 
     /// Copy `rect`'s alpha into the mirror, reporting whether any of it differed.
     ///

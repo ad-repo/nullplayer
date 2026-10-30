@@ -206,6 +206,8 @@
 - **Bubble_Tea_-_Updated's Playlist Editor lists the queue.** A frame whose scripts only draw chrome no longer
   counts as one that builds its content; QL2's playlist window is built the same way.
 - **Bubble_Tea_-_Updated's spectrum stays inside the cup** instead of drawing bars over the desktop beside it.
+- **Bubble_Tea_-_Updated's Playlist Editor has its Add / Rem / Sel / Misc / List buttons.** A playlist window that
+  names no component, and hosts only the playlist, now gets the command bar; LCDx's embedded playlist gets it too.
 
 ## 0.33.1
 

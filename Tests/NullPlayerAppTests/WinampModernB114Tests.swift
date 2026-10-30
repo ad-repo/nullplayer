@@ -408,6 +408,20 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertTrue(notAPlaylist.children(ofID: "status").isEmpty)
     }
 
+    /// B324 — Bubble_Tea_-_Updated's `Pledit` declares no `component=`; it hosts the playlist, and
+    /// nothing else, in its content. That is a playlist window too, so its status slot gets the bar.
+    func testAContainerThatHostsOnlyThePlaylistGetsTheCommandBarToo() throws {
+        let status = #"<LayoutStatus id="status" x="0" y="-15" relaty="1" w="0" relatw="1" h="15"/>"#
+        let playlist = #"<component id="pl" param="guid:pl" x="0" y="0" w="100" h="40"/>"#
+        let hosted = try makeScene(layoutAttributes: "", markup: playlist + status)
+        XCTAssertEqual(hosted.children(ofID: "status").compactMap { $0.attributes["action"] },
+                       ["PE_Add", "PE_Rem", "PE_Sel", "PE_Misc", "PE_List"])
+
+        let library = #"<component id="ml" param="guid:ml" x="0" y="0" w="100" h="40"/>"#
+        let shared = try makeScene(layoutAttributes: "", markup: playlist + library + status)
+        XCTAssertTrue(shared.children(ofID: "status").isEmpty, "a window that holds more than the playlist")
+    }
+
     /// Deimos's `cover.maki` (57 corpus skins) asks for `cover.jpg`, `folder.jpg`… beside the playing
     /// file, with the folder's first seven characters dropped. That names the cover; nothing opens it.
     func testACoverBesideThePlayingFileIsRecognisedByItsFolder() {
