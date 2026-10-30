@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B319 — SONY WALKMAN's colour buttons recolour the skin in the app; the silent rows were the headless dump — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B319 | **SONY WALKMAN's five colour buttons recolour nothing when clicked.** Found in intake #5 Phase 4 (2026-10-30): `layer#btd`/`btp`/`btpu`/`btw`/`bty` run `GammaSet.apply()` from `color.m` (`pink.apply()` and its four siblings, from `ColorMgr.getGammaSet`) and read `silent`. A `RENDER_CLICK` on `btp` (`main/normal@370,244`) runs `apply()` and leaves `main-normal.png` byte-identical to the unclicked dump, while `WINAMP_MODERN_RENDER_THEME=pink` prints `applied=true active=pink` and does recolour it. `GammaSet.apply` routes through `hooks.themeSwitchRequested` (`WinampModernScriptRuntimeDynamic.swift`), which the headless dump may not wire, so this may be H. Click the pink button in the app on the debug build: if the skin recolours, close as H and note it in `harness.md`; if not, find why the hook answers false for a theme the skin ships. `btd` (black) is the all-zero default and is inert by design | SONY__WALKMAN (5 rows); `maki-call` `GammaSet`: gold 4/156, silver 1/55, bronze 4/780 (manifest a1dbc926) | S | 2 |
+
+**Closed 2026-10-30 as class H (intake #5 live pass).** Clicking the pink button (`main/normal@370,244`) in the debug app recoloured the whole skin from the grey default to pink (main window before and after captured), so `GammaSet.apply` reaches `hooks.themeSwitchRequested` live. Only the headless dump leaves it unwired, so `GammaSet.apply()` rows read `silent` there.
+
 ## B324 — A container that hosts only the playlist gets the playlist's command bar — closed 2026-10-30
 
 | Id | Item | Reach | Effort | Tier |

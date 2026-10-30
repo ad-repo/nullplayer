@@ -573,7 +573,7 @@ radio options run `setXmlParam("ghost", activated)` in `onActivate`, so the opti
 `ghost=1` and the click falls to the layout by design (B272). Read the control's `ghost=` in
 `RENDER_PROBE` before calling `covered:layout` a hit-test defect. A control whose handler only calls `System.navigateUrl` reads
 `silent`: the call is routed to the browser hook, which the sweep does not record as an effect
-(Official_Zwan_Skin's `player.web`, 2026-10-26). And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
+(Official_Zwan_Skin's `player.web`, 2026-10-26). Likewise `GammaSet.apply()` (a skin's colour buttons) reads `silent` headlessly, because the dump does not wire `hooks.themeSwitchRequested`; in the app it recolours the skin (SONY__WALKMAN `btp`, B319, 2026-10-30). And a plain `action=` button with no script is not a target at all — its whole behaviour is static,
 and the host-action census answers it. Menus are counted, not walked item by item: the plan's per-item menu sweep is not
 built.
 

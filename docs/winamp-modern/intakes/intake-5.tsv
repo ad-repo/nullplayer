@@ -1,11 +1,11 @@
 file	sha256	stage	updated	rows	note
-Draculas_Helmet.wal	a7a8f2e950b49dba06752d08294c4d97c6d2eb57574f887ff78d188280ba039b	live	2026-10-30	-	visual: clean (5 windows); live: CustomVis never-played at rest (expected); font unresolved (D)
+Draculas_Helmet.wal	a7a8f2e950b49dba06752d08294c4d97c6d2eb57574f887ff78d188280ba039b	live	2026-10-30	-	visual: clean (5 windows); live: CustomVis never-played at rest (expected); font unresolved (D); vis: clean (CustomVis is a script-less static layer, nothing drawn playing)
 Bubble_Tea_-_Updated.wal	a5ae29aaee01aed24c1da8b34b52f4ad6e0b28964a2df91e977bcfb709b8bf7a	live	2026-10-30	-	visual: clean (2 windows: main, playlist); menu art and @COLORTHEMESPATH@ glob not in archive (D); B324 playlist command bar fixed and re-checked live; cup vis clean
 Braun_CC_50.wal	eb14db233cc5fb0d6c97f43156e9fe4788320e7c4681ed39b8a4497244a16370	live	2026-10-30	-	visual: clean (3 windows: main, about, window.mover drag); live: window.mover drag, BraunAnim2 and Skininfo OK
--Graviton-.wal	1bfc6c53568f296263849e1cd92842b30e1e4c3287ab9608d980bf14dbd20234	live	2026-10-30	-	visual: clean (7 windows) no ref; B318 closed class H
-_Mercury.wal	84223abd0bddfc59c7f87f9cab85c0e108e8d60bbf2bce24187323e296cb8687	headless	2026-10-30	B317	headless clean; 6clk (recounted); live: EQ/settings/vis/switch overlays are skin-made hit layers (H), seek at rest (B317)
-Kepler_1.1.wal	94ae0a955d44ad7eaf77ac7028e7665e084cf0667fefee09d0884da2973e0303	headless	2026-10-30	-	headless clean; live: -12/0/12 EQ buttons, sun, fadetimer slider (H); wasabi button/background art not in archive (D)
-AS-FxS.wal	1219c56ca6f93b0e8305d575cb0e4eb10632e0072c1014702613ef35cc7b179a	headless	2026-10-30	-	headless clean; live: meter anims never-played at rest (expected)
+-Graviton-.wal	1bfc6c53568f296263849e1cd92842b30e1e4c3287ab9608d980bf14dbd20234	live	2026-10-30	-	visual: clean (7 windows) no ref; B318 closed class H; vis: not exercised (main has no vis; Visuals button is config-assigned, not surfaced in two tries)
+_Mercury.wal	84223abd0bddfc59c7f87f9cab85c0e108e8d60bbf2bce24187323e296cb8687	live	2026-10-30	B317	visual: clean (6 windows) no ref; headless clean; 6clk (recounted); live: EQ/settings/vis/switch overlays are skin-made hit layers (H), seek at rest (B317)
+Kepler_1.1.wal	94ae0a955d44ad7eaf77ac7028e7665e084cf0667fefee09d0884da2973e0303	live	2026-10-30	-	visual: clean (2 windows) no ref; headless clean; live: -12/0/12 EQ buttons, sun, fadetimer slider (H); wasabi button/background art not in archive (D)
+AS-FxS.wal	1219c56ca6f93b0e8305d575cb0e4eb10632e0072c1014702613ef35cc7b179a	live	2026-10-30	-	visual: clean (2 windows) no ref; headless clean; live: meter anims never-played at rest (expected)
 Stargate_Winamp_-_SG1_edition.wal	75960f88a43819395cb8c1d6ed32ace85442c2a76f09380f06d6da5ee09c78c9	headless	2026-10-30	-	headless clean; live: glyph-ring (H); Stargate Glyphs.ttf not in archive (D)
 D-Shock.wal	55b1c9cc2ed9ba0fa306ac1d7c5233f363a293e59e7fb5b2630ed83828155010	headless	2026-10-30	-	headless clean; live: winshade layout switch (H); eq-elements.xml, config.xml not in archive (D)
 Electrolium.wal	5ab97dd26a49cc0ea69ce54ff4fbd08199a6fb464d053df026e2534a1135ce63	headless	2026-10-30	-	headless clean; live: statusbar frame plain (synthesized), songticker reverted (timer)
@@ -14,7 +14,7 @@ Official_The_Hives_Skin.wal	6444211e326c21854f1df528d5895562fad19ac6074aa661ab3b
 Official_Foo_Fighter_Skin.wal	73a140b4be0438b621569965be902887db77d88331012d00aca04e8c28192839	headless	2026-10-30	-	headless clean
 Xenon.wal	97a6930dedeb09df08e767ca9f0ff01f5f59f1b88baf235b9040828ac47c6e7f	headless	2026-10-30	-	headless clean; live: layer#disp2 click/dblclick/drag (H)
 XP_Blue_ver2.wal	adda4eef90cd1652e14c8a0f6abc0f94fbe43bd32062f3d6cecef4087b509268	headless	2026-10-30	-	headless clean; component windows blank from btn/eq art not in archive (D); no hooked control, live drive
-SONY__WALKMAN.wal	c121d43d6682ffc567731f313c1411fbdafdd9a83cb6026b87415e36c496ecf8	headless	2026-10-30	B319	fix list: B319 (colour buttons GammaSet.apply; H until the app says otherwise); text#timer click (H)
+SONY__WALKMAN.wal	c121d43d6682ffc567731f313c1411fbdafdd9a83cb6026b87415e36c496ecf8	live	2026-10-30	-	visual: clean (5 windows); B319 closed class H (recolours in the app); text#timer click (H)
 HALOAMP.wal	d379b26c59023ee17e40f6d0df47ed5d7ceda759ee6a017f7c366a1830c9bbef	headless	2026-10-30	-	headless clean; 145 bitmaps not in archive and xml/gammasets.xml (archive has 1gammasets.xml) explain the see-through panes (D); live: confirm, no hooked control
 American_Rag.wal	e84801401ea3afbc133cf45c5c2800ae88c1446a367b703a170aaee577596e48	headless	2026-10-30	-	headless clean; 24 eq rows covered by group.main (H, state pair), logo buttons are navigateUrl (H); live: open EQ and re-drive
 X-Theme.wal	ea09d71efe057522f9ae7c58a61c917b53fdf0a7abacf0ba436d722ca64f7a1b	headless	2026-10-30	B317	headless clean; volume/seek rows via B317; link.button navigateUrl, thinger buttons covered by slide.button (H); live
