@@ -285,7 +285,17 @@ final class StreamingWaveformAccumulator {
 enum WaveformCueSheetParser {
     static func parse(for track: Track?) -> [WaveformCuePoint] {
         guard let track, track.url.isFileURL else { return [] }
-        return parse(cueURL: track.url.deletingPathExtension().appendingPathExtension("cue"))
+        let points = parse(cueURL: track.cueSourceURL ?? track.url.deletingPathExtension().appendingPathExtension("cue"))
+        guard let start = track.cueStartOffset else { return points }
+        let startMS = Int(start * 1000)
+        let end = track.cueEndOffset ?? track.duration.map { start + $0 }
+        let endMS = end.map { Int($0 * 1000) }
+        return points.compactMap { point in
+            guard point.milliseconds >= startMS,
+                  endMS.map({ point.milliseconds < $0 }) ?? true else { return nil }
+            return WaveformCuePoint(performer: point.performer, title: point.title,
+                                    milliseconds: point.milliseconds - startMS)
+        }
     }
 
     static func parse(cueURL: URL) -> [WaveformCuePoint] {

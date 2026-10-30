@@ -204,13 +204,27 @@ re-seeking the current track, because `AVAudioPlayerNode` cannot drop a single s
 Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
 playback. Packet-only Opus CAF was tested but rejected: full reads/duration were correct, while
 native random seeks failed exact PCM alignment on the tested macOS. Do not replace this without
-preserving seek behavior. HTTP/cast codecs and waveform decoding are separate paths.
+preserving seek behavior. HTTP/cast codecs are a separate path; waveforms decode separately but share the fallback check.
 
 `LocalAudioFileTests` covers source identity/bytes, pre-skip, exact seek, native AAC/WAV, staging
 and explicit analysis-token cleanup. `AudioEngineOpusPreparationTests` covers normalization,
 paused intent, Stop/queue cancellation, bounds/rollback/first failures, native and fallback fades,
 and successor edits during/after gapless preparation. Set `NULLPLAYER_LONG_OPUS_FILE` to a
 synthetic one-hour M4A for the long responsiveness/supersession tests.
+
+### Local waveform decoding and cue cache ownership
+
+Local Opus-in-M4A can expose zero frames through `AVAudioFile`. The waveform service asks the
+same check playback uses (`LocalAudioFile.openNatively` returning nil) and streams those inputs
+with `AVAssetReader` straight into buckets, without a full PCM scratch file. Asset-reader output
+is interleaved Float32 to match its AudioBufferList reader, including the shared prerender path
+for server streams. Local frame limits/cache records always describe the full backing asset; each
+request receives its own cue presentation duration and corresponding source-bucket slice after
+generation, a shared in-flight join, or a disk-cache hit. For the last cue (no duration hint), derive backing duration minus
+`cueStartOffset`. The `local-v2` cache-key namespace invalidates earlier truncated records.
+
+`WaveformOpusCueTests` checks Opus output, native AAC, sibling/last cue durations and persisted
+full-source samples/duration. A silence-then-tone fixture checks that the rendered cue columns match the audible source window. Remote service waveform behavior still needs live-server QA.
 
 ### A Local Track That Will Not Open
 

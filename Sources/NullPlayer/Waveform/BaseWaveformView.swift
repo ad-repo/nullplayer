@@ -170,7 +170,10 @@ class BaseWaveformView: NSView {
            nextTrack.url.isFileURL,
            currentTrack.url.resolvingSymlinksInPath().standardizedFileURL ==
             nextTrack.url.resolvingSymlinksInPath().standardizedFileURL {
-            return true
+            // The cache may be shared, but a cue's presented sample window is not.
+            return currentTrack.cueStartOffset == nextTrack.cueStartOffset
+                && currentTrack.cueEndOffset == nextTrack.cueEndOffset
+                && currentTrack.duration == nextTrack.duration
         }
 
         return false
