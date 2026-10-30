@@ -20,6 +20,7 @@ actor WaveformCacheService {
         let sourcePath: String
         let cacheKey: String
         let durationHint: TimeInterval?
+        let cueStartOffset: TimeInterval
         let fileSize: Int64?
         let modificationDate: Date?
         let isStreaming: Bool
@@ -64,7 +65,7 @@ actor WaveformCacheService {
             if forceRegeneration {
                 try? fileManager.removeItem(at: cacheURL)
             } else if let cached = try loadCachedRecord(from: cacheURL, expectedKey: descriptor.cacheKey) {
-                return WaveformSnapshot(
+                return presentationSnapshot(WaveformSnapshot(
                     sourcePath: cached.sourcePath,
                     duration: cached.duration,
                     samples: cached.samples,
@@ -75,7 +76,7 @@ actor WaveformCacheService {
                     modificationDate: cached.modificationDate,
                     allowsSeeking: true,
                     isStreaming: descriptor.isStreaming
-                )
+                ), descriptor: descriptor)
             }
 
             // **One generation per track at a time.** The window reloads on every track change, on
@@ -86,7 +87,7 @@ actor WaveformCacheService {
             // finishes, is cached, and the next load is a cache hit. It is cancelled only when a
             // different track is loaded (above). A cancelled task still winding down is not joined.
             if let running = inFlight[descriptor.cacheKey], !running.isCancelled {
-                return await running.value
+                return presentationSnapshot(await running.value, descriptor: descriptor)
             }
             let task = Task { await self.generateAndPersist(descriptor: descriptor, cacheURL: cacheURL) }
             inFlight[descriptor.cacheKey] = task
@@ -94,12 +95,23 @@ actor WaveformCacheService {
             if inFlight[descriptor.cacheKey] == task {
                 inFlight[descriptor.cacheKey] = nil
             }
-            return result
+            return presentationSnapshot(result, descriptor: descriptor)
         } catch is CancellationError {
             return .failed("Waveform generation cancelled")
         } catch {
             return .failed("Waveform unavailable: \(error.localizedDescription)")
         }
+    }
+
+    /// Cache entries describe the complete backing asset; cue tracks share that cache but
+    /// retain their individual presentation durations for progress and seeking.
+    private func presentationSnapshot(_ snapshot: WaveformSnapshot, descriptor: CacheDescriptor) -> WaveformSnapshot {
+        guard !descriptor.isStreaming, snapshot.state == .ready else { return snapshot }
+        let duration = descriptor.durationHint.flatMap { $0 > 0 ? $0 : nil }
+            ?? max(0, snapshot.duration - descriptor.cueStartOffset)
+        var presented = snapshot
+        presented.duration = duration
+        return presented
     }
 
     func clearCache(for track: Track?) async {
@@ -128,7 +140,7 @@ actor WaveformCacheService {
     }
 
     static func cacheKey(canonicalPath: String, fileSize: Int64, modificationDate: Date) -> String {
-        let source = "\(canonicalPath)|\(fileSize)|\(modificationDate.timeIntervalSinceReferenceDate)"
+        let source = "local-v2|\(canonicalPath)|\(fileSize)|\(modificationDate.timeIntervalSinceReferenceDate)"
         let digest = SHA256.hash(data: Data(source.utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
     }
@@ -155,6 +167,7 @@ actor WaveformCacheService {
                     modificationDate: metadata.modificationDate
                 ),
                 durationHint: track.duration,
+                cueStartOffset: track.cueStartOffset ?? 0,
                 fileSize: metadata.fileSize,
                 modificationDate: metadata.modificationDate,
                 isStreaming: false,
@@ -184,6 +197,7 @@ actor WaveformCacheService {
                 sampleRate: track.sampleRate
             ),
             durationHint: duration,
+            cueStartOffset: 0,
             fileSize: nil,
             modificationDate: nil,
             isStreaming: true,
@@ -266,8 +280,10 @@ actor WaveformCacheService {
 
         let audioFile: AVAudioFile
         do {
-            audioFile = try Self.catchingObjCException {
-                try AVAudioFile(forReading: descriptor.sourceURL)
+            audioFile = try Self.catchingObjCException { try AVAudioFile(forReading: descriptor.sourceURL) }
+            if audioFile.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus,
+               audioFile.length == 0 {
+                return try await generateServiceSnapshotViaAssetReader(with: descriptor)
             }
         } catch {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
@@ -277,7 +293,7 @@ actor WaveformCacheService {
         }
         let totalFrames = try Self.catchingObjCException { max(audioFile.length, 1) }
         let processingFormat = try Self.catchingObjCException { audioFile.processingFormat }
-        let fileDuration = descriptor.durationHint ?? (Double(totalFrames) / processingFormat.sampleRate)
+        let fileDuration = Double(totalFrames) / processingFormat.sampleRate
         let channelCount = Int(processingFormat.channelCount)
         guard let buffer = AVAudioPCMBuffer(pcmFormat: processingFormat, frameCapacity: 16_384) else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
@@ -365,17 +381,21 @@ actor WaveformCacheService {
     private nonisolated func generateServiceSnapshotViaAssetReader(with descriptor: CacheDescriptor) async throws -> WaveformSnapshot {
         try Task.checkCancellation()
 
-        let duration = descriptor.durationHint ?? 0
+        let asset = AVURLAsset(url: descriptor.sourceURL)
+        let duration: TimeInterval
+        if descriptor.sourceURL.isFileURL {
+            // A cue duration is presentation metadata, never the backing asset's decode limit.
+            duration = try await asset.load(.duration).seconds
+        } else {
+            duration = descriptor.durationHint ?? 0
+        }
         guard duration > 0 else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Service stream duration unavailable"
             ])
         }
 
-        let asset = AVURLAsset(url: descriptor.sourceURL)
-        try await loadAssetValues(for: asset, keys: ["tracks"])
-
-        guard let audioTrack = asset.tracks(withMediaType: .audio).first else {
+        guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
             throw NSError(domain: "WaveformCacheService", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "No audio track available for waveform prerender"
             ])
@@ -400,7 +420,7 @@ actor WaveformCacheService {
             AVFormatIDKey: kAudioFormatLinearPCM,
             AVLinearPCMIsFloatKey: true,
             AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsNonInterleaved: true,
+            AVLinearPCMIsNonInterleaved: false,
             AVLinearPCMIsBigEndianKey: false
         ]
         let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
@@ -422,7 +442,7 @@ actor WaveformCacheService {
             try Task.checkCancellation()
             guard let sampleBuffer = output.copyNextSampleBuffer() else { break }
             let amplitudes = try Self.sampleAmplitudes(from: sampleBuffer)
-            for amplitude in amplitudes {
+            for amplitude in amplitudes.prefix(Int(max(0, totalFrames - frameIndex))) {
                 accumulator.add(frameAmplitude: amplitude, at: frameIndex)
                 frameIndex += 1
             }
@@ -455,10 +475,10 @@ actor WaveformCacheService {
             state: .ready,
             message: nil,
             cacheKey: descriptor.cacheKey,
-            fileSize: nil,
-            modificationDate: nil,
+            fileSize: descriptor.fileSize,
+            modificationDate: descriptor.modificationDate,
             allowsSeeking: true,
-            isStreaming: true
+            isStreaming: descriptor.isStreaming
         )
     }
 
@@ -489,6 +509,7 @@ actor WaveformCacheService {
             sourcePath: descriptor.sourcePath,
             cacheKey: descriptor.cacheKey,
             durationHint: descriptor.durationHint,
+            cueStartOffset: descriptor.cueStartOffset,
             fileSize: nil,
             modificationDate: nil,
             isStreaming: true,

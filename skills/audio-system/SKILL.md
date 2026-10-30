@@ -162,6 +162,19 @@ is false (`AudioEngineStreamStopTests`).
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### Local waveform decoding and cue cache ownership
+
+Local Opus-in-M4A can expose zero frames through `AVAudioFile`. The waveform service streams
+those inputs with `AVAssetReader` straight into buckets, without a full PCM scratch file.
+Asset-reader output is interleaved Float32 to match its AudioBufferList reader, including the
+shared prerender path. Local frame limits/cache records always describe the full backing asset;
+each request receives its own cue presentation duration after generation, a shared in-flight
+join, or a disk-cache hit. For the last cue (no duration hint), derive backing duration minus
+`cueStartOffset`. The `local-v2` cache-key namespace invalidates earlier truncated records.
+
+`WaveformOpusCueTests` checks Opus output, native AAC, sibling/last cue durations and persisted
+full-source samples/duration. Remote service waveform behavior still needs live-server QA.
+
 ### A Local Track That Will Not Open
 
 Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
