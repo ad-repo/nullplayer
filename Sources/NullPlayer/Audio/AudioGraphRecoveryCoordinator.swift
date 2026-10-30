@@ -5,7 +5,7 @@ enum AudioGraphRecoveryIntent {
     case play
     case playTrack(index: Int)
     case playNow(PlayNowRequest)
-    case loadTrack(index: Int)
+    case loadTrack(index: Int, transport: LocalTrackPreparation.Transport = .init())
     case loadLocalImmediate(index: Int)
 }
 

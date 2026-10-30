@@ -162,6 +162,46 @@ is false (`AudioEngineStreamStopTests`).
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### Opus in MPEG-4 local files
+
+`LocalAudioFile.open` is the async preparation seam. Some macOS versions recognize Opus-in-M4A
+but `AVAudioFile` returns zero frames and throws on read. `openNatively` is a header/readability
+probe; nil means a full fallback is needed. The fallback asserts it is off-main, loads asset
+metadata asynchronously and checks cancellation between PCM buffers.
+
+`LocalTrackPreparation` owns the task, generation, selection, transport policy and desired
+Play/Pause state. Both native and async results use `finishLocalTrackLoad`; completion never
+re-enters `loadTrack` with the same prepared file. Only an actual failure may select a successor.
+`loadTrack` takes one `Transport` policy (bound, Play Now rollback, first failure and playback
+intent). Navigation reads `localPlaybackIntent`; Play/Pause each record pending intent once.
+`CancellablePreparation` slots are reset explicitly, without token property observers. Their
+main-queue control/publication is guarded at runtime at the preparation owner's boundary.
+
+Prepared Float32 CAFs preserve segment seek/cue/gapless behavior and original source bytes/URLs.
+`LocalPlaybackFile` owns a single lifetime for its NAS staging copy and decoded directory;
+`LocalAudioStaging` owns disk staging/crash cleanup. Normalization receives an explicit
+`LocalAudioAnalysisSource` (backing URL, source identity, storage token) and opens its own reader.
+Releasing the player does not delete backing files still needed by analysis; all temporary
+cleanup runs on a utility queue.
+
+`LocalCrossfadePreparation` is refreshed on track commits, completed fades and queue/options
+changes, not timer ticks. Only MPEG-4 readers needing the fallback are decoded early. Native
+formats retain their off-main, just-in-time fade-boundary open. If an Opus handle is not ready,
+keep outgoing audio through EOF rather than starting a full decode or a late fade. Stop/source
+changes cancel the owner's slot. Gapless publication and handoff verify the successor UUID;
+queue edits discard pending or already scheduled old successors and prepare the new boundary.
+
+Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
+playback. Packet-only Opus CAF was tested but rejected: full reads/duration were correct, while
+native random seeks failed exact PCM alignment on the tested macOS. Do not replace this without
+preserving seek behavior. HTTP/cast codecs and waveform decoding are separate paths.
+
+`LocalAudioFileTests` covers source identity/bytes, pre-skip, exact seek, native AAC/WAV, staging
+and explicit analysis-token cleanup. `AudioEngineOpusPreparationTests` covers normalization,
+paused intent, Stop/queue cancellation, bounds/rollback/first failures, native and fallback fades,
+and successor edits during/after gapless preparation. Set `NULLPLAYER_LONG_OPUS_FILE` to a
+synthetic one-hour M4A for the long responsiveness/supersession tests.
+
 ### A Local Track That Will Not Open
 
 Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
