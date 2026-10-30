@@ -539,6 +539,16 @@ so a corpus run can't lose lines, not *what* is measured.
   Sepultura_Dante_XXI, Manchester_United_Red_Devils_Skin, OrbFace, pumaSKIN, Ar-Za-Jo,
   GlassAMPfinal, Ryoko_Asakura__Winamp_Skin_1_1, PAD, NEO (`.wal` each); copied into
   `WinampModernSkins/`.
+- **Intake #5 admitted 2026-10-30** (`feat/wal-intake-5`, rev `adfef300`). Run over the 806 bronze:
+  **21 silver at gain ≥ 3, 785 bronze, 0 quarantine**, ~50 min. **Gain curve** (first 60): `7 6 6 5 5
+  5 4 4 3 3 3 3 3 3 3 3 3 3 3 3 3 | 2 2 2 2 …` (2 to rank 72); gain 2: 51, 1: 99, 0: 635. The floor
+  was dropped (*Decisions*) and ranks 22–25 re-tiered to silver from the same ranking: **25 silver,
+  781 bronze**. Post-admission sweep: not run at admission. Batch: Draculas_Helmet,
+  Bubble_Tea_-_Updated, Braun_CC_50, -Graviton-, _Mercury, Kepler_1.1, AS-FxS,
+  Stargate_Winamp_-_SG1_edition, D-Shock, Electrolium, Winamp_Media_Tower_v11, Official_The_Hives_Skin,
+  Official_Foo_Fighter_Skin, Xenon, XP_Blue_ver2, SONY__WALKMAN, HALOAMP, American_Rag, X-Theme,
+  The_XP_Style_WinaMP3_Player, QL2, Official_Midnight_Club_2_skin, GoldenBeauty, SpongeBob_Squarepants,
+  MD_-_Iwakura_Lain_the_Fourth_v1 (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
