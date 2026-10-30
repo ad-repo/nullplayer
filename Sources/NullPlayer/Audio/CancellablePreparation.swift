@@ -1,9 +1,12 @@
 import Foundation
 
-/// Main-queue ownership of one background operation. Reset is explicit at every caller;
-/// a cancelled task may finish, but can no longer publish into the replacement slot.
-final class CancellablePreparation<Payload> {
-    private(set) var generation: UInt64 = 0
+/// Main-queue ownership of one background operation. `start` runs the work detached and
+/// publishes its result back on main; a reset or a newer `start` cancels it, and a cancelled
+/// task that still finishes can no longer publish into the replacement slot.
+// AudioEngine is a legacy, nonisolated main-queue owner, so this cannot be `@MainActor`.
+// The preconditions enforce that contract; the detached work only captures what it is handed.
+final class CancellablePreparation<Payload>: @unchecked Sendable {
+    private var generation: UInt64 = 0
     private(set) var payload: Payload?
     private var task: Task<Void, Never>?
 
@@ -14,24 +17,42 @@ final class CancellablePreparation<Payload> {
         payload = nil
     }
 
-    func start(_ payload: Payload, operation: (UInt64) -> Task<Void, Never>) {
+    func start<Value>(_ payload: Payload, priority: TaskPriority,
+                      work: @escaping @Sendable () async throws -> Value,
+                      publish: @escaping (Payload, Result<Value, Error>) -> Void) {
+        dispatchPrecondition(condition: .onQueue(.main))
         reset()
         self.payload = payload
-        task = operation(generation)
+        let generation = generation
+        task = Task.detached(priority: priority) { [weak self] in
+            let result: Result<Value, Error>
+            do {
+                let value = try await work()
+                try Task.checkCancellation()
+                result = .success(value)
+            } catch is CancellationError {
+                return
+            } catch {
+                result = .failure(error)
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let payload = self?.take(ifCurrent: generation) else { return }
+                publish(payload, result)
+            }
+        }
     }
-
-    func isCurrent(_ generation: UInt64) -> Bool { self.generation == generation }
 
     @discardableResult
     func update(_ change: (inout Payload) -> Void) -> Bool {
+        dispatchPrecondition(condition: .onQueue(.main))
         guard var payload else { return false }
         change(&payload)
         self.payload = payload
         return true
     }
 
-    func take(ifCurrent generation: UInt64) -> Payload? {
-        guard isCurrent(generation) else { return nil }
+    private func take(ifCurrent generation: UInt64) -> Payload? {
+        guard self.generation == generation else { return nil }
         let value = payload
         payload = nil
         task = nil

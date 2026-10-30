@@ -222,10 +222,10 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         engine.setPlaylistTracks([Track(url: opus)])
         holdGraphRebuild(of: engine, recovery: recovery)
         engine.play()
-        guard case .loadTrack(_, let transport) = recovery.pendingIntent else {
-            return XCTFail("The graph must hold the requested load and its transport policy")
+        guard case .loadTrack(_, let intent, _) = recovery.pendingIntent else {
+            return XCTFail("The graph must hold the requested load and its intent")
         }
-        XCTAssertEqual(transport.intent, .playing)
+        XCTAssertEqual(intent, .playing)
         let playing = expectation(forNotification: .audioPlaybackStateChanged, object: engine) { _ in
             engine.currentTrack?.url == opus && engine.state == .playing
         }

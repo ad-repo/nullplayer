@@ -178,6 +178,22 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         XCTAssertEqual(engine.state, .paused)
     }
 
+    func testPlayNowEditedDuringPreparationStillStartsItsTrack() throws {
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        let second = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
+        defer { try? FileManager.default.removeItem(at: second) }
+        engine.playNow([Track(url: opusURL), Track(url: second)])
+        XCTAssertTrue(engine.isPreparingLocalFileForTesting)
+        // Removing the Play Now's own second track takes its inserted range out of place.
+        let secondIndex = try XCTUnwrap(engine.playlist.firstIndex { $0.url == second })
+        let playing = expectation(forNotification: .audioPlaybackStateChanged, object: engine) { _ in
+            engine.currentTrack?.url == self.opusURL && engine.state == .playing
+        }
+        engine.removeTrack(at: secondIndex)
+        wait(for: [playing], timeout: 3)
+    }
+
     func testCrossfadePreparesBeforeTheFadeWindowAndUsesTheReadyFile() throws {
         let (engine, restorePreferences) = makeEngine()
         defer { engine.clearPlaylist(); restorePreferences() }
@@ -363,7 +379,8 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         let routed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             engine.currentTrack?.id == filmTrack.id
         }, object: nil)
-        wait(for: [routed], timeout: 2)
+        // AVAsset takes ~1s to reject the corrupt file and the predicate polls about once a second.
+        wait(for: [routed], timeout: 5)
         let failed = expectation(description: "video failure rolls back its bounded Play Now")
         let recorder = FailureRecorder(failed)
         engine.delegate = recorder

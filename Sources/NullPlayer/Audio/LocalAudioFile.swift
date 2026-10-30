@@ -6,49 +6,54 @@ import AVFoundation
 enum LocalAudioFile {
     static func prepareForPlayback(_ sourceURL: URL) async throws -> AVAudioFile {
         try Task.checkCancellation()
-        let staged = LocalAudioStaging.copyIfNeeded(for: sourceURL, logPrefix: "LocalAudioFile")
+        let staged = LocalAudioStaging.copyIfNeeded(for: sourceURL)
         return try await open(staged ?? sourceURL, sourceURL: sourceURL, stagedCopyURL: staged)
     }
 
+    /// Reads `url`, natively or through the Opus fallback. A reader of anything but the source
+    /// itself reports `sourceURL` as its identity and owns `stagedCopyURL`, deleted with it.
     static func open(_ url: URL, sourceURL: URL? = nil, stagedCopyURL: URL? = nil) async throws -> AVAudioFile {
         var transferred = false
         defer { if !transferred, let stagedCopyURL { removeTemporaryItem(stagedCopyURL) } }
         try Task.checkCancellation()
-        if let file = try openNatively(url, sourceURL: sourceURL, stagedCopyURL: stagedCopyURL) {
-            transferred = true
-            return file
+        let identity = sourceURL ?? url
+        let file: AVAudioFile
+        if let native = try openNatively(url) {
+            file = identity == url && stagedCopyURL == nil ? native
+                : try LocalPlaybackFile(backingURL: url, sourceURL: identity,
+                                        storage: PlaybackFileStorage(paths: stagedCopyURL.map { [$0] } ?? []))
+        } else {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            file = try await decodeOpusAsset(url, sourceURL: identity, stagedCopyURL: stagedCopyURL)
         }
-        dispatchPrecondition(condition: .notOnQueue(.main))
-        let file = try await decodeOpusAsset(url, sourceURL: sourceURL ?? url, stagedCopyURL: stagedCopyURL)
         transferred = true
         return file
     }
 
-    /// nil means preparation is required. Synchronous transport paths must defer to `open`.
-    static func openNatively(_ url: URL, sourceURL: URL? = nil, stagedCopyURL: URL? = nil) throws -> AVAudioFile? {
+    /// The native reader, or nil when the file needs the fallback decode in `open`.
+    /// Synchronous transport paths call this and defer a nil to asynchronous preparation.
+    static func openNatively(_ url: URL) throws -> AVAudioFile? {
+        let file: AVAudioFile
         do {
-            let file = try AVAudioFile(forReading: url)
-            if isMPEG4(url), file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus {
-                guard file.length > 0,
-               let probe = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1) else {
-                    return nil
-                }
-                do {
-                    try file.read(into: probe, frameCount: 1)
-                    file.framePosition = 0
-                    guard probe.frameLength > 0 else { return nil }
-                } catch { return nil }
-            }
-            let identity = sourceURL ?? url
-            if identity != url || stagedCopyURL != nil {
-                return try LocalPlaybackFile(backingURL: url, sourceURL: identity,
-                    storage: PlaybackFileStorage(paths: stagedCopyURL.map { [$0] } ?? []))
-            }
-            return file
+            file = try AVAudioFile(forReading: url)
         } catch {
-            guard isMPEG4(url) else { throw error }
+            guard mayNeedFallbackDecode(url) else { throw error }
+            return nil
         }
-        return nil
+        guard mayNeedFallbackDecode(url),
+              file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus else { return file }
+        // Core Audio can accept MPEG-4 Opus yet report no frames or fail the first read.
+        guard file.length > 0,
+              let probe = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1),
+              (try? file.read(into: probe, frameCount: 1)) != nil,
+              probe.frameLength > 0 else { return nil }
+        file.framePosition = 0
+        return file
+    }
+
+    /// MPEG-4 is the only container whose Opus Core Audio cannot always read.
+    static func mayNeedFallbackDecode(_ url: URL) -> Bool {
+        url.isFileURL && ["m4a", "mp4", "m4b"].contains(url.pathExtension.lowercased())
     }
 
     /// The backing CAF is an implementation detail, never a playlist/library identity.
@@ -67,10 +72,6 @@ enum LocalAudioFile {
 
     fileprivate static func removeTemporaryItem(_ directory: URL) {
         cleanupQueue.async { try? FileManager.default.removeItem(at: directory) }
-    }
-
-    private static func isMPEG4(_ url: URL) -> Bool {
-        url.isFileURL && ["m4a", "mp4", "m4b"].contains(url.pathExtension.lowercased())
     }
 
     private static func failure(_ message: String) -> NSError {

@@ -165,17 +165,22 @@ See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 ### Opus in MPEG-4 local files
 
 `LocalAudioFile.open` is the async preparation seam. Some macOS versions recognize Opus-in-M4A
-but `AVAudioFile` returns zero frames and throws on read. `openNatively` is a header/readability
-probe; nil means a full fallback is needed. The fallback asserts it is off-main, loads asset
-metadata asynchronously and checks cancellation between PCM buffers.
+but `AVAudioFile` returns zero frames and throws on read. `openNatively` is a pure
+header/readability check (`mayNeedFallbackDecode` names the MPEG-4 extensions); nil means the
+full fallback is needed. `open` alone wraps a reader whose identity differs from its backing file.
+The fallback asserts it is off-main, loads asset metadata asynchronously and checks cancellation
+between PCM buffers.
 
-`LocalTrackPreparation` owns the task, generation, selection, transport policy and desired
-Play/Pause state. Both native and async results use `finishLocalTrackLoad`; completion never
-re-enters `loadTrack` with the same prepared file. Only an actual failure may select a successor.
-`loadTrack` takes one `Transport` policy (bound, Play Now rollback, first failure and playback
-intent). Navigation reads `localPlaybackIntent`; Play/Pause each record pending intent once.
-`CancellablePreparation` slots are reset explicitly, without token property observers. Their
-main-queue control/publication is guarded at runtime at the preparation owner's boundary.
+`CancellablePreparation` is the one owner of background preparation: `start(payload, work:,
+publish:)` runs the work detached and publishes on main only while that start is still current.
+Reset is explicit; there are no token property observers. Local selections, gapless successors and
+Sweet Fades all use it. A selection's `LocalTrackPreparation.Request` carries its track, row,
+policy and Play/Pause `intent`, the only copy of that intent: Play and Pause `update` it in place,
+and navigation reads `localPlaybackIntent`. `loadTrack(at:intent:transport:)` takes the intent
+separately from the `Transport` (skip bound, Play Now rollback, first failure). Both native and
+async results use `finishLocalTrackLoad`; completion never re-enters `loadTrack` with the same
+prepared file, and only an actual failure may select a successor. A Play Now whose playlist was
+edited while its file prepared finishes as a plain load, as the graph-recovery path does.
 
 Prepared Float32 CAFs preserve segment seek/cue/gapless behavior and original source bytes/URLs.
 `LocalPlaybackFile` owns a single lifetime for its NAS staging copy and decoded directory;
@@ -188,8 +193,11 @@ cleanup runs on a utility queue.
 changes, not timer ticks. Only MPEG-4 readers needing the fallback are decoded early. Native
 formats retain their off-main, just-in-time fade-boundary open. If an Opus handle is not ready,
 keep outgoing audio through EOF rather than starting a full decode or a late fade. Stop/source
-changes cancel the owner's slot. Gapless publication and handoff verify the successor UUID;
-queue edits discard pending or already scheduled old successors and prepare the new boundary.
+changes cancel the owner's slot. The local gapless successor is one value
+(`localGaplessSuccessor`: file, row, track ID), and `clearGaplessSuccessor()` drops it with any
+pending preparation. Handoff verifies the row still holds that track. Queue edits discard pending or
+already scheduled old successors and prepare the new boundary; a scheduled one is unscheduled by
+re-seeking the current track, because `AVAudioPlayerNode` cannot drop a single segment.
 
 Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
 playback. Packet-only Opus CAF was tested but rejected: full reads/duration were correct, while

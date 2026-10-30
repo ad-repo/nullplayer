@@ -58,7 +58,7 @@ Sources/NullPlayer/
 
 - App: `App/WindowManager.swift`, `App/AppStateManager.swift`, `App/ContextMenuBuilder.swift`
 - Classic skin: `Skin/SkinElements.swift`, `Skin/SkinRenderer.swift`, `Skin/SkinLoader.swift`
-- Audio: `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift`, `Audio/LocalAudioFile.swift`, `Audio/LocalTrackPreparation.swift`, `Audio/LocalCrossfadePreparation.swift`
+- Audio: `Audio/AudioEngine.swift`, `Audio/StreamingAudioPlayer.swift`
 - Windows: `Windows/MainWindow/`, `Windows/ModernMainWindow/`, and sibling feature-window roots
 - Models/local library: `Models/Track.swift`, `Models/Playlist.swift`, `Data/Models/MediaLibrary.swift`, `Utilities/LocalFileDiscovery.swift`
 

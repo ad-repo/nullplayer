@@ -11,13 +11,10 @@ enum LocalAudioStaging {
     /// YouTubeManager's `nullplayer-ytdlp-*`). Keep it distinct from those.
     private static let temporaryPlaybackCopyPrefix = "nullplayer-playbackcopy-"
 
-    static func copyIfNeeded(
-        for sourceURL: URL,
-        logPrefix: String,
-        displayName: String? = nil
-    ) -> URL? {
+    static func copyIfNeeded(for sourceURL: URL) -> URL? {
         let fileManager = FileManager.default
-        let name = displayName ?? sourceURL.lastPathComponent
+        let logPrefix = "LocalAudioStaging"
+        let name = sourceURL.lastPathComponent
         let isLocalVolume = (try? sourceURL.resourceValues(
             forKeys: [.volumeIsLocalKey]
         ))?.volumeIsLocal ?? true
