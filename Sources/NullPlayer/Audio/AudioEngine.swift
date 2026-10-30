@@ -4116,9 +4116,9 @@ class AudioEngine {
         Task.detached(priority: .utility) { [weak self] in
             var fileDurations: [UUID: TimeInterval] = [:]
             for item in needsFileIO {
-                guard let af = try? AVAudioFile(forReading: item.url) else { continue }
-                var dur = Double(af.length) / af.processingFormat.sampleRate
-                if dur <= 0 {
+                // MPEG-4 Opus can fail to open natively or report zero frames; the asset still has a duration.
+                var dur = (try? AVAudioFile(forReading: item.url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
+                if dur <= 0, LocalAudioFile.mayNeedFallbackDecode(item.url) {
                     dur = (try? await AVURLAsset(url: item.url).load(.duration).seconds) ?? 0
                 }
                 if dur > 0 { fileDurations[item.id] = dur }
@@ -4451,6 +4451,8 @@ class AudioEngine {
         playlist.removeSubrange(request.insertedRange)
         currentIndex = request.previousIndex
         invalidateShufflePlaybackStateAfterPlaylistMutation()
+        // An asynchronous failure arrives after the Play Now's own `playlistDidChange`.
+        playlistDidChange()
         delegate?.audioEngineUserPlayRequestDidFail(failure.track, error: failure.error, fileIsMissing: fileIsMissing)
     }
 
@@ -4626,10 +4628,12 @@ class AudioEngine {
             try await LocalTrackPreparation.prepare(url)
         } publish: { [weak self] request, outcome in
             // `prepare` throws only cancellation, which is never published.
-            guard let self, let result = try? outcome.get(), self.currentIndex == request.index,
-                  self.playlist.indices.contains(request.index),
-                  self.playlist[request.index].id == request.track.id else { return }
+            // Matched by ID: an edit above the row moves `currentIndex` with it while the file prepares.
+            guard let self, let result = try? outcome.get(),
+                  self.playlist.indices.contains(self.currentIndex),
+                  self.playlist[self.currentIndex].id == request.track.id else { return }
             var request = request
+            request.index = self.currentIndex
             // The playlist was edited while the file prepared, so the Play Now's skip bound and
             // rollback no longer point at its tracks; finish as a plain load, as graph recovery does.
             if case .transport(let transport) = request.policy,
@@ -5437,14 +5441,16 @@ class AudioEngine {
                       self.currentTrack?.id == currentTrackID,
                       self.gaplessPlaybackEnabled, !self.sweetFadeEnabled,
                       !self.isCastingActive, !self.isStreamingPlayback,
-                      self.calculateNextTrackIndex() == nextIndex,
-                      self.playlist.indices.contains(nextIndex),
-                      self.playlist[nextIndex].id == nextTrack.id else { return }
+                      // By ID: `refreshLocalGaplessSuccessor` keeps this pending open across an
+                      // edit that only moves the successor's row.
+                      case let successorIndex = self.calculateNextTrackIndex(),
+                      self.playlist.indices.contains(successorIndex),
+                      self.playlist[successorIndex].id == nextTrack.id else { return }
                 switch result {
                 case .success(let nextFile):
                     let active = self.crossfadePlayerIsActive ? self.crossfadePlayerNode : self.playerNode
                     active.scheduleFile(nextFile, at: nil, completionHandler: nil)
-                    self.localGaplessSuccessor = (nextFile, nextIndex, nextTrack.id)
+                    self.localGaplessSuccessor = (nextFile, successorIndex, nextTrack.id)
                     NSLog("Gapless: Pre-scheduled next track: %@", nextTrack.title)
                 case .failure(let error):
                     NSLog("Gapless: Failed to pre-schedule next track: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
