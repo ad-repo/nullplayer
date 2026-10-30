@@ -2374,7 +2374,9 @@ final class WasabiSceneRenderer {
         } else if object.tag.is(.gradient) {
             drawGradient(object, frame: node.frame, context: context)
         } else if object.tag.is(.vis) {
-            drawVisualization(object, frame: node.frame, context: context)
+            context.recordingRegionExcluded {
+                drawVisualization(object, frame: node.frame, context: context)
+            }
         } else if object.tag.is(.eqVis) {
             drawEQVis(object, frame: node.frame, context: context)
         } else if object.tag.is(.list, in: .colorThemes) {

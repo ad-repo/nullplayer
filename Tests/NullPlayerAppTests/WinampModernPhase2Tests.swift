@@ -266,6 +266,25 @@ final class WinampModernPhase2Tests: XCTestCase {
         }, .resourceMissing)
     }
 
+    /// B321, Braun_CC_50: `@DEFAULTSKINPATH@/../about/about_fg.jpg` climbs out of the stock skin into
+    /// the skins collection, where the author's `about/` folder sat; shipped, it is inside the skin.
+    func testAClimbOutOfTheDefaultSkinFallsBackToTheSkinItself() throws {
+        let skin = try WalMemoryResourceProvider(resources: [
+            "skin.xml": Data(), "about/about.xml": Data(), "about/about_fg.jpg": Data([1])
+        ])
+        let vfs = try WalVirtualFileSystem(skinName: "Test", skin: skin)
+        XCTAssertEqual(try vfs.resolve("@DEFAULTSKINPATH@/../about/about_fg.jpg",
+                                       relativeTo: "/Skins/Test/about/about.xml").logicalPath,
+                       "/Skins/Test/about/about_fg.jpg")
+        // Only a path that really is in the skin; anything else still names the missing file.
+        XCTAssertEqual(errorCode {
+            try vfs.resolve("@DEFAULTSKINPATH@/../about/gone.jpg", relativeTo: "/Skins/Test/about/about.xml")
+        }, .resourceMissing)
+        XCTAssertEqual(errorCode {
+            try vfs.resolve("@DEFAULTSKINPATH@xml/eq.xml", relativeTo: "/Skins/Test/skin.xml")
+        }, .resourceMissing)
+    }
+
     /// The missing-include tolerance covers the include that names the missing file, and nothing
     /// deeper. Wrapping the recursion attributed every depth to the outermost node, so one unfound
     /// include discarded everything its *parent* file contained — silently, and under the parent's

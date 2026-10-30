@@ -201,6 +201,11 @@
   way the playlist panel beside it already did, on skins that declare an unfocused selection colour.
 - **Winamp Modern windows open wide enough to show their whole title.** Silverskin_3's playlist and
   help windows read `AYLIST EDITO` and `VERSKIN HE`; they now open at the width their titles need.
+- **Braun_CC_50's About window draws its artwork and credits.** Its `@DEFAULTSKINPATH@/../about/` paths now
+  resolve inside the skin instead of naming a skin that is not installed.
+- **Bubble_Tea_-_Updated's Playlist Editor lists the queue.** A frame whose scripts only draw chrome no longer
+  counts as one that builds its content; QL2's playlist window is built the same way.
+- **Bubble_Tea_-_Updated's spectrum stays inside the cup** instead of drawing bars over the desktop beside it.
 
 ## 0.33.1
 

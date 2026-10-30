@@ -172,6 +172,26 @@ final class WinampModernB95Tests: XCTestCase {
                        "so the artwork inside it is in the graph too")
     }
 
+    /// B322, Bubble_Tea_-_Updated: the frame declares chrome scripts (`fade`, `standstraw`) and not
+    /// `standardframe.maki`, so "declares a script" read as "instantiates its content" and the
+    /// Playlist Editor body stayed empty. Only a script that calls `newGroup` counts.
+    func testAClaimedFrameWhoseScriptsNeverCallNewGroupStillInstantiatesItsContent() throws {
+        let runtime = try makeRuntime(art: ["scripts/fade.maki": Self.frameScript(methods: ["getid"])], markup: """
+        <groupdef id="player.content" name="Winamp"/>
+        <groupdef id="wasabi.standardframe.statusbar" inherit_content="scripts">
+          <layer id="own.chrome" x="0" y="0" w="0" h="0" relatw="1" relath="1"/>
+          <script id="fade" file="scripts/fade.maki"/>
+        </groupdef>
+        <container id="Main">
+          <layout id="normal" w="64" h="64">
+            <Wasabi:StandardFrame:Status x="0" y="0" w="0" h="0" relatw="1" relath="1"
+                                         content="player.content"/>
+          </layout>
+        </container>
+        """)
+        XCTAssertFalse(runtime.graph.objects(xmlID: "player.content").isEmpty)
+    }
+
     /// The client rect is **measured** from the frame's own `resize=` strips, so it is the hole the
     /// skin's artwork actually leaves rather than the inset we invent for a frame of our own. TRON's
     /// strips are 5px sides, a 15px top and a 19px bottom band; corners are deliberately not counted,
@@ -401,7 +421,7 @@ final class WinampModernB95Tests: XCTestCase {
     /// A MAKI program that declares only a method table — enough for a `<script file=…>` to resolve
     /// and bind. What it contains does not matter here: this path asks whether the skin declares a
     /// frame script at all, not what that script does.
-    private static func frameScript() -> Data {
+    private static func frameScript(methods: [String] = ["getid", "newGroup"]) -> Data {
         var data = Data([0x46, 0x47])
         func u16(_ value: UInt16) {
             withUnsafeBytes(of: value.littleEndian) { data.append(contentsOf: $0) }
@@ -411,7 +431,6 @@ final class WinampModernB95Tests: XCTestCase {
         }
         u16(0x0403); u32(23); u32(1)
         data.append(contentsOf: repeatElement(UInt8(0), count: 16))
-        let methods = ["getid", "newGroup"]
         u32(UInt32(methods.count))
         for method in methods {
             u16(0); u16(0)

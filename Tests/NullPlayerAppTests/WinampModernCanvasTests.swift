@@ -113,4 +113,24 @@ final class WinampModernCanvasTests: XCTestCase {
         XCTAssertEqual(bytes(try XCTUnwrap(canvas.render(job)).picture), expected)
         XCTAssertEqual(bytes(try XCTUnwrap(canvas.render(job)).picture), expected, "the kept copy")
     }
+
+    /// B323, Bubble_Tea_-_Updated: a `<vis>` wider than the art under it drew its bars outside the
+    /// cup, because on a region window every painted pixel is window. It keeps only the pixels that
+    /// land inside the region the rest of the scene forms.
+    func testARegionExcludedStepNeverExtendsTheRegion() throws {
+        let list = scene([(CGRect(x: 0, y: 0, width: 20, height: 30), red)])
+        list.recordingRegionExcluded {
+            list.setFillColor(blue)
+            list.fill(CGRect(x: 10, y: 0, width: 20, height: 30))
+        }
+        let canvas = WinampModernCanvas()
+        let job = WinampModernCanvas.Job(pixelWidth: width, pixelHeight: height, colorSpace: space, scale: 1,
+                                         rects: [CGRect(x: 0, y: 0, width: width, height: height)],
+                                         scene: list, chrome: nil, promotesAlpha: true)
+        let pixels = bytes(try XCTUnwrap(canvas.render(job)).picture)
+        func pixel(_ x: Int, _ y: Int) -> [UInt8] { Array(pixels[(y * width + x) * 4..<(y * width + x) * 4 + 4]) }
+        XCTAssertEqual(pixel(15, 10)[3], 255, "over the art: drawn")
+        XCTAssertGreaterThan(pixel(15, 10)[2], 200)
+        XCTAssertEqual(pixel(25, 10), [0, 0, 0, 0], "past the art: not window")
+    }
 }

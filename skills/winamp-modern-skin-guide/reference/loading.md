@@ -289,6 +289,11 @@ three includes would still fail — and the shipped stock skin they were written
 corpus at all. A skin genuinely installed as `Default.wal` is still mounted and still resolves; that
 path is unchanged.
 
+**A climb out of the root is rebased onto the skin (B321).** Braun_CC_50 writes
+`@DEFAULTSKINPATH@/../about/about_fg.jpg`: the author's own `about/` folder beside the stock skin,
+which a shipped `.wal` carries inside itself. When the literal `/Skins/about/…` finds nothing,
+`resolve` retries it under the skin's root. 1 of 1091 corpus archives does this.
+
 **This is the only optional root.** Every other absent sibling mount stays the hard, named
 `missingRequiredMount` above, and so does the ClassicPro engine — an overlay drawn against missing
 artwork, or a cPro skin with no engine, must say so rather than half-load.

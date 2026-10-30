@@ -2,6 +2,30 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B323 — Bubble_Tea_-_Updated's spectrum no longer draws outside the cup — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B323 | **Bubble_Tea_-_Updated's spectrum bars are drawn outside the cup.** Reported by the user (2026-10-30), and visible on the group-1 review sheet: grey bars stick out to the left of the cup over the transparent area. `cup-groups.xml` declares `<vis id="cupVis" y="40" w="223" h="270">` over a `cup.outside` group wider than the cup, and the layout's `background` (`cup.back.png`) is empty, so the cup's shape is made only by the layers after the vis | Bubble_Tea_-_Updated (reach of a `<vis>` wider than the art on a region layout not measured) | S | 2 |
+
+**Closed 2026-10-30.** A layout with no `desktopalpha` is a region window: every painted pixel is window, so a `<vis>` wider than the art under it enlarged the window and drew bars over the desktop. `WasabiDrawList.recordingRegionExcluded` tags a vis draw, and `WinampModernCanvas.render` replays the scene without it to learn the region, then keeps only the vis pixels inside it (a rect where nothing else paints keeps its vis, so a bare analyzer window is unchanged). Only a region window with a vis pays the second replay. Pinned by `testARegionExcludedStepNeverExtendsTheRegion`; `WinampModernPhase17Tests`' vis-mode test now declares `desktopalpha="1"`, since its vis sat on no art. The sweeps cannot see this (no audio, the idle vis draws nothing), so it is live-measured: the bars stay inside the cup with a track playing.
+
+## B322 — A standard frame's content is built when no declared script instantiates it — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B322 | **Bubble_Tea_-_Updated's Playlist Editor body is empty.** Found in the intake #5 live pass (2026-10-30): with six tracks queued and one playing, the window (275x154, `<component param="guid:pl">` inside `Wasabi:StandardFrame:Status`) draws the frame and the pebble border but no rows, no Add/Del/Sel/Sort/Playlist buttons and no select row, which the author's `screenshot.png` shows. Draculas_Helmet's and Braun's playlist windows list the same queue. Done when the window lists the queue at its default size | Bubble_Tea_-_Updated (`playlist.xml`; `guid:pl` component host at a 227x94 box) | ? | 2 |
+
+**Closed 2026-10-30.** The `Pledit` frame is `Wasabi:StandardFrame:Status` over a skin groupdef that declares `fade.maki` and `standstraw.maki` (chrome) and never `standardframe.maki`, so nothing ran `newGroup(content)` and `pledit.content.group`, the playlist holder, never entered the graph. `WasabiStandardFrames.needsHostedContent` treated any declared script as the content script. It now asks the bytecode test the surface synthesizer already used: only a script that calls `newGroup` counts (`WasabiSurfaceSynthesizer.scriptInstantiatesContent`, used from `WasabiSkinInitializer`). Reach in gold+silver, from the render sweep: 2 skins changed (Bubble_Tea_-_Updated, QL2: a playlist holder appears in their `pledit`/`Component` windows). Pinned by `testAClaimedFrameWhoseScriptsNeverCallNewGroupStillInstantiatesItsContent`. Live: the window lists the queue at 275x154. The command bar beneath the list is a separate gap, B324.
+
+## B321 — A path that climbs out of `@DEFAULTSKINPATH@` falls back to the skin itself — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B321 | **Braun_CC_50's About window is a blank white pane.** Found in the intake #5 live pass (2026-10-30): the `About` button opens a 401x408 `ABOUT` frame whose body is plain white, with no artwork and none of the rotating credit texts, live and in the dump. The skin's `about/about.xml` loads `@DEFAULTSKINPATH@/../about/about_fg.jpg` and `@DEFAULTSKINPATH@/../about/about.maki`; the dump reports both missing (`resourceMissing`, `missingRequiredMount ... requires the skin 'about'`), but the archive holds `about/about_fg.jpg` and `about/about.maki`, so the `..` relative to the include is resolving outside the skin. Done when the About window draws `about_fg.jpg` and its script runs, and a test pins the path | Braun_CC_50; corpus count of `@DEFAULTSKINPATH@/../` references not taken (`scripts/wal_reach.sh`) | S | 2 |
+
+**Closed 2026-10-30.** `about.xml` names `@DEFAULTSKINPATH@/../about/about_fg.jpg`: out of the stock skin and into the skins collection, where the author's own `about/` folder sat. Shipped as a `.wal` that folder is inside the skin, so the path resolved to `/Skins/about/…` and the resolver asked for an uninstalled skin `about`. `WalVirtualFileSystem.resolve` now retries a path that climbs out of `/Skins/Default` against the skin's own root when the literal reading finds nothing (`WalVirtualFileSystem.swift`, a sibling skin that is installed still wins). Reach: 1 of 1091 corpus archives names `@DEFAULTSKINPATH@/..` (Braun_CC_50). Pinned by `testAClimbOutOfTheDefaultSkinFallsBackToTheSkinItself`. Live: the About window draws `about_fg.jpg` and the credits rotate.
+
 ## B318 — -Graviton-'s volume and progress layers answer after the intro; the silent rows were the harness — closed 2026-10-30
 
 | Id | Item | Reach | Effort | Tier |

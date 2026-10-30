@@ -91,11 +91,23 @@ final class WinampModernCanvas {
         for rect in job.rects { context.clear(rect) }
         let match = { [unowned self] (image: CGImage) in matched(image, into: job.colorSpace) }
 
-        context.saveGState()
-        context.clip(to: job.rects)
-        context.scaleBy(x: job.scale, y: job.scale)
-        job.scene.replay(into: context, matchImage: match)
-        context.restoreGState()
+        func replayScene(skippingRegionExcluded: Bool) {
+            context.saveGState()
+            context.clip(to: job.rects)
+            context.scaleBy(x: job.scale, y: job.scale)
+            job.scene.replay(into: context, matchImage: match, skippingRegionExcluded: skippingRegionExcluded)
+            context.restoreGState()
+        }
+        // A region window is every pixel something paints, so what must not shape it (a `<vis>`, B323)
+        // is drawn only where the rest of the scene already is: replay without it to read the region.
+        var regions: [[UInt8]] = []
+        if job.promotesAlpha, job.scene.hasRegionExcludedSteps {
+            replayScene(skippingRegionExcluded: true)
+            regions = job.rects.map { alphaPlane(data, rect: $0, in: context) }
+            for rect in job.rects { context.clear(rect) }
+        }
+        replayScene(skippingRegionExcluded: false)
+        for (rect, plane) in zip(job.rects, regions) { clearOutside(plane, rect: rect, data: data, in: context) }
 
         if job.promotesAlpha {
             for rect in job.rects {
@@ -154,6 +166,37 @@ final class WinampModernCanvas {
         return vImage_Buffer(data: data + row * context.bytesPerRow + Int(rect.minX) * 4,
                              height: vImagePixelCount(rect.height), width: vImagePixelCount(rect.width),
                              rowBytes: context.bytesPerRow)
+    }
+
+    /// `rect`'s alpha, top row first.
+    private func alphaPlane(_ data: UnsafeMutableRawPointer, rect: CGRect, in context: CGContext) -> [UInt8] {
+        let width = Int(rect.width), height = Int(rect.height)
+        var plane = [UInt8](repeating: 0, count: width * height)
+        guard width > 0, height > 0 else { return plane }
+        var source = buffer(data, rect: rect, in: context)
+        plane.withUnsafeMutableBytes { bytes in
+            var destination = vImage_Buffer(data: bytes.baseAddress, height: vImagePixelCount(height),
+                                            width: vImagePixelCount(width), rowBytes: width)
+            _ = vImageExtractChannel_ARGB8888(&source, &destination, 3, vImage_Flags(kvImageNoFlags))
+        }
+        return plane
+    }
+
+    /// Empty every pixel of `rect` that `plane` says is outside the region.
+    private func clearOutside(_ plane: [UInt8], rect: CGRect, data: UnsafeMutableRawPointer,
+                              in context: CGContext) {
+        let width = Int(rect.width), height = Int(rect.height)
+        // A rect where nothing else paints has no region to clip to: a window made of its vis alone
+        // (a bare analyzer) keeps it. ponytail: judged per dirty rect, not per window; a rect wholly
+        // past the art would keep stray bars. Take the window's whole-frame region if one shows.
+        guard width > 0, height > 0, plane.contains(where: { $0 != 0 }) else { return }
+        let pixels = buffer(data, rect: rect, in: context)
+        for row in 0..<height {
+            let line = pixels.data.advanced(by: row * pixels.rowBytes).assumingMemoryBound(to: UInt8.self)
+            for column in 0..<width where plane[row * width + column] == 0 {
+                (line + column * 4).update(repeating: 0, count: 4)
+            }
+        }
     }
 
     /// Copy `rect`'s alpha into the mirror, reporting whether any of it differed.
