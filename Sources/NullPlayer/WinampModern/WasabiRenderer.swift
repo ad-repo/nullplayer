@@ -4661,8 +4661,10 @@ final class WasabiSceneRenderer {
     }
 
     /// A component window narrower than this on an axis its skin never sized has no window in it.
-    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`.
-    private static let degenerateComponentExtent: CGFloat = 32
+    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`. Two 12px playlist rows:
+    /// _Mercury's playlist is a 116px frame around a 31px list, a size its author chose (B325); at the
+    /// old 32 the fit grew its canvas to 335 under a 116px window and the user saw half of it.
+    private static let degenerateComponentExtent: CGFloat = 24
     /// What such an axis is grown to give the component. Winamp's own stock Modern skin opens the
     /// same visualization window at `354x280`, whose client area under the standard frame is a little
     /// over 250px tall; this reproduces that rather than inventing a number.

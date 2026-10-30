@@ -10,6 +10,22 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
 
 **Closed 2026-10-30 as class H (intake #5 live pass).** Clicking the pink button (`main/normal@370,244`) in the debug app recoloured the whole skin from the grey default to pink (main window before and after captured), so `GammaSet.apply` reaches `hooks.themeSwitchRequested` live. Only the headless dump leaves it unwired, so `GammaSet.apply()` rows read `silent` there.
 
+## B326 — Kepler_1.1's ticker and bitrate text are two boxes the skin overlaps — closed 2026-10-30 (class H)
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B326 | **Kepler_1.1's song ticker draws over its bitrate text in the main window's bottom bar.** Found by the orchestrator's look at the intake #5 group-2 review sheet (2026-10-30, `sheet_Kepler_1.1.png`): `-Royalty Free-4:02--Kevin` runs into `320kbps 44kHz` with no gap, so the two strings overlap. Find from the skin's XML whether the ticker's width or the info text's x is wrong in our layout (relat* or a script-set size), or whether the ticker should be clipped at its own width. Done when the ticker stops before the bitrate text | Kepler_1.1 | ? | 1 |
+
+**Closed 2026-10-30 as class H (skin geometry, not an engine defect).** `player.xml` gives the ticker `titre` `x=5 w=-661 relatw` and `kepler-ticker.m` moves it with `setxmlparam("x", x0+dx-i)` (76..88), so its box ends between 439 and 451 at the 1024 layout, while `br` (the bitrate text) starts at `x=-578 relatx` = 446: the skin's own boxes overlap by up to 5px as the ticker scrolls, and each text is clipped to its box (the live capture shows `Kev` against the `3` of `320kbps`). Nothing in our layout or clipping differs from the XML; there is no reference render in the corpus to say Winamp spaced them further. Left as the author drew it.
+
+## B325 — A component window the author sized at 116px was grown to 335 under a 116px window — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B325 | **_Mercury's Playlist Editor is empty: a black pane with six tracks queued.** Found by the orchestrator's look at the intake #5 group-2 review sheet (2026-10-30, `sheet__Mercury.png`, last window): the frame draws its Add/Rem/Sel/Misc/List bar but no list rows, while the same queue lists in every other skin's playlist that pass. The live-pass worker read it as clean. Find whether the list is not built (as B322 was), built off-screen, or drawn black on black. Done when the window lists the queue with a track playing | _Mercury | ? | 1 |
+
+**Closed 2026-10-30.** Not a missing list: `_Mercury`'s `Pledit` states no height, only `minimum_h="116"`, and the standard frame leaves its playlist holder 31px (`h=-85`). `componentRoomFittedSize` (B136) treats a holder under `degenerateComponentExtent` = 32 as a sliver and grew the canvas to 335, while the window opened at its declared 116, so the user saw the bottom 116px of a 335px scene: a black pane (the holder's lower part) and the command bar, with the title bar and first rows cut off. It is not B322's seam (the holder was built). The threshold is now 24, two 12px rows (`WasabiRenderer.swift:4667`); AVS's 2px sliver still grows. **Reach:** render sweep vs the same tree at 32, gold+silver: `_Mercury` and `PAD` (the same 31px list, 277x335 -> 277x116) change; `HALOAMP`'s clear/library containers change size in the dump (its `PLEdit` dump went 210x108 -> 210x18, a script-coupled artefact of the headless dump: in the app its playlist opens 210x108 and lists the queue); `DLibrary` sizes in MoonLight/GlassAMPfinal flip between runs of the same code (noise); the rest are animated clocks. Interaction and motion sweeps over _Mercury, PAD and HALOAMP on both thresholds: identical. Pinned by `testAShortButAuthoredComponentBoxIsNotGrown`. Live: the playlist opens 277x116 whole, title bar and the playing track highlighted.
+
 ## B324 — A container that hosts only the playlist gets the playlist's command bar — closed 2026-10-30
 
 | Id | Item | Reach | Effort | Tier |

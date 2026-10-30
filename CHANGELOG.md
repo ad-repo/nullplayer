@@ -208,6 +208,8 @@
 - **Bubble_Tea_-_Updated's spectrum stays inside the cup** instead of drawing bars over the desktop beside it.
 - **Bubble_Tea_-_Updated's Playlist Editor has its Add / Rem / Sel / Misc / List buttons.** A playlist window that
   names no component, and hosts only the playlist, now gets the command bar; LCDx's embedded playlist gets it too.
+- **_Mercury's Playlist Editor opens whole.** It was laid out 335px tall inside a 116px window, so only a black pane and
+  the command bar showed; PAD's playlist had the same cut.
 
 ## 0.33.1
 

@@ -146,6 +146,20 @@ final class WinampModernB136Tests: XCTestCase {
         XCTAssertEqual(renderer.canvasSize, CGSize(width: 354, height: 280))
     }
 
+    /// B325: _Mercury's playlist is a 116px frame (`minimum_h`, no stated height) around a 31px list.
+    /// That is the author's size, not a sliver, so the room fit must not grow the canvas to 335.
+    func testAShortButAuthoredComponentBoxIsNotGrown() throws {
+        let renderer = try makeRenderer(
+            container: #"<container id="Pledit" component="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}">"#,
+            layout: """
+            <layout id="normal" minimum_w="277" minimum_h="116">
+              <component x="10" y="36" w="-31" h="-85" relatw="1" relath="1"
+                         param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}"/>
+            </layout>
+            """)
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 277, height: 116))
+    }
+
     // MARK: - The hosted component's floor
 
     private static let libraryContainer =
