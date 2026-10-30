@@ -168,12 +168,12 @@ Local Opus-in-M4A can expose zero frames through `AVAudioFile`. The waveform ser
 those inputs with `AVAssetReader` straight into buckets, without a full PCM scratch file.
 Asset-reader output is interleaved Float32 to match its AudioBufferList reader, including the
 shared prerender path. Local frame limits/cache records always describe the full backing asset;
-each request receives its own cue presentation duration after generation, a shared in-flight
+each request receives its own cue presentation duration and corresponding source-bucket slice after generation, a shared in-flight
 join, or a disk-cache hit. For the last cue (no duration hint), derive backing duration minus
 `cueStartOffset`. The `local-v2` cache-key namespace invalidates earlier truncated records.
 
 `WaveformOpusCueTests` checks Opus output, native AAC, sibling/last cue durations and persisted
-full-source samples/duration. Remote service waveform behavior still needs live-server QA.
+full-source samples/duration. A silence-then-tone fixture checks that the rendered cue columns match the audible source window. Remote service waveform behavior still needs live-server QA.
 
 ### A Local Track That Will Not Open
 

@@ -20,7 +20,7 @@ actor WaveformCacheService {
         let sourcePath: String
         let cacheKey: String
         let durationHint: TimeInterval?
-        let cueStartOffset: TimeInterval
+        let cueStartOffset: TimeInterval?
         let fileSize: Int64?
         let modificationDate: Date?
         let isStreaming: Bool
@@ -107,10 +107,23 @@ actor WaveformCacheService {
     /// retain their individual presentation durations for progress and seeking.
     private func presentationSnapshot(_ snapshot: WaveformSnapshot, descriptor: CacheDescriptor) -> WaveformSnapshot {
         guard !descriptor.isStreaming, snapshot.state == .ready else { return snapshot }
+        let backingDuration = snapshot.duration
+        let start = min(max(0, descriptor.cueStartOffset ?? 0), backingDuration)
         let duration = descriptor.durationHint.flatMap { $0 > 0 ? $0 : nil }
-            ?? max(0, snapshot.duration - descriptor.cueStartOffset)
+            ?? max(0, backingDuration - start)
         var presented = snapshot
         presented.duration = duration
+        guard descriptor.cueStartOffset != nil, backingDuration > 0, !snapshot.samples.isEmpty else { return presented }
+        presented.duration = min(duration, max(0, backingDuration - start))
+        // The renderer spreads all returned buckets over presentation duration. Select the
+        // cue's source window first; preserve the canonical whole-source record on disk.
+        // Round outward to retain a partial bucket at either boundary (one source bucket's
+        // temporal resolution), and keep the variable-length slice for the renderer to scale.
+        let count = snapshot.samples.count
+        let lower = min(count, Int(floor(start / backingDuration * Double(count))))
+        let end = min(backingDuration, start + presented.duration)
+        let upper = min(count, max(lower, Int(ceil(end / backingDuration * Double(count)))))
+        presented.samples = Array(snapshot.samples[lower..<upper])
         return presented
     }
 
@@ -167,7 +180,7 @@ actor WaveformCacheService {
                     modificationDate: metadata.modificationDate
                 ),
                 durationHint: track.duration,
-                cueStartOffset: track.cueStartOffset ?? 0,
+                cueStartOffset: track.cueStartOffset,
                 fileSize: metadata.fileSize,
                 modificationDate: metadata.modificationDate,
                 isStreaming: false,
@@ -197,7 +210,7 @@ actor WaveformCacheService {
                 sampleRate: track.sampleRate
             ),
             durationHint: duration,
-            cueStartOffset: 0,
+            cueStartOffset: nil,
             fileSize: nil,
             modificationDate: nil,
             isStreaming: true,
