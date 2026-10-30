@@ -35,6 +35,10 @@
   working on NullPlayer.
 - **Report a Skin Bug** — below Browse NullPlayer Certified Skins in the Skins menu, it opens the
   [nullplayer.fyi bug report page](https://nullplayer.fyi/report-a-bug/).
+- **Go to Artist and Go to Album in the library browser** — right-click a track (local, Plex,
+  Subsonic, Jellyfin or Emby, including search results and playlist entries) to jump to its artist
+  on the Artists tab, or to its album under the expanded artist. An album offers Go to Artist.
+  Flow and Tiles open on the selected row's level.
 
 ### Fixes
 

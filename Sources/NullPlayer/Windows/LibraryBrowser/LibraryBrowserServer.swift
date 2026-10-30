@@ -39,6 +39,10 @@ protocol BrowsableSong {
     var track: Int? { get }
     var year: Int? { get }
     var created: Date? { get }
+    var artist: String? { get }
+    var artistId: String? { get }
+    var album: String? { get }
+    var albumId: String? { get }
     var itemType: LibraryBrowserItem.ItemType { get }
 }
 

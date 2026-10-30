@@ -1164,7 +1164,12 @@ final class MediaLibraryStore {
 
     /// The `tracksForAlbum` key of the album `url` belongs to; nil for a file not in the library.
     func albumId(containing url: URL) -> String? {
-        track(forURL: url).map { "\($0.albumArtist ?? "")|\($0.album ?? "Unknown Album")" }
+        track(forURL: url).map(Self.albumId(of:))
+    }
+
+    /// The `tracksForAlbum` key of `track`'s album: "albumArtist|album".
+    static func albumId(of track: LibraryTrack) -> String {
+        "\(track.albumArtist ?? "")|\(track.album ?? "Unknown Album")"
     }
 
     func trackCount() -> Int {
@@ -1948,19 +1953,15 @@ final class MediaLibraryStore {
     }
 
     private func derivedArtistEntries(for track: LibraryTrack) -> [(name: String, role: ArtistRole)] {
-        var entries = ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
+        ArtistSplitter.split(track.artist ?? "", isAlbumArtist: false)
+            + (Self.albumArtistNames(of: track) ?? ["Unknown Artist"]).map { (name: $0, role: .albumArtist) }
+    }
 
-        let albumArtistEntries: [(name: String, role: ArtistRole)]
-        if let albumArtist = track.albumArtist, !albumArtist.isEmpty {
-            albumArtistEntries = ArtistSplitter.split(albumArtist, isAlbumArtist: true)
-        } else if let artist = track.artist, !artist.isEmpty {
-            albumArtistEntries = ArtistSplitter.split(artist, isAlbumArtist: true)
-        } else {
-            albumArtistEntries = [(name: "Unknown Artist", role: .albumArtist)]
-        }
-
-        entries.append(contentsOf: albumArtistEntries)
-        return entries
+    /// The Artists-tab artists `track` files under, from its album artist, else its artist; nil
+    /// when it has neither, empty when the tag is only whitespace.
+    static func albumArtistNames(of track: LibraryTrack) -> [String]? {
+        guard let raw = [track.albumArtist, track.artist].compactMap({ $0 }).first(where: { !$0.isEmpty }) else { return nil }
+        return ArtistSplitter.split(raw, isAlbumArtist: true).map(\.name)
     }
 
     @discardableResult
