@@ -17,16 +17,6 @@
   to queue tracks like it, scored from the tags (artist, genre, year, tempo, key, grouping) with
   no audio analysis. The CLI gains `--source local --radio track|library|genre|decade|artist` and
   `--list-queue`, which prints the queue a `--radio` mode would play without playing it.
-- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the second corpus intake):
-  ArmorAMP, Ashen Player, cPro - KAO, cPro - iPhone3g, DDTank Glass, EMP - Evolved Media Player,
-  hm_Touch, MD Ganbare Rakkatan the Sixth, Ayanami Rei the Fifth, MetAlchemy III, H2O Liquid,
-  MIDISUI, Moon Groove, Moonkore, Music Show, Mad Magazine, RazorEdge, RODE 3 Lite, Slimline XP,
-  The Crow, YoYoBoy, Vision, wasabi.player, Winamp Portrait and Winamp Single GUI.
-- **25 more Winamp Modern (`.wal`) skins checked and fixed in the app** (the fourth corpus intake):
-  cPro - Mecha, G2, GlassAMP, iSkin, Jenna loves Mambo, JIP, LG Cookie, Manchester United Football
-  Club: The Red Devils, MBOS, MfS3, MiPod, MSkin RyokoAsakura, MultiButtons, NEO, Official The
-  Music Skin, OrbFace, PAD, Puma Skin, Quadelic, Sepultura, Silverskin 3, Star Trek LCARS AMP
-  PADD II, The Duk Side, WINyaMP3 and ZWAN.
 - **Scroll-wheel volume in the Classic main window** — scroll anywhere on the main window to step
   the volume 5% (the same step as ↑/↓), or over the balance slider to step the balance 10%. A
   trackpad swipe stops when your fingers lift instead of flinging the value.
@@ -47,6 +37,41 @@
 
 ### Fixes
 
+- **Audion faces draw their text in fonts close to the ones they name** — Chicago, Charcoal and
+  the Mac OS 8.5 theme fonts, the pixel fonts (Mini, 04b, Silkscreen and others), Textile and SF
+  Digital Readout now use bundled lookalikes instead of Helvetica, and Techno Jammo's artist line
+  matches its album line. A font you have installed is still used first.
+- **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
+  visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
+  letter (#611, thanks @tmichelbrink).
+- **Classic skins no longer draw lines from neighbouring sprites at scaled window sizes.** At UI sizes
+  such as 125% or 200%, a sliver of the next sprite on the skin's sheet could show at a sprite's edge,
+  such as Militarized's pink divider line above the volume and pan sliders, or beside the pan
+  thumb (#612, thanks @tmichelbrink).
+- **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
+  quit while refreshing the rooms' volumes; volumes are now read one room at a time.
+- **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
+  between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
+  2 px left of its knob.
+- **Waveforms for Opus M4A files and cue tracks.** Local `.m4a` files holding Opus audio now show
+  a waveform instead of none. A track from a cue sheet shows only its own part of the file's
+  waveform, with its cue markers, instead of the whole file squeezed into one track's length
+  (#631, thanks @infinity-dump).
+
+### Winamp Modern (`.wal`) skins
+
+- **75 more Winamp Modern (`.wal`) skins checked and fixed in the app** (corpus intakes two, three
+  and four): Abducted, Angrenthoron, Apill, Aria of the Soul, ArmorAMP, Ashen Player, Avalon Winamp
+  Modern, Ayanami Rei the Fifth, BeatSugar, CardiumII, Celica Amp, Circlo T roniC, Clock V2.76,
+  cPro - Creed Full Circle, cPro - iPhone3g, cPro - KAO, cPro - Mecha, DDTank Glass, Ebonite,
+  EMP - Evolved Media Player, Freeform Simpsons, G2, GlassAMP, H2O Liquid, hm_Touch, Hybrid v10,
+  intellidesign, Invicta, iSkin, Jenna loves Mambo, JIP, LCDx, LG Cookie, Mad Magazine, Manchester
+  United Football Club: The Red Devils, MBOS, MD Ganbare Rakkatan the Sixth, METASKINS WooHoo FER,
+  MetAlchemy III, MfS3, MIDISUI, MiPod, Moon Groove, Moonkore, MSkin RyokoAsakura, MultiButtons,
+  Music Show, Nebular, NEO, Official 28 Days Later, Official The Music Skin, Official Trapt,
+  OrbFace, PAD, Puma Skin, Quadelic, RazorEdge, RODE 3 Lite, Sencillo, Sepultura, Silverskin 3,
+  Slimline XP, Star Trek LCARS AMP PADD II, TAL 96, The Crow, The Duk Side, Vision, wasabi.player,
+  Winamp Portrait, Winamp Single GUI, Winampple, WINyaMP3, WoopieAMP3, YoYoBoy and ZWAN.
 - **Modern skin windows draw their background** — DDtank Glass's equalizer and about window showed
   their controls on the bare desktop; Fuzzy Muffins no longer shows a grey mask through its
   see-through areas.
@@ -118,10 +143,6 @@
 - **A Modern skin's selected rows dim when their window loses focus**, in the colours the skin
   declares for that (iTunes Miniplayer's playlist), unless you set the selection colours yourself
   (#603).
-- **Audion faces draw their text in fonts close to the ones they name** — Chicago, Charcoal and
-  the Mac OS 8.5 theme fonts, the pixel fonts (Mini, 04b, Silkscreen and others), Textile and SF
-  Digital Readout now use bundled lookalikes instead of Helvetica, and Techno Jammo's artist line
-  matches its album line. A font you have installed is still used first.
 - **Winampple no longer opens an empty Media Library frame at launch**, and its Windows menu no
   longer lists empty Media Library, Visualizations and video frames beside the real windows.
 - **Winampple's Media Library can be clicked again.** Its video window's frame no longer sits over
@@ -176,18 +197,6 @@
 - **Labels on Winamp Modern skins' text buttons are readable.** Where the skin's button colour would
   vanish into its button art (MMD3's Switch, Nebular's About, meridian's OK and a dozen others), the
   label is drawn in black or white instead.
-- **The classic main window's song title is sharp at every window size.** At UI sizes above 100%, most
-  visibly on non-Retina displays, the title was stretched and smoothed into grey halos around each
-  letter (#611, thanks @tmichelbrink).
-- **Classic skins no longer draw lines from neighbouring sprites at scaled window sizes.** At UI sizes
-  such as 125% or 200%, a sliver of the next sprite on the skin's sheet could show at a sprite's edge,
-  such as Militarized's pink divider line above the volume and pan sliders, or beside the pan
-  thumb (#612, thanks @tmichelbrink).
-- **NullPlayer no longer crashes with the Sonos Rooms window open.** On some Macs the release build
-  quit while refreshing the rooms' volumes; volumes are now read one room at a time.
-- **Classic EQ slider bars no longer show a stray coloured stripe.** Skins that paint the 1-px gap
-  between bar images (Militarized's pink) had that column drawn beside every slider, and the bar sat
-  2 px left of its knob.
 - **Winamp Modern skins dim the Media Library's selection when the player loses focus**, the same
   way the playlist panel beside it already did, on skins that declare an unfocused selection colour.
 - **Winamp Modern windows open wide enough to show their whole title.** Silverskin_3's playlist and
