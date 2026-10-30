@@ -4,33 +4,47 @@ import AVFoundation
 /// MPEG-4 container yet report zero frames (and fail on read); AVAssetReader can decode it.
 /// Full preparation is async, cancellable, and must never run on the main queue.
 enum LocalAudioFile {
-    static func open(_ url: URL, sourceURL: URL? = nil) async throws -> AVAudioFile {
+    static func prepareForPlayback(_ sourceURL: URL) async throws -> AVAudioFile {
         try Task.checkCancellation()
-        if let file = try openNatively(url, sourceURL: sourceURL) { return file }
+        let staged = LocalAudioStaging.copyIfNeeded(for: sourceURL, logPrefix: "LocalAudioFile")
+        return try await open(staged ?? sourceURL, sourceURL: sourceURL, stagedCopyURL: staged)
+    }
+
+    static func open(_ url: URL, sourceURL: URL? = nil, stagedCopyURL: URL? = nil) async throws -> AVAudioFile {
+        var transferred = false
+        defer { if !transferred, let stagedCopyURL { removeTemporaryItem(stagedCopyURL) } }
+        try Task.checkCancellation()
+        if let file = try openNatively(url, sourceURL: sourceURL, stagedCopyURL: stagedCopyURL) {
+            transferred = true
+            return file
+        }
         dispatchPrecondition(condition: .notOnQueue(.main))
-        return try await decodeOpusAsset(url, sourceURL: sourceURL ?? url)
+        let file = try await decodeOpusAsset(url, sourceURL: sourceURL ?? url, stagedCopyURL: stagedCopyURL)
+        transferred = true
+        return file
     }
 
     /// nil means preparation is required. Synchronous transport paths must defer to `open`.
-    static func openNatively(_ url: URL, sourceURL: URL? = nil) throws -> AVAudioFile? {
+    static func openNatively(_ url: URL, sourceURL: URL? = nil, stagedCopyURL: URL? = nil) throws -> AVAudioFile? {
         do {
-            let file: AVAudioFile
-            if let sourceURL, sourceURL != url {
-                file = try LocalPlaybackFile(backingURL: url, sourceURL: sourceURL)
-            } else {
-                file = try AVAudioFile(forReading: url)
-            }
-            guard isMPEG4(url), file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus else {
-                return file
-            }
-            if file.length > 0,
-               let probe = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1) {
+            let file = try AVAudioFile(forReading: url)
+            if isMPEG4(url), file.fileFormat.streamDescription.pointee.mFormatID == kAudioFormatOpus {
+                guard file.length > 0,
+               let probe = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 1) else {
+                    return nil
+                }
                 do {
                     try file.read(into: probe, frameCount: 1)
                     file.framePosition = 0
-                    if probe.frameLength > 0 { return file }
-                } catch { /* Prepare a readable file off the main queue. */ }
+                    guard probe.frameLength > 0 else { return nil }
+                } catch { return nil }
             }
+            let identity = sourceURL ?? url
+            if identity != url || stagedCopyURL != nil {
+                return try LocalPlaybackFile(backingURL: url, sourceURL: identity,
+                    storage: PlaybackFileStorage(paths: stagedCopyURL.map { [$0] } ?? []))
+            }
+            return file
         } catch {
             guard isMPEG4(url) else { throw error }
         }
@@ -42,9 +56,16 @@ enum LocalAudioFile {
         (file as? LocalPlaybackFile)?.sourceURL ?? file.url
     }
 
+    /// An explicit read URL plus ownership token: analysis can outlive the scheduled player
+    /// without retaining/sharing that player's mutable AVAudioFile reader.
+    static func analysisSource(of file: AVAudioFile) -> LocalAudioAnalysisSource {
+        LocalAudioAnalysisSource(backingURL: file.url, sourceURL: sourceURL(of: file),
+                                 storage: (file as? LocalPlaybackFile)?.storage)
+    }
+
     private static let cleanupQueue = DispatchQueue(label: "com.nullplayer.audio-file-cleanup", qos: .utility)
 
-    fileprivate static func removeBackingDirectory(_ directory: URL) {
+    fileprivate static func removeTemporaryItem(_ directory: URL) {
         cleanupQueue.async { try? FileManager.default.removeItem(at: directory) }
     }
 
@@ -56,7 +77,7 @@ enum LocalAudioFile {
         NSError(domain: "LocalAudioFile", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
     }
 
-    private static func decodeOpusAsset(_ url: URL, sourceURL: URL) async throws -> AVAudioFile {
+    private static func decodeOpusAsset(_ url: URL, sourceURL: URL, stagedCopyURL: URL?) async throws -> AVAudioFile {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first,
               let description = try await track.load(.formatDescriptions).first,
@@ -88,11 +109,12 @@ enum LocalAudioFile {
         let directory = try FileManager.default.url(for: .itemReplacementDirectory,
             in: .userDomainMask, appropriateFor: FileManager.default.temporaryDirectory, create: true)
         var transferred = false
-        defer { if !transferred { removeBackingDirectory(directory) } }
+        defer { if !transferred { removeTemporaryItem(directory) } }
         let decodedURL = directory.appendingPathComponent("decoded.caf")
         try writePCM(from: output, reader: reader, duration: duration, to: decodedURL)
         try Task.checkCancellation()
-        let file = try LocalPlaybackFile(backingURL: decodedURL, sourceURL: sourceURL, directory: directory)
+        let storage = PlaybackFileStorage(paths: [directory] + (stagedCopyURL.map { [$0] } ?? []))
+        let file = try LocalPlaybackFile(backingURL: decodedURL, sourceURL: sourceURL, storage: storage)
         transferred = true
         return file
     }
@@ -150,16 +172,33 @@ enum LocalAudioFile {
 }
 
 /// Like AVAudioFile, the mutable reader is handed off to one consumer, not used concurrently.
-/// Only immutable source/directory metadata is added; deletion is dispatched to a utility queue.
+/// Only immutable source/storage metadata is added; deletion is dispatched to a utility queue.
 private final class LocalPlaybackFile: AVAudioFile, @unchecked Sendable {
     let sourceURL: URL
-    private let directory: URL?
+    let storage: PlaybackFileStorage
 
-    init(backingURL: URL, sourceURL: URL, directory: URL? = nil) throws {
+    init(backingURL: URL, sourceURL: URL, storage: PlaybackFileStorage) throws {
         self.sourceURL = sourceURL
-        self.directory = directory
+        self.storage = storage
         try super.init(forReading: backingURL, commonFormat: .pcmFormatFloat32, interleaved: false)
     }
+}
 
-    deinit { if let directory { LocalAudioFile.removeBackingDirectory(directory) } }
+/// One immutable lifetime for every temporary path behind a prepared reader.
+fileprivate final class PlaybackFileStorage: @unchecked Sendable {
+    private let paths: [URL]
+    init(paths: [URL]) { self.paths = paths }
+    deinit { for path in paths { LocalAudioFile.removeTemporaryItem(path) } }
+}
+
+struct LocalAudioAnalysisSource: Sendable {
+    let backingURL: URL
+    let sourceURL: URL
+    fileprivate let storage: PlaybackFileStorage?
+
+    func withFile<T>(_ read: (AVAudioFile) throws -> T) throws -> T {
+        try withExtendedLifetime(storage) {
+            try read(AVAudioFile(forReading: backingURL))
+        }
+    }
 }

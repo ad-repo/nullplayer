@@ -254,6 +254,125 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         NSLog("AAC superseded long gapless preparation in %.4fs", Date().timeIntervalSince(start))
     }
 
+    func testNativeCrossfadeOpensAtTheBoundaryAfterAQueueEdit() throws {
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        let first = try TestAudioFile.temporaryWAV(seconds: 3, tone: true)
+        defer { try? FileManager.default.removeItem(at: first) }
+        let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
+        let incoming = Track(url: aac)
+        engine.sweetFadeDuration = 0.1
+        engine.sweetFadeEnabled = true
+        engine.playNow([Track(url: first), Track(url: opusURL), incoming])
+        engine.moveTrack(from: 2, to: 1)
+        XCTAssertNil(engine.preparedCrossfadeTrackIDForTesting, "Native AAC must not depend on an early cached handle")
+        let changed = expectation(forNotification: .audioTrackDidChange, object: engine) { _ in
+            engine.currentTrack?.id == incoming.id
+        }
+        engine.seek(to: 2.8)
+        wait(for: [changed], timeout: 2)
+        XCTAssertEqual(engine.currentIndex, 1)
+        XCTAssertEqual(engine.state, .playing)
+    }
+
+    func testQueueEditReplacesAnAlreadyScheduledGaplessSuccessor() throws {
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        let first = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
+        defer { try? FileManager.default.removeItem(at: first) }
+        let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
+        let oldNext = Track(url: aac)
+        let newNext = Track(url: opusURL)
+        engine.gaplessPlaybackEnabled = true
+        engine.playNow([Track(url: first), oldNext, newNext])
+        let scheduled = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            engine.scheduledGaplessTrackIDForTesting == oldNext.id
+        }, object: nil)
+        wait(for: [scheduled], timeout: 2)
+        let position = engine.currentTime
+        engine.moveTrack(from: 2, to: 1)
+        let replaced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            engine.scheduledGaplessTrackIDForTesting == newNext.id
+        }, object: nil)
+        wait(for: [replaced], timeout: 2)
+        XCTAssertEqual(engine.scheduledGaplessSourceForTesting, opusURL)
+        XCTAssertGreaterThanOrEqual(engine.currentTime, position)
+        XCTAssertEqual(engine.state, .playing)
+        let changed = expectation(forNotification: .audioTrackDidChange, object: engine) { _ in
+            engine.currentTrack?.id == newNext.id
+        }
+        wait(for: [changed], timeout: 5)
+        XCTAssertEqual(engine.currentIndex, 1)
+    }
+
+    func testQueueEditSupersedesAnInFlightGaplessSuccessor() throws {
+        guard let path = ProcessInfo.processInfo.environment["NULLPLAYER_LONG_OPUS_FILE"] else {
+            throw XCTSkip("Set NULLPLAYER_LONG_OPUS_FILE to a generated long Opus M4A")
+        }
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        let first = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
+        defer { try? FileManager.default.removeItem(at: first) }
+        let long = Track(url: URL(fileURLWithPath: path), title: "Long Opus", duration: 3600)
+        let aac = opusURL.deletingLastPathComponent().appendingPathComponent("aac-in-m4a.m4a")
+        let incoming = Track(url: aac)
+        engine.gaplessPlaybackEnabled = true
+        engine.playNow([Track(url: first), long, incoming])
+        XCTAssertEqual(engine.pendingGaplessTrackIDForTesting, long.id)
+        engine.moveTrack(from: 2, to: 1)
+        let replaced = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            engine.scheduledGaplessTrackIDForTesting == incoming.id
+        }, object: nil)
+        wait(for: [replaced], timeout: 2)
+        XCTAssertEqual(engine.scheduledGaplessSourceForTesting, aac)
+        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertEqual(engine.state, .playing)
+    }
+
+    func testPlayNowAndEmptyPipelinePlayStillAttemptPlaceholderResolution() {
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        for throughPlayNow in [true, false] {
+            engine.clearPlaylist()
+            let placeholder = Track(url: URL(string: "about:blank")!, title: "Unresolvable placeholder")
+            let failed = expectation(forNotification: .audioTrackDidFailToLoad, object: engine) { notification in
+                (notification.userInfo?["track"] as? Track)?.id == placeholder.id
+            }
+            if throughPlayNow { engine.playNow([placeholder]) }
+            else { engine.setPlaylistTracks([placeholder]); engine.play() }
+            wait(for: [failed], timeout: 2)
+            XCTAssertEqual(engine.currentTrack?.id, placeholder.id)
+        }
+    }
+
+    func testPlayNowRetainsItsVideoRollbackAfterAnAsyncBadAudioSkip() throws {
+        let (engine, restorePreferences) = makeEngine()
+        let oldHeadless = AudioEngine.isHeadless
+        AudioEngine.isHeadless = true
+        defer { engine.clearPlaylist(); restorePreferences(); AudioEngine.isHeadless = oldHeadless }
+        let old = try TestAudioFile.temporaryWAV(seconds: 5, tone: true)
+        let corrupt = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        let film = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).mp4")
+        defer { [old, corrupt, film].forEach { try? FileManager.default.removeItem(at: $0) } }
+        try Data("not audio".utf8).write(to: corrupt)
+        try Data("not video".utf8).write(to: film)
+        let oldTrack = Track(url: old)
+        let filmTrack = Track(url: film, title: "Bad film", mediaType: .video)
+        engine.setPlaylistTracks([oldTrack])
+        engine.playNow([Track(url: corrupt), filmTrack])
+        let routed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            engine.currentTrack?.id == filmTrack.id
+        }, object: nil)
+        wait(for: [routed], timeout: 2)
+        let failed = expectation(description: "video failure rolls back its bounded Play Now")
+        let recorder = FailureRecorder(failed)
+        engine.delegate = recorder
+        engine.videoTrackDidEnd(.failed)
+        wait(for: [failed], timeout: 2)
+        XCTAssertEqual(engine.playlist.map(\.id), [oldTrack.id])
+        XCTAssertEqual(engine.state, .stopped)
+    }
+
     private final class FailureRecorder: AudioEngineDelegate {
         let failure: XCTestExpectation
         var failedURLs: [URL] = []

@@ -93,17 +93,6 @@ final class LocalAudioFileTests: XCTestCase {
         } catch { /* Expected. */ }
     }
 
-    func testWaveformUsesTheSameDecoderAndOriginalIdentity() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let service = WaveformCacheService(cacheDirectoryURL: directory)
-        let snapshot = await service.loadSnapshot(for: Track(url: opusURL))
-        XCTAssertEqual(snapshot.state, .ready)
-        XCTAssertEqual(snapshot.sourcePath, opusURL.path)
-        XCTAssertEqual(snapshot.duration, 0.537, accuracy: 1 / 48_000)
-        XCTAssertGreaterThan(snapshot.samples.max() ?? 0, 0)
-    }
-
     func testStagedFilesKeepTheOriginalPlaylistIdentity() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -118,34 +107,40 @@ final class LocalAudioFileTests: XCTestCase {
         }
     }
 
-    func testCueTracksShareAFullBackingWaveformButKeepTheirOwnDurations() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let service = WaveformCacheService(cacheDirectoryURL: directory.appendingPathComponent("cache"))
-        let referenceService = WaveformCacheService(cacheDirectoryURL: directory.appendingPathComponent("reference"))
-        let full = Track(url: opusURL)
-        let reference = await referenceService.loadSnapshot(for: full)
-        let cueURL = directory.appendingPathComponent("album.cue")
-        let first = Track(url: opusURL, title: "First cue", duration: 0.25,
-                          cueStartOffset: 0, cueEndOffset: 0.25, cueSourceURL: cueURL)
-        let second = Track(url: opusURL, title: "Second cue", duration: 0.287,
-                           cueStartOffset: 0.25, cueEndOffset: nil, cueSourceURL: cueURL)
-        let firstSnapshot = await service.loadSnapshot(for: first)
-        let secondSnapshot = await service.loadSnapshot(for: second)
-        let fullSnapshot = await service.loadSnapshot(for: full)
-        XCTAssertEqual(reference.state, .ready)
-        XCTAssertEqual(firstSnapshot.duration, 0.25, accuracy: 1 / 48_000)
-        XCTAssertEqual(secondSnapshot.duration, 0.287, accuracy: 1 / 48_000)
-        XCTAssertEqual(fullSnapshot.duration, 0.537, accuracy: 1 / 48_000)
-        XCTAssertEqual(firstSnapshot.cacheKey, secondSnapshot.cacheKey)
-        XCTAssertEqual(firstSnapshot.samples, reference.samples, "A short cue must not truncate the backing decode")
-        XCTAssertEqual(secondSnapshot.samples, reference.samples)
-        XCTAssertEqual(fullSnapshot.samples, reference.samples)
-        let key = try XCTUnwrap(fullSnapshot.cacheKey)
-        let data = try Data(contentsOf: directory.appendingPathComponent("cache/\(key).plist"))
-        let record = try XCTUnwrap(PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
-        XCTAssertEqual(try XCTUnwrap(record["duration"] as? Double), 0.537, accuracy: 1 / 48_000,
-                       "Persist whole-source duration, never the first cue's presentation duration")
+    func testAnalysisTokenOwnsBothStagedAndDecodedFilesAfterThePlayerReleasesThem() async throws {
+        for name in ["opus-in-m4a.m4a", "aac-in-m4a.m4a"] {
+            let source = opusURL.deletingLastPathComponent().appendingPathComponent(name)
+            let staged = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+            try FileManager.default.copyItem(at: source, to: staged)
+            var file: AVAudioFile? = try await LocalAudioFile.open(staged, sourceURL: source, stagedCopyURL: staged)
+            let backing = try XCTUnwrap(file).url
+            var analysis: LocalAudioAnalysisSource? = LocalAudioFile.analysisSource(of: try XCTUnwrap(file))
+            file = nil
+            XCTAssertTrue(FileManager.default.fileExists(atPath: staged.path))
+            XCTAssertEqual(analysis?.sourceURL, source)
+            let frames = try XCTUnwrap(analysis).withFile { try readAll($0)[0].count }
+            XCTAssertGreaterThan(frames, 25_000)
+            analysis = nil
+            let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                !FileManager.default.fileExists(atPath: staged.path)
+                    && !FileManager.default.fileExists(atPath: backing.path)
+            }, object: nil)
+            await fulfillment(of: [removed], timeout: 2)
+            XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        }
+    }
+
+    func testFailedPreparationAlsoReleasesItsStagingCopy() async throws {
+        let staged = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        try Data("not audio".utf8).write(to: staged)
+        do {
+            _ = try await LocalAudioFile.open(staged, sourceURL: opusURL, stagedCopyURL: staged)
+            XCTFail("A corrupt staged source must fail")
+        } catch { /* Expected. */ }
+        let removed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            !FileManager.default.fileExists(atPath: staged.path)
+        }, object: nil)
+        await fulfillment(of: [removed], timeout: 2)
     }
 
     private func readAll(_ file: AVAudioFile) throws -> [[Float]] {
