@@ -5456,7 +5456,8 @@ class AudioEngine {
     /// A queue edit may change the successor without changing currentIndex. Drop both
     /// a pending open and an already scheduled old file before accepting the new boundary.
     private func refreshLocalGaplessSuccessor() {
-        guard !isStreamingPlayback, !isAnyCastingActive, let current = currentTrack,
+        // A loaded track before the casting check, as in `prepareNextLocalCrossfade`.
+        guard let current = currentTrack, !isStreamingPlayback, !isAnyCastingActive,
               let currentIndexInQueue = playlist.firstIndex(where: { $0.id == current.id }),
               currentIndexInQueue == currentIndex, audioFile != nil else { return }
         let nextIndex = calculateNextTrackIndex()
@@ -5552,8 +5553,10 @@ class AudioEngine {
     
     private func prepareNextLocalCrossfade() {
         guard !isCrossfading else { return }
-        guard sweetFadeEnabled, !isStreamingPlayback, !isAnyCastingActive,
-              let current = currentTrack, audioFile != nil, !(repeatEnabled && !shuffleEnabled) else {
+        // The casting check reads WindowManager.shared, whose init constructs this engine and runs
+        // the options didSets; a loaded track first proves init is over, so it is checked first.
+        guard sweetFadeEnabled, let current = currentTrack, audioFile != nil, !isStreamingPlayback,
+              !isAnyCastingActive, !(repeatEnabled && !shuffleEnabled) else {
             localCrossfadePreparation.reset()
             return
         }
