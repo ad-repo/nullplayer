@@ -147,14 +147,13 @@ final class WinampModernFrames {
         let job = record(geometry, rects)
         let viewRects = rects.map { $0.applying(CGAffineTransform(scaleX: 1 / geometry.scale, y: 1 / geometry.scale)) }
         if isWhole || Self.rendersSynchronously {
-            let frame = queue.sync { self.canvas.render(job) }
+            let frame = queue.sync { canvas.render(job) }
             if frame != nil { drawnGeometry = geometry }
             land(frame, rects: viewRects)
             return
         }
         isInFlight = true
-        let canvas = canvas, generation = generation
-        queue.async { [weak self] in
+        queue.async { [weak self, canvas, generation] in
             let frame = canvas.render(job)
             DispatchQueue.main.async {
                 guard let self else { return }
