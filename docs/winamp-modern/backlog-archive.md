@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B316 — The quarantined skins move to bronze — closed 2026-10-29
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B316 | **The 54 quarantined skins load, but are still tiered quarantine, so nothing probes them.** B175–B181 fixed every cause B173 found and took `load '^failed$'` to quarantine 0/54 (`2f5cba32`, 2026-10-19), but the manifest still files them under `quarantine` and every intake since has re-rated bronze only. Gold+silver sweeps, the census and the app-driven tools never reach them. First re-run `scripts/wal_skin_census.sh <outdir> --corpus …/WinampModernCorpus/quarantine` to confirm all 54 still load on today's build; file a row per cause for any that regressed. Then move them to bronze: files from `quarantine/` to `bronze/`, manifest tier and rev rewritten. No batch is run for it; the next admit ranks them by gain with the rest of bronze. Done when `wal_intake_status.sh` reports quarantine 0 and the moved skins' manifest rows carry the new tier and rev | quarantine 54/54 (manifest; `wal_intake_status.sh` 2026-10-29) | S | 2 |
+
+**Closed 2026-10-29**. A census over the quarantine tier on `dda0983a` loaded all 54 with no `FAILED` line (fully-skinned 33, partly-skinned 11, player-skinned 10; 17 ship `screenshot.png`), so B175–B181's fixes still hold. All 54 moved to `WinampModernCorpus/bronze/` and their manifest rows to tier `bronze`, rev `dda0983a`. `wal_intake_status.sh`: gold 156, silver 33, bronze 806, quarantine 0. They reach silver like any bronze skin, by the next admit's gain ranking.
+
 ## B282 — A window is wide enough to show its own title — closed 2026-10-29
 
 | Id | Item | Reach | Effort | Tier |

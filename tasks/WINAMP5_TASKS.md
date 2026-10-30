@@ -36,8 +36,8 @@ the cause is not known.
 ### Corpus plan queue — work in progress
 
 Order is the plan's S4 severity ladder, then its `skins × severity × visibility ÷ cost` within a
-class. First, skin-dead: the quarantine's loader gaps (B173), most skins first. Then the MAKI demand
-queue (B174), by priority, whose scoring is in B174's archive entry. Each severity rests on one or two
+class. First, the MAKI demand queue
+(B174), by priority, whose scoring is in B174's archive entry. Each severity rests on one or two
 call sites, so re-check it when a row is taken.
 
 | Id | Item | Reach | Effort | Tier |
