@@ -11,7 +11,7 @@ enum LocalTrackPreparation {
 
     struct Request {
         let track: Track
-        let index: Int
+        var index: Int
         let playbackGeneration: Int
         var policy: Policy
         /// The only copy of the selection's Play/Pause intent; Play and Pause update it in place.
