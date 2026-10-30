@@ -217,6 +217,14 @@ final class LibraryArtLens<Row: LibraryArtRow> {
         rowsDidChange()
     }
 
+    /// The browser selected a row for the user (Go to Artist / Album): show the level it sits on,
+    /// centred on it.
+    func reveal(_ index: Int) {
+        guard mode != .list else { return }
+        seedFocus(at: index, enteringExpanded: false)
+        rowsDidChange()
+    }
+
     /// The skin or its palette changed: recolour the art view, which takes its colours when made.
     func restyle() {
         view?.style = host.style()
@@ -237,7 +245,7 @@ final class LibraryArtLens<Row: LibraryArtRow> {
 
     private func modeDidChange(from oldMode: LibraryViewMode) {
         if oldMode == .list {
-            seedFocusFromSelection()
+            seedFocus(at: host.selectedIndex(), enteringExpanded: true)
         } else if let view, levelRows.indices.contains(view.centerIndex - backOffset) {
             // Flow ↔ Tiles keeps the level and the item the old view was on.
             pendingCenterId = levelRows[view.centerIndex - backOffset].id
@@ -253,19 +261,20 @@ final class LibraryArtLens<Row: LibraryArtRow> {
         container?.window?.makeFirstResponder(isPresenting ? view : container)
     }
 
-    /// Switching on with a container already expanded and selected in the list (an artist showing
-    /// its albums) opens inside that container rather than back at the root.
-    private func seedFocusFromSelection() {
+    /// Open on the level row `idx` sits on, centred on it; at the root when it is no art row.
+    /// `enteringExpanded` opens inside it instead when it is an expanded container: switching on
+    /// with an artist showing its albums in the list opens on those albums.
+    private func seedFocus(at idx: Int?, enteringExpanded: Bool) {
         focusStack.removeAll()
         centerFirstChild = false
         pendingCenterId = nil
         let rows = host.rows()
-        guard let idx = host.selectedIndex(), rows.indices.contains(idx) else { return }
+        guard let idx, rows.indices.contains(idx) else { return }
         let selected = rows[idx]
         guard selected.indentLevel >= rootLevel, selected.isArtItem else { return }
 
         let ancestors = ancestorIds(ofIndex: idx, in: rows)
-        if selected.hasChildren, host.isExpanded(selected) {
+        if enteringExpanded, selected.hasChildren, host.isExpanded(selected) {
             focusStack = ancestors + [selected.id]
             centerFirstChild = true
         } else {

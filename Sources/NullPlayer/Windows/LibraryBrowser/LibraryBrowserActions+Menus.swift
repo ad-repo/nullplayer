@@ -17,6 +17,13 @@ extension LibraryBrowserActions {
                                             resolve: resolver(for: playable))
             }
         }
+        if let target = model.revealTarget(of: item) {
+            menu.addItem(.separator())
+            menu.addItem(menuItem("Go to Artist") { [unowned self] in model.reveal(.init(artist: target.artist)) })
+            if target.album != nil {
+                menu.addItem(menuItem("Go to Album") { [unowned self] in model.reveal(target) })
+            }
+        }
 
         switch item.type {
         case .track(let track):

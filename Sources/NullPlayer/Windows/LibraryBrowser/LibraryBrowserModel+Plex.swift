@@ -58,7 +58,6 @@ extension LibraryBrowserModel {
                         self.plex.albums = albums
                     }
                     self.buildArtistAlbumCounts()
-                    self.pendingArtistLoadUnfiltered = false
                     self.buildArtistItems()
                 case .albums:
                     if self.plex.albums.isEmpty {

@@ -58,6 +58,7 @@ final class LibraryBrowserModel: NSObject {
                 cancelLocalFolderBuild()
             }
             if browseMode.isHistoryMode { history.scheduleRefresh() }
+            pendingReveal = nil
             selectedIndices.removeAll()
             onChange?(.browseMode)
         }
@@ -187,14 +188,17 @@ final class LibraryBrowserModel: NSObject {
     /// Expanded YouTube channels, kept whole: their uploads load by channel.
     var expandedYouTubeChannels: [String: YouTubeChannel] = [:]
 
-    // MARK: - Search → Artists
+    // MARK: - Reveal in Artists
 
-    var pendingScrollToArtistId: String?
-    var pendingScrollToArtistName: String?
-    var pendingScrollAttempts = 0
-    /// The Artists load after a search jump fetches unfiltered, so an artist the search found
-    /// outside the selected folder or library is in the list.
-    var pendingArtistLoadUnfiltered = false
+    /// The Artists-tab row a search jump or Go to Artist / Album is waiting to select; a tab or
+    /// source change drops it.
+    var pendingReveal: PendingReveal?
+    /// The Artists load for an unfiltered reveal fetches every artist, so one found outside the
+    /// selected server library is in the list.
+    var pendingArtistLoadUnfiltered: Bool {
+        if case .artist(_, unfiltered: true) = pendingReveal { return true }
+        return false
+    }
 
     // MARK: - Columns
 
@@ -315,6 +319,7 @@ final class LibraryBrowserModel: NSObject {
 
     private func sourceDidChange() {
         invalidateActiveLoads()
+        pendingReveal = nil
         if browseMode == .folders && !currentSource.isLocal {
             browseMode = .plists
         }
@@ -548,7 +553,7 @@ final class LibraryBrowserModel: NSObject {
             rebuildPlexItems()
         }
         if columnSortId != nil { applyColumnSort() }
-        resolvePendingArtist()
+        resolvePendingReveal()
     }
 
     /// The Refresh button: re-read the current tab from its source, dropping the server's cache.
@@ -623,7 +628,7 @@ final class LibraryBrowserModel: NSObject {
         // Apply any active column-header sort so a fresh server load matches what an
         // expand-driven rebuild produces — otherwise expanding a row would re-order the list.
         if columnSortId != nil { applyColumnSort() }
-        resolvePendingArtist()
+        resolvePendingReveal()
         onChange?(.loaded)
     }
 
@@ -705,56 +710,6 @@ final class LibraryBrowserModel: NSObject {
     func resetJellyfinVideo() { jellyfinVideo = .init(); collapse(.jellyfinVideo) }
     func resetEmbyMusic() { emby = .init(); collapse(.embyMusic) }
     func resetEmbyVideo() { embyVideo = .init(); collapse(.embyVideo) }
-
-    // MARK: - Search → Artists
-
-    /// A search result's artist row was activated: open the Artists tab on that artist.
-    func navigateToArtistFromSearch(id: String, name: String = "") {
-        let artistName = name.isEmpty ? id.replacingOccurrences(of: "local-artist-", with: "") : name
-        pendingScrollToArtistId = id
-        pendingScrollToArtistName = artistName
-        pendingScrollAttempts = 0
-        pendingArtistLoadUnfiltered = true
-        // Clear the artist caches to force a fresh fetch that bypasses folder/library
-        // filters (so an artist found via unfiltered search is findable).
-        plex.artists.removeAll()
-        subsonic.artists.removeAll()
-        jellyfin.artists.removeAll()
-        emby.artists.removeAll()
-        // Switch first so the page offset is computed under the Artists tab's own sort.
-        browseMode = .artists
-        if currentSource.isLocal,
-           let artistOffset = MediaLibraryStore.shared.artistOffset(named: artistName, sort: currentSort) {
-            localArtistPageOffset = (artistOffset / localPageSize) * localPageSize
-        }
-        loadDataForCurrentMode()
-    }
-
-    /// After a load or rebuild: reveal the artist a search jump is looking for, giving up after
-    /// three tries.
-    func resolvePendingArtist() {
-        guard let artistId = pendingScrollToArtistId else { return }
-        pendingScrollAttempts += 1
-        let index = pendingArtistIndex(artistId: artistId, name: pendingScrollToArtistName ?? "")
-        guard index != nil || pendingScrollAttempts >= 3 else { return }
-        pendingScrollToArtistId = nil
-        pendingScrollToArtistName = nil
-        pendingScrollAttempts = 0
-        pendingArtistLoadUnfiltered = false
-        if let index {
-            selectedIndices = [index]
-            onChange?(.reveal(index))
-        }
-    }
-
-    private func pendingArtistIndex(artistId: String, name: String) -> Int? {
-        let titleMatch = !name.isEmpty ? displayItems.firstIndex { item in
-            item.type.isArtist && item.title.caseInsensitiveCompare(name) == .orderedSame
-        } : nil
-        return titleMatch ?? displayItems.firstIndex { item in
-            item.type.isArtist && item.id == artistId
-        }
-    }
 
     // MARK: - Letters and type-ahead
 

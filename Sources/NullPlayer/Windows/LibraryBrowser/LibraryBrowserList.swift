@@ -160,7 +160,9 @@ final class LibraryBrowserList {
         case .rebuilt: horizontalScrollOffset = 0
         // With nothing playing, the artwork background shows the browsed library's art.
         case .loaded: art.showBrowsedLibrary()
-        case .reveal(let index): ensureVisible(index)
+        case .reveal(let index):
+            ensureVisible(index)
+            lens.reveal(index)
         case .source:
             lens.resetNavigation()
             scrollOffset = 0

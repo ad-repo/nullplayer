@@ -83,7 +83,6 @@ extension LibraryBrowserModel {
                     }
                 }
             }
-            pendingArtistLoadUnfiltered = false
         case .albums:
             if self[keyPath: cache].albums.isEmpty {
                 self[keyPath: cache].albums = try await preloadedOr(manager.cachedAlbums) { try await manager.fetchAlbums() }

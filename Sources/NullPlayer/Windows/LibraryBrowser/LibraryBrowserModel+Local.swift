@@ -33,7 +33,8 @@ extension LibraryBrowserModel {
         let store = MediaLibraryStore.shared
         switch browseMode {
         case .artists:
-            if !pendingArtistLoadUnfiltered {
+            // A reveal has paged to its artist.
+            if pendingReveal == nil {
                 localArtistPageOffset = 0
             }
             localArtistTotal = store.artistCount()
@@ -63,7 +64,7 @@ extension LibraryBrowserModel {
         // Apply any active column-header sort so a fresh load matches what an expand-driven
         // rebuild produces — otherwise expanding a row would re-order the list.
         if columnSortId != nil { applyColumnSort() }
-        resolvePendingArtist()
+        resolvePendingReveal()
         onChange?(.loaded)
     }
 
