@@ -153,8 +153,7 @@ final class WinampModernFrames {
             return
         }
         isInFlight = true
-        let canvas = canvas, generation = generation
-        queue.async { [weak self] in
+        queue.async { [weak self, canvas, generation] in
             let frame = canvas.render(job)
             DispatchQueue.main.async {
                 guard let self else { return }
