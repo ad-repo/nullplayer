@@ -177,8 +177,10 @@ Reset is explicit; there are no token property observers. Local selections, gapl
 Sweet Fades all use it. A selection's `LocalTrackPreparation.Request` carries its track, row,
 policy and Play/Pause `intent`, the only copy of that intent: Play and Pause `update` it in place,
 and navigation reads `localPlaybackIntent`. `loadTrack(at:intent:transport:)` takes the intent
-separately from the `Transport` (skip bound, Play Now rollback, first failure). Both native and
-async results use `finishLocalTrackLoad`; completion never re-enters `loadTrack` with the same
+separately from the `TrackLoadTransport` (skip bound, Play Now rollback, first failure), which the
+video route reads too. Both native and async results use `finishLocalTrackLoad` with a typed
+`LocalTrackPreparation.Failure` whose folder/file stats were taken on the thread that touched the
+file — never re-statted on main, where a dropped NAS would stall. Completion never re-enters `loadTrack` with the same
 prepared file, and only an actual failure may select a successor. A Play Now whose playlist was
 edited while its file prepared finishes as a plain load, as the graph-recovery path does.
 

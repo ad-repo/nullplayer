@@ -6,25 +6,25 @@ import AVFoundation
 enum LocalAudioFile {
     static func prepareForPlayback(_ sourceURL: URL) async throws -> AVAudioFile {
         try Task.checkCancellation()
-        let staged = LocalAudioStaging.copyIfNeeded(for: sourceURL)
-        return try await open(staged ?? sourceURL, sourceURL: sourceURL, stagedCopyURL: staged)
+        return try await open(sourceURL, stagedCopy: LocalAudioStaging.copyIfNeeded(for: sourceURL))
     }
 
-    /// Reads `url`, natively or through the Opus fallback. A reader of anything but the source
-    /// itself reports `sourceURL` as its identity and owns `stagedCopyURL`, deleted with it.
-    static func open(_ url: URL, sourceURL: URL? = nil, stagedCopyURL: URL? = nil) async throws -> AVAudioFile {
+    /// Reads `sourceURL` — from `stagedCopy` when there is one — natively or through the Opus
+    /// fallback. A reader backed by any other file reports `sourceURL` as its identity and owns
+    /// `stagedCopy`, which is deleted with it.
+    static func open(_ sourceURL: URL, stagedCopy: URL? = nil) async throws -> AVAudioFile {
         var transferred = false
-        defer { if !transferred, let stagedCopyURL { removeTemporaryItem(stagedCopyURL) } }
+        defer { if !transferred, let stagedCopy { removeTemporaryItem(stagedCopy) } }
         try Task.checkCancellation()
-        let identity = sourceURL ?? url
+        let url = stagedCopy ?? sourceURL
         let file: AVAudioFile
         if let native = try openNatively(url) {
-            file = identity == url && stagedCopyURL == nil ? native
-                : try LocalPlaybackFile(backingURL: url, sourceURL: identity,
-                                        storage: PlaybackFileStorage(paths: stagedCopyURL.map { [$0] } ?? []))
+            file = stagedCopy == nil ? native
+                : try LocalPlaybackFile(backingURL: url, sourceURL: sourceURL,
+                                        storage: PlaybackFileStorage(paths: [url]))
         } else {
             dispatchPrecondition(condition: .notOnQueue(.main))
-            file = try await decodeOpusAsset(url, sourceURL: identity, stagedCopyURL: stagedCopyURL)
+            file = try await decodeOpusAsset(url, sourceURL: sourceURL, stagedCopyURL: stagedCopy)
         }
         transferred = true
         return file

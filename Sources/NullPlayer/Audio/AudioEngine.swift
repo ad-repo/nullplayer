@@ -4521,7 +4521,7 @@ class AudioEngine {
     /// a transport's bound and Play Now rollback travel together through any failed-file skip.
     /// `intent` is the state the loaded track is left in: `.playing` starts it, `.paused` holds it.
     private func loadTrack(at index: Int, intent: PlaybackState = .stopped,
-                           transport: LocalTrackPreparation.Transport = .init()) {
+                           transport: TrackLoadTransport = .init()) {
         guard index >= 0 && index < playlist.count else { return }
         clearCrossfadeDeclineLatch()
 
@@ -4608,23 +4608,25 @@ class AudioEngine {
         }
         playbackGeneration += 1
         prepareForLocalTrackLoad()
-        audioFile = nil
-        currentTrack = track
-        _currentTime = 0
-        lastReportedTime = 0
-        state = .stopped
-        stopTimeUpdates()
-        let request = LocalTrackPreparation.Request(track: track, index: index,
-            playbackGeneration: playbackGeneration, policy: .immediate(userInitiated: userInitiated), intent: .playing)
-        prepareLocalTrack(request)
+        prepareLocalTrack(LocalTrackPreparation.Request(track: track, index: index,
+            playbackGeneration: playbackGeneration, policy: .immediate(userInitiated: userInitiated), intent: .playing))
     }
 
+    /// Shows the track as current, with no reader, while its file prepares off main. A Pause
+    /// intent shows as paused; a Play intent stays stopped until there is audio to start.
     private func prepareLocalTrack(_ request: LocalTrackPreparation.Request) {
+        audioFile = nil
+        currentTrack = request.track
+        _currentTime = 0
+        lastReportedTime = 0
+        state = request.intent == .paused ? .paused : .stopped
+        stopTimeUpdates()
         let url = request.track.url
         localTrackPreparation.start(request, priority: .userInitiated) {
             try await LocalTrackPreparation.prepare(url)
-        } publish: { [weak self] request, result in
-            guard let self, self.currentIndex == request.index,
+        } publish: { [weak self] request, outcome in
+            // `prepare` throws only cancellation, which is never published.
+            guard let self, let result = try? outcome.get(), self.currentIndex == request.index,
                   self.playlist.indices.contains(request.index),
                   self.playlist[request.index].id == request.track.id else { return }
             var request = request
@@ -4641,7 +4643,8 @@ class AudioEngine {
     /// Both the native open and asynchronous preparation publish here; neither re-enters
     /// loadTrack to install a prepared file. Only a failed selection can advance to another row.
     private func finishLocalTrackLoad(_ request: LocalTrackPreparation.Request,
-                                     result: Result<AVAudioFile, Error>, reuseExistingFile: Bool = false) {
+                                     result: Result<AVAudioFile, LocalTrackPreparation.Failure>,
+                                     reuseExistingFile: Bool = false) {
         switch result {
         case .success(let file):
             commitShufflePlaybackAdvance(to: request.index)
@@ -4653,33 +4656,30 @@ class AudioEngine {
             case .paused: state = .paused
             default: break
             }
-        case .failure(let error):
-            let details = error as? LocalTrackPreparation.Failure
-            let underlying = details?.underlying ?? error
-            let folderIsPresent = details?.folderIsPresent ?? Self.containingFolderIsPresent(request.track.url)
-            let fileIsMissing = details?.fileIsMissing ?? !FileManager.default.fileExists(atPath: request.track.url.path)
+        case .failure(let failure):
+            let underlying = failure.underlying
+            let reported = UserPlayRequestFailure(failure: TrackLoadFailure(track: request.track, error: underlying),
+                                                  fileIsMissing: failure.fileIsMissing)
             switch request.policy {
             case .immediate(let userInitiated):
-                let userRequest = userInitiated && folderIsPresent
-                    ? UserPlayRequestFailure(failure: TrackLoadFailure(track: request.track, error: underlying),
-                                             fileIsMissing: fileIsMissing) : nil
                 handleLocalTrackLoadFailure(track: request.track, error: underlying,
-                    advanceToNextTrack: folderIsPresent, userRequest: userRequest)
-                if userInitiated && !folderIsPresent {
-                    delegate?.audioEngineUserPlayRequestDidFail(request.track, error: underlying, fileIsMissing: fileIsMissing)
+                    advanceToNextTrack: failure.folderIsPresent,
+                    userRequest: userInitiated && failure.folderIsPresent ? reported : nil)
+                if userInitiated && !failure.folderIsPresent {
+                    delegate?.audioEngineUserPlayRequestDidFail(request.track, error: underlying,
+                                                                fileIsMissing: failure.fileIsMissing)
                 }
             case .transport(var transport):
-                let failure = transport.firstFailure ?? TrackLoadFailure(track: request.track, error: underlying)
+                let first = transport.firstFailure ?? reported
                 handleLocalTrackLoadFailure(track: request.track, error: underlying)
-                if folderIsPresent,
+                if failure.folderIsPresent,
                    request.index + 1 <= min(transport.lastSkippable ?? .max, playlist.count - 1) {
-                    transport.firstFailure = failure
+                    transport.firstFailure = first
                     currentIndex = request.index + 1
                     isLoadingTrack = false
                     loadTrack(at: currentIndex, intent: request.intent, transport: transport)
                 } else if let playNow = transport.playNow {
-                    withdrawPlayNow(playNow, failure: failure,
-                        fileIsMissing: !FileManager.default.fileExists(atPath: failure.track.url.path))
+                    withdrawPlayNow(playNow, failure: first.failure, fileIsMissing: first.fileIsMissing)
                 }
             }
         }
@@ -4699,8 +4699,8 @@ class AudioEngine {
         WindowManager.shared.stopVideo()
     }
 
-    private func loadLocalTrack(_ track: Track, intent: PlaybackState, transport: LocalTrackPreparation.Transport) {
-        cancelPendingLocalLoad()
+    /// Only `loadTrack` calls this, after it has cancelled any pending local load.
+    private func loadLocalTrack(_ track: Track, intent: PlaybackState, transport: TrackLoadTransport) {
         playbackGeneration += 1
         let request = LocalTrackPreparation.Request(track: track, index: currentIndex,
             playbackGeneration: playbackGeneration, policy: .transport(transport), intent: intent)
@@ -4721,16 +4721,11 @@ class AudioEngine {
             if let file = try LocalAudioFile.openNatively(track.url) {
                 finishLocalTrackLoad(request, result: .success(file))
             } else {
-                currentTrack = track
-                audioFile = nil
-                _currentTime = 0
-                lastReportedTime = 0
-                state = request.intent == .paused ? .paused : .stopped
-                stopTimeUpdates()
                 prepareLocalTrack(request)
             }
         } catch {
-            finishLocalTrackLoad(request, result: .failure(error))
+            // The stats are on this thread only because the native open just read the same path on it.
+            finishLocalTrackLoad(request, result: .failure(.init(error, url: track.url)))
         }
     }
 
@@ -5461,7 +5456,8 @@ class AudioEngine {
     /// A queue edit may change the successor without changing currentIndex. Drop both
     /// a pending open and an already scheduled old file before accepting the new boundary.
     private func refreshLocalGaplessSuccessor() {
-        guard !isStreamingPlayback, !isAnyCastingActive, let current = currentTrack,
+        // A loaded track before the casting check, as in `prepareNextLocalCrossfade`.
+        guard let current = currentTrack, !isStreamingPlayback, !isAnyCastingActive,
               let currentIndexInQueue = playlist.firstIndex(where: { $0.id == current.id }),
               currentIndexInQueue == currentIndex, audioFile != nil else { return }
         let nextIndex = calculateNextTrackIndex()
@@ -5557,8 +5553,10 @@ class AudioEngine {
     
     private func prepareNextLocalCrossfade() {
         guard !isCrossfading else { return }
-        guard sweetFadeEnabled, !isStreamingPlayback, !isAnyCastingActive,
-              let current = currentTrack, audioFile != nil, !(repeatEnabled && !shuffleEnabled) else {
+        // The casting check reads WindowManager.shared, whose init constructs this engine and runs
+        // the options didSets; a loaded track first proves init is over, so it is checked first.
+        guard sweetFadeEnabled, let current = currentTrack, audioFile != nil, !isStreamingPlayback,
+              !isAnyCastingActive, !(repeatEnabled && !shuffleEnabled) else {
             localCrossfadePreparation.reset()
             return
         }
