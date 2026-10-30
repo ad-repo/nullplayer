@@ -33,13 +33,15 @@ Nullplayer is the **first macOS and only open-source engine capable of rendering
 
 NullPlayer is also the **first macOS and only open-source engine capable of rendering Windows Media Player (`.wmz`) skins**:from WMP 7, 7.1, XP (8), 9, 10, 11 and 12. It supports their views, JScript, EQ, SRS and visualizer controls, all driving NullPlayer's playback engine. Skin scripts run sandboxed in an isolated JavaScriptCore context with no ActiveX, registry, shell, DLL, plug-in or HTML access.
 
+NullPlayer is also the **first macOS and only open-source engine capable of rendering Sonique (`.sgf`) skins**: Sonique 1.x skins in all three of Sonique's modes (navigator, mid and small), with the navigator's visual mode screen and equalizer drawer, checked against real Sonique 1.96 skin by skin.
+
 NullPlayer is not affiliated with, endorsed by, or connected to Winamp, Nullsoft, Microsoft, Winamp Group SA, Llama Group, Radionomy Group, Jamendo, Hotmix, Bridger, SHOUTcast, Sonos, Plex, WACUP, Emby, Jellyfin, Google, Panic or anyone else
 
 No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed with the project, apart from the default `.wal` skin, [iTunes Miniplayer](https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer), shipped with its author's permission
 
 ### General Features
 
-- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files, with List, Cover Flow and Tiles views
+- Library browser for Plex, Jellyfin, Emby, Navidrome/Subsonic, YouTube and local files, with List, Cover Flow and Tiles views; right-click a track for **Go to Artist** or **Go to Album**
 - 21-band EQ (Original/Original-Metal) and 10-band EQ (Classic, Modern)
 - [EQ profiles](#quick-start-eq-profiles) — saved 31-band EQ curves with separate left and right channels and a parametric stage, assigned to tracks, albums or artists and applied whenever they play
 - [EQ Cast](#quick-start-eq-cast) — casts to Sonos and Chromecast with the track's EQ profile applied, by rendering the track with its profile first
@@ -47,6 +49,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 - SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
 - Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
+- Track Radio for the local library — right-click a track and choose **Start Track Radio** to queue tracks like it, scored from its tags (artist, genre, year, tempo, key, grouping) with no audio analysis
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
 - Sonos content filtering for unsupported lossless formats and improved playlist support
 - Sonos Rooms window for picking cast rooms and setting each room's volume individually
@@ -63,7 +66,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 
 ### Skin System Support
 
-- Classic mode: full `.wsz` Winamp 2.X skin support with window snapping and docking
+- Classic mode: full `.wsz` Winamp 2.X skin support with window snapping and docking; scroll over the main window to step the volume 5%, or over the balance slider to step the balance 10%
 - Winamp Modern (`.wal`) skin support (Winamp 5.X and ClassicPro); the ClassicPro Windows plug-in engine is extracted from the user-supplied installer and runs natively on macOS
 - Original mode: JSON-based skin system with color theming, custom assets, procedural backgrounds, and bloom effects and full skinning documentation for authors
 - Original-Metal mode: seven brushed-metal finishes with backlit LCD displays
@@ -381,6 +384,8 @@ Backups are stored in `~/Library/Application Support/NullPlayer/Backups/`.
 
 NullPlayer has seven looks — Modern, Classic, Original, Original-Metal, Windows Media Player, Audion Faces, and Sonique — selectable from the right-click context menu under **Skins**. Switching between them happens **live, with no restart** — playback, casting, and the open playlist continue uninterrupted while the windows rebuild in the new look:
 
+At the bottom of the Skins menu, **Browse NullPlayer Certified Skins** opens the [nullplayer.fyi skin gallery](https://nullplayer.fyi/skins/), the record of every skin tested working on NullPlayer, and **Report a Skin Bug** opens the [bug report page](https://nullplayer.fyi/report-a-bug/) for a skin that draws or behaves wrong.
+
 ### Winamp Modern (`.wal`) / ClassicPro
 
 ClassicPro skins (such as cPro-Bento, cPro2 Dark Aluminum, and the cPro Insomnis family) depend on the **ClassicPro plug-in**, which ships in a Windows installer. NullPlayer extracts that installer internally — no Wine, no external tools — but you must supply the installer. You can download it directly from **Skins > Modern > Download ClassicPro Engine...** and that will open a browser to the Softpedia download page.
@@ -514,6 +519,7 @@ nullplayer --cli --list-albums    --source jellyfin --artist "3rd Bass" # Jellyf
 nullplayer --cli --list-libraries --source emby                        # Emby libraries
 nullplayer --cli --list-playlists --source plex                        # list playlists
 nullplayer --cli --list-stations                                       # list internet radio stations
+nullplayer --cli --list-queue --source local --radio genre --genre "Reggae"  # print the queue a radio mode would play
 nullplayer --cli --list-eq                                             # list EQ presets
 nullplayer --cli --list-outputs                                        # list audio output devices
 nullplayer --cli --list-devices                                        # list cast devices
@@ -531,6 +537,10 @@ nullplayer --cli --source local --artist "Courtney Barnett"
 nullplayer --cli --source local --album "Dub Side Of The Moon"
 nullplayer --cli --source local --genre "Reggae" --repeat-all
 nullplayer --cli --source local --artist "Rush" --shuffle
+
+# Local library radio (track|library|genre|decade|artist); track radio scores by tags, --artist disambiguates
+nullplayer --cli --source local --radio track --track "Tom Sawyer" --artist "Rush"
+nullplayer --cli --source local --radio library
 
 # Plex — pick a music library with --library (omit to use your last-selected one)
 nullplayer --cli --source plex --library AD-FLAC --artist "Soundgarden" --album "SuperUnknown"
