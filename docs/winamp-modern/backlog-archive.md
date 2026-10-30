@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B318 — -Graviton-'s volume and progress layers answer after the intro; the silent rows were the harness — closed 2026-10-30
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B318 | **-Graviton-'s volume and progress animatedlayers sit under `main.inner.mask`, so nothing reaches them.** Found in intake #5 Phase 4 (2026-10-30): `animatedlayer#progress.ani` and `volume.ani` read `silent` with `hit=no` (4 rows), and a `RENDER_CLICK` at `main/normal@125,51` hits `layer#main.inner.mask` (0,0,300,300, `ghost` unset), not `volume.ani`. The skin's `startupanim.m` plays `button.ani` forward and back, and on its second `onStop` fades both masks and sets `ghost=1`; the motion sweep sees `button.ani=moving` with both masks listed as moving, so the intro was still running when the 2.5 s settle ended. Establish which it is: the intro outlasts the settle (class H: re-drive after the intro, `RENDER_PROBE` the mask's `ghost`), or `AnimatedLayer.onStop` never fires after a reversed `setStartFrame`/`setEndFrame` play (class A). Done when `volume.ani` is hit after the intro, or the missing `onStop` is fixed and a test pins it | -Graviton- (4 interaction rows; `onstop` on `animatedlayer`: `scripts/wal_reach.sh maki-event` to size) | ? | 2 |
+
+**Closed 2026-10-30 as class H (intake #5 live pass).** The intro finishes in the app: `WINAMP_MODERN_CALL_TRACE=1` shows `startupanim.m`'s `onStop` firing twice and `setxmlparam(ghost,1)` on `main.inner.mask` and `main.outer.mask`, so class A (a missing `onStop`) is ruled out. Afterwards a click on the volume arc moves the engine volume (0.20 to 0.51 at 150,48, then 0.87 at 210,70) and a click on the progress arc seeks (231,198: 161 s to 212 s). The headless `RENDER_CLICK` still hits `main.inner.mask` because the dump takes its click while the intro runs; the `silent`/`hit=no` interaction rows are that artifact.
+
 ## B316 — The quarantined skins move to bronze — closed 2026-10-29
 
 | Id | Item | Reach | Effort | Tier |
