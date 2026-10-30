@@ -76,7 +76,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 
 ### Media Support
 
-- Audio codecs: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG
+- Audio codecs: MP3, FLAC, AAC, WAV, AIFF, ALAC, OGG, Opus (in `.m4a`)
 - Video codecs: MKV, MP4, MOV, AVI, WebM, HEVC (VLCKit/libVLC)
 - `.cue` sheet support - virtual split cue/flac into ephemeral playlist items or optionally split to multiple tagged files on import
 

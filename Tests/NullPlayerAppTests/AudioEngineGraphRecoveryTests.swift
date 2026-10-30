@@ -213,6 +213,26 @@ final class AudioEngineGraphRecoveryTests: XCTestCase {
         XCTAssertNotEqual(engine.state, .playing)
     }
 
+    func testEmptyPipelinePlayPreservesItsIntentThroughGraphRecoveryAndOpusPreparation() {
+        let recovery = AudioGraphRecoveryCoordinator()
+        let engine = AudioEngine(audioGraphRecovery: recovery)
+        let opus = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/Audio/opus-in-m4a.m4a")
+        defer { recovery.cancelScheduledWork(); engine.clearPlaylist() }
+        engine.setPlaylistTracks([Track(url: opus)])
+        holdGraphRebuild(of: engine, recovery: recovery)
+        engine.play()
+        guard case .loadTrack(_, let intent, _) = recovery.pendingIntent else {
+            return XCTFail("The graph must hold the requested load and its intent")
+        }
+        XCTAssertEqual(intent, .playing)
+        let playing = expectation(forNotification: .audioPlaybackStateChanged, object: engine) { _ in
+            engine.currentTrack?.url == opus && engine.state == .playing
+        }
+        recovery.setFaultInjectorForTesting(nil)
+        wait(for: [playing], timeout: 3)
+    }
+
     /// The graph cannot be rebuilt, as after a cast ends on a device that has not settled.
     private func holdGraphRebuild(of engine: AudioEngine, recovery: AudioGraphRecoveryCoordinator) {
         recovery.setFaultInjectorForTesting { _ in

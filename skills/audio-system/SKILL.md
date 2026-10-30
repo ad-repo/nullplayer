@@ -162,6 +162,56 @@ is false (`AudioEngineStreamStopTests`).
 
 See `skills/local-library/SKILL.md` — NAS Responsiveness section.
 
+### Opus in MPEG-4 local files
+
+`LocalAudioFile.open` is the async preparation seam. Some macOS versions recognize Opus-in-M4A
+but `AVAudioFile` returns zero frames and throws on read. `openNatively` is a pure
+header/readability check (`mayNeedFallbackDecode` names the MPEG-4 extensions); nil means the
+full fallback is needed. `open` alone wraps a reader whose identity differs from its backing file.
+The fallback asserts it is off-main, loads asset metadata asynchronously and checks cancellation
+between PCM buffers.
+
+`CancellablePreparation` is the one owner of background preparation: `start(payload, work:,
+publish:)` runs the work detached and publishes on main only while that start is still current.
+Reset is explicit; there are no token property observers. Local selections, gapless successors and
+Sweet Fades all use it. A selection's `LocalTrackPreparation.Request` carries its track, row,
+policy and Play/Pause `intent`, the only copy of that intent: Play and Pause `update` it in place,
+and navigation reads `localPlaybackIntent`. `loadTrack(at:intent:transport:)` takes the intent
+separately from the `TrackLoadTransport` (skip bound, Play Now rollback, first failure), which the
+video route reads too. Both native and async results use `finishLocalTrackLoad` with a typed
+`LocalTrackPreparation.Failure` whose folder/file stats were taken on the thread that touched the
+file — never re-statted on main, where a dropped NAS would stall. Completion never re-enters `loadTrack` with the same
+prepared file, and only an actual failure may select a successor. A Play Now whose playlist was
+edited while its file prepared finishes as a plain load, as the graph-recovery path does.
+
+Prepared Float32 CAFs preserve segment seek/cue/gapless behavior and original source bytes/URLs.
+`LocalPlaybackFile` owns a single lifetime for its NAS staging copy and decoded directory;
+`LocalAudioStaging` owns disk staging/crash cleanup. Normalization receives an explicit
+`LocalAudioAnalysisSource` (backing URL, source identity, storage token) and opens its own reader.
+Releasing the player does not delete backing files still needed by analysis; all temporary
+cleanup runs on a utility queue.
+
+`LocalCrossfadePreparation` is refreshed on track commits, completed fades and queue/options
+changes, not timer ticks. Only MPEG-4 readers needing the fallback are decoded early. Native
+formats retain their off-main, just-in-time fade-boundary open. If an Opus handle is not ready,
+keep outgoing audio through EOF rather than starting a full decode or a late fade. Stop/source
+changes cancel the owner's slot. The local gapless successor is one value
+(`localGaplessSuccessor`: file, row, track ID), and `clearGaplessSuccessor()` drops it with any
+pending preparation. Handoff verifies the row still holds that track. Queue edits discard pending or
+already scheduled old successors and prepare the new boundary; a scheduled one is unscheduled by
+re-seeking the current track, because `AVAudioPlayerNode` cannot drop a single segment.
+
+Fallback needs temporary space (~23 MB/minute at 48 kHz stereo) and a full decode before first
+playback. Packet-only Opus CAF was tested but rejected: full reads/duration were correct, while
+native random seeks failed exact PCM alignment on the tested macOS. Do not replace this without
+preserving seek behavior. HTTP/cast codecs and waveform decoding are separate paths.
+
+`LocalAudioFileTests` covers source identity/bytes, pre-skip, exact seek, native AAC/WAV, staging
+and explicit analysis-token cleanup. `AudioEngineOpusPreparationTests` covers normalization,
+paused intent, Stop/queue cancellation, bounds/rollback/first failures, native and fallback fades,
+and successor edits during/after gapless preparation. Set `NULLPLAYER_LONG_OPUS_FILE` to a
+synthetic one-hour M4A for the long responsiveness/supersession tests.
+
 ### A Local Track That Will Not Open
 
 Two load paths, one rule: **skip a bad file, but never skip past a file whose folder is gone.**
@@ -548,7 +598,8 @@ When audio isn't playing:
 ## File Support
 
 ### Local Playback (AVAudioEngine)
-MP3, M4A, AAC, WAV, AIFF, FLAC, ALAC, OGG
+MP3, M4A (AAC, ALAC, or Opus via the decode fallback in *Opus in MPEG-4 local files*), AAC, WAV,
+AIFF, FLAC, ALAC, OGG. Bare `.opus` (Ogg Opus) is not in `AudioFileValidator.supportedExtensions`.
 
 Route-change graph rebuilds catch Objective-C exceptions from disconnect/connect via `ObjCExceptionCatcher`; Swift `do/catch` cannot catch them. `AudioGraphRecoveryCoordinator` owns the typed deferred/retry lifecycle and pending playback intent; `AudioEngine` owns only AVFoundation graph mutation and playback restoration. An exception can leave a partially mutated graph (including persistent `-10868` failures after long idle periods). Recovery replaces the engine and **all local nodes**, including the controller's local pitch node, then restores output selection, EQ layout/gains/preamp/bypass, pitch/rate, volume, and balance. Streaming pitch nodes remain independent. If the saved output device is gone, replacement falls back to the system default rather than failing every retry. Configuration observers move to the new engine; stale notifications from the retired engine are ignored. Invalidate playback completion generations before stopping old players.
 

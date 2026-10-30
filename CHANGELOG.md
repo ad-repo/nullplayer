@@ -39,6 +39,11 @@
   Subsonic, Jellyfin or Emby, including search results and playlist entries) to jump to its artist
   on the Artists tab, or to its album under the expanded artist. An album offers Go to Artist.
   Flow and Tiles open on the selected row's level.
+- **Opus audio in M4A files plays.** Local `.m4a` files holding Opus audio loaded but played
+  silence on macOS versions whose own reader can't decode them; NullPlayer now decodes them in the
+  background before playback, keeping the original file untouched. Seeking, cue tracks, gapless
+  playback, Sweet Fades and volume normalization all work on them. Decoding needs temporary disk
+  space, about 23 MB per minute of audio (#615, thanks @infinity-dump).
 
 ### Fixes
 
