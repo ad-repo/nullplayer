@@ -170,6 +170,37 @@ Left open: B306 (-MfS3-'s oscilloscope shows no trace), B309 (GlassAMPfinal's no
 11 px up-left of the panel), B282 (Silverskin_3's frame titles wider than their windows), B290
 (MultiButtons' fontsize-less title draws small), B300 (cPro__Mecha's long tab labels cut).
 
+### Done: intake #5, promoted to gold (2026-10-31)
+
+The 27 skins admitted at `adfef300` were worked by `skills/skin-intake` on `feat/wal-intake-5`, all
+accepted by the user in the app, and promoted to gold on 2026-10-31 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (23 B, 4 C, from a census at
+promotion). The per-skin record is `intakes/intake-5.tsv`. Each fix is general, named after the skin
+that showed it; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Bubble_Tea_-_Updated | Playlist body empty (B322) and no command bar (B324); spectrum drawn outside the cup (B323) | A standard frame's content is built when no declared script calls `newGroup`; a container hosting only the playlist gets its command bar; a vis outside the region is cleared |
+| Braun_CC_50 | About window a blank pane (B321) | A path climbing out of `@DEFAULTSKINPATH@` retries against the skin's own root |
+| _Mercury | Playlist a black pane under a 116 px window (B325) | The degenerate-extent threshold for a component holder is 24, not 32 |
+| Xenon | Round EQ a black rectangle (B331); trays unreachable (B332); time never drawn (B335) | `Enable desktop alpha` answers 1; `onmousemove` reaches the object under the pointer and a size-less group is not a coordinate space; a font whose OS/2 descent has its sign bit set falls back to `hhea` |
+| XP_Blue_ver2 | Faint e-mail over the playlist after About (B333) | A hosted component draws at the static alpha down its tree, not the group's focus fade |
+| HALOAMP | Two strings drawn on the desktop below the window (B334) | Text touching no artwork on an `alphabackground` layout is dropped, for drawing and hit testing |
+| iPlay | Title scrolled two ways at once (B320, GitHub #643) | Bitmap-text overflow is tested by advances alone (`BitmapRun.advanceLength`) |
+| QL2 | Title bars read `:COMPONENTNAME` (B336); thinger icons missing (B337) | A script-set text resolves its placeholder; margins that eat a bucket still show one icon |
+| Midnight_Club_2 | Shade layout an empty box (B338) | A composed window region draws the layout's own painted backing |
+| Stargate | Dial drew outside its circle (B345) | A wrapping rotation about the centre draws through the unwrapped affine path |
+| Kepler_1.1 | Could not be dragged (B342) | An inert button (the title logo) is a drag surface |
+| American_Rag | Stuck in the shade layout (B348) | A `switch` naming its own container returns to its first layout |
+| Draculas_Helmet | Opacity options did nothing (B349) | An `embed_xui` naming no id embeds the group's only slider |
+| GoldenBeauty | EQ bars never drew the bands (B339); library button reads EQ | A group show/hide reaches its descendants and an EQ drag dispatches `onSetPosition`; the button art is the author's |
+
+Closed as not defects or the skin's own design (class H): B318, B319, B326, B328, B329, B330, B340,
+B341, B343, B344, B346, B347. The other 13 skins were accepted as they were.
+
+Left open: B317 (the interaction sweep reads a host volume change as silent; class H, no skin row
+waits on it), B327 (GoldenBeauty's floating text below the main window, not reproduced).
+
 **Next:** the open intake, by `skills/skin-intake`. Where it stands is
 `scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
 B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
