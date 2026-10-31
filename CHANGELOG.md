@@ -4,6 +4,12 @@
 
 ### Winamp Modern (`.wal`) skins
 
+- **27 more Winamp Modern (`.wal`) skins checked and fixed in the app** (corpus intake five):
+  American Rag, AS-FxS, Braun CC 50, Bubble Tea - Updated, D-Shock, Dracula's Helmet, Electrolium,
+  GoldenBeauty, Graviton, HALOAMP, i-Skin, iPlay, Kepler 1.1, MD Iwakura Lain the Fourth, Mercury,
+  Official Foo Fighter, Official Midnight Club 2, Official The Hives, QL2, Sony Walkman, SpongeBob
+  Squarepants, Stargate Winamp - SG1 Edition, The XP Style WinaMP3 Player, Winamp Media Tower v11,
+  X-Theme, Xenon, XP Blue ver2.
 - **Braun_CC_50's About window draws its artwork and credits.** Its `@DEFAULTSKINPATH@/../about/` paths now
   resolve inside the skin instead of naming a skin that is not installed.
 - **Bubble_Tea_-_Updated's Playlist Editor lists the queue.** A frame whose scripts only draw chrome no longer
