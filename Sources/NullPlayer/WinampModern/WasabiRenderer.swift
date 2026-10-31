@@ -1359,6 +1359,7 @@ final class WasabiSceneRenderer {
     /// a 340x220 layout whose own backgrounds are empty: they drew over the bare desktop, on top of
     /// each other. "Artwork" is every node that is not a text, a bare group or the layout; a text that touches any of
     /// it stays, so a label on a panel, or a window with no artwork at all, is untouched.
+    /// A layout naming a bitmap that is missing from the archive drops nothing (the art is unknown).
     /// ponytail: one bounding box for the whole layout; a text in the gap between two far-apart
     /// pieces of art stays. Test each piece's own frame if a skin shows one.
     private func droppingStrayText(from nodes: [WasabiSceneNode]) -> [WasabiSceneNode] {
@@ -1378,9 +1379,15 @@ final class WasabiSceneRenderer {
             let key = layout.source.path + "|" + id.lowercased()
             if backingBoundsCache[key] == nil {
                 backingBoundsCache[key] = .some(resources.bitmap(background: id, declaredIn: layout.source)
-                    .flatMap { bitmap in WasabiResourceCache.opaqueBounds(of: bitmap.image).map { ($0, bitmap.width, bitmap.height) } })
+                    .map { bitmap in
+                        (WasabiResourceCache.opaqueBounds(of: bitmap.image), bitmap.width, bitmap.height)
+                    })
             }
-            guard let (bounds, width, height) = backingBoundsCache[key] ?? nil, width > 0, height > 0 else { continue }
+            // A named bitmap the archive does not hold (Auburn's `thinger.png`) is art we cannot see:
+            // the text on it is the skin's, not a stray, so nothing is dropped. A bitmap that is
+            // there and fully transparent is not that (HALOAMP's) and adds no art.
+            guard let cached = backingBoundsCache[key], let (opaque, width, height) = cached else { return nodes }
+            guard let bounds = opaque, width > 0, height > 0 else { continue }
             let fx = rootFrame.width / CGFloat(width), fy = rootFrame.height / CGFloat(height)
             art = art.union(CGRect(x: rootFrame.minX + bounds.minX * fx, y: rootFrame.minY + bounds.minY * fy,
                                    width: bounds.width * fx, height: bounds.height * fy))
@@ -2569,8 +2576,9 @@ final class WasabiSceneRenderer {
 
     // MARK: - The window's own shape
 
-    /// `droppingStrayText`: the opaque box of a layout bitmap, by source and id (nil: no opaque pixel).
-    var backingBoundsCache: [String: (CGRect, Int, Int)?] = [:]
+    /// `droppingStrayText`: the opaque box of a layout bitmap, by source and id (outer nil: the bitmap is
+    /// missing; box nil: no opaque pixel).
+    var backingBoundsCache: [String: (CGRect?, Int, Int)?] = [:]
 
     var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?

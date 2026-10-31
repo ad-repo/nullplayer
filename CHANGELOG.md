@@ -219,6 +219,7 @@
   and OrbFace's circles).
 - **Xenon and Hoop Life draw their time (and Hoop Life its title)**: a font whose size table was stored with a
   sign bit no longer throws its line out of its box.
+- **Auburn's component-bucket label is no longer hidden** when the layout's own artwork is missing from the skin.
 
 ## 0.33.1
 

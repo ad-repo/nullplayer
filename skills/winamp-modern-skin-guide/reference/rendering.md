@@ -1413,6 +1413,12 @@ child reaches (`contentBottom`).
   nodes (one bounding box). **Do not mask by the layout's own bitmap**: that one is empty here, and
   masking by it first blanked every text, title and time included. Xenon's `alphabackground` is a
   separate shadow map, which broke the same first attempt.
+  **A host heuristic, not a measured Winamp behaviour** (audit 2026-10-31): over the 318 gold, silver and
+  bronze skins that name `alphabackground`, it hides a visible, non-empty text in exactly two skins, HALOAMP's
+  two overlapping strings and Auburn's thinger label (`cbtxt`, whose `thinger.png` is not in the archive).
+  Every other match is a zero-size or 1x1 text. A layout naming a bitmap the archive lacks therefore drops
+  nothing (the art is unknown); a present, fully transparent bitmap (HALOAMP) still does. Whether Winamp
+  would hide HALOAMP's strings cannot be shown from the skin's files; it is a user decision.
 - **A hover reaches `onMouseMove` (B332).** `WinampModernMainView.mouseMoved` dispatches `onmousemove`
   to the object under the pointer when it has a binding, before the enter/leave identity guard; before
   it only a pressed object heard it. Its point is in layout space (`coordinateSpace(of:)`, the nearest

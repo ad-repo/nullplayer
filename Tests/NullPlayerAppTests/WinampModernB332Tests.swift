@@ -53,7 +53,39 @@ final class WinampModernB332Tests: XCTestCase {
         XCTAssertEqual(clip("below")?.isEmpty, true)
     }
 
-    private func makeRenderer(xml: String, png: Bool = false) throws -> (WinampModernLoadedSkin, WasabiSceneRenderer) {
+    /// B334: a bitmap that is present and fully transparent is not a missing one (HALOAMP's): the
+    /// button is the only art, and the text below it is still dropped.
+    func testTextBelowIsStillDroppedWhenTheBitmapIsTransparent() throws {
+        let (_, renderer) = try makeRenderer(xml: """
+        <WasabiXML>
+          <bitmap id="bg" file="bg.png"/>
+          <container id="main"><layout id="normal" w="100" h="100" alphabackground="bg">
+            <button id="b" x="0" y="5" w="10" h="10"/>
+            <text id="below" x="0" y="60" w="20" h="10" default="x"/>
+          </layout></container>
+        </WasabiXML>
+        """, png: true, transparent: true)
+        let below = renderer.sceneNodes().first { $0.object.xmlID == "below" }
+        XCTAssertEqual(below?.clipping.rect.isEmpty, true)
+    }
+
+    /// B334 audit: a layout whose named bitmap is not in the archive (Auburn's thinger) has art the
+    /// renderer cannot see, so its text below the buttons is the skin's own and stays.
+    func testTextIsKeptWhenTheLayoutsBitmapIsMissing() throws {
+        let (_, renderer) = try makeRenderer(xml: """
+        <WasabiXML>
+          <bitmap id="bg" file="bg.png"/>
+          <container id="main"><layout id="normal" w="100" h="100" alphabackground="bg">
+            <button id="b" x="0" y="5" w="10" h="10"/>
+            <text id="below" x="0" y="60" w="20" h="10" default="x"/>
+          </layout></container>
+        </WasabiXML>
+        """)
+        let below = renderer.sceneNodes().first { $0.object.xmlID == "below" }
+        XCTAssertEqual(below?.clipping.rect.isEmpty, false)
+    }
+
+    private func makeRenderer(xml: String, png: Bool = false, transparent: Bool = false) throws -> (WinampModernLoadedSkin, WasabiSceneRenderer) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WinampModernB332Tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -69,7 +101,7 @@ final class WinampModernB332Tests: XCTestCase {
             }
         }
         try add("skin.xml", Data(xml.utf8))
-        if png { try add("bg.png", Self.artPNG()) }
+        if png { try add("bg.png", Self.artPNG(opaqueSide: transparent ? 0 : 20)) }
         let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
         addTeardownBlock { loaded.teardown() }
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host())
@@ -78,7 +110,7 @@ final class WinampModernB332Tests: XCTestCase {
     }
 
     /// 40x40, opaque in the top-left 20x20 only.
-    private static func artPNG() throws -> Data {
+    private static func artPNG(opaqueSide: Int = 20) throws -> Data {
         let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 40, pixelsHigh: 40,
                                                  bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
                                                  isPlanar: false, colorSpaceName: .deviceRGB,
@@ -86,12 +118,12 @@ final class WinampModernB332Tests: XCTestCase {
         let pixels = try XCTUnwrap(rep.bitmapData)
         for y in 0..<40 { for x in 0..<40 {
             let o = y * rep.bytesPerRow + x * 4
-            let opaque = x < 20 && y < 20
+            let opaque = x < opaqueSide && y < opaqueSide
             (pixels[o], pixels[o + 1], pixels[o + 2], pixels[o + 3]) = (opaque ? 255 : 0, 0, 0, opaque ? 255 : 0)
         } }
         let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
         let back = try XCTUnwrap(NSBitmapImageRep(data: png))
-        XCTAssertEqual(back.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, 1, accuracy: 0.01)
+        XCTAssertEqual(back.colorAt(x: 5, y: 5)?.alphaComponent ?? 0, opaqueSide > 0 ? 1 : 0, accuracy: 0.01)
         return png
     }
 
