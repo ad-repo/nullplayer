@@ -549,7 +549,8 @@ so a corpus run can't lose lines, not *what* is measured.
   Official_Foo_Fighter_Skin, Xenon, XP_Blue_ver2, SONY__WALKMAN, HALOAMP, American_Rag, X-Theme,
   The_XP_Style_WinaMP3_Player, QL2, Official_Midnight_Club_2_skin, GoldenBeauty, SpongeBob_Squarepants,
   MD_-_Iwakura_Lain_the_Fourth_v1 (`.wal` each); copied into `WinampModernSkins/`. i-Skin (rank 323,
-  gain 0) added to the batch by the user the same day: **26 silver, 780 bronze**.
+  gain 0) added to the batch by the user the same day: **26 silver, 780 bronze**. iPlay (rank 58, gain 2)
+  added by the user the same day for GitHub #643 (B320): **27 silver, 779 bronze**.
 
 ### Decisions (fixed — re-open only with a measurement)
 

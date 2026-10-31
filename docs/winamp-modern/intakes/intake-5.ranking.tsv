@@ -56,7 +56,7 @@ rank	file	sha256	tier	load	rating	unimplemented	features	gain	added
 55	Underscore.wal	bc99c7742c67c5375fc6a17f14749a4481a303923de4fe7aa337e929bdc5a524	bronze	ok	fully-skinned	0	298	2	xml-attr:bitmap@width,xml-attr:text@cbsource
 56	EW.wal	beb8e3f82d10347e4ffb1512c68dd8fa7cf5fc1f3d60efe57e286d45fe3de0e8	bronze	ok	fully-skinned	0	299	2	xml-attr:groupdef@image,xml-attr:layout@alphadesktop
 57	Software.wal	ca6c42d5a674aaca3613f8da7bc02d696d34c02e95112b444cfa0aeac9be972a	bronze	ok	fully-skinned	0	298	2	xml-attr:color@gamagroup,xml-attr:text@ahost
-58	iPlay.wal	cb84e65f729d9c75a6f5e6a455a063a0ab33d69bd642d1955556525b710b76d7	bronze	ok	fully-skinned	0	479	2	xml-attr:layer@gost,xml-attr:slider@default
+58	iPlay.wal	cb84e65f729d9c75a6f5e6a455a063a0ab33d69bd642d1955556525b710b76d7	silver	ok	fully-skinned	0	479	2	xml-attr:layer@gost,xml-attr:slider@default
 59	Kyoko_Fukada.wal	d3369b70bafe35bc77f686acda81e7345ac1cd04c831fa9c6aaad82adbc0aa88	bronze	ok	fully-skinned	0	496	2	xml-attr:animatedlayer@color,xml-attr:layer@antialias
 60	Chronabie.wal	d3412c47179bea9ef53dc3d5a6bfbf5c4bc9c4806dbf94ca50af02077036b872	bronze	ok	fully-skinned	0	392	2	xml-attr:animatedlayer@framheight,xml-attr:button@hoverimapge
 61	AniTransformers.wal	d544bd8808f3fa2b472557244a163b02ce1d1d2e702426044d52ec61b796d34b	bronze	ok	partly-skinned	0	349	2	maki-event:d6f50f6449b793fa66baf193983eaeef.oncreatelayout,xml-attr:slider@activethumb
