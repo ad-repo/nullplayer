@@ -1652,9 +1652,17 @@ final class WinampModernMainView: NSView {
     ///
     /// Wasabi sends it on every move over the object, not only while one is pressed: Xenon slides
     /// its transport tray out of `d2.onMouseMove(x,y)` when the pointer reaches the ball's edge.
+    ///
+    /// The point is in **layout space** (the nearest sized ancestor), not the parent group's space a
+    /// pressed drag is told (`dispatch(object:event:point:)`): Xenon's `d2` sits in a group at `x=100`
+    /// and tests `x` 250..330 and 110..125, the right and left edge strips of its 160px ball. Presses
+    /// stay parent-relative: SingItKitty, SONY__WALKMAN and YoYoBoy's volume knobs subtract
+    /// `getLeft()` from the press and went silent in layout space (interaction sweep, 2026-10-30).
     private func dispatchHoverMove(over object: WasabiObject?, at point: CGPoint) {
         guard let object, scripts.hasBinding(for: object, event: "onmousemove") else { return }
-        dispatch(object: object, event: "onmousemove", point: point)
+        let origin = renderer.coordinateSpace(of: object)?.origin ?? .zero
+        _ = try? scripts.dispatch(object: scripts.mouseRedirectionTarget(of: object), event: "onmousemove",
+                                  arguments: [.integer(Int32(point.x - origin.x)), .integer(Int32(point.y - origin.y))])
     }
 
     override func mouseExited(with event: NSEvent) {

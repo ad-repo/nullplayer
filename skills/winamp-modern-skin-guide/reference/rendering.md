@@ -1415,5 +1415,9 @@ child reaches (`contentBottom`).
   separate shadow map, which broke the same first attempt.
 - **A hover reaches `onMouseMove` (B332).** `WinampModernMainView.mouseMoved` dispatches `onmousemove`
   to the object under the pointer when it has a binding, before the enter/leave identity guard; before
-  it only a pressed object heard it. The coordinates come from `pointInEventSpace`, so the nearest
-  sized ancestor rule in `compatibility/maki-surface.md` (`clientToScreen`) applies to them too.
+  it only a pressed object heard it. Its point is in layout space (`coordinateSpace(of:)`, the nearest
+  sized ancestor; `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch), the space Xenon's `x` 250..330
+  assumes; **presses and drags stay parent-relative**, because SingItKitty, SONY__WALKMAN and
+  YoYoBoy's volume knobs subtract `getLeft()` and went silent in layout space (interaction sweep
+  2026-10-30). Winamp's real rule is unmeasured: Xenon wants layout space for hover and
+  `clientToScreen`, those three want the parent for presses.
