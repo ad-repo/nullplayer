@@ -7868,3 +7868,35 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
 | B345 | **Stargate draws artifacts outside its circle border while the dial turns.** Found in the intake #5 user UI round (2026-10-31, reporter driving). Pixels appear outside the gate's circular border while the dial spins. Done when the turning dial draws nothing outside the circle | Stargate_Winamp_-_SG1_edition | S | Live-reported |
 
 **Fixed 2026-10-31** - the glyph ring is a 444x440 layer whose script (`lib/rotationlayer.m`) turns it with `fx_setWrap(1)`; a wrapping mesh took the slow resample path, which samples past the image edge from the opposite side, so the corners the circle leaves empty were tiled with the ring's ragged rim (reproduced live: seek the gate and the layer's square corners fill with ring). `WasabiLayerFXMesh.isRotationAboutCentre` (affine, determinant 1, centre fixed) now draws such a mesh through the unwrapped affine path (`drawWarped`); a wrap that scrolls or scales still wraps. Test `testAWrappingRotationAboutTheCentreIsNotTiled`. Re-checked live on Stargate_Winamp_-_SG1_edition: after seeking, the ring has turned and nothing is drawn outside the circle. Render sweep (gold+silver, vs HEAD): 1930 of 1939 images identical; Stargate's Gate-playermode is the fix; Official_28_Days_Later main-normal changes by a maxdelta 4 over 35 px (rasteriser, a rotated knob); -MfS3-, LG_Free, Clock V2.76, Anexa, Midnight Club 2 (clocks) and HALOAMP/MoonLight (window size) varied between runs of one build. Wasabi-mode only; Classic/Original untouched.
+
+## B340 — HALOAMP's track text — closed 2026-10-31, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B340 | **HALOAMP shows no track text.** Found in the intake #5 user UI round (2026-10-31, reporter driving). No title or song text draws while a track plays. B334 dropped stray text on this skin on 2026-10-30, so check first whether that rule now drops the real title. Done when the track text draws in its box while playing | HALOAMP | ? | 1 |
+
+**Closed 2026-10-31, not a defect.** Not reproduced: on the debug build with a track playing, `player.songname` (`display="SONGNAME"`, 43,14 104x10, no ticker) draws the title, clipped to its 104px box, at 11 s and 36 s, after Next and after Stop/Play. B334's stray-text rule drops only `songArtist`/`songAlbum`, which sit below the 80px bar. The reporter closed it as not a bug.
+
+## B343 — QL2's line under the thinger and EQ panes — closed 2026-10-31, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B343 | **QL2's thinger and EQ panes draw a horizontal line across the player.** Found in the intake #5 user UI round (2026-10-31, reporter driving). Opening the thinger (2) or EQ (Q) pane puts a horizontal line through the main window. Done when neither pane leaves a line on the player | QL2 | ? | 1 |
+
+**Closed 2026-10-31, not a defect.** The skin's own geometry: the Drawers script (`scripts/15.maki`) moves `top01` to y=18, whose `t01` layer (57 px) ends at y=75, then sets `buttom01` to y=58 for the "2" and "Q" panes (57 for "L"), so `b01` starts at y=76 and row 75 is covered by nothing over a transparent background (`01/01.png`). The host draws the script's numbers faithfully. The reporter closed it as not a bug.
+
+## B344 — the EQ on/off button reads reversed on SONY WALKMAN and SpongeBob — closed 2026-10-31, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B344 | **The EQ on/off button shows the reverse of the EQ's state on SONY WALKMAN and SpongeBob: lit while off.** Found in the intake #5 user UI round (2026-10-31, reporter driving). This is the third skin family to show it. B307 (Ar-Za-Jo, archive) was closed as author art, because the skin pairs `activeImage` with its pressed art. The reporter suspects an engine defect because it keeps coming back. Compare the three skins' EQ buttons (`action`, `activeImage`/`downImage`, any script that sets `setActivated`) and the start-up bypass state before deciding art or engine. Done when the button's lit state matches the EQ's real state in both directions on both skins, or a measured rule shows the art is the author's | SONY__WALKMAN, SpongeBob_Squarepants; Ar-Za-Jo (B307) | ? | 1 |
+
+**Closed 2026-10-31, not a defect.** The engine is right: `WasabiRenderer` lights an `EQ_TOGGLE` button from `engine.isEQEnabled()` and four live clicks on SpongeBob agreed with `eqBypass` each time. Across the corpus's `EQ_TOGGLE` buttons (602 declarations, 437 skins), about 195 whose art names a state pair `image` = off with `activeimage` = on, as the engine reads them; 5 pair them the other way. SONY's `togglebutton` puts `normal.eq.on` (lit red lamp, "ON") in `image` and `normal.eq.off` (dim, "OFF") in `activeimage`, the author's swap, shared by Gateway_Valentino_Rossi_-_46 and Kaskus_Batik_Indonesia. SpongeBob wires `image=player.eq.switch.on.disabled` / `activeImage=…on.enabled` correctly, but its disabled art is bright yellow and its enabled art blue, so off reads as lit. Same finding as B307 (Ar-Za-Jo). The reporter closed it as not a bug.
+
+## B346 — XP_Blue's EQ faders overlap — closed 2026-10-31, not a defect
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B346 | **XP_Blue's EQ faders overlap each other.** Found in the intake #5 user UI round (2026-10-31, reporter driving). The equalizer's sliders draw on top of their neighbours. Done when each fader sits apart in its own track | XP_Blue_ver2 | ? | 1 |
+
+**Closed 2026-10-31, not a defect.** The skin's own geometry: the ten `<slider>`s in `player.xml` are 12 wide at 15px pitch and use `thumb="eqslider"` (`player/eqslider.png`, 22x11), the knob of its horizontal seek and volume bars, so each centred knob overhangs its neighbours by 7px. Clipping a thumb wider than its slider also clipped deliberate overhangs in 21 other skins (38 render-sweep images), and the skin ships no reference. The reporter closed it as not a bug.
