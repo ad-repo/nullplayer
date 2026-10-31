@@ -2673,6 +2673,11 @@ final class WinampModernMainView: NSView {
         // would swallow its own click, and the skins that declare it (17 of the 981) are relying on
         // Winamp's press-and-hold distinction, which this hit test does not model.
         if object.attributes["move"] == "1", !Self.isControl(object) { return true }
+        // A `<button>` with no action, no gesture command and no script on its mouse events does
+        // nothing when pressed, so it is decoration the skin laid over its window, not a control.
+        // Kepler's "Kepler 1.1" logo is one (`about`, a 478x283 button whose only opaque pixels are
+        // the logo): refusing it as a control left the one title-shaped handle undraggable (B342).
+        if object.tag.is(.button), !Self.hasPressCommand(object, scripts: scripts) { return true }
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if object.tag.is(.layout) { return true }
@@ -2697,6 +2702,13 @@ final class WinampModernMainView: NSView {
     private static let controlKinds: Set<WasabiKind> = [
         .button, .toggleButton, .nStatesButton, .slider, .menu, .list, .component, .browser, .edit, .editBox
     ]
+
+    /// Whether pressing this object can do anything: a command attribute, or a script bound to one
+    /// of the mouse events.
+    private static func hasPressCommand(_ object: WasabiObject, scripts: WinampModernScriptRuntime) -> Bool {
+        ["action", "dblclickaction", "rightclickaction", "cfgattrib", "param"].contains { object.attributes[$0] != nil }
+            || mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
+    }
 
     static func isControl(_ object: WasabiObject) -> Bool {
         object.tag.is(anyOf: controlKinds) || object.tag.isStandard(anyOf: [.button, .toggleButton])
