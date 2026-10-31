@@ -2,6 +2,30 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B330 — Official_Foo_Fighter_Skin's main window draws only its lower half — closed 2026-10-30 (class H)
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B330 | **Foo_Fighter main window draws only its lower half.** Live 2026-10-30 (debug build, playing): the 297x194 main capture shows the orange body and the transport buttons, but the upper half in the author's `preview.png` is missing: the dark body above, the -00:00 time, the ticker, the `Buy Foo Fighter's new CD / Album Images / foofighters.com` links, `ON PRE AUTO`, `PLAYLIST / MEDIA LIBRARY` and the spectrum. About 58% of the window is transparent. Headless reads clean, so a layer or group the live scene hides or masks (the skin ships `desktopalphalayer.maki` and `bottommask.maki`). Done when the main capture matches the preview with a track playing; judge its visualization then | Official_Foo_Fighter_Skin | ? | 1 |
+
+**Closed 2026-10-30 as class H (the skin's own default state; not a B323 regression).** `player.maki` reads `getprivateint(foofighter,topdrawer,0)` and, at 0, collapses `player.drawer.top` to y=62/h=28, so a first launch shows the lower half; the author's `preview.png` shows the drawer opened. Headless and live agree (headless `main-normal.png` is the same lower half). Clicking the drawer toggle live (`toggle.drawer`, ~(120,75)) opens it and the window matches the preview: time, ticker, the three links, the fresh `0:38` readout; the bottom drawer toggle (~(235,132)) shows `ON PRE AUTO`, `PLAYLIST`, `MEDIA LIBRARY`. B323 ruled out by A/B (canvas path with the region pass skipped: still 58.7% transparent). The skin ships no `<vis>`: the preview's spectrum is background art and the eq bars are the flat EQ display, so there is no visualization to judge.
+
+## B329 — Official_The_Hives_Skin's title bar is translucent by design — closed 2026-10-30 (class H)
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B329 | **The_Hives main window's title bar is translucent over the desktop.** Live 2026-10-30 (debug build, playing): in the main capture the rounded bar behind the five faces (and a band at y 35-54 across the faces' lower edge) has alpha ~118, so magenta shows through (the sheet reports a HOLES band bbox=(3,35,282,54), 554 px enclosed); the author's `screenshot.png` shows solid grey metal there. Find whether the art is genuinely semi-transparent and the original ignores its alpha, or a layer/alpha attribute is wrongly applied. Done when the title bar renders opaque like the screenshot | Official_The_Hives_Skin | ? | 1 |
+
+**Closed 2026-10-30 as class H (authored glass bar; not a B323 regression).** `player.bg.desktopalpha.png` carries the rounded bar behind the faces at black alpha 102 (0.40), and the layout is `desktopalpha="1" alphabackground=...`; the live capture measures 118 there, the 102 plus the window shadow beneath. The author's `screenshot.png` was taken over a light desktop, where 40% black reads as the solid grey it shows. The sheet's `HOLES` band is that bar (its y 35-54 is 2x pixels, 1x y 17-27). No layer or alpha attribute is wrongly applied; B323 does not touch the window (its `<vis>` lies wholly over art and the main window has no region pass difference).
+
+## B328 — Electrolium's top edge is transparent where the author cut it — closed 2026-10-30 (class H)
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B328 | **Electrolium's windows are see-through along the top edge.** Live 2026-10-30 (debug build, playing, census shots): main, playlist, library and studio capture a ~7 px fully transparent band across the top between the two ear caps (the shot shows magenta there); the author's `skinshot.png` fills it with the grey bezel edge. Find which layer paints that row (a frame/top-edge image missing from the layout, or a region mask cut too deep) and why it is not drawn. Done when the capture has no transparent rows above the title/ticker strip | Electrolium | ? | 1 |
+
+**Closed 2026-10-30 as class H (author's notch; not a B323 regression).** The main art `main/main.png` is alpha 0 on its top 4 rows between the ear caps (x 100 and 200 read `(0,0,0,0)`), and the standard frame's `region.top` (`wasabi/window/top.png`, `sysregion="-2"`) cuts the same 4 rows from playlist, library and studio. The live capture's "7 px" is those 4 rows at 1x plus the drop shadow. The author's `skinshot.png` has orange-brown `(125,73,33)` on those rows, a desktop wallpaper gradient, not grey bezel. Nothing is dropped from the layout.
+
 ## B319 — SONY WALKMAN's colour buttons recolour the skin in the app; the silent rows were the headless dump — closed 2026-10-30
 
 | Id | Item | Reach | Effort | Tier |
