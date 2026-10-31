@@ -210,6 +210,13 @@
   names no component, and hosts only the playlist, now gets the command bar; LCDx's embedded playlist gets it too.
 - **_Mercury's Playlist Editor opens whole.** It was laid out 335px tall inside a 116px window, so only a black pane and
   the command bar showed; PAD's playlist had the same cut.
+- **Xenon's round Equalizer is the round art** instead of a black rectangle beside the ball.
+- **Xenon's transport, volume, seek and window trays open on hover.** `onMouseMove` now reaches the object under the
+  pointer, not only a pressed one.
+- **XP_Blue_ver2's playlist stays opaque when the window loses focus**, so the author's e-mail no longer shows through it.
+- **HALOAMP's artist and album strings no longer float below the player** over the desktop.
+- **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art** (no white fringe round -Graviton-'s
+  and OrbFace's circles).
 
 ## 0.33.1
 
