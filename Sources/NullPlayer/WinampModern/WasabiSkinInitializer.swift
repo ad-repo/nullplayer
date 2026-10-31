@@ -1699,13 +1699,9 @@ final class WasabiSkinInitializer {
                WasabiStandardFrames.needsHostedContent(
                    definitionChildren: definition.templateChildren,
                    group: { try? types.resolved(identifier: $0).templateChildren },
-                   scriptInstantiatesContent: { [vfs] script in
-                       WasabiSurfaceSynthesizer.scriptInstantiatesContent(script) { rawPath, source in
-                           let resolved = (try? vfs.resolve(rawPath, relativeTo: source.path, location: source))
-                               ?? (try? vfs.resolve("@SKINPATH@/\(rawPath)", relativeTo: source.path,
-                                                    location: source))
-                           return resolved.flatMap { try? vfs.data(at: $0.logicalPath, location: source) }
-                       }
+                   scriptReader: { rawPath, source in
+                       (try? self.resolveSkinResource(rawPath, source: source))
+                           .flatMap { try? self.vfs.data(at: $0.logicalPath, location: source) }
                    }) {
                 let border = WasabiStandardFrames.measuredBorder(
                     in: definition.templateChildren,

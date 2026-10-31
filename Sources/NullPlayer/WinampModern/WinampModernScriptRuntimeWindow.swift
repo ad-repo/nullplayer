@@ -30,7 +30,7 @@ extension WinampModernScriptRuntime {
         table.add(["clienttoscreenx", "clienttoscreeny", "screentoclientx", "screentoclienty"], 1) { runtime, call in
             let origin = WasabiSceneRenderer.coordinateSpace(of: call.object) {
                 runtime.hooks.resolvedGeometryRequested?($0)?.frame
-            }?.origin ?? runtime.hooks.resolvedGeometryRequested?(call.object)?.parent.origin ?? .zero
+            }?.origin ?? .zero
             let offset = call.method.hasSuffix("x") ? origin.x : origin.y
             let signed = call.method.hasPrefix("client") ? offset : -offset
             return .integer(Int32(clamping: Int(Double(call.arguments[0].integerValue) + Double(signed))))

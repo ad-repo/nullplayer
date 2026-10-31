@@ -678,4 +678,28 @@ extension WasabiSceneRenderer {
     /// the artwork draws it, and it keeps a silhouette a skin drew at partial opacity (Ebonite's 179)
     /// on the cut side, where a Win32 region would also have put it.
     private static let regionKeepFloor: UInt8 = 128
+
+    /// The box an object's mouse coordinates and `clientToScreen` are measured from (B332): the
+    /// nearest ancestor that has a size, which the layout always does; nil only for the layout itself.
+    /// A group that declares no `w`/`h` is only where its children are placed, not a space of its
+    /// own. Xenon's `player.display` (`x=100`, no size) holds `d2.onMouseMove(x,y)`, which opens its
+    /// tray at `x` 250..330 and reads `d2.clientToScreenX(0)` as the layout's own left edge: both
+    /// only work in layout space.
+    func coordinateSpace(of object: WasabiObject) -> CGRect? {
+        Self.coordinateSpace(of: object) { ancestor in resolvedGeometry(of: ancestor)?.frame }
+    }
+
+    /// `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch for B332: a pointer event and `clientToScreen`
+    /// are measured from the immediate parent group again, sized or not.
+    static let measuresFromParentGroup = ProcessInfo.processInfo.environment["WINAMP_MODERN_PARENT_SPACE"] == "1"
+
+    static func coordinateSpace(of object: WasabiObject, frameOf: (WasabiObject) -> CGRect?) -> CGRect? {
+        if measuresFromParentGroup { return object.parent.flatMap(frameOf) }
+        var ancestor = object.parent
+        while let next = ancestor {
+            if let frame = frameOf(next), frame.width > 0, frame.height > 0 { return frame }
+            ancestor = next.parent
+        }
+        return nil
+    }
 }

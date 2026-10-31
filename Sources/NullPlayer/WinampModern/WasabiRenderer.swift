@@ -1357,51 +1357,6 @@ final class WasabiSceneRenderer {
         return includingHidden ? nodes : droppingStrayText(from: nodes)
     }
 
-    /// On a layout that names an `alphabackground`, a text lying wholly outside the artwork has no
-    /// window to be in (B334). HALOAMP's `songArtist`/`songAlbum` sit at `y=81`, below its 80px bar on
-    /// a 340x220 layout whose own backgrounds are empty: they drew over the bare desktop, on top of
-    /// each other. "Artwork" is every node that is not a text, a bare group or the layout; a text that touches any of
-    /// it stays, so a label on a panel, or a window with no artwork at all, is untouched.
-    /// A layout naming a bitmap that is missing from the archive drops nothing (the art is unknown).
-    /// ponytail: one bounding box for the whole layout; a text in the gap between two far-apart
-    /// pieces of art stays. Test each piece's own frame if a skin shows one.
-    private func droppingStrayText(from nodes: [WasabiSceneNode]) -> [WasabiSceneNode] {
-        guard layout.attributes["alphabackground"] != nil else { return nodes }
-        func isArtwork(_ node: WasabiSceneNode) -> Bool {
-            let object = node.object
-            if object === layout || object.tag.is(anyOf: [.text, .songticker]) { return false }
-            return !object.tag.is(.group) || object.attributes["background"] != nil
-        }
-        var art = nodes.lazy.filter(isArtwork)
-            .map { $0.frame.intersection($0.clipping.rect) }.filter { !$0.isNull && !$0.isEmpty }
-            .reduce(CGRect.null) { $0.union($1) }
-        // The layout's own bitmaps are artwork too, where they have any (GoldenBeauty's player *is*
-        // its `background`); HALOAMP's are empty, which is the case this exists for.
-        let rootFrame = nodes.first?.frame ?? .zero
-        for id in ["background", "alphabackground"].compactMap({ layout.attributes[$0] }) {
-            let key = layout.source.path + "|" + id.lowercased()
-            if backingBoundsCache[key] == nil {
-                backingBoundsCache[key] = .some(resources.bitmap(background: id, declaredIn: layout.source)
-                    .map { bitmap in
-                        (WasabiResourceCache.opaqueBounds(of: bitmap.image), bitmap.width, bitmap.height)
-                    })
-            }
-            // A named bitmap the archive does not hold (Auburn's `thinger.png`) is art we cannot see:
-            // the text on it is the skin's, not a stray, so nothing is dropped. A bitmap that is
-            // there and fully transparent is not that (HALOAMP's) and adds no art.
-            guard let cached = backingBoundsCache[key], let (opaque, width, height) = cached else { return nodes }
-            guard let bounds = opaque, width > 0, height > 0 else { continue }
-            let fx = rootFrame.width / CGFloat(width), fy = rootFrame.height / CGFloat(height)
-            art = art.union(CGRect(x: rootFrame.minX + bounds.minX * fx, y: rootFrame.minY + bounds.minY * fy,
-                                   width: bounds.width * fx, height: bounds.height * fy))
-        }
-        guard !art.isNull else { return nodes }
-        return nodes.map { node in
-            guard node.object.tag.is(anyOf: [.text, .songticker]), !node.frame.intersects(art) else { return node }
-            return node.clipped(to: .zero)
-        }
-    }
-
     /// The active layout's geometry **including hidden subtrees** — what is laid out, not what is
     /// painted. Never used for drawing or hit testing.
     ///
@@ -1649,29 +1604,6 @@ final class WasabiSceneRenderer {
     /// need and collapses every one of them to 20px. See `WinampModernScriptRuntime.resolvedFrame`.
     func resolvedGeometry(of object: WasabiObject) -> (frame: CGRect, parent: CGRect)? {
         layoutNodes().first { $0.object === object }.map { ($0.frame, $0.parentFrame) }
-    }
-
-    /// The box an object's mouse coordinates and `clientToScreen` are measured from (B332): the
-    /// nearest ancestor that has a size, nil at the layout. A group that declares no `w`/`h` is only
-    /// where its children are placed, not a space of its own. Xenon's `player.display` (`x=100`, no
-    /// size) holds `d2.onMouseMove(x,y)`, which opens its tray at `x` 250..330 and reads
-    /// `d2.clientToScreenX(0)` as the layout's own left edge: both only work in layout space.
-    func coordinateSpace(of object: WasabiObject) -> CGRect? {
-        Self.coordinateSpace(of: object) { ancestor in resolvedGeometry(of: ancestor)?.frame }
-    }
-
-    /// `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch for B332: a pointer event and `clientToScreen`
-    /// are measured from the immediate parent group again, sized or not.
-    static let measuresFromParentGroup = ProcessInfo.processInfo.environment["WINAMP_MODERN_PARENT_SPACE"] == "1"
-
-    static func coordinateSpace(of object: WasabiObject, frameOf: (WasabiObject) -> CGRect?) -> CGRect? {
-        if measuresFromParentGroup { return object.parent.flatMap(frameOf) }
-        var ancestor = object.parent
-        while let next = ancestor {
-            if let frame = frameOf(next), frame.width > 0, frame.height > 0 { return frame }
-            ancestor = next.parent
-        }
-        return nil
     }
 
     /// The objects in the active scene a resize is reported to, with their resolved frames.
@@ -2579,9 +2511,8 @@ final class WasabiSceneRenderer {
 
     // MARK: - The window's own shape
 
-    /// `droppingStrayText`: the opaque box of a layout bitmap, by source and id (outer nil: the bitmap is
-    /// missing; box nil: no opaque pixel).
-    var backingBoundsCache: [String: (CGRect?, Int, Int)?] = [:]
+    /// `layoutBitmapArt`'s answers, by source and id (`WasabiRendererStrayText.swift`).
+    var layoutBitmapArtCache: [String: LayoutBitmapArt] = [:]
 
     var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?

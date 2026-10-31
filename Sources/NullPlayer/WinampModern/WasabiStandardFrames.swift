@@ -122,9 +122,10 @@ extension WasabiStandardFrames {
     /// the benefit of the doubt, so no second copy lands under one a real script builds.
     static func needsHostedContent(definitionChildren: [WalXMLNode],
                                    group: (String) -> [WalXMLNode]?,
-                                   scriptInstantiatesContent: (WalXMLNode) -> Bool) -> Bool {
-        !declaresContentScript(in: definitionChildren, group: group, depth: 0, visited: [],
-                               instantiates: scriptInstantiatesContent)
+                                   scriptReader: @escaping WasabiSurfaceSynthesizer.ScriptReader) -> Bool {
+        !declaresContentScript(in: definitionChildren, group: group, depth: 0, visited: []) {
+            WasabiSurfaceSynthesizer.scriptInstantiatesContent($0, scriptReader: scriptReader)
+        }
     }
 
     /// Where a frame names its client group: `content="…"` on a XUI instance (TRON Legacy), or
