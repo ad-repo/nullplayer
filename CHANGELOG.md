@@ -1,5 +1,43 @@
 # Changelog
 
+## Unreleased
+
+### Winamp Modern (`.wal`) skins
+
+- **27 more Winamp Modern (`.wal`) skins checked and fixed in the app** (corpus intake five):
+  American Rag, AS-FxS, Braun CC 50, Bubble Tea - Updated, D-Shock, Dracula's Helmet, Electrolium,
+  GoldenBeauty, Graviton, HALOAMP, i-Skin, iPlay, Kepler 1.1, MD Iwakura Lain the Fourth, Mercury,
+  Official Foo Fighter, Official Midnight Club 2, Official The Hives, QL2, Sony Walkman, SpongeBob
+  Squarepants, Stargate Winamp - SG1 Edition, The XP Style WinaMP3 Player, Winamp Media Tower v11,
+  X-Theme, Xenon, XP Blue ver2.
+- **Braun_CC_50's About window draws its artwork and credits.** Its `@DEFAULTSKINPATH@/../about/` paths now
+  resolve inside the skin instead of naming a skin that is not installed.
+- **Bubble_Tea_-_Updated's Playlist Editor lists the queue.** A frame whose scripts only draw chrome no longer
+  counts as one that builds its content; QL2's playlist window is built the same way.
+- **Bubble_Tea_-_Updated's spectrum stays inside the cup** instead of drawing bars over the desktop beside it.
+- **Bubble_Tea_-_Updated's Playlist Editor has its Add / Rem / Sel / Misc / List buttons.** A playlist window that
+  names no component, and hosts only the playlist, now gets the command bar; LCDx's embedded playlist gets it too.
+- **_Mercury's Playlist Editor opens whole.** It was laid out 335px tall inside a 116px window, so only a black pane and
+  the command bar showed; PAD's playlist had the same cut.
+- **Xenon's round Equalizer is the round art** instead of a black rectangle beside the ball.
+- **Xenon's transport, volume, seek and window trays open on hover.** `onMouseMove` now reaches the object under the
+  pointer, not only a pressed one.
+- **XP_Blue_ver2's playlist stays opaque when the window loses focus**, so the author's e-mail no longer shows through it.
+- **HALOAMP's artist and album strings no longer float below the player** over the desktop.
+- **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art** (no white fringe round -Graviton-'s
+  and OrbFace's circles).
+- **Xenon and Hoop Life draw their time (and Hoop Life its title)**: a font whose size table was stored with a
+  sign bit no longer throws its line out of its box.
+- **Auburn's component-bucket label is no longer hidden** when the layout's own artwork is missing from the skin.
+- **iPlay's song title moves one cell at a time**, as its own script steps it, instead of also sliding (#643).
+- **QL2's window title bars read their window's name**, not `:COMPONENTNAME`, and its thinger shows an icon between the arrows.
+- **Midnight Club 2's shaded player draws its display**, ticker, timer, volume knob and transport glyphs instead of an empty box.
+- **Kepler's main window drags by its title logo**: a button with no action or script is a drag surface, not a dead control.
+- **Stargate's turning dial no longer draws outside its circle**: a layer rotated about its centre with wrapping on is no longer tiled into its corners.
+- **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
+- **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
+- **GoldenBeauty's in-skin equalizer draws the bands and follows a drag**: showing a group now tells the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its library button reading EQ is the author's art.)
+
 ## 0.34.0
 
 ### New features

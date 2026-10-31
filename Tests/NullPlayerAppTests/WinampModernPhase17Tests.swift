@@ -48,7 +48,7 @@ final class WinampModernPhase17Tests: XCTestCase {
         <bitmapfont id="id.font" file="sheet" charwidth="8" charheight="8"/>
       </elements>
       <container id="main">
-        <layout id="normal" w="120" h="64">
+        <layout id="normal" w="120" h="64" desktopalpha="1">
           <group id="under" x="0" y="0" w="40" h="20" background="panel">
             <button id="tab" x="0" y="0" w="10" h="10" image="panel"/>
           </group>

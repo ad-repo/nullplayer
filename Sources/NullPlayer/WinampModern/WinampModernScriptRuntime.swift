@@ -784,15 +784,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
             visibility.reopened(layout.stableID)
             noteGeometryChange()
         }
-        func walk(_ object: WasabiObject, ancestorsVisible: Bool) {
-            let selfVisible = ancestorsVisible && isVisible(object)
-            if selfVisible || !visible {
-                _ = try? dispatch(object: object, event: "onsetvisible",
-                                  arguments: [.boolean(visible)])
-            }
-            for child in object.children { walk(child, ancestorsVisible: selfVisible) }
-        }
-        walk(container, ancestorsVisible: true)
+        broadcastOnSetVisible(visible, from: container)
         notifyGraphDidMutate()
     }
 

@@ -807,16 +807,21 @@ enum WasabiSurfaceSynthesizer {
     private static func hasContentScript(_ definition: WalXMLNode,
                                          definitions: [String: WalXMLNode],
                                          scriptReader: ScriptReader?) -> Bool {
-        inheritanceChain(of: definition, definitions: definitions).lazy.flatMap(scriptNodes(in:)).contains { script in
-            // A script we cannot read or parse is given the benefit of the doubt.
-            guard let scriptReader,
-                  let rawPath = script.attribute("file"), !rawPath.isEmpty,
-                  let data = scriptReader(rawPath, script.location),
-                  let program = try? MakiBytecodeParser().parse(data, source: script.location) else {
-                return true
-            }
-            return program.methods.contains { $0.name == contentInstantiationMethod }
+        inheritanceChain(of: definition, definitions: definitions).lazy.flatMap(scriptNodes(in:)).contains {
+            scriptInstantiatesContent($0, scriptReader: scriptReader)
         }
+    }
+
+    /// Whether one declared script calls `newGroup`. A script we cannot read or parse is given the
+    /// benefit of the doubt. Shared with `WasabiSkinInitializer`'s hosted-content test (B322).
+    static func scriptInstantiatesContent(_ script: WalXMLNode, scriptReader: ScriptReader?) -> Bool {
+        guard let scriptReader,
+              let rawPath = script.attribute("file"), !rawPath.isEmpty,
+              let data = scriptReader(rawPath, script.location),
+              let program = try? MakiBytecodeParser().parse(data, source: script.location) else {
+            return true
+        }
+        return program.methods.contains { $0.name == contentInstantiationMethod }
     }
 
     /// The MAKI method a standard frame calls to build its client area out of `content=`. Method

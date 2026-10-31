@@ -40,7 +40,10 @@ extension WasabiTextMetrics {
     static func gdiDrawsAsArial(_ font: NSFont) -> Bool { font.familyName == "Helvetica" }
 
     /// A face's OS/2 `usWinAscent`/`usWinDescent` per em — the cell GDI lays a line out in — or
-    /// `nil` when it has no OS/2 table.
+    /// `nil` when it has no OS/2 table, or when either value has its sign bit set: the fields are
+    /// unsigned, so a face that stored a negative there (Xenon's `square.TTF`, `usWinDescent` 65400)
+    /// declares a 64 em cell, which pushed its clock 376px out of its box and drew nothing (B335).
+    /// Such a face falls back to its own `hhea` line.
     static func winMetricsPerEm(of font: NSFont) -> (ascent: CGFloat, descent: CGFloat)? {
         let unitsPerEm = CGFloat(CTFontGetUnitsPerEm(font))
         guard unitsPerEm > 0,
@@ -50,6 +53,7 @@ extension WasabiTextMetrics {
             CGFloat(UInt16(table[table.startIndex + offset]) << 8
                     | UInt16(table[table.startIndex + offset + 1]))
         }
+        guard uint16(74) < 32768, uint16(76) < 32768 else { return nil }
         return (uint16(74) / unitsPerEm, uint16(76) / unitsPerEm)
     }
 

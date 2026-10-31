@@ -519,6 +519,14 @@ extension WasabiSceneRenderer {
             // to slide into — and a 252x1 `<vis>` at y=215 drew a flickering line across the
             // desktop below. Outside such a box the rect stands, so a window whose positive layers
             // merely decorate it is not trimmed to them.
+            // **The layout's own backing is a mark too.** A layout that is nothing but marked groups
+            // and layers still paints its `background` (Midnight Club 2's shade: `background="small.player"`
+            // is the dark display, the frame layer over it is transparent there, and the content group
+            // is a wrapper that stands for the glare layer it holds). Composed from the marks alone the
+            // display fell outside the window and was cut away with every control on it (B338).
+            if composes, case .bitmap(let backing)? = backing(of: layout) {
+                draw(backing, object: layout, frame: CGRect(x: 0, y: 0, width: width, height: height), context: context)
+            }
             for cut in cuts {
                 guard let contentBoxes = cut.contentBoxes else { continue }
                 context.saveGState()
@@ -670,4 +678,28 @@ extension WasabiSceneRenderer {
     /// the artwork draws it, and it keeps a silhouette a skin drew at partial opacity (Ebonite's 179)
     /// on the cut side, where a Win32 region would also have put it.
     private static let regionKeepFloor: UInt8 = 128
+
+    /// The box an object's mouse coordinates and `clientToScreen` are measured from (B332): the
+    /// nearest ancestor that has a size, which the layout always does; nil only for the layout itself.
+    /// A group that declares no `w`/`h` is only where its children are placed, not a space of its
+    /// own. Xenon's `player.display` (`x=100`, no size) holds `d2.onMouseMove(x,y)`, which opens its
+    /// tray at `x` 250..330 and reads `d2.clientToScreenX(0)` as the layout's own left edge: both
+    /// only work in layout space.
+    func coordinateSpace(of object: WasabiObject) -> CGRect? {
+        Self.coordinateSpace(of: object) { ancestor in resolvedGeometry(of: ancestor)?.frame }
+    }
+
+    /// `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch for B332: a pointer event and `clientToScreen`
+    /// are measured from the immediate parent group again, sized or not.
+    static let measuresFromParentGroup = ProcessInfo.processInfo.environment["WINAMP_MODERN_PARENT_SPACE"] == "1"
+
+    static func coordinateSpace(of object: WasabiObject, frameOf: (WasabiObject) -> CGRect?) -> CGRect? {
+        if measuresFromParentGroup { return object.parent.flatMap(frameOf) }
+        var ancestor = object.parent
+        while let next = ancestor {
+            if let frame = frameOf(next), frame.width > 0, frame.height > 0 { return frame }
+            ancestor = next.parent
+        }
+        return nil
+    }
 }

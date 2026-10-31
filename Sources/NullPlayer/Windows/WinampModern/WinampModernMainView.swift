@@ -1630,6 +1630,7 @@ final class WinampModernMainView: NSView {
         // the hovered *object*.
         if renderer.focusComponentBucketIcon(at: point) { needsDisplay = true }
         let next = renderer.object(at: point)
+        dispatchHoverMove(over: next, at: point)
         guard next !== hoveredObject else { return }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
         // A `<Menu>` entry lights up under the pointer by swapping which of its three sibling objects
@@ -1645,6 +1646,23 @@ final class WinampModernMainView: NSView {
             WasabiMenuBar.apply(.hover, to: next)
         }
         needsDisplay = true
+    }
+
+    /// `onMouseMove` for a pointer that is over an object with no button down (B332).
+    ///
+    /// Wasabi sends it on every move over the object, not only while one is pressed: Xenon slides
+    /// its transport tray out of `d2.onMouseMove(x,y)` when the pointer reaches the ball's edge.
+    ///
+    /// The point is in **layout space** (the nearest sized ancestor), not the parent group's space a
+    /// pressed drag is told (`dispatch(object:event:point:)`): Xenon's `d2` sits in a group at `x=100`
+    /// and tests `x` 250..330 and 110..125, the right and left edge strips of its 160px ball. Presses
+    /// stay parent-relative: SingItKitty, SONY__WALKMAN and YoYoBoy's volume knobs subtract
+    /// `getLeft()` from the press and went silent in layout space (interaction sweep, 2026-10-30).
+    private func dispatchHoverMove(over object: WasabiObject?, at point: CGPoint) {
+        guard let object, scripts.hasBinding(for: object, event: "onmousemove") else { return }
+        let origin = renderer.coordinateSpace(of: object)?.origin ?? .zero
+        _ = try? scripts.dispatch(object: scripts.mouseRedirectionTarget(of: object), event: "onmousemove",
+                                  arguments: [.integer(Int32(point.x - origin.x)), .integer(Int32(point.y - origin.y))])
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -2655,6 +2673,11 @@ final class WinampModernMainView: NSView {
         // would swallow its own click, and the skins that declare it (17 of the 981) are relying on
         // Winamp's press-and-hold distinction, which this hit test does not model.
         if object.attributes["move"] == "1", !Self.isControl(object) { return true }
+        // A `<button>` with no action, no gesture command and no script on its mouse events does
+        // nothing when pressed, so it is decoration the skin laid over its window, not a control.
+        // Kepler's "Kepler 1.1" logo is one (`about`, a 478x283 button whose only opaque pixels are
+        // the logo): refusing it as a control left the one title-shaped handle undraggable (B342).
+        if object.tag.is(.button), !Self.hasPressCommand(object, scripts: scripts) { return true }
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if object.tag.is(.layout) { return true }
@@ -2679,6 +2702,13 @@ final class WinampModernMainView: NSView {
     private static let controlKinds: Set<WasabiKind> = [
         .button, .toggleButton, .nStatesButton, .slider, .menu, .list, .component, .browser, .edit, .editBox
     ]
+
+    /// Whether pressing this object can do anything: a command attribute, or a script bound to one
+    /// of the mouse events.
+    private static func hasPressCommand(_ object: WasabiObject, scripts: WinampModernScriptRuntime) -> Bool {
+        ["action", "dblclickaction", "rightclickaction", "cfgattrib", "param"].contains { object.attributes[$0] != nil }
+            || mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
+    }
 
     static func isControl(_ object: WasabiObject) -> Bool {
         object.tag.is(anyOf: controlKinds) || object.tag.isStandard(anyOf: [.button, .toggleButton])
@@ -2845,6 +2875,9 @@ final class WinampModernMainView: NSView {
         let value = vertical ? 1 - (point.y - frame.minY) / frame.height
                              : (point.x - frame.minX) / frame.width
         let normalized = max(0, min(1, value))
+        // Read before the host drive: an EQ drive syncs this very slider's `value` on the way, and
+        // `notePosition` would then find nothing moved and never tell the skin's `onSetPosition`.
+        let positionBefore = object.attributes["value"]
         // EQ, balance, seek and volume, through the host — the same value the thumb is drawn from.
         // The EQ half also lets the skin hear its own equalizer move, before `notePosition` below,
         // so the drag's own position is the last thing written to this slider.
@@ -2859,7 +2892,7 @@ final class WinampModernMainView: NSView {
         // Wasabi moves the object's own position on a drag and tells the skin about it, whatever the
         // slider drives. Skins hang their only feedback off that: multipass's balance and crossfade
         // sliders print "Balance: Left +40%" on the song ticker from `onSetPosition` and nowhere else.
-        notePosition(normalized, on: object)
+        notePosition(normalized, on: object, previous: positionBefore)
         needsDisplay = true
     }
 
@@ -2884,9 +2917,9 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
+    private func notePosition(_ normalized: CGFloat, on object: WasabiObject, previous: String?) {
         let position = WinampModernScriptRuntime.sliderPosition(normalized: normalized, of: object)
-        guard object.attributes["value"] != String(position) else { return }
+        guard previous != String(position) else { return }
         _ = object.setAttribute("value", value: String(position))
         _ = try? scripts.dispatch(object: object, event: "onsetposition",
                                   arguments: [.integer(position)])

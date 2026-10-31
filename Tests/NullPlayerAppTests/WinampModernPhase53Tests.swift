@@ -233,7 +233,7 @@ final class WinampModernPhase53Tests: XCTestCase {
               <grid id="titlebar.grid" x="0" y="0" w="200" h="20" move="1"/>
               <rect id="vic_mover" fitparent="1" move="1" color="0,0,0" alpha="0"/>
               <text id="caption" x="0" y="30" w="80" h="20" text="Title" move="1"/>
-              <button id="movingbutton" x="0" y="60" w="20" h="20" move="1"/>
+              <button id="movingbutton" x="0" y="60" w="20" h="20" action="Play" move="1"/>
               <group id="plaingroup" x="0" y="90" w="40" h="20"/>
             </layout>
           </container>

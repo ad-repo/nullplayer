@@ -115,14 +115,17 @@ extension WasabiStandardFrames {
     /// The whole corpus has three of these (TRON Legacy, Sony Walkman, canum); every other skin
     /// either ships the script or leaves the groupdef to us.
     ///
-    /// **A declared script is still taken at its word here.** The bytecode test that
-    /// `WasabiSurfaceSynthesizer` applies to pick a frame for a window of *ours* is deliberately not
-    /// repeated: this path only ever adds a group to a frame where nothing else could have, and
-    /// treating a script-bearing frame as scriptless would put a second copy of the content group
-    /// under one the skin's own script instantiates.
+    /// **Only a script that calls `newGroup` counts as the frame's content script** — the bytecode
+    /// test `WasabiSurfaceSynthesizer` applies (B322). Bubble_Tea_-_Updated's frame declares
+    /// `fade.maki` and `standstraw.maki` (chrome) and not `standardframe.maki`; "declares any script"
+    /// read that as instantiated and left its Playlist Editor body empty. An unreadable script keeps
+    /// the benefit of the doubt, so no second copy lands under one a real script builds.
     static func needsHostedContent(definitionChildren: [WalXMLNode],
-                                   group: (String) -> [WalXMLNode]?) -> Bool {
-        !declaresScript(in: definitionChildren, group: group, depth: 0, visited: [])
+                                   group: (String) -> [WalXMLNode]?,
+                                   scriptReader: @escaping WasabiSurfaceSynthesizer.ScriptReader) -> Bool {
+        !declaresContentScript(in: definitionChildren, group: group, depth: 0, visited: []) {
+            WasabiSurfaceSynthesizer.scriptInstantiatesContent($0, scriptReader: scriptReader)
+        }
     }
 
     /// Where a frame names its client group: `content="…"` on a XUI instance (TRON Legacy), or
@@ -218,16 +221,17 @@ extension WasabiStandardFrames {
         }
     }
 
-    private static func declaresScript(in children: [WalXMLNode], group: (String) -> [WalXMLNode]?,
-                                       depth: Int, visited: Set<String>) -> Bool {
+    private static func declaresContentScript(in children: [WalXMLNode], group: (String) -> [WalXMLNode]?,
+                                              depth: Int, visited: Set<String>,
+                                              instantiates: (WalXMLNode) -> Bool) -> Bool {
         guard depth <= maximumFrameDepth else { return true }
         for node in children {
-            if node.name.caseInsensitiveCompare("script") == .orderedSame { return true }
-            if declaresScript(in: node.children, group: group, depth: depth + 1,
-                              visited: visited) { return true }
+            if node.name.caseInsensitiveCompare("script") == .orderedSame, instantiates(node) { return true }
+            if declaresContentScript(in: node.children, group: group, depth: depth + 1,
+                                     visited: visited, instantiates: instantiates) { return true }
             guard let nested = referencedGroup(node, group: group, visited: visited) else { continue }
-            if declaresScript(in: nested.children, group: group, depth: depth + 1,
-                              visited: nested.visited) { return true }
+            if declaresContentScript(in: nested.children, group: group, depth: depth + 1,
+                                     visited: nested.visited, instantiates: instantiates) { return true }
         }
         return false
     }
@@ -318,12 +322,28 @@ extension WasabiStandardFrames {
         var ancestor = object.parent
         while let current = ancestor {
             if current.tag.is(.container) {
-                let declared = current.attributes["component"] ?? current.attributes["hold"]
-                return declared.flatMap(WinampModernComponentRegistry.kind(for:)) == .playlist
+                guard let declared = current.attributes["component"] ?? current.attributes["hold"] else {
+                    return holdsOnlyThePlaylist(current)
+                }
+                return WinampModernComponentRegistry.kind(for: declared) == .playlist
             }
             ancestor = current.parent
         }
         return false
+    }
+
+    /// A container that declares no component is the playlist's window when the one component it
+    /// hosts is the playlist: Bubble_Tea_-_Updated's `Pledit` is a status frame around a
+    /// `<component param="guid:pl">` and names nothing itself (B324).
+    private static func holdsOnlyThePlaylist(_ container: WasabiObject) -> Bool {
+        var held: Set<WinampModernComponentKind> = []
+        func collect(_ object: WasabiObject) {
+            if WinampModernComponentRegistry.isHolderElement(object.tag),
+               let kind = WasabiSceneRenderer.componentKind(of: object) { held.insert(kind) }
+            object.children.forEach(collect)
+        }
+        collect(container)
+        return held == [.playlist]
     }
 
     /// The playlist `<LayoutStatus>` slots beneath `roots` that get the host's command bar. A

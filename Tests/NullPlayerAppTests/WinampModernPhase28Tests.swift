@@ -202,6 +202,19 @@ final class WinampModernPhase28Tests: XCTestCase {
         XCTAssertNil(mesh.affineSourceTransform)
     }
 
+    /// B345: a wrapping rotation about the centre is drawn unwrapped (Stargate's glyph ring tiled its
+    /// rim into the corners); a wrapping scroll is not a rotation and keeps wrapping.
+    func testAWrappingRotationAboutTheCentreIsNotTiled() {
+        func mesh(_ sources: [CGPoint]) -> WasabiLayerFXMesh {
+            WasabiLayerFXMesh(columns: 9, rows: 9, sources: sources, wrap: true, bilinear: true)
+        }
+        let rotated = makeRotationMesh(radians: 0.7)
+        XCTAssertTrue(mesh(rotated.sources).isRotationAboutCentre)
+        let identity = makeRotationMesh(radians: 0).sources
+        XCTAssertTrue(mesh(identity).isRotationAboutCentre)
+        XCTAssertFalse(mesh(identity.map { CGPoint(x: $0.x + 0.25, y: $0.y) }).isRotationAboutCentre)
+    }
+
     /// The affine draw must put the same pixels where the resampler does. The layer is drawn into
     /// a top-row-first context, the scene's own orientation, so a flipped or mirrored needle fails.
     func testAnAffineWarpDrawsWhatTheResampleDraws() throws {

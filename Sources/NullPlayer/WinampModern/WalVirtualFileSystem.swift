@@ -169,6 +169,17 @@ final class WalVirtualFileSystem {
                 return WalResolvedResource(logicalPath: existing)
             }
         }
+        // `@DEFAULTSKINPATH@/../about/about_fg.jpg` (Braun_CC_50, B321) climbs out of the stock skin
+        // into `/Skins`, where the author's own folder `about/` sat; shipped as a `.wal` that folder
+        // is inside the skin. Tried only when the literal reading finds nothing, so a sibling skin
+        // that really is installed still wins. The one climb is the whole rule: the stock skin's
+        // parent is the skins collection, which for a shipped skin is the skin itself.
+        if mustExist, substituted.hasPrefix(Self.defaultSkinRoot + "/"), let skinRoot,
+           !Self.fold(canonical).hasPrefix(Self.fold(Self.defaultSkinRoot + "/")),
+           canonical.hasPrefix("/Skins/"), resolvedExisting(canonical) == nil,
+           let existing = resolvedExisting(skinRoot + canonical.dropFirst("/Skins".count)) {
+            return WalResolvedResource(logicalPath: existing)
+        }
         guard mustExist else { return WalResolvedResource(logicalPath: canonical) }
         return WalResolvedResource(logicalPath: try canonicalExistingPath(canonical, location: location))
     }

@@ -59,8 +59,24 @@ final class WasabiDrawList {
 
     /// `matchImage`, when given, swaps each bitmap for one already in the replay context's colour
     /// space (`WinampModernCanvas.matched`).
-    func replay(into context: CGContext, matchImage: @escaping ImageMatcher = { $0 }) {
-        for step in steps { step(context, matchImage) }
+    func replay(into context: CGContext, matchImage: @escaping ImageMatcher = { $0 },
+                skippingRegionExcluded: Bool = false) {
+        for (index, step) in steps.enumerated() where !(skippingRegionExcluded && regionExcluded.contains(index)) {
+            step(context, matchImage)
+        }
+    }
+
+    /// Steps that paint into the window but must not *shape* it (B323). On a region window every
+    /// painted pixel is window, so a `<vis>` wider than the art beneath it grew the window and drew its
+    /// bars over the desktop; the canvas replays without these to learn the region, then keeps only
+    /// the pixels of them that land inside it.
+    private var regionExcluded = IndexSet()
+    var hasRegionExcludedSteps: Bool { !regionExcluded.isEmpty }
+
+    func recordingRegionExcluded(_ body: () -> Void) {
+        let start = steps.count
+        body()
+        if steps.count > start { regionExcluded.insert(integersIn: start..<steps.count) }
     }
 
     /// For a draw that needs a real context: run on the replaying thread, with the replay context.

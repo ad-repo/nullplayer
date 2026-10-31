@@ -460,7 +460,7 @@ extension WasabiSceneRenderer {
         // the run at `frame.maxX`, so at rest the text sat entirely off the right edge and a long
         // title simply vanished instead of scrolling.
         var repeats: [CGFloat] = []
-        if width > frame.width, let ticker,
+        if run.advanceLength(of: text) > frame.width, let ticker,
            let scroll = tickerMotion(for: ticker, overflow: width - frame.width, textWidth: width) {
             startX = frame.minX - scroll.offset
             repeats = scroll.wraps ? [width + Self.tickerGap] : []

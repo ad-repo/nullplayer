@@ -46,6 +46,7 @@ final class WinampModernPhase19Tests: XCTestCase {
       </elements>
       <groupdef id="chrome">
         <layer id="handle" image="knob" x="100" y="0"/>
+        <button id="logo" image="knob" x="100" y="20"/>
       </groupdef>
       <groupdef id="body">
         <button id="fullPlay" action="Play" x="10" y="150" image="knob"/>
@@ -142,6 +143,17 @@ final class WinampModernPhase19Tests: XCTestCase {
         _ = handle.setAttribute("move", value: "0")
         XCTAssertFalse(view.shouldDragWindow(from: handle),
                        "move=\"0\" is the skin claiming that press for itself")
+    }
+
+    /// B342: Kepler's title logo is a `<button>` with no action; it must drag, a real button must not.
+    @MainActor
+    func testAnInertButtonDragsButACommandButtonDoesNot() throws {
+        let (view, renderer) = try makeView()
+        let objects = renderer.sceneNodes().map(\.object)
+        let logo = try XCTUnwrap(objects.first { $0.attributes["id"] == "logo" })
+        let play = try XCTUnwrap(objects.first { $0.attributes["id"] == "fullPlay" })
+        XCTAssertTrue(view.shouldDragWindow(from: logo))
+        XCTAssertFalse(view.shouldDragWindow(from: play))
     }
 
     // MARK: - Fixture

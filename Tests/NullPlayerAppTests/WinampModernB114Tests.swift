@@ -229,6 +229,18 @@ final class WinampModernB114Tests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(decorated.pixel(x: 20, y: 35)).alpha, 255, "marks that decorate trim nothing")
     }
 
+    /// B338, Midnight Club 2's shade: the layout's own painted backing is a mark too, so the display
+    /// it draws under a transparent frame is window, and is not cut away with the controls on it.
+    func testAComposedWindowKeepsItsLayoutBacking() throws {
+        let scene = try makeScene(layoutAttributes: #"desktopalpha="1" alphabackground="blue""#,
+                                  resources: #"<bitmap id="red" file="red.png"/><bitmap id="blue" file="blue.png"/>"#,
+                                  markup: #"<layer id="body" x="0" y="0" w="8" h="8" image="red" sysregion="1"/>"#,
+                                  art: ["red.png": Self.solidPNG(red: 255, green: 0, blue: 0),
+                                        "blue.png": Self.solidPNG(red: 0, green: 0, blue: 255)])
+        let display = try XCTUnwrap(scene.pixel(x: 60, y: 20))
+        XCTAssertEqual([display.blue, display.alpha], [255, 255], "the backing shows and stays in the window")
+    }
+
     /// A plain `<edit>` is an opaque native window on `wasabi.list.background`, so Clock V2.76's
     /// comment field, which its box art leaves blank, can be seen and clicked.
     func testAPlainEditPaintsTheListBackground() throws {
@@ -406,6 +418,20 @@ final class WinampModernB114Tests: XCTestCase {
 
         let notAPlaylist = try makeScene(layoutAttributes: "", markup: status)
         XCTAssertTrue(notAPlaylist.children(ofID: "status").isEmpty)
+    }
+
+    /// B324 — Bubble_Tea_-_Updated's `Pledit` declares no `component=`; it hosts the playlist, and
+    /// nothing else, in its content. That is a playlist window too, so its status slot gets the bar.
+    func testAContainerThatHostsOnlyThePlaylistGetsTheCommandBarToo() throws {
+        let status = #"<LayoutStatus id="status" x="0" y="-15" relaty="1" w="0" relatw="1" h="15"/>"#
+        let playlist = #"<component id="pl" param="guid:pl" x="0" y="0" w="100" h="40"/>"#
+        let hosted = try makeScene(layoutAttributes: "", markup: playlist + status)
+        XCTAssertEqual(hosted.children(ofID: "status").compactMap { $0.attributes["action"] },
+                       ["PE_Add", "PE_Rem", "PE_Sel", "PE_Misc", "PE_List"])
+
+        let library = #"<component id="ml" param="guid:ml" x="0" y="0" w="100" h="40"/>"#
+        let shared = try makeScene(layoutAttributes: "", markup: playlist + library + status)
+        XCTAssertTrue(shared.children(ofID: "status").isEmpty, "a window that holds more than the playlist")
     }
 
     /// Deimos's `cover.maki` (57 corpus skins) asks for `cover.jpg`, `folder.jpg`… beside the playing

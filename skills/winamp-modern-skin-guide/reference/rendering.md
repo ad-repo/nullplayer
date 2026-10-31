@@ -1375,3 +1375,55 @@ volume slider never appeared — a layout bug with no missing element and no dia
 Both sources are the ones Wasabi resolves any auto height from, and both answer the child's **bottom**
 rather than its own height: an `autoheightsource="<id>"` naming a descendant, else the lowest edge any
 child reaches (`contentBottom`).
+
+
+### Three seams that decide what a region window or a standard frame draws
+
+- **A `<vis>` never shapes a region window (B323).** On a layout with no `desktopalpha` every painted
+  pixel is window, so a vis wider than the art grew the window and drew bars over the desktop
+  (Bubble_Tea's cup). `WasabiDrawList.recordingRegionExcluded` tags the vis draw; the canvas replays
+  without it to read the region, replays whole, and empties what the vis left outside it
+  (`clearOutside`: the inverted region plane as an alpha-only picture drawn with the `clear` blend; never a
+  Swift per-pixel loop, which cost about a point of whole-app CPU in a release build). A dirty rect where
+  nothing else paints keeps its vis, so the clip is per rect, not per window. The idle vis draws nothing in
+  a dump, so the sweeps cannot see this: drive the app with a track playing. 20 gold+silver region
+  layouts draw a vis and all sit wholly over art, so only a skin whose vis overhangs its art changes.
+- **A container that hosts only the playlist gets the playlist's command bar (B324).**
+  `WasabiStandardFrames.hostsPlaylistCommandBar` reads a declared `component=`/`hold=`, and for a container
+  declaring neither, the components it holds (`holdsOnlyThePlaylist`). Bubble_Tea's `Pledit` and LCDx's
+  embedded `main/plus` playlist are the two gold+silver windows it reaches.
+- **Only a script that calls `newGroup` instantiates a standard frame's content (B322).**
+  `WasabiStandardFrames.needsHostedContent` reads the bytecode, as the surface synthesizer does:
+  a frame declaring chrome scripts (`fade`, `standstraw`) and no `standardframe.maki` still needs the
+  content group built for it.
+
+### Three more seams (intake #5 group 5, 2026-10-30)
+
+- **A host component ignores the skin's focus fade (B333).** Winamp gives a component a real child
+  window, so a group's `inactivealpha` never reaches it, and our NSView surfaces already share that.
+  `hostComponentAlpha(of:)` is the static `alpha` down the tree, used by the inline and deferred
+  component draws. XP_Blue_ver2 fades `player.normal.playbuttons` to `inactivealpha="175"` and paints
+  the author's e-mail into `background.png` under the opaque playlist: faded with the group, the
+  playlist showed that watermark whenever the window lost focus (the user opening About). Reproduce
+  with the window **inactive**: a capture right after `winhelper raise` is clean.
+- **Stray text on an `alphabackground` layout is dropped (B334).** HALOAMP's layout `background` and
+  `alphabackground` are both a fully transparent 340x220 `background.png`; the 196x80 bar is the
+  `playerbody` layer. `songArtist`/`songAlbum` (`y=81`, `y=85`) sit below it and drew over the desktop.
+  `droppingStrayText` clips a text node to nothing when it touches none of the layout's bitmap-painting
+  nodes (one bounding box). **Do not mask by the layout's own bitmap**: that one is empty here, and
+  masking by it first blanked every text, title and time included. Xenon's `alphabackground` is a
+  separate shadow map, which broke the same first attempt.
+  **A host heuristic, not a measured Winamp behaviour** (audit 2026-10-31): over the 318 gold, silver and
+  bronze skins that name `alphabackground`, it hides a visible, non-empty text in exactly two skins, HALOAMP's
+  two overlapping strings and Auburn's thinger label (`cbtxt`, whose `thinger.png` is not in the archive).
+  Every other match is a zero-size or 1x1 text. A layout naming a bitmap the archive lacks therefore drops
+  nothing (the art is unknown); a present, fully transparent bitmap (HALOAMP) still does. Whether Winamp
+  would hide HALOAMP's strings cannot be shown from the skin's files; it is a user decision.
+- **A hover reaches `onMouseMove` (B332).** `WinampModernMainView.mouseMoved` dispatches `onmousemove`
+  to the object under the pointer when it has a binding, before the enter/leave identity guard; before
+  it only a pressed object heard it. Its point is in layout space (`coordinateSpace(of:)`, the nearest
+  sized ancestor; `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch), the space Xenon's `x` 250..330
+  assumes; **presses and drags stay parent-relative**, because SingItKitty, SONY__WALKMAN and
+  YoYoBoy's volume knobs subtract `getLeft()` and went silent in layout space (interaction sweep
+  2026-10-30). Winamp's real rule is unmeasured: Xenon wants layout space for hover and
+  `clientToScreen`, those three want the parent for presses.

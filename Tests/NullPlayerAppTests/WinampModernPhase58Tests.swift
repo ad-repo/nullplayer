@@ -134,6 +134,28 @@ final class WinampModernPhase58Tests: XCTestCase {
         XCTAssertEqual(seeker.attributes["visible"], "1")
     }
 
+    // MARK: - B339: a group's show reaches what is inside it
+
+    /// GoldenBeauty binds `onSetVisible` to the animated layers *inside* its equalizer group and
+    /// shows the group with `show()`. Only the group was told, so the bars never drew the bands.
+    /// A child under a still-hidden group hears nothing (B22), and a hidden child hears no show.
+    func testShowingAGroupTellsItsVisibleDescendantsOnly() throws {
+        let (runtime, program) = try makeRuntime(layout: """
+        <group id="eq" x="0" y="0" w="50" h="32" visible="0">
+          <layer id="bar" x="0" y="0" w="9" h="32"/>
+          <layer id="off" x="0" y="0" w="9" h="32" visible="0"/>
+        </group>
+        <group id="closed" x="0" y="40" w="50" h="32" visible="0">
+          <group id="inner" x="0" y="0" w="50" h="32" visible="0"><layer id="deep" x="0" y="0" w="9" h="32"/></group>
+        </group>
+        """)
+        runtime.recordsDispatchedEventsForTesting = true
+        _ = try runtime.invoke(method: "show", on: reference(try object(runtime, "eq")), arguments: [], program: program)
+        _ = try runtime.invoke(method: "show", on: reference(try object(runtime, "inner")), arguments: [], program: program)
+        let told = Set(runtime.dispatchedEventsForTesting.filter { $0.1 == "onsetvisible" }.map { $0.0 })
+        XCTAssertEqual(told, ["eq", "bar", "inner"])
+    }
+
     // MARK: - Fixture
 
     private func reference(_ object: WasabiObject) -> MakiObjectReference {

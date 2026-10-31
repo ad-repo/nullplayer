@@ -130,9 +130,37 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
         if changed {
             _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(visible)])
+            notifyDescendants(of: object, visible: visible)
         }
         requestWindow(for: object, visible: visible)
         return .null
+    }
+
+    /// Wasabi hands `onSetVisible` down a shown or hidden group to everything inside it, because a
+    /// child window hears its parent's show. GoldenBeauty's equalizer reads the bands from handlers
+    /// bound to the **animated layers inside** its group, so with only the group told, the five bars
+    /// stayed on frame 0 (all grey) however the bands stood. `notifyContainerVisibility` does the same
+    /// for a whole container. Showing under a hidden ancestor tells nobody (the children are still off
+    /// screen, B22's tab pages).
+    func notifyDescendants(of object: WasabiObject, visible: Bool) {
+        if visible {
+            var ancestor = object.parent
+            while let node = ancestor {
+                guard isVisible(node) else { return }
+                ancestor = node.parent
+            }
+        }
+        for child in object.children { broadcastOnSetVisible(visible, from: child) }
+    }
+
+    /// `onSetVisible(visible)` to `object` and everything inside it. On a show, an object that is
+    /// itself hidden, or under one, hears nothing; a hide is told to all of them.
+    func broadcastOnSetVisible(_ visible: Bool, from object: WasabiObject, ancestorsVisible: Bool = true) {
+        let selfVisible = ancestorsVisible && isVisible(object)
+        if selfVisible || !visible {
+            _ = try? dispatch(object: object, event: "onsetvisible", arguments: [.boolean(visible)])
+        }
+        for child in object.children { broadcastOnSetVisible(visible, from: child, ancestorsVisible: selfVisible) }
     }
 
     /// Visible *as the user sees it*. The window this object lives in is the outer term — only the

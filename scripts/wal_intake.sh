@@ -28,8 +28,8 @@
 set -u -o pipefail
 
 source "$(dirname "$0")/lib/wal_corpus.sh"
-# Agreed 2026-10-19; re-open from intake.tsv's gain curve and the sweep time the batch added (§8).
-readonly SILVER_BUDGET=25 SILVER_MIN_GAIN=3
+# Every candidate goes through an intake (2026-10-30, §8): the floor is 0, the budget is the batch.
+readonly SILVER_BUDGET=25 SILVER_MIN_GAIN=0
 
 usage() {
     echo "usage: wal_intake.sh <candidates> <outdir> [--admit] [--allow-dirty]" >&2

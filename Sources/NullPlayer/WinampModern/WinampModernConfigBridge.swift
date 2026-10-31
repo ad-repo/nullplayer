@@ -71,6 +71,8 @@ enum WinampModernConfigBridge {
             ? Attribute.repeatPlayback.section : name
     }
 
+    static let skinsAndUITweaksSection = "{9149C445-3C30-4e04-8433-5A518ED0FDDE}"
+
     /// The bridged attribute a `{GUID};Name` pair names, or nil when it is the skin's own.
     static func attribute(section: String, key: String) -> Attribute? {
         Attribute.allCases.first {
@@ -105,16 +107,29 @@ enum WinampModernConfigBridge {
     ///   `1.0f/3.0f`, stored through `%f`. Shield_Amp's and Ebonite_2_1's shared `OneDirectionText`
     ///   sets its move timer to `20/stringToFloat(value)` — 60 ms — and a `""` made it infinite (B148).
     ///
-    /// The same item's `Enable desktop alpha` and `Enable tooltips` are read by 12 markup bindings
-    /// and deliberately **not** answered: each would switch a skin branch nobody has measured here.
-    private static let hostDefaults: [(section: String, key: String, value: String)] = [
-        ("{9149C445-3C30-4e04-8433-5A518ED0FDDE}", "Text Ticker Speed", "0.333333")
+    /// - `Enable desktop alpha` (same item): `"1"`, because every NullPlayer window is truly
+    ///   translucent (a `desktopalpha="1"` layout composites per pixel, as `isDesktopAlphaAvailable()`
+    ///   already says). Xenon's `eq.m` shows its opaque `eqfakedta` rect whenever this is not `1`, which
+    ///   painted the round Equalizer as a black box (B331). It was left unanswered while nobody had
+    ///   measured the ~40 skins that read it; B331's sweep classified them.
+    ///
+    /// `Enable tooltips` is still **not** answered: nothing here has asked for it.
+    private static let hostDefaults: [(section: String, itemName: String?, key: String, value: String)] = [
+        (skinsAndUITweaksSection, nil, "Text Ticker Speed", "0.333333"),
+        (skinsAndUITweaksSection, "Skins and UI Tweaks", "Enable desktop alpha", "1"),
     ]
 
     /// The value Winamp would answer for one of its own unset preferences, or nil for anything else.
+    ///
+    /// An entry with an `itemName` answers that spelling of the item as well as its GUID: Xenon's
+    /// `eq.m` reads `Enable desktop alpha` from `Config.getItem("Skins and UI Tweaks")` (B331). Only
+    /// that entry, and only its **default**: the stores of the two spellings stay separate (merging
+    /// them moved HALOAMP's library window from 200x152 to 521x329, its `attribs.m` mirrors
+    /// `Enable tooltips` both ways), and answering `Text Ticker Speed` by name did the same.
     static func hostDefault(section: String, key: String) -> String? {
         hostDefaults.first {
-            $0.section.caseInsensitiveCompare(section) == .orderedSame
+            ($0.section.caseInsensitiveCompare(section) == .orderedSame
+                || $0.itemName?.caseInsensitiveCompare(section) == .orderedSame)
                 && $0.key.caseInsensitiveCompare(key) == .orderedSame
         }?.value
     }

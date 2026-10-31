@@ -234,6 +234,17 @@ struct WasabiLayerFXMesh: Equatable {
         return transform
     }
 
+    /// A pure turn about the layer's centre: affine, area-preserving, centre fixed (B345). Wrapping
+    /// such a mesh only ever tiles the layer's own rim into the corners the circle leaves empty —
+    /// Stargate's glyph ring (`fx_setWrap(1)`) drew its ragged edge outside the gate — so the draw
+    /// treats it as unwrapped; a wrap that scrolls or scales still wraps.
+    var isRotationAboutCentre: Bool {
+        guard let map = affineSourceTransform else { return false }
+        let centre = CGPoint(x: 0.5, y: 0.5).applying(map)
+        return abs(map.a * map.d - map.b * map.c - 1) < 1e-3
+            && abs(centre.x - 0.5) < 1e-3 && abs(centre.y - 0.5) < 1e-3
+    }
+
     /// A mesh that samples every destination pixel from its own position — the layer drawn as-is.
     var isIdentity: Bool {
         for row in 0..<rows {

@@ -920,10 +920,13 @@ final class WasabiSceneRenderer {
 
     @discardableResult
     func activateLayout(id: String) throws -> CGSize {
-        guard let next = container.children.first(where: {
-            $0.tag.is(.layout) &&
-            $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame
-        }) else {
+        // A switch may name the *container* rather than a layout (American Rag's shade layout
+        // returns with `action="switch" param="main"`, and `main` is the container's id; its layouts
+        // are `normal` and `shade`). That asks for the container's default layout, its first (B348).
+        let layouts = container.children.filter { $0.tag.is(.layout) }
+        let named = layouts.first { $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame }
+        let ownContainer = container.xmlID?.caseInsensitiveCompare(id) == .orderedSame
+        guard let next = named ?? (ownContainer ? layouts.first : nil) else {
             throw WalFailure(WalDiagnostic(.malformedXML,
                                            "Container '\(container.xmlID ?? "Main")' has no layout '\(id)'.",
                                            location: container.source))
@@ -1351,7 +1354,7 @@ final class WasabiSceneRenderer {
         var nodes: [WasabiSceneNode] = []
         append(object: layout, frame: rootRect, clip: rootRect, into: &nodes, isRoot: true,
                includingHidden: includingHidden)
-        return nodes
+        return includingHidden ? nodes : droppingStrayText(from: nodes)
     }
 
     /// The active layout's geometry **including hidden subtrees** — what is laid out, not what is
@@ -2374,7 +2377,9 @@ final class WasabiSceneRenderer {
         } else if object.tag.is(.gradient) {
             drawGradient(object, frame: node.frame, context: context)
         } else if object.tag.is(.vis) {
-            drawVisualization(object, frame: node.frame, context: context)
+            context.recordingRegionExcluded {
+                drawVisualization(object, frame: node.frame, context: context)
+            }
         } else if object.tag.is(.eqVis) {
             drawEQVis(object, frame: node.frame, context: context)
         } else if object.tag.is(.list, in: .colorThemes) {
@@ -2506,6 +2511,9 @@ final class WasabiSceneRenderer {
 
     // MARK: - The window's own shape
 
+    /// `layoutBitmapArt`'s answers, by source and id (`WasabiRendererStrayText.swift`).
+    var layoutBitmapArtCache: [String: LayoutBitmapArt] = [:]
+
     var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?
 
@@ -2524,6 +2532,18 @@ final class WasabiSceneRenderer {
         let raw = attributes[active ? "activealpha" : "inactivealpha"] ?? attributes["alpha"] ?? "255"
         let alpha = max(0, min(255, Int(Double(raw) ?? 255)))
         return CGFloat(alpha) / 255
+    }
+
+    /// The alpha a host component draws at: the skin's static `alpha` down the tree, never the
+    /// focus-dependent `inactivealpha` fade (B333).
+    ///
+    /// Winamp gives a component a real child window (`drawDeferredHostComponents`), which the skin's
+    /// Wasabi alpha does not reach, and which our own NSView surfaces already share. XP_Blue_ver2
+    /// fades `player.normal.playbuttons` to `inactivealpha="175"` and paints the author's e-mail
+    /// into its background under the opaque playlist: a playlist faded with the group let that
+    /// watermark show through every time the window lost focus, as when About opened.
+    static func hostComponentAlpha(of object: WasabiObject) -> CGFloat {
+        sequence(first: object, next: \.parent).reduce(1) { $0 * alphaFraction(of: $1, active: true) }
     }
 
     /// The `<list>` control: the rows a script put in it, in the skin's own colours.
@@ -3425,6 +3445,7 @@ final class WasabiSceneRenderer {
             deferredHostComponents.append((kind, node))
             return
         }
+        context.setAlpha(Self.hostComponentAlpha(of: object))
         switch kind {
         case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
@@ -4659,8 +4680,10 @@ final class WasabiSceneRenderer {
     }
 
     /// A component window narrower than this on an axis its skin never sized has no window in it.
-    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`.
-    private static let degenerateComponentExtent: CGFloat = 32
+    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`. Two 12px playlist rows:
+    /// _Mercury's playlist is a 116px frame around a 31px list, a size its author chose (B325); at the
+    /// old 32 the fit grew its canvas to 335 under a 116px window and the user saw half of it.
+    private static let degenerateComponentExtent: CGFloat = 24
     /// What such an axis is grown to give the component. Winamp's own stock Modern skin opens the
     /// same visualization window at `354x280`, whose client area under the standard frame is a little
     /// over 250px tall; this reproduces that rather than inventing a number.

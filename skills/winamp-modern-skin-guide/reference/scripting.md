@@ -393,10 +393,16 @@ because the corpus spells `{9149C445-3C30-4e04-…}` both ways. It answers exact
 | *Skins and UI Tweaks* `{9149C445-3C30-4e04-8433-5A518ED0FDDE}` | `Text Ticker Speed` | `"0.333333"` | gen_ff `wasabicfg.h` `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f` (`StringPrintfW(double)`) |
 
 Shield_Amp's and Ebonite_2_1's shared `OneDirectionText` sets its step to `20/stringToFloat(value)`,
-which is 60 ms (B148). The same item's `Enable desktop alpha` (8 markup bindings) and
-`Enable tooltips` (4) are **deliberately unanswered**: each switches a skin branch nobody has
-measured here. Add an entry only with Winamp's own default in hand, read from its source, never
-chosen.
+which is 60 ms (B148). The same item's `Enable desktop alpha` now answers `"1"` (B331, 2026-10-30):
+every NullPlayer window is truly translucent, as `isDesktopAlphaAvailable()` already says, and Xenon's
+`eq.m` paints an opaque `eqfakedta` rect over its round Equalizer whenever the preference is not `1`.
+41 gold+silver skins read it (`unzip -p` grep for `Enable desktop alpha`).
+`Enable tooltips` stays **unanswered**: nothing here asks for it. Xenon asks by item *name*
+(`Config.getItem("Skins and UI Tweaks")`), so that one entry carries an `itemName` and answers both
+spellings; the stores stay separate and `Text Ticker Speed` is still answered by GUID only. Both
+widenings moved HALOAMP's, GlassAMPfinal's and MoonLight's library windows (HALOAMP 200x152 to 521x329:
+its `attribs.m` mirrors `Enable tooltips` between the two spellings), which no measurement says is
+right. Add an entry only with a measured reason, never a guess.
 
 #### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
 

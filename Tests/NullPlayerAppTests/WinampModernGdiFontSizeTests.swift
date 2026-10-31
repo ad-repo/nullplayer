@@ -38,4 +38,28 @@ final class WinampModernGdiFontSizeTests: XCTestCase {
             XCTAssertEqual(line.baselineDrop, 0, accuracy: 0.5, name)
         }
     }
+
+    /// B335: the OS/2 win fields are unsigned, and Xenon's `square.TTF` stored -136 in `usWinDescent`,
+    /// a 64 em cell that pushed its clock 376px out of its box. A face like that has no usable win
+    /// cell and falls back to its own line. The fixture is Arial's bytes with that one field patched.
+    func testANegativeWinDescentIsNotACell() throws {
+        let url = URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf")
+        var data = try XCTUnwrap(try? Data(contentsOf: url))
+        let tables = Int(data[4]) << 8 | Int(data[5])
+        var patched = false
+        for index in 0..<tables {
+            let entry = 12 + index * 16
+            guard String(decoding: data[entry..<entry + 4], as: UTF8.self) == "OS/2" else { continue }
+            let offset = data[entry + 8..<entry + 12].reduce(0) { $0 << 8 | Int($1) }
+            data[offset + 76] = 0xFF
+            data[offset + 77] = 0x78
+            patched = true
+        }
+        XCTAssertTrue(patched)
+        let provider = try XCTUnwrap(CGDataProvider(data: data as CFData))
+        let cgFont = try XCTUnwrap(CGFont(provider))
+        let font = try XCTUnwrap(CTFontCreateWithGraphicsFont(cgFont, 16, nil, nil) as NSFont?)
+        XCTAssertNil(WasabiTextMetrics.winMetricsPerEm(of: font))
+        XCTAssertEqual(WasabiTextMetrics.gdiLine(of: font).cell, font.ascender - font.descender, accuracy: 0.01)
+    }
 }
