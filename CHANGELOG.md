@@ -226,6 +226,7 @@
 - **Kepler's main window drags by its title logo**: a button with no action or script is a drag surface, not a dead control.
 - **Stargate's turning dial no longer draws outside its circle**: a layer rotated about its centre with wrapping on is no longer tiled into its corners.
 - **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
+- **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
 
 ## 0.33.1
 

@@ -94,14 +94,36 @@ final class WinampModernEmbeddedToggleTests: XCTestCase {
         XCTAssertLessThan(toggle, release)
     }
 
+    /// Draculas_Helmet (B349): `embed_xui="slider.button"` over a lone slider named `slider` matches no
+    /// id, and the opacity sliders' events never reached the wrapper the script listens on.
+    func testAnUnmatchedEmbedNameMeansTheGroupsOnlySlider() throws {
+        let (loaded, scripts) = try makeRuntime(group: """
+          <groupdef id="tab" embed_xui="slider.button">
+            <slider id="slider" x="0" y="0" w="20" h="10" low="1" high="255"/>
+          </groupdef>
+        """)
+        let wrapper = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "tab").first)
+        let slider = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "slider").first)
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
+                                  instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/t.maki"),
+                                  ownerID: nil, parameter: nil)
+        XCTAssertTrue(scripts.embeddingOwners(of: slider).contains { $0 === wrapper })
+        _ = try scripts.invoke(method: "setPosition", on: MakiObjectReference(.gui(wrapper.stableID)),
+                               arguments: [.integer(77)], program: program)
+        XCTAssertEqual(try scripts.invoke(method: "getPosition", on: MakiObjectReference(.gui(slider.stableID)),
+                                          arguments: [], program: program).stringValue, "77")
+    }
+
     // MARK: -
 
-    private func makeRuntime() throws -> (WinampModernLoadedSkin, WinampModernScriptRuntime) {
-        let xml = """
-        <WasabiXML>
+    private func makeRuntime(group: String = """
           <groupdef id="tab" embed_xui="tab.button">
             <togglebutton id="tab.button" fitparent="1"/>
           </groupdef>
+    """) throws -> (WinampModernLoadedSkin, WinampModernScriptRuntime) {
+        let xml = """
+        <WasabiXML>
+          \(group)
           <container id="main">
             <layout id="normal" w="20" h="20">
               <group id="tab" x="0" y="0" w="20" h="20"/>

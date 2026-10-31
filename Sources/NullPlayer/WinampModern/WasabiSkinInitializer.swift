@@ -1614,8 +1614,8 @@ final class WasabiSkinInitializer {
                               definitionStack: nextDefinitionStack,
                               createdCount: &createdCount,
                               documentOrder: documentOrder, enclosingOrder: nodeOrder)
-            let embeddedParent = embeddedXUITag.flatMap { findObject(xmlID: $0, beneath: object) } ?? object
-            if embeddedParent !== object, let tag = embeddedXUITag,
+            let embeddedParent = embeddedXUITag.flatMap { embeddedControl(named: $0, beneath: object) } ?? object
+            if embeddedParent !== object, let tag = embeddedParent.xmlID ?? embeddedXUITag,
                WasabiEmbeddedXUI.forward(attributes, from: object, tag: tag, onto: embeddedParent) {
                 try buildHostedWidgetBody(of: embeddedParent, location: node.location, graph: graph, types: types,
                                           pendingScripts: &pendingScripts,
@@ -1833,6 +1833,19 @@ final class WasabiSkinInitializer {
                 }
             }
         }
+    }
+
+    /// The control an `embed_xui` names. Draculas_Helmet's `Drac:Conf-Slider` says
+    /// `embed_xui="slider.button"` over a lone `<Wasabi:HSlider id="slider">`: the name matches no id,
+    /// and Winamp still makes that slider the XUI's control (its script sets and hears the wrapper's
+    /// position). A name that finds nothing therefore means the group's only slider (B349).
+    private func embeddedControl(named xmlID: String, beneath root: WasabiObject) -> WasabiObject? {
+        if let match = findObject(xmlID: xmlID, beneath: root) { return match }
+        func sliders(in node: WasabiObject) -> [WasabiObject] {
+            node.children.flatMap { ($0.tag.is(.slider) ? [$0] : []) + sliders(in: $0) }
+        }
+        let candidates = sliders(in: root)
+        return candidates.count == 1 ? candidates[0] : nil
     }
 
     private func findObject(xmlID: String, beneath root: WasabiObject) -> WasabiObject? {
