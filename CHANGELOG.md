@@ -222,6 +222,7 @@
 - **Auburn's component-bucket label is no longer hidden** when the layout's own artwork is missing from the skin.
 - **iPlay's song title moves one cell at a time**, as its own script steps it, instead of also sliding (#643).
 - **QL2's window title bars read their window's name**, not `:COMPONENTNAME`, and its thinger shows an icon between the arrows.
+- **Midnight Club 2's shaded player draws its display**, ticker, timer, volume knob and transport glyphs instead of an empty box.
 
 ## 0.33.1
 

@@ -341,6 +341,8 @@ failed on Big Bento's notifier, BOOM and Pure Inspired, which mark objects deep 
 content. Gold+silver moved Clock alone, bar a 13px outline on MMD3's slanted shade edge.
 `WasabiSceneRenderer.marksWholeWindow`.
 
+**The layout's own painted backing is a mark too** (B338, 2026-10-31): Midnight Club 2's `small` is a transparent frame layer and a marked wrapper group, and the dark display is its `background=`; without the backing in the composition the display fell outside the window and was cut away with every control on it.
+
 **Nor by cuts alone, past half the window** (2026-10-25). Winampple_1_1's four holder windows
 (`MLibrary`, `video`, `Visualizations`, the playlist) each stretch `bg.playlist` — an opaque 1x1
 white — over their client at `sysregion="-2"`, 20px up and left of it, with no positive region object

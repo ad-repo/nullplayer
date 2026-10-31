@@ -519,6 +519,14 @@ extension WasabiSceneRenderer {
             // to slide into — and a 252x1 `<vis>` at y=215 drew a flickering line across the
             // desktop below. Outside such a box the rect stands, so a window whose positive layers
             // merely decorate it is not trimmed to them.
+            // **The layout's own backing is a mark too.** A layout that is nothing but marked groups
+            // and layers still paints its `background` (Midnight Club 2's shade: `background="small.player"`
+            // is the dark display, the frame layer over it is transparent there, and the content group
+            // is a wrapper that stands for the glare layer it holds). Composed from the marks alone the
+            // display fell outside the window and was cut away with every control on it (B338).
+            if composes, case .bitmap(let backing)? = backing(of: layout) {
+                draw(backing, object: layout, frame: CGRect(x: 0, y: 0, width: width, height: height), context: context)
+            }
             for cut in cuts {
                 guard let contentBoxes = cut.contentBoxes else { continue }
                 context.saveGState()
