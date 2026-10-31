@@ -920,10 +920,13 @@ final class WasabiSceneRenderer {
 
     @discardableResult
     func activateLayout(id: String) throws -> CGSize {
-        guard let next = container.children.first(where: {
-            $0.tag.is(.layout) &&
-            $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame
-        }) else {
+        // A switch may name the *container* rather than a layout (American Rag's shade layout
+        // returns with `action="switch" param="main"`, and `main` is the container's id; its layouts
+        // are `normal` and `shade`). That asks for the container's default layout, its first (B348).
+        let layouts = container.children.filter { $0.tag.is(.layout) }
+        let named = layouts.first { $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame }
+        let ownContainer = container.xmlID?.caseInsensitiveCompare(id) == .orderedSame
+        guard let next = named ?? (ownContainer ? layouts.first : nil) else {
             throw WalFailure(WalDiagnostic(.malformedXML,
                                            "Container '\(container.xmlID ?? "Main")' has no layout '\(id)'.",
                                            location: container.source))

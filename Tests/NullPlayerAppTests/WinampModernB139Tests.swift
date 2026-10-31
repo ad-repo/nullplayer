@@ -62,6 +62,16 @@ final class WinampModernB139Tests: XCTestCase {
                        "and comes back to what it was resized to, not to the player's size")
     }
 
+    /// B348: American Rag's shade layout returns with `action="switch" param="main"`, and `main` is the
+    /// container's id, not a layout's. A switch naming its own container asks for its first layout.
+    func testSwitchNamingTheContainerReturnsToItsDefaultLayout() throws {
+        let renderer = try makeLinkedLayoutsRenderer()
+        _ = try renderer.activateLayout(id: "shade")
+        _ = try renderer.activateLayout(id: "main")
+        XCTAssertEqual(renderer.layout.xmlID, "normal")
+        XCTAssertThrowsError(try renderer.activateLayout(id: "nowhere"))
+    }
+
     // MARK: - `linkwidth`
 
     /// Winamp's rule for a shade pair: the width carries, the height does not.

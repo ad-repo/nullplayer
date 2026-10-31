@@ -225,6 +225,7 @@
 - **Midnight Club 2's shaded player draws its display**, ticker, timer, volume knob and transport glyphs instead of an empty box.
 - **Kepler's main window drags by its title logo**: a button with no action or script is a drag surface, not a dead control.
 - **Stargate's turning dial no longer draws outside its circle**: a layer rotated about its centre with wrapping on is no longer tiled into its corners.
+- **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
 
 ## 0.33.1
 

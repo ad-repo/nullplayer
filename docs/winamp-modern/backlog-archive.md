@@ -7900,3 +7900,11 @@ which differs between two runs of the same binary. B38.1 and B38.2 confirmed liv
 | B346 | **XP_Blue's EQ faders overlap each other.** Found in the intake #5 user UI round (2026-10-31, reporter driving). The equalizer's sliders draw on top of their neighbours. Done when each fader sits apart in its own track | XP_Blue_ver2 | ? | 1 |
 
 **Closed 2026-10-31, not a defect.** The skin's own geometry: the ten `<slider>`s in `player.xml` are 12 wide at 15px pitch and use `thumb="eqslider"` (`player/eqslider.png`, 22x11), the knob of its horizontal seek and volume bars, so each centred knob overhangs its neighbours by 7px. Clipping a thumb wider than its slider also clipped deliberate overhangs in 21 other skins (38 render-sweep images), and the skin ships no reference. The reporter closed it as not a bug.
+
+## B348 — American Rag's shade layout never returned — fixed 2026-10-31
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B348 | **American Rag gets stuck in its compact/shade layout.** Found in the intake #5 user UI round (2026-10-31, reporter driving). Once in the compact/shade layout, there is no way back to the full player. Done when the skin's control returns from compact/shade to the normal layout | American_Rag | ? | 1 |
+
+**Fixed 2026-10-31** - the shade layout's return button is `action="switch" param="main"`, and `main` is the container's id, not a layout's (`normal`, `shade`), so `WasabiSceneRenderer.activateLayout` found no layout and threw; the click did nothing. A switch that names its own container now asks for that container's default (first) layout. Reach by static scan of gold+silver: only American_Rag and LG_Free_touch_the_music_ switch to their own container id (iCandy-2 and i-Skin name another container, `pledit`, which is unchanged). Test `testSwitchNamingTheContainerReturnsToItsDefaultLayout`. Re-checked live on American_Rag: the shade button returns 300x200 to 500x400 and the skin's normal-layout shade button goes back. Interaction sweep of the two reachable skins on both revs: identical (the sweep does not drive layout switches); the full corpus run was abandoned after 70 minutes as a fresh baseline build and run. Wasabi-mode only; Classic/Original untouched.
