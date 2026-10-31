@@ -1357,13 +1357,18 @@ final class WasabiSceneRenderer {
     /// On a layout that names an `alphabackground`, a text lying wholly outside the artwork has no
     /// window to be in (B334). HALOAMP's `songArtist`/`songAlbum` sit at `y=81`, below its 80px bar on
     /// a 340x220 layout whose own backgrounds are empty: they drew over the bare desktop, on top of
-    /// each other. "Artwork" is every other node that paints a bitmap; a text that touches any of
+    /// each other. "Artwork" is every node that is not a text, a bare group or the layout; a text that touches any of
     /// it stays, so a label on a panel, or a window with no artwork at all, is untouched.
     /// ponytail: one bounding box for the whole layout; a text in the gap between two far-apart
     /// pieces of art stays. Test each piece's own frame if a skin shows one.
     private func droppingStrayText(from nodes: [WasabiSceneNode]) -> [WasabiSceneNode] {
         guard layout.attributes["alphabackground"] != nil else { return nodes }
-        let art = nodes.lazy.filter { $0.object !== self.layout && $0.bitmapID != nil && !$0.object.tag.is(anyOf: [.text, .songticker]) }
+        func isArtwork(_ node: WasabiSceneNode) -> Bool {
+            let object = node.object
+            if object === layout || object.tag.is(anyOf: [.text, .songticker]) { return false }
+            return !object.tag.is(.group) || object.attributes["background"] != nil
+        }
+        let art = nodes.lazy.filter(isArtwork)
             .map { $0.frame.intersection($0.clipping.rect) }.filter { !$0.isNull && !$0.isEmpty }
             .reduce(CGRect.null) { $0.union($1) }
         guard !art.isNull else { return nodes }
