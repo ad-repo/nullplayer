@@ -514,11 +514,19 @@ final class WasabiTextMetrics {
             character == ":" ? (colonAdvance ?? advance) : advance
         }
 
+        /// What the string occupies by its advances alone, without the last cell's overhang past the next
+        /// cell's start. This is the length a skin counts when it cuts a string to fit a box: iPlay's
+        /// 14 cells advancing 12 are 168px in a 170px box and must not tick, though `width(of:)`
+        /// reaches 172 (B320).
+        func advanceLength(of text: String) -> CGFloat {
+            text.reduce(0) { $0 + advanceWidth(of: $1) }
+        }
+
         /// The run ends where its last cell does, not one advance past its start: under a negative
         /// `hspacing` the cells overlap, and Cell's ticker font (13px cells advancing 6) measured 7px
         /// short, so a centred "VOLUME: 50%" sat 3.5px right of its box (#581).
         func width(of text: String) -> CGFloat {
-            text.reduce(0) { $0 + advanceWidth(of: $1) }
+            advanceLength(of: text)
                 + (text.last.map { max(0, CGFloat(charWidth) - advanceWidth(of: $0)) } ?? 0)
         }
     }
@@ -726,7 +734,11 @@ final class WasabiTextMetrics {
         // commoner pattern — a transient readout over the songticker (MMD3's VOLUME/BASS/TREBLE,
         // Styx's and Ebonite's seek and volume overlays, micro's `oldtimer.m` clock over
         // `display="time"`) that is taken back down with `setText("")`.
-        if let override = object.attributes[scriptTextKey], !override.isEmpty { return override }
+        // A script-set `:componentname` is the frame's placeholder too (QL2's `upper.m` writes it back
+        // with `setText`, and uppercases whatever `onTextChanged` hands it) — B336.
+        if let override = object.attributes[scriptTextKey], !override.isEmpty {
+            return resolvePlaceholder(override, on: object)
+        }
         let resolved = bound(object, host: host)
         if resolved.isEmpty, let placeholder = object.attributes["alternatetext"], !placeholder.isEmpty {
             return placeholder

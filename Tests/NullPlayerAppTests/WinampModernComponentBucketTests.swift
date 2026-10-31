@@ -59,6 +59,14 @@ final class WinampModernComponentBucketTests: XCTestCase {
         XCTAssertEqual(lobe.visibleCount, 1)
     }
 
+    /// B337 — QL2's thinger is `w=50 rightmargin=50`: the margin equals the box, so the strip is zero
+    /// long, yet the author put the bucket between two arrows to show one icon.
+    func testMarginsThatEatTheWholeBoxStillShowOneIcon() {
+        let ql2 = layout(["rightmargin": "50"], CGRect(x: 32, y: 12, width: 50, height: 32))
+        XCTAssertEqual(ql2.visibleCount, 1)
+        XCTAssertEqual(layout([:], CGRect(x: 0, y: 0, width: 0, height: 32)).visibleCount, 0)
+    }
+
     /// `vertical="1"` (Lobe's switch layout, S7Reflex's config drawer): the strip runs down the box
     /// and `leftmargin`/`rightmargin` run along **that** axis, as they do in Wasabi.
     func testAVerticalBucketStacksItsIconsAndKeepsItsMarginsOnTheScrollAxis() {
@@ -214,5 +222,18 @@ final class WinampModernComponentBucketTests: XCTestCase {
                        .componentBucketScroll(delta: 1, page: true))
         XCTAssertEqual(WinampModernHostAction(action: "CB_PREVPAGE"),
                        .componentBucketScroll(delta: -1, page: true))
+    }
+
+    /// B320 — iPlay's 14-cell title (`charwidth 16`, `hspacing -4`) advances 168px in a 170px box. It
+    /// fits, so the host ticker must not slide it, though the drawn run reaches 172px.
+    func testABitmapRunThatFitsByAdvanceIsNotAnOverflow() {
+        let definition = WalResourceDefinition(
+            kind: "bitmapfont", identifier: "f", logicalFile: nil,
+            attributes: ["charwidth": "16", "charheight": "24", "hspacing": "-4"],
+            source: WalSourceLocation(path: "test", line: 0, column: 0))
+        let run = WasabiTextMetrics.BitmapRun(definition: definition, colonWidth: nil)
+        let title = String(repeating: "A", count: 14)
+        XCTAssertEqual(run.advanceLength(of: title), 168)
+        XCTAssertEqual(run.width(of: title), 172)
     }
 }

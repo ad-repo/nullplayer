@@ -469,6 +469,11 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(try text("title"), "My Component", "the nearest componentname wins")
         XCTAssertEqual(try text("outer.title"), "Playlist Editor", "otherwise the container's name")
         XCTAssertEqual(try text("plain"), "literal")
+
+        // B336: a script's `setText(":componentname")` is the same placeholder (QL2's `upper.m`).
+        let outer = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "outer.title").first)
+        _ = outer.setAttribute(WasabiTextMetrics.scriptTextKey, value: ":componentname")
+        XCTAssertEqual(try text("outer.title"), "Playlist Editor")
     }
 
     /// A skin declaring its own `xuitag=` always wins; an alias only fills an unclaimed tag.

@@ -171,7 +171,9 @@ struct WinampModernComponentBucketLayout: Equatable {
     /// the empty strip again.
     var visibleCount: Int {
         let extent = iconExtent
-        guard extent > 0, axisLength > 0 else { return 0 }
+        // Margins that eat the whole box still leave the one icon: QL2's thinger is `w=50
+        // rightmargin=50` between two arrows and means one icon there (B337).
+        guard extent > 0, (isVertical ? frame.height : frame.width) > 0 else { return 0 }
         let stride = extent + spacing
         guard stride > 0 else { return 0 }
         return max(1, Int((axisLength + spacing) / stride))
