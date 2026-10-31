@@ -189,7 +189,7 @@ naturally stops:
      those). A difference in a skin that varies between runs of one build (OrbFace, -MfS3-,
      CopperdeckII, Aria_of_the_Soul, Invicta, winampmodern566, Cpro_Winamp_Modern, Quadelic,
      CPro_Winamp_for_Mac_Sync, WinampAzenis2, 4-dreliction, cPro_T2T, Winamp_Single_GUI,
-     LG_Free's clock frame; B296) is noise unless it is in that
+     LG_Free's clock frame; HALOAMP's `cont.clear.*` and `PLEdit` sizes, which follow the random `onresize` seed order; B296) is noise unless it is in that
      phase's skin. A `--rev` baseline missing from the store is the one full run a phase may
      take.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
