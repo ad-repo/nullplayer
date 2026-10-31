@@ -265,6 +265,13 @@ Tahoma, Trebuchet — draws byte-identically. Helvetica is exempt, as in `gdiSiz
 Arial. Sweep: 83 of 970 renders across 20 skins moved, nearly all 1–2px; Winamp 2000's clock moved
 toward its own `screenshot.png`; nothing newly clipped. Wrapping text keeps its measured block.
 
+**A win field with its sign bit set is not a cell** (B335, 2026-10-31). The fields are unsigned, and
+Xenon's `square.TTF` (`usWinDescent` 65400) and Hoop_Life's `srgt6pack.ttf` (65480) hold a negative
+there: a 64 em cell that centred the line 376px outside its box, so the box's scissor cut the whole
+clock and `RENDER_PROBE` still listed the text. `winMetricsPerEm` answers nil for such a face, which
+falls back to its `hhea` line. Reach: those two of 995 archives' fonts. A text that is in the probe but
+paints nothing: log `verticalInset` before suspecting the font load.
+
 **A missing face stands in at the size GDI would draw *it* at** (`substituteScale(forMissing:)`,
 2026-10-21). `gdiSized` reads a face's cell from its OS/2 table, and a face that is not installed has
 none to read, so the Arial stand-in took Arial's em. A table carries the cells of missing Windows faces

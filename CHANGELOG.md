@@ -217,6 +217,8 @@
 - **HALOAMP's artist and album strings no longer float below the player** over the desktop.
 - **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art** (no white fringe round -Graviton-'s
   and OrbFace's circles).
+- **Xenon and Hoop Life draw their time (and Hoop Life its title)**: a font whose size table was stored with a
+  sign bit no longer throws its line out of its box.
 
 ## 0.33.1
 
