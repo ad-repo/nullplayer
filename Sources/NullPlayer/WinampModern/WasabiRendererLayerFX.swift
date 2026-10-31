@@ -22,7 +22,7 @@ extension WasabiSceneRenderer {
     @discardableResult
     func drawWarped(_ image: CGImage, in rect: CGRect, mesh: WasabiLayerFXMesh,
                             context: WasabiDrawList) -> Bool {
-        if !mesh.wrap, let sourceFromDestination = mesh.affineSourceTransform {
+        if !mesh.wrap || mesh.isRotationAboutCentre, let sourceFromDestination = mesh.affineSourceTransform {
             drawAffineWarp(image, in: rect, sourceFromDestination: sourceFromDestination,
                            bilinear: mesh.bilinear, context: context)
             return true
