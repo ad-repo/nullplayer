@@ -397,11 +397,12 @@ which is 60 ms (B148). The same item's `Enable desktop alpha` now answers `"1"` 
 every NullPlayer window is truly translucent, as `isDesktopAlphaAvailable()` already says, and Xenon's
 `eq.m` paints an opaque `eqfakedta` rect over its round Equalizer whenever the preference is not `1`.
 41 gold+silver skins read it (`unzip -p` grep for `Enable desktop alpha`).
-`Enable tooltips` stays **unanswered**: nothing here asks for it. `Config.getItem("Skins and UI Tweaks")`
-(by name) and `getItemByGuid("{9149C445-…}")` are one item for the **default** only (`hostDefault`); their
-stores stay separate. Merging the stores (`section(forItemName:)`) moved HALOAMP's library window from
-200x152 to 521x329, because its `attribs.m` mirrors `Enable tooltips` between the two spellings. Add an
-entry only with a measured reason, never a guess.
+`Enable tooltips` stays **unanswered**: nothing here asks for it. Xenon asks by item *name*
+(`Config.getItem("Skins and UI Tweaks")`), so that one entry carries an `itemName` and answers both
+spellings; the stores stay separate and `Text Ticker Speed` is still answered by GUID only. Both
+widenings moved HALOAMP's, GlassAMPfinal's and MoonLight's library windows (HALOAMP 200x152 to 521x329:
+its `attribs.m` mirrors `Enable tooltips` between the two spellings), which no measurement says is
+right. Add an entry only with a measured reason, never a guess.
 
 #### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
 

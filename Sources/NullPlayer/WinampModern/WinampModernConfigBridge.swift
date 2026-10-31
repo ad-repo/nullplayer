@@ -114,22 +114,22 @@ enum WinampModernConfigBridge {
     ///   measured the ~40 skins that read it; B331's sweep classified them.
     ///
     /// `Enable tooltips` is still **not** answered: nothing here has asked for it.
-    private static let hostDefaults: [(section: String, key: String, value: String)] = [
-        (skinsAndUITweaksSection, "Text Ticker Speed", "0.333333"),
-        (skinsAndUITweaksSection, "Enable desktop alpha", "1")
+    private static let hostDefaults: [(section: String, itemName: String?, key: String, value: String)] = [
+        (skinsAndUITweaksSection, nil, "Text Ticker Speed", "0.333333"),
+        (skinsAndUITweaksSection, "Skins and UI Tweaks", "Enable desktop alpha", "1"),
     ]
 
     /// The value Winamp would answer for one of its own unset preferences, or nil for anything else.
     ///
-    /// *Skins and UI Tweaks* is one item under its name and its GUID: Xenon's `eq.m` reads
-    /// `Enable desktop alpha` from `Config.getItem("Skins and UI Tweaks")` (B331). Only the **default**
-    /// is shared. The two spellings keep separate stores, because merging them changed HALOAMP's
-    /// library window from 200x152 to 521x329 (its `attribs.m` mirrors `Enable tooltips` both ways).
+    /// An entry with an `itemName` answers that spelling of the item as well as its GUID: Xenon's
+    /// `eq.m` reads `Enable desktop alpha` from `Config.getItem("Skins and UI Tweaks")` (B331). Only
+    /// that entry, and only its **default**: the stores of the two spellings stay separate (merging
+    /// them moved HALOAMP's library window from 200x152 to 521x329, its `attribs.m` mirrors
+    /// `Enable tooltips` both ways), and answering `Text Ticker Speed` by name did the same.
     static func hostDefault(section: String, key: String) -> String? {
-        let section = section.caseInsensitiveCompare("Skins and UI Tweaks") == .orderedSame
-            ? skinsAndUITweaksSection : section
-        return hostDefaults.first {
-            $0.section.caseInsensitiveCompare(section) == .orderedSame
+        hostDefaults.first {
+            ($0.section.caseInsensitiveCompare(section) == .orderedSame
+                || $0.itemName?.caseInsensitiveCompare(section) == .orderedSame)
                 && $0.key.caseInsensitiveCompare(key) == .orderedSame
         }?.value
     }
