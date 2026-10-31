@@ -227,6 +227,7 @@
 - **Stargate's turning dial no longer draws outside its circle**: a layer rotated about its centre with wrapping on is no longer tiled into its corners.
 - **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
 - **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
+- **GoldenBeauty's in-skin equalizer draws the bands and follows a drag**: showing a group now tells the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its library button reading EQ is the author's art.)
 
 ## 0.33.1
 

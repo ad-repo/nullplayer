@@ -130,9 +130,37 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
         if changed {
             _ = try dispatch(object: object, event: "onsetvisible", arguments: [.boolean(visible)])
+            notifyDescendants(of: object, visible: visible)
         }
         requestWindow(for: object, visible: visible)
         return .null
+    }
+
+    /// Wasabi hands `onSetVisible` down a shown or hidden group to everything inside it, because a
+    /// child window hears its parent's show. GoldenBeauty's equalizer reads the bands from handlers
+    /// bound to the **animated layers inside** its group, so with only the group told, the five bars
+    /// stayed on frame 0 (all grey) however the bands stood. The window-level walk in
+    /// `notifyContainerVisibility` already does this for a whole container; this is the same rule for
+    /// one group. Showing under a hidden ancestor tells nobody (the children are still off screen,
+    /// B22's tab pages), and a child that is itself hidden hears nothing on a show.
+    func notifyDescendants(of object: WasabiObject, visible: Bool) {
+        if visible {
+            var ancestor = object.parent
+            while let node = ancestor {
+                guard isVisible(node) else { return }
+                ancestor = node.parent
+            }
+        }
+        func walk(_ node: WasabiObject, shown: Bool) {
+            for child in node.children {
+                let childShown = shown && isVisible(child)
+                if childShown || !visible {
+                    _ = try? dispatch(object: child, event: "onsetvisible", arguments: [.boolean(visible)])
+                }
+                walk(child, shown: childShown)
+            }
+        }
+        walk(object, shown: true)
     }
 
     /// Visible *as the user sees it*. The window this object lives in is the outer term — only the

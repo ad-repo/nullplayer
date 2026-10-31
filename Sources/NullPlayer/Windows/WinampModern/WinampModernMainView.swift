@@ -2875,6 +2875,9 @@ final class WinampModernMainView: NSView {
         let value = vertical ? 1 - (point.y - frame.minY) / frame.height
                              : (point.x - frame.minX) / frame.width
         let normalized = max(0, min(1, value))
+        // Read before the host drive: an EQ drive syncs this very slider's `value` on the way, and
+        // `notePosition` would then find nothing moved and never tell the skin's `onSetPosition`.
+        let positionBefore = object.attributes["value"]
         // EQ, balance, seek and volume, through the host — the same value the thumb is drawn from.
         // The EQ half also lets the skin hear its own equalizer move, before `notePosition` below,
         // so the drag's own position is the last thing written to this slider.
@@ -2889,7 +2892,7 @@ final class WinampModernMainView: NSView {
         // Wasabi moves the object's own position on a drag and tells the skin about it, whatever the
         // slider drives. Skins hang their only feedback off that: multipass's balance and crossfade
         // sliders print "Balance: Left +40%" on the song ticker from `onSetPosition` and nowhere else.
-        notePosition(normalized, on: object)
+        notePosition(normalized, on: object, previous: positionBefore)
         needsDisplay = true
     }
 
@@ -2914,9 +2917,9 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private func notePosition(_ normalized: CGFloat, on object: WasabiObject) {
+    private func notePosition(_ normalized: CGFloat, on object: WasabiObject, previous: String?) {
         let position = WinampModernScriptRuntime.sliderPosition(normalized: normalized, of: object)
-        guard object.attributes["value"] != String(position) else { return }
+        guard previous != String(position) else { return }
         _ = object.setAttribute("value", value: String(position))
         _ = try? scripts.dispatch(object: object, event: "onsetposition",
                                   arguments: [.integer(position)])
