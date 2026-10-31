@@ -1368,9 +1368,23 @@ final class WasabiSceneRenderer {
             if object === layout || object.tag.is(anyOf: [.text, .songticker]) { return false }
             return !object.tag.is(.group) || object.attributes["background"] != nil
         }
-        let art = nodes.lazy.filter(isArtwork)
+        var art = nodes.lazy.filter(isArtwork)
             .map { $0.frame.intersection($0.clipping.rect) }.filter { !$0.isNull && !$0.isEmpty }
             .reduce(CGRect.null) { $0.union($1) }
+        // The layout's own bitmaps are artwork too, where they have any (GoldenBeauty's player *is*
+        // its `background`); HALOAMP's are empty, which is the case this exists for.
+        let rootFrame = nodes.first?.frame ?? .zero
+        for id in ["background", "alphabackground"].compactMap({ layout.attributes[$0] }) {
+            let key = layout.source.path + "|" + id.lowercased()
+            if backingBoundsCache[key] == nil {
+                backingBoundsCache[key] = .some(resources.bitmap(background: id, declaredIn: layout.source)
+                    .flatMap { bitmap in WasabiResourceCache.opaqueBounds(of: bitmap.image).map { ($0, bitmap.width, bitmap.height) } })
+            }
+            guard let (bounds, width, height) = backingBoundsCache[key] ?? nil, width > 0, height > 0 else { continue }
+            let fx = rootFrame.width / CGFloat(width), fy = rootFrame.height / CGFloat(height)
+            art = art.union(CGRect(x: rootFrame.minX + bounds.minX * fx, y: rootFrame.minY + bounds.minY * fy,
+                                   width: bounds.width * fx, height: bounds.height * fy))
+        }
         guard !art.isNull else { return nodes }
         return nodes.map { node in
             guard node.object.tag.is(anyOf: [.text, .songticker]), !node.frame.intersects(art) else { return node }
@@ -2549,6 +2563,9 @@ final class WasabiSceneRenderer {
 
 
     // MARK: - The window's own shape
+
+    /// `droppingStrayText`: the opaque box of a layout bitmap, by source and id (nil: no opaque pixel).
+    var backingBoundsCache: [String: (CGRect, Int, Int)?] = [:]
 
     var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?
