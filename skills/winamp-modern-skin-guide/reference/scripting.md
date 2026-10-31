@@ -396,10 +396,12 @@ Shield_Amp's and Ebonite_2_1's shared `OneDirectionText` sets its step to `20/st
 which is 60 ms (B148). The same item's `Enable desktop alpha` now answers `"1"` (B331, 2026-10-30):
 every NullPlayer window is truly translucent, as `isDesktopAlphaAvailable()` already says, and Xenon's
 `eq.m` paints an opaque `eqfakedta` rect over its round Equalizer whenever the preference is not `1`.
-41 gold+silver skins read it (`unzip -p` grep for `Enable desktop alpha`); the sweeps classified them.
+41 gold+silver skins read it (`unzip -p` grep for `Enable desktop alpha`).
 `Enable tooltips` stays **unanswered**: nothing here asks for it. `Config.getItem("Skins and UI Tweaks")`
-(by name) and `getItemByGuid("{9149C445-…}")` are one item: `section(forItemName:)` maps the name to the
-GUID, so a default answers either spelling. Add an entry only with a measured reason, never a guess.
+(by name) and `getItemByGuid("{9149C445-…}")` are one item for the **default** only (`hostDefault`); their
+stores stay separate. Merging the stores (`section(forItemName:)`) moved HALOAMP's library window from
+200x152 to 521x329, because its `attribs.m` mirrors `Enable tooltips` between the two spellings. Add an
+entry only with a measured reason, never a guess.
 
 #### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
 

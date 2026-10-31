@@ -1650,7 +1650,12 @@ final class WasabiSceneRenderer {
         Self.coordinateSpace(of: object) { ancestor in resolvedGeometry(of: ancestor)?.frame }
     }
 
+    /// `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch for B332: a pointer event and `clientToScreen`
+    /// are measured from the immediate parent group again, sized or not.
+    static let measuresFromParentGroup = ProcessInfo.processInfo.environment["WINAMP_MODERN_PARENT_SPACE"] == "1"
+
     static func coordinateSpace(of object: WasabiObject, frameOf: (WasabiObject) -> CGRect?) -> CGRect? {
+        if measuresFromParentGroup { return object.parent.flatMap(frameOf) }
         var ancestor = object.parent
         while let next = ancestor {
             if let frame = frameOf(next), frame.width > 0, frame.height > 0 { return frame }

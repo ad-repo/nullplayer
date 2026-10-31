@@ -66,14 +66,9 @@ enum WinampModernConfigBridge {
     /// as well as their GUID, and a skin that asks by name means the same host state: Anunaki's
     /// repeat menu writes `Config.getItem("Playlist editor").getAttribute("repeat")`, which landed in
     /// a skin-private "Playlist editor" store and left repeat untouched. Any other name is the skin's.
-    ///
-    /// *Skins and UI Tweaks* is the same item under its GUID (`hostDefaults`): Xenon's `eq.m` reads
-    /// `Enable desktop alpha` from `Config.getItem("Skins and UI Tweaks")` by name, and the default
-    /// below answered only the GUID's spelling (B331).
     static func section(forItemName name: String) -> String {
-        if name.caseInsensitiveCompare("Playlist editor") == .orderedSame { return Attribute.repeatPlayback.section }
-        if name.caseInsensitiveCompare("Skins and UI Tweaks") == .orderedSame { return skinsAndUITweaksSection }
-        return name
+        name.caseInsensitiveCompare("Playlist editor") == .orderedSame
+            ? Attribute.repeatPlayback.section : name
     }
 
     static let skinsAndUITweaksSection = "{9149C445-3C30-4e04-8433-5A518ED0FDDE}"
@@ -125,8 +120,15 @@ enum WinampModernConfigBridge {
     ]
 
     /// The value Winamp would answer for one of its own unset preferences, or nil for anything else.
+    ///
+    /// *Skins and UI Tweaks* is one item under its name and its GUID: Xenon's `eq.m` reads
+    /// `Enable desktop alpha` from `Config.getItem("Skins and UI Tweaks")` (B331). Only the **default**
+    /// is shared. The two spellings keep separate stores, because merging them changed HALOAMP's
+    /// library window from 200x152 to 521x329 (its `attribs.m` mirrors `Enable tooltips` both ways).
     static func hostDefault(section: String, key: String) -> String? {
-        hostDefaults.first {
+        let section = section.caseInsensitiveCompare("Skins and UI Tweaks") == .orderedSame
+            ? skinsAndUITweaksSection : section
+        return hostDefaults.first {
             $0.section.caseInsensitiveCompare(section) == .orderedSame
                 && $0.key.caseInsensitiveCompare(key) == .orderedSame
         }?.value
