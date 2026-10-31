@@ -39,7 +39,7 @@ extension WasabiSceneRenderer {
         for (kind, node) in pending {
             context.saveGState()
             node.clipping.apply(to: context)
-            context.setAlpha(Self.alphaFraction(of: node.object, active: isWindowActive) * node.inheritedAlpha)
+            context.setAlpha(Self.hostComponentAlpha(of: node.object))
             switch kind {
             case .playlist: drawPlaylistComponent(node.object, frame: node.frame, context: context)
             default: drawWaveformSeeker(frame: node.frame, context: context)

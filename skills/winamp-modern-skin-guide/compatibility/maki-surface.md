@@ -247,6 +247,13 @@ By area:
   titlebar exercises the other shape — `layout.clientToScreenX(…)` out, titlebar **group**
   `screenToClientX(…)` back, then `− group.getLeft()` — and both objects hang off the layout, so it
   returns the input and the correction lands. Phase 24
+  **Nearest sized ancestor (B332, 2026-10-30).** The "parent" is the nearest ancestor that has a size
+  (`WasabiSceneRenderer.coordinateSpace(of:)`); a `<group>` that declares no `w`/`h` is only where its
+  children are placed, so the conversion (and a pointer event's `x`/`y`, `pointInEventSpace`) reaches
+  past it to the next sized group or the layout. Xenon's `player.display` is `x=100` with no size, and
+  its script opens the tray at `d2.onMouseMove(x)` for `x` 250..330 and keeps it open while the pointer
+  is within `d2.clientToScreenX(d2.getGuiX())+250..370`: every number reads right only with the layout
+  as the space (tray out at window x 250..300) and wrong with the group's `x=100` added.
 - **`popAtXY(x, y)`** — a script-built menu at a computed point, in the same coordinates the
   conversions above answer in. ClassicPro's tab-strip right-click menu and its drawer's "goto" menu.
   Phase 24

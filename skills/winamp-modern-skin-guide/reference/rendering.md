@@ -1396,3 +1396,24 @@ child reaches (`contentBottom`).
   `WasabiStandardFrames.needsHostedContent` reads the bytecode, as the surface synthesizer does:
   a frame declaring chrome scripts (`fade`, `standstraw`) and no `standardframe.maki` still needs the
   content group built for it.
+
+### Three more seams (intake #5 group 5, 2026-10-30)
+
+- **A host component ignores the skin's focus fade (B333).** Winamp gives a component a real child
+  window, so a group's `inactivealpha` never reaches it, and our NSView surfaces already share that.
+  `hostComponentAlpha(of:)` is the static `alpha` down the tree, used by the inline and deferred
+  component draws. XP_Blue_ver2 fades `player.normal.playbuttons` to `inactivealpha="175"` and paints
+  the author's e-mail into `background.png` under the opaque playlist: faded with the group, the
+  playlist showed that watermark whenever the window lost focus (the user opening About). Reproduce
+  with the window **inactive**: a capture right after `winhelper raise` is clean.
+- **Stray text on an `alphabackground` layout is dropped (B334).** HALOAMP's layout `background` and
+  `alphabackground` are both a fully transparent 340x220 `background.png`; the 196x80 bar is the
+  `playerbody` layer. `songArtist`/`songAlbum` (`y=81`, `y=85`) sit below it and drew over the desktop.
+  `droppingStrayText` clips a text node to nothing when it touches none of the layout's bitmap-painting
+  nodes (one bounding box). **Do not mask by the layout's own bitmap**: that one is empty here, and
+  masking by it first blanked every text, title and time included. Xenon's `alphabackground` is a
+  separate shadow map, which broke the same first attempt.
+- **A hover reaches `onMouseMove` (B332).** `WinampModernMainView.mouseMoved` dispatches `onmousemove`
+  to the object under the pointer when it has a binding, before the enter/leave identity guard; before
+  it only a pressed object heard it. The coordinates come from `pointInEventSpace`, so the nearest
+  sized ancestor rule in `compatibility/maki-surface.md` (`clientToScreen`) applies to them too.

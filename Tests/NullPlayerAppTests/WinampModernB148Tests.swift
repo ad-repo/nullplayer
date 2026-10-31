@@ -35,8 +35,20 @@ final class WinampModernB148Tests: XCTestCase {
         let item = try invoke("getitembyguid", on: MakiObjectReference(.system),
                               [.string(Self.uiOptions)], in: runtime)
         let attribute = try invoke("getattribute", on: try reference(item),
-                                   [.string("Enable desktop alpha")], in: runtime)
+                                   [.string("Enable tooltips")], in: runtime)
         XCTAssertEqual(try invoke("getdata", on: try reference(attribute), [], in: runtime).stringValue, "")
+    }
+
+    /// B331: every window here is truly translucent, so Winamp's *Enable desktop alpha* reads `1`;
+    /// Xenon's `eq.m` paints an opaque rect over the round Equalizer whenever it does not.
+    func testDesktopAlphaAnswersOn() throws {
+        let runtime = try makeRuntime()
+        // By item name, as Xenon's `eq.m` asks.
+        let item = try invoke("getitem", on: MakiObjectReference(.system),
+                              [.string("Skins and UI Tweaks")], in: runtime)
+        let attribute = try invoke("getattribute", on: try reference(item),
+                                   [.string("Enable desktop alpha")], in: runtime)
+        XCTAssertEqual(try invoke("getdata", on: try reference(attribute), [], in: runtime).stringValue, "1")
     }
 
     func testGetDelayAnswersTheDelayAsSet() throws {

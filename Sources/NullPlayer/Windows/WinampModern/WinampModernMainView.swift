@@ -1630,6 +1630,7 @@ final class WinampModernMainView: NSView {
         // the hovered *object*.
         if renderer.focusComponentBucketIcon(at: point) { needsDisplay = true }
         let next = renderer.object(at: point)
+        dispatchHoverMove(over: next, at: point)
         guard next !== hoveredObject else { return }
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
         // A `<Menu>` entry lights up under the pointer by swapping which of its three sibling objects
@@ -1645,6 +1646,15 @@ final class WinampModernMainView: NSView {
             WasabiMenuBar.apply(.hover, to: next)
         }
         needsDisplay = true
+    }
+
+    /// `onMouseMove` for a pointer that is over an object with no button down (B332).
+    ///
+    /// Wasabi sends it on every move over the object, not only while one is pressed: Xenon slides
+    /// its transport tray out of `d2.onMouseMove(x,y)` when the pointer reaches the ball's edge.
+    private func dispatchHoverMove(over object: WasabiObject?, at point: CGPoint) {
+        guard let object, scripts.hasBinding(for: object, event: "onmousemove") else { return }
+        dispatch(object: object, event: "onmousemove", point: point)
     }
 
     override func mouseExited(with event: NSEvent) {

@@ -393,10 +393,13 @@ because the corpus spells `{9149C445-3C30-4e04-…}` both ways. It answers exact
 | *Skins and UI Tweaks* `{9149C445-3C30-4e04-8433-5A518ED0FDDE}` | `Text Ticker Speed` | `"0.333333"` | gen_ff `wasabicfg.h` `DEFAULT_TEXTSPEED 1.0f/3.0f`, stored through `%f` (`StringPrintfW(double)`) |
 
 Shield_Amp's and Ebonite_2_1's shared `OneDirectionText` sets its step to `20/stringToFloat(value)`,
-which is 60 ms (B148). The same item's `Enable desktop alpha` (8 markup bindings) and
-`Enable tooltips` (4) are **deliberately unanswered**: each switches a skin branch nobody has
-measured here. Add an entry only with Winamp's own default in hand, read from its source, never
-chosen.
+which is 60 ms (B148). The same item's `Enable desktop alpha` now answers `"1"` (B331, 2026-10-30):
+every NullPlayer window is truly translucent, as `isDesktopAlphaAvailable()` already says, and Xenon's
+`eq.m` paints an opaque `eqfakedta` rect over its round Equalizer whenever the preference is not `1`.
+41 gold+silver skins read it (`unzip -p` grep for `Enable desktop alpha`); the sweeps classified them.
+`Enable tooltips` stays **unanswered**: nothing here asks for it. `Config.getItem("Skins and UI Tweaks")`
+(by name) and `getItemByGuid("{9149C445-…}")` are one item: `section(forItemName:)` maps the name to the
+GUID, so a default answers either spelling. Add an entry only with a measured reason, never a guess.
 
 #### `Timer.setDelay` re-arms a running timer; `getDelay` answers it
 

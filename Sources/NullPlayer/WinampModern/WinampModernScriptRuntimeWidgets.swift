@@ -70,7 +70,7 @@ extension WinampModernScriptRuntime {
     func pointInEventSpace(of object: WasabiObject, event: String, canvasPoint: CGPoint,
                            renderer: WasabiSceneRenderer) -> CGPoint {
         let space = mouseEventSpace(of: object, event: event).flatMap { renderer.resolvedGeometry(of: $0)?.frame }
-            ?? renderer.resolvedGeometry(of: object)?.parent
+            ?? renderer.coordinateSpace(of: object)
         guard let space else { return canvasPoint }
         return CGPoint(x: canvasPoint.x - space.minX, y: canvasPoint.y - space.minY)
     }
