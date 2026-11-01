@@ -36,6 +36,51 @@ final class AudionFaceSceneTests: XCTestCase {
         XCTAssertEqual(Self.pixel(image, 3, 3), clear, "the transparent animation frame cleared the base")
     }
 
+    /// Departures: a stream animation replaces the readouts under the frame it draws, the buttons
+    /// staying above it (A16), and a frame smaller than its rect draws at its own size from the
+    /// corner (A17).
+    func testAStreamAnimationReplacesItsReadoutsAndDrawsAnUndersizedFrameAtItsOwnSize() async throws {
+        let fixture = try AudionFaceFixture(json: [
+            "streamingAnimRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 3, right: 3),
+            "streamingFirstPICTID": 200, "streamingNumPICTs": 1, "streamingFrameDelay": 0,
+            "timeDigit1Rect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 1, right: 1), "timeDigit1FirstPICTID": 100,
+            "timeDigit3Rect": AudionFaceFixture.rect(top: 1, left: 1, bottom: 2, right: 2), "timeDigit3FirstPICTID": 100,
+            "timeDigit2Rect": AudionFaceFixture.rect(top: 3, left: 3, bottom: 4, right: 4), "timeDigit2FirstPICTID": 100,
+            "stopButtonRect": AudionFaceFixture.rect(top: 2, left: 2, bottom: 3, right: 3),
+        ])
+        try fixture.png("base.png", width: 4, height: 4, fill: green)
+        try fixture.png("200.png", fill: red)
+        for id in 100..<110 { try fixture.png("\(id).png", fill: blue) }
+        try fixture.png("stop.png", fill: [255, 255, 255, 255])
+        let face = try await fixture.load()
+
+        var host = AudionFaceHostState()
+        host.streamPhase = .streaming
+        let image = try XCTUnwrap(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host)))
+        XCTAssertEqual(Self.pixel(image, 0, 0), red, "the 1×1 frame at the rect's corner, over the digit it replaced")
+        XCTAssertEqual(Self.pixel(image, 1, 0), green, "not stretched over the rect")
+        XCTAssertEqual(Self.pixel(image, 1, 1), blue, "a digit in the rect but outside the frame stays")
+        XCTAssertEqual(Self.pixel(image, 2, 2), [255, 255, 255, 255], "the button stays above it")
+        XCTAssertEqual(Self.pixel(image, 3, 3), blue, "a digit outside the rect stays")
+    }
+
+    /// Departure: text draws above the mask, where Audion drew it over the desktop (X-factor).
+    func testTextDrawsOverAClearMask() async throws {
+        let fixture = try AudionFaceFixture(json: [
+            "albumDisplayRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 14, right: 60), "albumTextMode": 1,
+            "albumDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 0],
+        ])
+        try fixture.png("base.png", width: 60, height: 14, fill: green)
+        try fixture.png("base-alpha.png", width: 60, height: 14, fill: clear)
+        let face = try await fixture.load()
+
+        var host = AudionFaceHostState()
+        host.reduceMotion = true
+        XCTAssertFalse(Self.hasInk(try XCTUnwrap(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host)))))
+        host.artist = "HHH"
+        XCTAssertTrue(Self.hasInk(try XCTUnwrap(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host)))))
+    }
+
     func testButtonStatesFollowFaceKitsPrecedence() async throws {
         let fixture = try AudionFaceFixture(json: [
             "playButtonRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 1, right: 1),
@@ -150,6 +195,34 @@ final class AudionFaceSceneTests: XCTestCase {
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host))
 
         XCTAssertEqual(AudionFaceScene.timeDigitRects(face), [AudionFaceRect(x: 1, y: 0, width: 1, height: 1)])
+    }
+
+    /// Departure: the artist line scrolls only when it does not fit its box; FaceKit cuts it.
+    func testTheArtistLineScrollsOnlyWhenItDoesNotFit() async throws {
+        let fixture = try AudionFaceFixture(json: [
+            "artistDisplayRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 14, right: 40), "artistTextMode": 1,
+            "artistDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 0],
+        ])
+        try fixture.png("base.png", width: 40, height: 14)
+        let face = try await fixture.load()
+
+        var host = AudionFaceHostState()
+        host.title = "Hi"
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "it fits: pinned")
+        host.title = "A title far too long for a forty pixel box"
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
+        host.reduceMotion = true
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "Reduce Motion cuts it instead")
+    }
+
+    /// Whether any pixel is drawn at all.
+    static func hasInk(_ image: CGImage) -> Bool {
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        let context = CGContext(data: &bytes, width: image.width, height: image.height, bitsPerComponent: 8,
+                                bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return stride(from: 3, to: bytes.count, by: 4).contains { bytes[$0] > 0 }
     }
 
     /// The pixel at `x`, `y`, top-left origin, as RGBA.

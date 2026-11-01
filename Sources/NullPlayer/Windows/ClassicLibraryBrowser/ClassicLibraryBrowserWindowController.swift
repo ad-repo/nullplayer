@@ -57,9 +57,10 @@ class ClassicLibraryBrowserWindowController: NSWindowController, LibraryBrowserW
         
         window.isMovableByWindowBackground = false  // Custom drag handling in ClassicLibraryBrowserView
         
-        // On non-Retina displays, use opaque window to prevent compositing artifacts
+        // On non-Retina displays, use opaque window to prevent compositing artifacts — except beside
+        // an Audion face, whose gloss rim's rounded corners would show the black (#640)
         let backingScale = NSScreen.main?.backingScaleFactor ?? 2.0
-        if backingScale < 1.5 {
+        if backingScale < 1.5, WindowManager.shared.runningControllerFamily != .audion {
             window.backgroundColor = .black
             window.isOpaque = true
         } else {

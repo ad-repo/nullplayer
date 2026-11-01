@@ -5,9 +5,10 @@ struct AudionFaceDrawOp {
     /// FaceKit's layer stack, bottom to top. `AudionFaceRenderer` composites each the way its
     /// layer does: `base` and `readouts` clear an op's rect before drawing it (FaceKit
     /// `context.clear`), `readouts` is its own transparent buffer (FaceKit's `sublayer`, zPosition 2,
-    /// above the buttons at 1), `labels` draw unscaled and clipped (zPosition 10), and `mask` keeps
-    /// only the alpha it covers.
-    enum Layer: CaseIterable { case base, buttons, readouts, labels, mask }
+    /// above the buttons at 1), `mask` keeps only the alpha it covers, and `labels` draw unscaled and
+    /// clipped (zPosition 10). Departure: FaceKit masks the labels too; Audion drew them over the
+    /// desktop where the mask is clear (X-factor, Jack&Sally, Ugly in their screenshots).
+    enum Layer: CaseIterable { case base, buttons, readouts, mask, labels }
 
     /// What the op draws, which decides its layer. The description is what the harness's probe prints.
     enum Element: Hashable, CustomStringConvertible {
@@ -66,7 +67,7 @@ struct AudionFaceScene {
         self.scale = scale
         ops = Self.baseOps(face, host, frame: frame) + Self.buttonOps(face, host, interaction)
             + Self.digitOps(face, host) + Self.indicatorOps(face, host)
-            + Self.labelOps(face, host, frame: frame, scale: scale) + Self.maskOps(face, host)
+            + Self.maskOps(face, host) + Self.labelOps(face, host, frame: frame, scale: scale)
     }
 
     /// The buttons drawn in this state, bottom first: play hides while playing when there is a pause
@@ -102,7 +103,27 @@ struct AudionFaceScene {
     static func isAnimated(_ face: AudionFace, _ host: AudionFaceHostState) -> Bool {
         if let role = host.streamPhase.animation, let animation = face.animations[role],
            animation.frames.count > 1, animation.frameDelay > 0 { return true }
-        return !host.reduceMotion && host.albumLine != nil && (face.album?.rect.width ?? 0) > 12
+        return labels(face, host).contains { scrolls($0.role, $0.line, $0.text, host) }
+    }
+
+    /// The text lines drawn in this state: a box 12 px wide or narrower draws no text.
+    private static func labels(_ face: AudionFace, _ host: AudionFaceHostState)
+        -> [(role: AudionFace.TextRole, line: AudionFace.TextLine, text: String)] {
+        [(AudionFace.TextRole.artist, face.artist, host.artistLine), (.album, face.album, host.albumLine)].compactMap {
+            guard let line = $0.1, let text = $0.2, line.rect.width > 12 else { return nil }
+            return ($0.0, line, text)
+        }
+    }
+
+    /// The album line always scrolls, as FaceKit's does; the artist line only when it does not fit.
+    /// Reduce Motion stops both, and only then is a line cut with an ellipsis. Departure: FaceKit
+    /// cuts the artist line, and a justified album line, rather than scroll them (the user's call).
+    private static func scrolls(_ role: AudionFace.TextRole, _ line: AudionFace.TextLine, _ text: String,
+                                _ host: AudionFaceHostState) -> Bool {
+        guard !host.reduceMotion else { return false }
+        guard role == .artist else { return true }
+        let width = AudionFaceText.image(text, line: line, justify: false, scale: 1, reduceMotion: false)?.width ?? 0
+        return width > line.rect.width
     }
 
     /// FaceKit `LabelView.frameNum`: an 80-tick hold, then one pixel every two ticks, the text
@@ -132,7 +153,12 @@ struct AudionFaceScene {
                                     rect: AudionFaceRect(x: 0, y: 0, width: face.base.width, height: face.base.height))]
         if let role = host.streamPhase.animation, let animation = face.animations[role] {
             let index = animation.frameDelay > 0 ? (frame / animation.frameDelay) % animation.frames.count : 0
-            ops.append(AudionFaceDrawOp(element: .animation(role), image: animation.frames[index], rect: animation.rect))
+            // A frame smaller than its rect draws at its own size from the rect's corner, not
+            // stretched (FaceKit stretches; iPod 1.2's 72×8 frames sit in a 77×26 rect).
+            let image = animation.frames[index], rect = animation.rect
+            ops.append(AudionFaceDrawOp(element: .animation(role), image: image,
+                                        rect: AudionFaceRect(x: rect.x, y: rect.y, width: min(image.width, rect.width),
+                                                             height: min(image.height, rect.height))))
         }
         return ops
     }
@@ -177,32 +203,26 @@ struct AudionFaceScene {
         }
     }
 
-    /// The artist line is always middle-truncated and pinned; the album line truncates only when
-    /// justified, and scrolls unless Reduce Motion is on — even when justified (FaceKit sets the
-    /// album label's own `justify` to false). A box 12 px wide or narrower draws no text.
-    private static func labelOps(_ face: AudionFace, _ host: AudionFaceHostState, frame: Int,
-                                 scale: Int) -> [AudionFaceDrawOp] {
-        let labels: [(AudionFace.TextRole, AudionFace.TextLine?, String?, Bool)] = [
-            (.artist, face.artist, host.artistLine, true),
-            (.album, face.album, host.albumLine, face.album?.style.contains(.justify) == true),
-        ]
-        return labels.compactMap { role, line, text, justify in
-            guard let line, let text, line.rect.width > 12,
-                  let image = AudionFaceText.image(text, line: line, justify: justify, scale: scale,
-                                                   reduceMotion: host.reduceMotion) else { return nil }
-            let pinned = role == .artist || host.reduceMotion
-            let offset = pinned ? alignmentOffset(line, textWidth: image.width, scale: scale)
-                : marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
-            return AudionFaceDrawOp(element: .label(role, offset: offset), image: image, rect: line.rect)
-        }
-    }
-
     private static func maskOps(_ face: AudionFace, _ host: AudionFaceHostState) -> [AudionFaceDrawOp] {
         guard let mask = !host.isWindowActive ? face.inactiveMask ?? face.mask : face.mask else { return [] }
         // `contentsGravity = .bottomLeft`: drawn at its own size from the bottom-left corner.
         return [AudionFaceDrawOp(element: .mask, image: mask,
                                  rect: AudionFaceRect(x: 0, y: face.base.height - mask.height,
                                                       width: mask.width, height: mask.height))]
+    }
+
+    /// A line scrolls its whole text (`scrolls`), or is pinned at its alignment; under Reduce Motion
+    /// a line too wide for its box is middle-truncated instead.
+    private static func labelOps(_ face: AudionFace, _ host: AudionFaceHostState, frame: Int,
+                                 scale: Int) -> [AudionFaceDrawOp] {
+        labels(face, host).compactMap { role, line, text in
+            guard let image = AudionFaceText.image(text, line: line, justify: false, scale: scale,
+                                                   reduceMotion: host.reduceMotion) else { return nil }
+            let offset = scrolls(role, line, text, host)
+                ? marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
+                : alignmentOffset(line, textWidth: image.width, scale: scale)
+            return AudionFaceDrawOp(element: .label(role, offset: offset), image: image, rect: line.rect)
+        }
     }
 }
 

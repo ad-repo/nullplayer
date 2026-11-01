@@ -30,7 +30,18 @@ enum AudionFaceRenderer {
             case .readouts:
                 guard !ops.isEmpty, let readouts = buffer() else { continue }
                 for op in ops { readouts.clear(device(op.rect)); readouts.draw(op.image, in: device(op.rect)) }
+                // A stream animation replaces the readouts it covers, as faces like Plasmat and Nixie
+                // Tube draw it; FaceKit draws them over it, so only the gaps between digits animate.
+                for op in scene.ops { if case .animation = op.element { readouts.clear(device(op.rect)) } }
                 readouts.makeImage().map { canvas.draw($0, in: bounds) }
+            case .mask:
+                guard let op = ops.first, let content = canvas.makeImage() else { continue }
+                canvas.saveGState()
+                canvas.clear(bounds)
+                canvas.draw(op.image, in: device(op.rect))
+                canvas.setBlendMode(.sourceIn)
+                canvas.draw(content, in: bounds)
+                canvas.restoreGState()
             case .labels:
                 for op in ops {
                     guard case .label(_, let offset) = op.element else { continue }
@@ -43,13 +54,6 @@ enum AudionFaceRenderer {
                                                      width: CGFloat(op.image.width), height: CGFloat(op.image.height)))
                     canvas.restoreGState()
                 }
-            case .mask:
-                guard let op = ops.first, let content = canvas.makeImage(),
-                      let masked = buffer() else { continue }
-                masked.draw(op.image, in: device(op.rect))
-                masked.setBlendMode(.sourceIn)
-                masked.draw(content, in: bounds)
-                return masked.makeImage()
             }
         }
         return canvas.makeImage()
