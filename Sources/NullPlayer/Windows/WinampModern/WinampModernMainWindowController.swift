@@ -299,9 +299,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                    componentBridge: componentBridge)
             ClassicProTabStrip.prepareFlags(in: loaded)
             try scripts.start()
-            ClassicProTabStrip.clearFlags(in: loaded.configuration)
-            classicProTabs = ClassicProTabStrip(runtime: scripts)
-            classicProTabs?.withholdAutoClose()
             // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
             // this is the last word: a window the user left shaded comes back shaded (B44a). Before
             // `scriptsDidStart()`, so the seeding resize dispatch describes the layout that is
@@ -323,6 +320,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             view.setSceneVisible(true)
             auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
             announceClaimedComponents(scripts: scripts)
+            // The ClassicPro strip, once its engine has built the tabs and read the closed ones' flags —
+            // engine one in `start()`, engine two from `onSetVisible` — so the flags can go (B350).
+            ClassicProTabStrip.clearFlags(in: loaded.configuration)
+            classicProTabs = ClassicProTabStrip(runtime: scripts)
+            classicProTabs?.withholdAutoClose()
             // …and then the windows the skin says open *with* it. After `scriptsDidStart`, so a
             // window that opens at launch is told `onSetVisible` with its geometry already dispatched.
             applyDefaultContainerVisibility()

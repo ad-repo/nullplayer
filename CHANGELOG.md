@@ -75,7 +75,8 @@
   Jack&Sally, Smart, Ugly and others drew their titles over the desktop).
 - **A click on a clear part of an Audion face hits the face** instead of the window behind it, so
   Smart's see-through display drags the player as Audion's did.
-- **ClassicPro skins' tabs open and close from the Windows menu** (cPro Bento, reported on r/nullPlayer).
+- **ClassicPro skins' tabs open and close from the Windows menu** (cPro Bento, reported on r/nullPlayer,
+  and the cPro2 skins).
   Each tab has a menu item ticked while it is in the strip — Media Library and Playlist are the Library
   Browser and Playlist Editor items — choosing it closes or reopens the tab, and closed tabs stay closed
   after a relaunch. The skin's own Windows-menu items (Web Browser, widget tabs) are listed too.

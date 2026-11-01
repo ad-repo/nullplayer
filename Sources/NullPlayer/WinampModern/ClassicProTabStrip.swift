@@ -13,7 +13,7 @@ import Foundation
 /// Playlist page switches to Media Library; a film starting switches to Video), and that tab would
 /// vanish again at the next click. So which tabs are closed is the host's record, snapshotted from
 /// the strip as the skin unloads (`recordClosedTabs`); before the scripts start their flags are set
-/// so the engine builds them hidden (`prepareFlags`), and once they have started every flag is
+/// so the engine builds them hidden (`prepareFlags`), and once it has built the strip every flag is
 /// cleared (`clearFlags`). A close sets its tab's flag for the one switch that removes it.
 ///
 /// **The tab's own right-click *Auto Close Tab* is withheld** (`withholdAutoClose`). Chosen, it sets
@@ -81,22 +81,22 @@ struct ClassicProTabStrip {
         self.sui = sui
         self.buttons = buttons
         widgetLoader = graph.objects(xmlID: "widget.loader").first
-        family = Self.family(of: runtime.loadedSkin.configuration)
+        family = Self.family(of: buttons)
     }
 
     /// Before the scripts start: flag the tabs closed at the last unload so the engine builds them
     /// hidden, and nothing else.
     static func prepareFlags(in loaded: WinampModernLoadedSkin) {
-        guard !loaded.runtime.graph.objects(xmlID: "Cpro.tabs").isEmpty else { return }
+        guard let buttons = loaded.runtime.graph.objects(xmlID: "cprotabs.buttons").first else { return }
         let configuration = loaded.configuration
         clearFlags(in: configuration)
-        let prefix = family(of: configuration).publicPrefix
+        let prefix = family(of: buttons).publicPrefix
         for key in closedKeys(in: configuration) {
             configuration.setInteger(1, section: "@public", key: "\(prefix).One.TabAutoClose.\(key)")
         }
     }
 
-    /// Once the scripts have started: no tab may leave the strip on its own.
+    /// Once the engine has built its tabs: no tab may leave the strip on its own.
     static func clearFlags(in configuration: WinampModernConfiguration) {
         for family in [one, two] {
             configuration.removeSection("@public", keyPrefix: "\(family.publicPrefix).One.TabAutoClose.")
@@ -116,11 +116,13 @@ struct ClassicProTabStrip {
             .split(separator: "\n").map(String.init)
     }
 
-    // ponytail: the family is read from which spelling of the active page the engine has written,
-    // which it does on its first tab switch; a skin's very first load reads as `one`, harmless then
-    // because nothing is closed yet. A graph marker would be sturdier.
-    private static func family(of configuration: WinampModernConfiguration) -> Family {
-        configuration.integer(section: "@public", key: "cpro2.lastComponentPage", default: -1) == -1 ? one : two
+    /// Which engine built the strip, from where its `CproTabs.maki` lives (`…\CentroSUI\_v2\…`).
+    /// The script belongs to the `cprotabs.xui` group holding the buttons, bound before any script
+    /// runs.
+    private static func family(of buttons: WasabiObject) -> Family {
+        let paths = sequence(first: buttons, next: \.parent).prefix(4)
+            .flatMap(\.scriptBindings).map { $0.logicalPath.lowercased() }
+        return paths.contains { $0.contains("_v2") } ? two : one
     }
 
     /// Every tab the engine built, open ones first in strip order, then the closed ones. The plugin

@@ -1,9 +1,9 @@
 #!/bin/bash
-# Drive cPro-Bento's SUI tabs from both sides — the tab strip and the Windows menu — and check after
+# Drive a ClassicPro skin's SUI tabs (cPro-Bento by default) from both sides — the tab strip and the Windows menu — and check after
 # every step that the two agree (B350). Prints one row per step and a VIOLATION line for each broken
 # rule; exits 1 if any rule broke. Usage:
 #
-#   skills/app-control/scripts/bento_tabs.sh [--no-launch] [--keep] [step ...]
+#   skills/app-control/scripts/bento_tabs.sh [--skin <name>] [--no-launch] [--keep] [step ...]
 #
 #   step  click:<tab label>   click that tab in the strip     click:"Media Library"
 #         menu:<item>         choose that Windows-menu item   menu:"Library Browser"
@@ -11,6 +11,8 @@
 #         reset               Skins → Modern → Restore Default Tabs (reloads the skin)
 #         relaunch            quit with ⌘Q and launch again (not with --no-launch)
 #   With no steps, runs the default sequence below.
+#   --skin       the skin to launch: 2222-cPro__Bento (engine one, the default) or
+#                cpro2_dark_aluminum_final_by_victhor_d6necra (engine two)
 #   --no-launch  drive the debug build already running (it must have WINAMP_MODERN_TAB_TRACE=1)
 #   --keep       leave the app running afterwards (it is quit by default)
 #
@@ -33,25 +35,33 @@ WH="$HERE/winhelper"
 LOG="${BENTO_TABS_LOG:-${TMPDIR:-/tmp}/bento_tabs.log}"
 SETTLE="${BENTO_TABS_SETTLE:-1.2}"
 
-LAUNCH=1; KEEP=0; STEPS=()
-for arg in "$@"; do
-  case "$arg" in
+LAUNCH=1; KEEP=0; STEPS=(); SKIN="2222-cPro__Bento"
+while [ $# -gt 0 ]; do
+  case "$1" in
     --no-launch) LAUNCH=0 ;;
     --keep) KEEP=1 ;;
-    *) STEPS+=("$arg") ;;
+    --skin) SKIN="$2"; shift ;;
+    *) STEPS+=("$1") ;;
   esac
+  shift
 done
+# The tabs that differ by skin: engine two names the browser tab Web Reader; the widget tabs are the
+# skin's own (W1 is closed and reopened, W2 closed).
+case "$SKIN" in
+  *dark_aluminum*) WEB="Web Reader"; W1="Now Playing"; W2="Now Playing" ;;
+  *) WEB="Browser"; W1="BrowserPro"; W2="Now Playing" ;;
+esac
 if [ ${#STEPS[@]} -eq 0 ]; then
   STEPS=(reset
-         "click:Playlist" "click:Media Library" "click:Browser" "click:Now Playing" "click:Video"
+         "click:Playlist" "click:Media Library" "click:$WEB" "click:$W2" "click:Video"
          "menu:Library Browser" "menu:Library Browser"           # close an inactive tab, reopen it
          "menu:Library Browser" "click:Video"                    # close the active tab, then click
          "menu:Playlist Editor" "menu:Playlist Editor"
-         "menu:Browser" "menu:Browser" "menu:Library Browser"
-         "menu:Now Playing" "menu:BrowserPro" "menu:BrowserPro"
-         "click:Browser" "click:Playlist" "click:Browser"       # clicks keep every tab in the strip
-         "rclick:Playlist" "rclick:Browser" "click:Playlist"    # the tab menu cannot close a tab
-         "menu:Video" "menu:Visualization" relaunch "click:Browser"
+         "menu:$WEB" "menu:$WEB" "menu:Library Browser"
+         "menu:$W2" "menu:$W1" "menu:$W1"
+         "click:$WEB" "click:Playlist" "click:$WEB"             # clicks keep every tab in the strip
+         "rclick:Playlist" "rclick:$WEB" "click:Playlist"       # the tab menu cannot close a tab
+         "menu:Video" "menu:Visualization" relaunch "click:$WEB"
          "menu:Video" "menu:Visualization" relaunch
          reset)
 fi
@@ -67,13 +77,14 @@ tab_for_menu() {
 page_for_tab() {
   case "$1" in
     "Media Library") echo library ;; "Playlist") echo playlist ;; "Video") echo video ;;
-    "Visualization") echo visualization ;; "Browser") echo browser ;; *) echo widget ;;
+    "Visualization") echo visualization ;; "$WEB") echo browser ;; *) echo widget ;;
   esac
 }
-MENU_ITEMS=("Library Browser" "Playlist Editor" "Video" "Visualization" "Browser" "BrowserPro" "Now Playing")
+MENU_ITEMS=("Library Browser" "Playlist Editor" "Video" "Visualization" "$WEB" "$W1")
+[ "$W2" = "$W1" ] || MENU_ITEMS+=("$W2")
 
 if [ $LAUNCH -eq 1 ]; then
-  WINAMP_MODERN_TAB_TRACE=1 "$HERE/launch.sh" "2222-cPro__Bento" --log "$LOG" | tail -1
+  WINAMP_MODERN_TAB_TRACE=1 "$HERE/launch.sh" "$SKIN" --log "$LOG" | tail -1
   [ "${PIPESTATUS[0]}" -eq 0 ] || exit 1
 fi
 PID=$(pgrep -nx NullPlayer) || { echo "FAIL: no NullPlayer running"; exit 1; }
@@ -82,12 +93,17 @@ ax() {
   osascript -e 'tell application "System Events"' -e "tell (first process whose unix id is $PID)" \
     -e "$1" -e 'end tell' -e 'end tell' 2>/dev/null
 }
+# A Windows-menu item by title, the last of that title: the tab rows close the menu, and a skin window
+# can carry a tab's name (Dark Aluminum's Web Reader window above its Web Reader tab).
+item() {
+  echo "last item of (menu items of menu 1 of menu bar item \"Windows\" of menu bar 1 whose title is \"$1\")"
+}
 # A failed read prints nothing (an unticked item reads `missing value`), so it is retried: the menu
 # is rebuilt as windows change, and a read that lands mid-rebuild errors.
 tick() {
   local i v
   for i in 1 2 3 4 5; do
-    v=$(ax "get value of attribute \"AXMenuItemMarkChar\" of menu item \"$1\" of menu 1 of menu bar item \"Windows\" of menu bar 1")
+    v=$(ax "get value of attribute \"AXMenuItemMarkChar\" of ($(item "$1"))")
     [ -n "$v" ] && break; sleep 0.2
   done
   [ "$v" = "✓" ]
@@ -217,11 +233,11 @@ for step in "${STEPS[@]}"; do
     relaunch)
       [ $LAUNCH -eq 1 ] || { echo "relaunch needs the script to own the launch"; exit 2; }
       quit_app
-      WINAMP_MODERN_TAB_TRACE=1 "$HERE/launch.sh" "2222-cPro__Bento" --log "$LOG" >/dev/null || { echo "FAIL: relaunch"; exit 1; }
+      WINAMP_MODERN_TAB_TRACE=1 "$HERE/launch.sh" "$SKIN" --log "$LOG" >/dev/null || { echo "FAIL: relaunch"; exit 1; }
       PID=$(pgrep -nx NullPlayer) ;;
     menu:*)
       tick "${step#menu:}" && before=1
-      ax "perform action \"AXPress\" of menu item \"${step#menu:}\" of menu 1 of menu bar item \"Windows\" of menu bar 1" >/dev/null ;;
+      ax "perform action \"AXPress\" of ($(item "${step#menu:}"))" >/dev/null ;;
     *) echo "unknown step: $step"; exit 2 ;;
   esac
   sleep "$SETTLE"
