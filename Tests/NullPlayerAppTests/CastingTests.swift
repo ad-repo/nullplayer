@@ -217,6 +217,50 @@ final class CastingTests: XCTestCase {
         XCTAssertFalse(id.contains("8009"))
     }
 
+    func testCLICastMatchesNameIdAndBareId() {
+        let device = CastDevice(id: "chromecast:91a086b76d0c422dd9dd9cda078e4911", name: "Living Room TV",
+                                type: .chromecast, address: "192.168.1.10", port: 8009)
+
+        XCTAssertTrue(CLIPlayer.castDevice(device, matches: "living room tv"))
+        XCTAssertTrue(CLIPlayer.castDevice(device, matches: "chromecast:91A086B76D0C422DD9DD9CDA078E4911"))
+        XCTAssertTrue(CLIPlayer.castDevice(device, matches: "91a086b76d0c422dd9dd9cda078e4911"))
+        XCTAssertFalse(CLIPlayer.castDevice(device, matches: "Living Room"))
+        XCTAssertFalse(CLIPlayer.castDevice(device, matches: "4911"))
+    }
+
+    func testMPEGVideoExtensionsAreVideoForCasting() {
+        let mpg = detectContentType(for: URL(fileURLWithPath: "/films/clip.mpg"))
+        let mts = detectContentType(for: URL(fileURLWithPath: "/films/clip.MTS"))
+
+        XCTAssertEqual(mpg.mediaType, .video)
+        XCTAssertEqual(mpg.contentType, "video/mpeg")
+        XCTAssertEqual(mts.mediaType, .video)
+        XCTAssertEqual(mts.contentType, "video/mp2t")
+    }
+
+    func testChromecastVideoIdleErrorBeforePlaybackFailsTheCast() {
+        let wasHeadless = AudioEngine.isHeadless
+        AudioEngine.isHeadless = true  // postError would otherwise run a modal alert
+        defer { AudioEngine.isHeadless = wasHeadless }
+        let device = CastDevice(id: "cc-video", name: "Living Room TV", type: .chromecast, address: "192.168.1.10", port: 8009)
+        CastManager.shared.debugSetActiveCastSessionForTesting(device: device, startPosition: 0, duration: 120)
+        CastManager.shared.debugSetActiveSessionStateForTesting(.loaded)
+
+        let reported = expectation(forNotification: CastManager.errorNotification, object: nil)
+        var status = CastMediaStatus()
+        status.playerState = .idle
+        status.idleReason = "ERROR"
+        status.mediaSessionId = 1
+
+        NotificationCenter.default.post(
+            name: ChromecastManager.mediaStatusDidUpdateNotification,
+            object: nil,
+            userInfo: ["status": status]
+        )
+
+        wait(for: [reported], timeout: 1.0)
+    }
+
     func testIsVideoContentActiveUsesWindowVisibilityAndVideoCastingState() {
         let windowManager = WindowManager.shared
         let castManager = CastManager.shared

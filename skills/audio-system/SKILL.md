@@ -248,7 +248,10 @@ under the error message.
   the AudioStreaming `.playing` callback for a stream. Without the stream reset, a repeating playlist
   of streams and a few bad local files kept accumulating across loops and ended the queue early.
 - **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
-  the rule guards its recursive skip.
+  the rule guards its recursive skip. A skip chain that fails through the last row, with no Play Now
+  to withdraw, ends the queue (`stopAfterQueueExhausted`, so `.audioQueueDidExhaust` and the sleep
+  timer's end-of-queue mode fire), as the asynchronous path's end does; it used to stop silently,
+  and the CLI, which exits on that notification, hung on a queue in which nothing opens.
 - **A failed load leaves `currentTrack` nil, and `play()` reads nil as "start the playlist from the
   top".** So a caller that does `loadTrack(at:)` then `play()` must guard with
   `if currentTrack != nil` — `playNow`, `loadTracks`, `insertTracksAfterCurrent`, `next()`,

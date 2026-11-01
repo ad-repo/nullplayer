@@ -210,12 +210,7 @@ class CLIPlayer: AudioEngineDelegate {
                 return true
             }
 
-            // By name, or by id with or without its `chromecast:`-style type prefix.
-            let wanted = request.deviceName.lowercased()
-            if let match = filteredDevices.first(where: {
-                let id = $0.id.lowercased()
-                return $0.name.lowercased() == wanted || id == wanted || id.hasSuffix(":" + wanted)
-            }) {
+            if let match = filteredDevices.first(where: { Self.castDevice($0, matches: request.deviceName) }) {
                 return match
             }
 
@@ -230,6 +225,13 @@ class CLIPlayer: AudioEngineDelegate {
             }
             .map { "\($0.name) (\($0.type))" }
         throw CLIPlayerError.castDeviceNotFound(request.deviceName, available)
+    }
+
+    /// `--cast` names a device by its name, or by its id with or without its `chromecast:`-style type prefix.
+    static func castDevice(_ device: CastDevice, matches query: String) -> Bool {
+        let wanted = query.lowercased()
+        let id = device.id.lowercased()
+        return device.name.lowercased() == wanted || id == wanted || id.hasSuffix(":" + wanted)
     }
 
     private func setupCasting(castValue: String) async {

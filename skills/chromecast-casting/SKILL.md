@@ -118,6 +118,18 @@ try await chromecastManager.cast(url: url, metadata: metadata)
 
 This applies to both `CastManager.cast()` (full connect+cast path) and `CastManager.castNewTrack()` (reuse-existing-session path).
 
+### IDLE with `idleReason: ERROR` (video)
+
+A receiver that rejects the media (an unsupported H.264 level, a corrupt file) sends `LOAD_FAILED`, then
+`MEDIA_STATUS` `IDLE` with `idleReason: ERROR` — sometimes after a BUFFERING — and returns to its launcher.
+`CastSessionController` parses `idleReason` into `CastMediaStatus.idleReason`, and the video branch of
+`CastManager`'s status handler treats IDLE/ERROR as a failure **whatever `chromecastHasSeenActivePlayback`
+says**: it sets `activeSession.state = .error` (which also dedupes the status polls that keep arriving until
+teardown), calls `postError(.playbackFailed(…))` and stops the cast. The GUI shows the casting alert;
+`postError` shows none in headless mode, because a modal alert would block the CLI's main thread. The CLI
+learns of the failure from `CastManager.errorNotification` (see `cli`, *Keyboard Controls*, video-cast mode). The audio
+branch does not read `idleReason` yet (M57 in `tasks/MISC_TASKS.md`).
+
 ## `.loaded` CastState
 
 `CastState` has a `.loaded` case meaning "LOAD acknowledged by the receiver, awaiting first status update":

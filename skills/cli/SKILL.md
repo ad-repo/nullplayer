@@ -349,7 +349,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 
 `CLIKeyboard` reads stdin on a background `DispatchQueue` and dispatches all player calls to `DispatchQueue.main.async`.
 
-In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down (code 0). A video the receiver rejects (MEDIA_STATUS `IDLE` with `idleReason: ERROR`) exits 1 with *The cast device could not play this video*, even after a BUFFERING; a Chromecast cast that reaches neither PLAYING nor BUFFERING within 30 s exits 1 too. DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
+In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down (code 0). A video the receiver rejects (MEDIA_STATUS `IDLE` with `idleReason: ERROR`) exits 1 with *The cast device could not play this video*, even after a BUFFERING; a Chromecast cast that reaches neither PLAYING nor BUFFERING within 30 s exits 1 too. `CLIPlayer` holds this as one `VideoCastPhase?` (`starting(deadline:)`, `playing(paused:)`, `failed`; nil when no video cast runs): PLAYING/BUFFERING moves `starting` to `playing`, `CastManager.errorNotification` moves any phase to `failed` (which a later status cannot undo), and when the session ends `failed` exits 1, `playing` exits 0 and `starting` waits. The CLI does not read `idleReason` itself — `CastManager` decides the rejection (`chromecast-casting`, *IDLE with `idleReason: ERROR`*). DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
 
 Local video files are served through `LocalMediaServer` on port `8765` before being handed to Chromecast or DLNA targets. If the main NullPlayer UI is already open, that process may own the port; CLI local-video casts should fail with a descriptive "port 8765 is unavailable" error. Tell users to quit the app UI or stop the other NullPlayer process, then retry. A port conflict can otherwise look like a DLNA `716 Resource not found` because the TV receives a `/media/<token>` URL that belongs to the CLI process, while another process is actually serving the port.
 
@@ -606,6 +606,10 @@ no-op, all string/int/double value flags, and the query-vs-playback classificati
 (`isQueryMode`, and `isSearchQuery` flipping to playback when `--search` is combined with
 `--artist`/`--album`/`--playlist`/`--radio`/`--station`). The original Plex bug command
 shape (`--source plex --list-albums --artist …`) is pinned as a regression guard.
+
+Elsewhere: `CastingTests` covers `--cast` matching (`CLIPlayer.castDevice(_:matches:)`: name, id,
+bare id) and the IDLE/ERROR cast failure; `AudioEngineOpusPreparationTests` covers the queue end
+the CLI exits on when nothing opens (`testAPlayThatFailsThroughTheLastTrackExhaustsTheQueue`).
 
 **Not unit-tested (needs live servers or a spawned binary — do via manual QA):**
 
