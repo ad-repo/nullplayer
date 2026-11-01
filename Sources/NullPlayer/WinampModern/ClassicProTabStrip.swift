@@ -63,13 +63,15 @@ struct ClassicProTabStrip {
     private static let pluginTabID: Int32 = 5
 
     private let runtime: WinampModernScriptRuntime
-    private let sui: WasabiObject
     private let buttons: WasabiObject
     private let widgetLoader: WasabiObject?
     private let family: Family
+    /// Select a tab, as `switch_to_tab` does.
+    private let switchTo: (Tab) -> Void
 
-    /// Nil unless the loaded skin runs the ClassicPro strip.
-    init?(runtime: WinampModernScriptRuntime) {
+    /// Nil unless the loaded skin runs the ClassicPro strip. `switchTab` stands in for the engine's
+    /// `switch_to_tab`, which by default is sent to the SUI as `onaction`.
+    init?(runtime: WinampModernScriptRuntime, switchTab: ((Tab) -> Void)? = nil) {
         let graph = runtime.loadedSkin.runtime.graph
         guard let strip = graph.objects(xmlID: "Cpro.tabs").first,
               let buttons = graph.objects(xmlID: "cprotabs.buttons").first,
@@ -78,10 +80,14 @@ struct ClassicProTabStrip {
               })
         else { return nil }
         self.runtime = runtime
-        self.sui = sui
         self.buttons = buttons
         widgetLoader = graph.objects(xmlID: "widget.loader").first
         family = Self.family(of: buttons)
+        switchTo = switchTab ?? { tab in
+            _ = try? runtime.dispatch(object: sui, event: "onaction",
+                                      arguments: [.string("switch_to_tab"), .string(tab.widget), .integer(tab.id),
+                                                  .integer(0), .integer(0), .integer(0), .null])
+        }
     }
 
     /// Before the scripts start: flag the tabs closed at the last unload so the engine builds them
@@ -231,11 +237,5 @@ struct ClassicProTabStrip {
         } else {
             runtime.loadedSkin.configuration.removeValue(section: "@public", key: key)
         }
-    }
-
-    private func switchTo(_ tab: Tab) {
-        _ = try? runtime.dispatch(object: sui, event: "onaction",
-                                  arguments: [.string("switch_to_tab"), .string(tab.widget), .integer(tab.id),
-                                              .integer(0), .integer(0), .integer(0), .null])
     }
 }
