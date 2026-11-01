@@ -56,11 +56,12 @@ struct Track: Identifiable, Equatable {
     let title: String
     let artist: String?
     let album: String?
-    let duration: TimeInterval?
-    let bitrate: Int?
-    let sampleRate: Int?
-    let channels: Int?
-    
+    /// The `Format` fields: the only part of a track filled in after it is made (`filling`).
+    private(set) var duration: TimeInterval?
+    private(set) var bitrate: Int?
+    private(set) var sampleRate: Int?
+    private(set) var channels: Int?
+
     /// Plex rating key for play tracking (nil for local files)
     let plexRatingKey: String?
 
@@ -412,18 +413,12 @@ struct Track: Identifiable, Equatable {
 
     /// A copy with each unknown `Format` field taken from `format`; a field already known wins.
     func filling(_ format: Format) -> Track {
-        Track(id: id, url: url, title: title, artist: artist, album: album,
-              duration: (duration ?? 0) > 0 ? duration : format.duration,
-              bitrate: bitrate ?? format.bitrate, sampleRate: sampleRate ?? format.sampleRate,
-              channels: channels ?? format.channels,
-              plexRatingKey: plexRatingKey, plexServerId: plexServerId,
-              subsonicId: subsonicId, subsonicServerId: subsonicServerId,
-              jellyfinId: jellyfinId, jellyfinServerId: jellyfinServerId,
-              embyId: embyId, embyServerId: embyServerId, artworkThumb: artworkThumb,
-              mediaType: mediaType, genre: genre,
-              playHistoryContentTypeOverride: playHistoryContentTypeOverride,
-              contentType: contentType, cueStartOffset: cueStartOffset, cueEndOffset: cueEndOffset,
-              cueSourceURL: cueSourceURL, isRadioOrigin: isRadioOrigin, isYouTubeOrigin: isYouTubeOrigin)
+        var filled = self
+        if (duration ?? 0) <= 0 { filled.duration = format.duration }
+        filled.bitrate = bitrate ?? format.bitrate
+        filled.sampleRate = sampleRate ?? format.sampleRate
+        filled.channels = channels ?? format.channels
+        return filled
     }
 
     /// The average bitrate a local file of this duration works out to, in kbps.
