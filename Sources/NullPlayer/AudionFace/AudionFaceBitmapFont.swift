@@ -36,7 +36,9 @@ struct AudionFaceBitmapFont: Hashable {
     static func strike(of font: CTFont) -> AudionFaceBitmapFont? {
         guard let ppem = Int(exactly: CTFontGetSize(font)) else { return nil }
         return cached("\(CTFontCopyPostScriptName(font))/\(ppem)") { key in
-            strike(font, ppem: ppem).map { AudionFaceBitmapFont(key: key, font: font, glyphs: $0) }
+            strike(font, ppem: ppem).map {
+                AudionFaceBitmapFont(key: key, font: font, glyphs: $0.glyphs, ascent: $0.ascent, descent: $0.descent)
+            }
         }
     }
 
@@ -60,12 +62,14 @@ struct AudionFaceBitmapFont: Hashable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [String: AudionFaceBitmapFont?] = [:]
 
-    private init(key: String, font: CTFont, glyphs: [CGGlyph: Glyph]) {
+    private init(key: String, font: CTFont, glyphs: [CGGlyph: Glyph], ascent: Int, descent: Int) {
         self.key = key
         glyphTable = .sfnt(font, glyphs)
-        // FaceKit's layout of an outline line, so a bitmap line sits where the outline one did.
-        height = Int(NSAttributedString(string: " ", attributes: [.font: font]).size().height)
-        baseline = Int(((CTFontGetAscent(font) - CTFontGetDescent(font)) / 2).rounded())
+        // QuickDraw's line, as for an `NFNT`: the strike's ascent from the top. Panic's screenshots
+        // put Geneva 9 two pixels and Monaco 9 one pixel below FaceKit's outline baseline (A15).
+        // The image keeps at least the outline line's height, so an inverse box keeps its size.
+        height = max(Int(NSAttributedString(string: " ", attributes: [.font: font]).size().height), ascent + descent)
+        baseline = height - ascent
     }
 
     /// A QuickDraw `NFNT`/`FONT` resource: a `FontRec` header, one bit image holding every glyph
@@ -185,7 +189,7 @@ struct AudionFaceBitmapFont: Hashable {
     /// The 1-bit strike at `ppem`, from `bloc` (EBLC's layout) and `bdat` (EBDT's). Geneva and
     /// Monaco use index formats 1 and 3 (4- and 2-byte offsets) and the byte-aligned image formats
     /// 1 (small metrics) and 6 (big metrics); a strike in any other format is not read.
-    private static func strike(_ font: CTFont, ppem: Int) -> [CGGlyph: Glyph]? {
+    private static func strike(_ font: CTFont, ppem: Int) -> (glyphs: [CGGlyph: Glyph], ascent: Int, descent: Int)? {
         guard let bloc = CTFontCopyTable(font, CTFontTableTag(kCTFontTableBloc), []).map({ [UInt8]($0 as Data) }),
               let bdat = CTFontCopyTable(font, CTFontTableTag(kCTFontTableBdat), []).map({ [UInt8]($0 as Data) }),
               bloc.count >= 8 else { return nil }
@@ -225,7 +229,8 @@ struct AudionFaceBitmapFont: Hashable {
                                                 rows: Array(bdat[(start + metrics)..<end]))
                 }
             }
-            return glyphs
+            // The strike's horizontal line metrics: ascender, then descender (negative).
+            return (glyphs, i8(bloc[entry + 16]), -i8(bloc[entry + 17]))
         }
         return nil
     }

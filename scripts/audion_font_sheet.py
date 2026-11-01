@@ -28,7 +28,12 @@ SUBSTITUTED = {'chicago', 'charcoal', 'techno', 'gadget', 'sand', 'capitals', 's
                'sf digital readout medium', 'mini', 'mini tight', '04b-03', '04b-08', '04b-09', '04b-11',
                '04b-20', '04b-24', '04bit-10', '04bit-16', 'orchis 5', 'orchis 6', 'redensek', 'bitbit',
                'bitsumishi', 'squarodynamic 08', 'hooge 05_53', 'freecemini', 'lilliput steps',
-               'ikkio_square'}  # AudionFaceFontSubstitutes' keys
+               'ikkio_square', 'arial bl', 'arial mt condensed light', 'bradley hand itc tt-bold',
+               'futura condensed', 'futura condensedlight', 'century gothic', 'avant guard', 'futuri light',
+               'new york', 'vt100', 'cubase data font', 'espy sans', 'espy sans bold', 'facet',
+               'i/o sans italic', 'weathered sf regular', 'monotype.com', 'institution',
+               'machine itc tt', 'junior pro', 'stencil', 'eurostile boldextendedtwo', 'eurostile extendedtwo',
+               'square721 ex bt roman', 'avalon quest'}  # AudionFaceFontSubstitutes' keys
 BITMAP_STRIKES = {'geneva': {9, 10, 12, 14, 18, 20, 24}, 'monaco': {9, 10, 12, 14}}
 SCALE, CROP_MAX, THUMB = 3, 260, (340, 170)
 SHIPPED = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Sources', 'NullPlayer', 'Resources',

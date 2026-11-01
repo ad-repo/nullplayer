@@ -51,6 +51,12 @@ comicneue	Comic Neue Regular and Bold Italic (Audion face font substitutes)	OFL-
 dseg14	NullPlayer Segment14 (Audion face font substitute)	OFL-1.1	Copyright (c) 2020, keshikan, with Reserved Font Name "DSEG"	https://www.keshikan.net	Modified Version of DSEG14 Classic Light: renamed, descent added	Fonts/DSEG14-LICENSE.txt	-
 silkscreen	Silkscreen (Audion face font substitute)	OFL-1.1	Copyright 2001 The Silkscreen Project Authors	https://github.com/googlefonts/silkscreen	bundled	Fonts/Silkscreen-LICENSE.txt	-
 tiny5	Tiny5 (Audion face font substitute)	OFL-1.1	Copyright 2022-2024 The Tiny5 Project Authors	https://github.com/Gissio/font_tiny5	bundled	Fonts/Tiny5-LICENSE.txt	-
+bebasneue	Bebas Neue (Audion face font substitute)	OFL-1.1	Copyright © 2010 by Dharma Type	https://github.com/google/fonts/tree/main/ofl/bebasneue	bundled	Fonts/BebasNeue-LICENSE.txt	-
+kronaone	Krona One (Audion face font substitute)	OFL-1.1	Copyright (c) 2011 by Sorkin Type Co	https://github.com/google/fonts/tree/main/ofl/kronaone	bundled	Fonts/KronaOne-LICENSE.txt	-
+michroma	Michroma (Audion face font substitute)	OFL-1.1	Copyright 2011 The Michroma Project Authors	https://github.com/googlefonts/Michroma-font	bundled	Fonts/Michroma-LICENSE.txt	-
+pathwaygothicone	Pathway Gothic One (Audion face font substitute)	OFL-1.1	Copyright 2013 The Pathway Gothic Project Authors, with Reserved Font Name 'Pathway'	https://github.com/etunni/pathway-gothic	bundled	Fonts/PathwayGothicOne-LICENSE.txt	-
+sniglet	Sniglet ExtraBold (Audion face font substitute)	OFL-1.1	Copyright (c) 2008 Haley Fiege, (c) 2012 Brenda Gallo, (c) 2013 Pablo Impallari	https://github.com/google/fonts/tree/main/ofl/sniglet	bundled	Fonts/Sniglet-LICENSE.txt	-
+stardosstencil	Stardos Stencil Bold (Audion face font substitute)	OFL-1.1	Copyright (c) 2011 by vernon adams	https://github.com/google/fonts/tree/main/ofl/stardosstencil	bundled	Fonts/StardosStencil-LICENSE.txt	-
 milkdrop-presets	MilkDrop / projectM presets	community (see notice)	Various MilkDrop / projectM preset authors	https://github.com/projectM-visualizer/presets-cream-of-the-crop	bundled assets	ThirdPartyLicenses/MilkDropPresets_NOTICE.txt	-
 bundled-skins	Bundled skins and visual assets	project-original	NullPlayer project	https://github.com/ad-repo/nullplayer	bundled assets	ThirdPartyLicenses/BundledSkins_NOTICE.txt	-
 itunes-miniplayer	iTunes Miniplayer skin	used with permission (see notice)	Copyright spacecowgoesmoo	https://github.com/spacecowgoesmoo/Old-iTunes-Miniplayer	1.139	ThirdPartyLicenses/iTunesMiniplayer_NOTICE.txt	-

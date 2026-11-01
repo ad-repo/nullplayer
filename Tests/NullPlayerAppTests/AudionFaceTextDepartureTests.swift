@@ -7,7 +7,7 @@ final class AudionFaceTextDepartureTests: XCTestCase {
     private func album(_ json: [String: Any], override: AudionFaceTextOverrides.Line? = nil) throws -> AudionFace.TextLine {
         var json = json
         json["albumDisplayRect"] = AudionFaceFixture.rect(top: 0, left: 0, bottom: 12, right: 100)
-        json["albumTextMode"] = 1
+        json["albumTextMode"] = json["albumTextMode"] ?? 1
         for suffix in ["Bold", "Italic", "Underline", "Outline", "Shadow", "Condense", "Extend", "Justify"]
         where json["album\(suffix)"] == nil {
             json["album\(suffix)"] = false
@@ -38,6 +38,31 @@ final class AudionFaceTextDepartureTests: XCTestCase {
         XCTAssertEqual(AudionFaceScene.alignmentOffset(line, textWidth: 2 * 140, scale: 2), 0, "wider than the box: left")
         let right = try album([:], override: .init(alignment: .right))
         XCTAssertEqual(AudionFaceScene.alignmentOffset(right, textWidth: 40, scale: 1), 60)
+    }
+
+    /// Departure: text mode 4 (QuickDraw `notSrcCopy`) is inverse video, the line colour's box with
+    /// the glyphs knocked out in white (aPop, A14).
+    func testTextModeFourIsInverseVideo() throws {
+        XCTAssertFalse(try album([:]).inverse)
+        let line = try album(["albumTextMode": 4, "albumDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 255]])
+        XCTAssertTrue(line.inverse)
+        let image = try XCTUnwrap(AudionFaceText.image("H", line: line, justify: false, scale: 1, reduceMotion: true))
+        let corner = AudionFaceSceneTests.pixel(image, 0, 0)   // blue, give or take the colour space
+        XCTAssertTrue(corner[0] < 32 && corner[1] < 64 && corner[2] > 230 && corner[3] == 255, "the box: \(corner)")
+        let pixels = (0..<image.width).flatMap { x in (0..<image.height).map { AudionFaceSceneTests.pixel(image, x, $0) } }
+        XCTAssertTrue(pixels.contains([255, 255, 255, 255]), "white glyphs")
+    }
+
+    /// A strike sits on its own `bloc` line metrics (A15): the bottom of an H is ascent − 1 rows
+    /// from the top, 10 for Geneva 9 and 9 for Monaco 9.
+    func testAStrikeSitsOnItsOwnAscent() throws {
+        let black = AudionFace.color(red: 0, green: 0, blue: 0)
+        for (name, ascent) in [("Geneva", 10), ("Monaco", 9)] {
+            let strike = try XCTUnwrap(AudionFaceBitmapFont.strike(of: NSFont(name: name, size: 9)!))
+            let image = try XCTUnwrap(strike.image("H", color: black, style: [], boxWidth: 100, truncate: false, scale: 1))
+            let rows = (0..<image.height).filter { y in (0..<image.width).contains { AudionFaceSceneTests.pixel(image, $0, y)[3] > 0 } }
+            XCTAssertEqual(rows.last, ascent - 1, name)
+        }
     }
 
     func testTheBitmapPathTakesOnlyAStrikeSize() throws {

@@ -75,6 +75,9 @@ struct AudionFace {
         let bitmap: AudionFaceBitmapFont?
         /// `…TextMode & 2`. Parsed, and deliberately not drawn (FaceKit does the same).
         let xor: Bool
+        /// `…TextMode` 4, QuickDraw's `notSrcCopy`: inverse video (aPop). A departure; FaceKit draws
+        /// it plainly.
+        let inverse: Bool
     }
 
     struct Button {
@@ -188,8 +191,9 @@ struct AudionFace {
     /// `AudionFacePolicy.fontSizes`. Departures: an unresolved name first tries the font the face's
     /// author shipped (`AudionFaceOriginalFonts`), then a bundled lookalike
     /// (`AudionFaceFontSubstitutes`); size 0 is QuickDraw's default, 12, in the named font; and no
-    /// name at all is Audion's own default, Geneva 9 — a face with no `Txtr` of its own, which
-    /// FaceKit draws as Helvetica 12.
+    /// name at all is Audion's own default, Geneva 10 — a face with no `Txtr` of its own, which
+    /// FaceKit draws as Helvetica 12. Every readable line in those faces' screenshots is Geneva 10's
+    /// width (A13).
     ///
     /// `bitmap` is the 1-bit font the line draws in when it can: a strike the face's author shipped
     /// for that name and size, else the strike the resolved font carries (Geneva, Monaco), else none.
@@ -198,7 +202,7 @@ struct AudionFace {
         func withOwnStrike(_ font: CTFont) -> (font: CTFont, bitmap: AudionFaceBitmapFont?) {
             (font, AudionFaceBitmapFont.strike(of: font))
         }
-        guard let name else { return withOwnStrike(NSFont(name: "Geneva", size: 9)!) }
+        guard let name else { return withOwnStrike(NSFont(name: "Geneva", size: 10)!) }
         guard let size = size == 0 ? 12 : size, AudionFacePolicy.fontSizes.contains(size) else {
             return withOwnStrike(NSFont(name: "Helvetica", size: 12)!)
         }

@@ -230,6 +230,7 @@ private struct Reader {
         return AudionFace.TextLine(
             rect: rect, font: font,
             color: override?.color ?? color(role.txtrColorKey) ?? color(role.faceColorKey) ?? AudionFace.color(red: 0, green: 0, blue: 0),
-            style: style, alignment: alignment, bitmap: bitmap, xor: mode & 2 != 0)
+            style: style, alignment: alignment, bitmap: bitmap, xor: mode & 2 != 0,
+            inverse: mode == 4)
     }
 }

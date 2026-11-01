@@ -36,7 +36,8 @@ enum AudionFaceText {
         if let image = cache[key] { return image }
         // ponytail: dropped whole when full; the window shows two lines, so 16 never thrashes.
         if cache.count >= 16 { cache.removeAll() }
-        let image = rasterize(text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+        var image = rasterize(text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+        if line.inverse { image = image.flatMap { inverted($0, color: line.color) } }
         cache[key] = image
         return image
     }
@@ -110,6 +111,22 @@ enum AudionFaceText {
             CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: cut.text, attributes: attributes)), context)
         }
         return context.makeImage()
+    }
+
+    /// QuickDraw `notSrcCopy` text: the glyphs in the port's background colour, white, on a box of
+    /// the text colour as wide as the image and as tall as the line, as aPop's screenshots show.
+    private static func inverted(_ image: CGImage, color: CGColor) -> CGImage? {
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        guard let glyphs = CGContext.audionFaceBitmap(width: image.width, height: image.height),
+              let box = CGContext.audionFaceBitmap(width: image.width, height: image.height) else { return nil }
+        glyphs.draw(image, in: bounds)
+        glyphs.setBlendMode(.sourceIn)
+        glyphs.setFillColor(.white)
+        glyphs.fill(bounds)
+        box.setFillColor(color)
+        box.fill(bounds)
+        glyphs.makeImage().map { box.draw($0, in: bounds) }
+        return box.makeImage()
     }
 
     /// FaceKit trims one character from each side of the middle until the line is no wider than
