@@ -163,8 +163,8 @@ final class WinampModernB350Tests: XCTestCase {
         var shown: [String] = []
         scene.scripts.popupPresenter = { items, _ in shown = items.map(\.title); return 0 }
 
-        scene.strip.withholdAutoClose()
-        _ = scene.scripts.popupPresenter?([popupItem("Auto Close Tab"), popupItem("Show Status Bar")], nil)
+        _ = ClassicProTabStrip.attach(to: scene.scripts)
+        _ = scene.scripts.presentPopup([popupItem("Auto Close Tab"), popupItem("Show Status Bar")], at: nil)
 
         XCTAssertEqual(shown, ["Show Status Bar"])
     }

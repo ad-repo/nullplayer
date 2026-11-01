@@ -14,9 +14,9 @@ import Foundation
 /// vanish again at the next click. So which tabs are closed is the host's record, snapshotted from
 /// the strip as the skin unloads (`recordClosedTabs`); before the scripts start their flags are set
 /// so the engine builds them hidden (`prepareFlags`), and once it has built the strip every flag is
-/// cleared (`clearFlags`). A close sets its tab's flag for the one switch that removes it.
+/// cleared (`attach`). A close sets its tab's flag for the one switch that removes it.
 ///
-/// **The tab's own right-click *Auto Close Tab* is withheld** (`withholdAutoClose`). Chosen, it sets
+/// **The tab's own right-click *Auto Close Tab* is withheld** (`attach`). Chosen, it sets
 /// the same flag and takes the tab out of the strip — at once if the tab is not the selected one,
 /// otherwise at the next switch — so tabs left the strip behind the Windows menu's back.
 struct ClassicProTabStrip {
@@ -102,7 +102,16 @@ struct ClassicProTabStrip {
         }
     }
 
-    /// Once the engine has built its tabs: no tab may leave the strip on its own.
+    /// Once the engine has built its tabs — engine one in `start()`, engine two from `onSetVisible` —
+    /// the flags go and the tab menu's *Auto Close Tab* is withheld, so no tab leaves the strip on its
+    /// own. Nil unless the loaded skin runs the strip.
+    static func attach(to runtime: WinampModernScriptRuntime) -> ClassicProTabStrip? {
+        clearFlags(in: runtime.loadedSkin.configuration)
+        guard let strip = ClassicProTabStrip(runtime: runtime) else { return nil }
+        runtime.withheldPopupTitles.insert("Auto Close Tab")
+        return strip
+    }
+
     static func clearFlags(in configuration: WinampModernConfiguration) {
         for family in [one, two] {
             configuration.removeSection("@public", keyPrefix: "\(family.publicPrefix).One.TabAutoClose.")
@@ -175,13 +184,12 @@ struct ClassicProTabStrip {
         recordClosedTabs()
     }
 
-    /// Forget the stored order and every Auto Close flag, so the next load builds every tab in the
+    /// Forget the stored order and the closed tabs, so the next load builds every tab in the
     /// engine's own order. Only between unloading the skin and loading it again: `CproTabs.m` writes
     /// the order back from `onScriptUnloading`.
     static func resetLayout(in configuration: WinampModernConfiguration) {
         configuration.removeSection("ClassicPro", keyPrefix: "TabOrder_")
         configuration.removeSection(closedSection)
-        clearFlags(in: configuration)
     }
 
     /// Whether a Windows-menu item the skin registered is one of the strip's own — "Web Browser" and
@@ -189,15 +197,6 @@ struct ClassicProTabStrip {
     /// tab items replace them.
     func ownsMenuItem(named name: String) -> Bool {
         WinampModernContainerTopology.menuLabel(name) == "Web Browser" || tab(named: name) != nil
-    }
-
-    /// Leave the tab menu's *Auto Close Tab* out of every script-built popup from now on. Once the
-    /// scripts have started, when the view's presenter is in place.
-    func withholdAutoClose() {
-        guard let present = runtime.popupPresenter else { return }
-        runtime.popupPresenter = { items, point in
-            present(items.filter { $0.title != "Auto Close Tab" }, point)
-        }
     }
 
     // MARK: -

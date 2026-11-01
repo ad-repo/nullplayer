@@ -57,6 +57,10 @@ protocol MainWindowProviding: ModeDependentWindow {
     /// The queue's ∿ EQ profile row markers changed; the queue and its selection did not. A skin
     /// that draws its own queue repaints it.
     func playlistMarkersDidChange()
+
+    /// The app is quitting: save what a skin's scripts would have saved on unload, which they are
+    /// never given the chance to do (`.wmz` `onClose`, a ClassicPro strip's closed tabs).
+    func prepareForTermination()
 }
 
 // MARK: - Default Implementations
@@ -75,6 +79,8 @@ extension MainWindowProviding {
     func playlistContentDidChange() {}
 
     func playlistMarkersDidChange() {}
+
+    func prepareForTermination() {}
 }
 
 /// A main window whose size is its skin's own canvas (`.wal`, `.wmz`, an Audion face): UI Size

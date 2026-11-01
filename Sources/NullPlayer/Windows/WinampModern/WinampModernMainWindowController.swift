@@ -320,11 +320,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             view.setSceneVisible(true)
             auxiliaryContainers.forEach { $0.view.setSceneVisible($0.window.isVisible) }
             announceClaimedComponents(scripts: scripts)
-            // The ClassicPro strip, once its engine has built the tabs and read the closed ones' flags —
-            // engine one in `start()`, engine two from `onSetVisible` — so the flags can go (B350).
-            ClassicProTabStrip.clearFlags(in: loaded.configuration)
-            classicProTabs = ClassicProTabStrip(runtime: scripts)
-            classicProTabs?.withholdAutoClose()
+            // The ClassicPro strip, once its engine has built the tabs and read the closed ones' flags (B350).
+            classicProTabs = ClassicProTabStrip.attach(to: scripts)
             // …and then the windows the skin says open *with* it. After `scriptsDidStart`, so a
             // window that opens at launch is told `onSetVisible` with its geometry already dispatched.
             applyDefaultContainerVisibility()
@@ -2744,7 +2741,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     func prepareForUITeardown() { tearDownSkin() }
 
     /// The app is quitting, and no `.wal` script hears `onScriptUnloading` then.
-    func recordStateOnTermination() {
+    func prepareForTermination() {
         classicProTabs?.recordClosedTabs()
     }
 
