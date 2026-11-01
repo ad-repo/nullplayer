@@ -46,7 +46,7 @@ struct AudionFaceDocument: Decodable {
         return try decoder.decode(Self.self, from: json)
     }
 
-    /// Set only by `decode`, so the cast in `init(from:)` cannot miss.
+    /// Set by `decode`; a plain `JSONDecoder` leaves it unset and decodes with no overrides.
     private static let textOverridesKey = CodingUserInfoKey(rawValue: "AudionFaceTextOverrides")!
 
     init(from decoder: Decoder) throws {

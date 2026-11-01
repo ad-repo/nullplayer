@@ -25,12 +25,14 @@ import unicodedata
 def resources(path):
     """{type: {id: bytes}} from an AppleDouble file's resource fork (entry 2); {} if malformed."""
     try:
-        return read_fork(open(path, 'rb').read())
+        named = named_resources(open(path, 'rb').read())
     except (struct.error, IndexError):
         return {}
+    return {kind: {rid: data for rid, (_, data) in ids.items()} for kind, ids in named.items()}
 
 
-def read_fork(data):
+def named_resources(data):
+    """{type: {id: (name, bytes)}} from AppleDouble bytes' resource fork; '' for an unnamed resource."""
     if data[:4] != b'\x00\x05\x16\x07':
         return {}
     fork = b''
@@ -42,16 +44,20 @@ def read_fork(data):
         return {}
     data_offset, map_offset, _, map_length = struct.unpack('>IIII', fork[:16])
     rmap = fork[map_offset:map_offset + map_length]
-    types_offset = struct.unpack('>H', rmap[24:26])[0]
+    types_offset, names_offset = struct.unpack('>HH', rmap[24:28])
     found = {}
     for t in range(struct.unpack('>H', rmap[types_offset:types_offset + 2])[0] + 1):
         kind, count, refs = struct.unpack('>4sHH', rmap[types_offset + 2 + 8 * t:types_offset + 10 + 8 * t])
         for r in range(count + 1):
             at = types_offset + refs + 12 * r
-            rid, _, attrs = struct.unpack('>hHI', rmap[at:at + 8])
+            rid, name_at, attrs = struct.unpack('>hHI', rmap[at:at + 8])
             start = data_offset + (attrs & 0xFFFFFF)
             length = struct.unpack('>I', fork[start:start + 4])[0]
-            found.setdefault(kind.decode('mac_roman'), {})[rid] = fork[start + 4:start + 4 + length]
+            name = ''
+            if name_at != 0xFFFF:
+                p = names_offset + name_at
+                name = rmap[p + 1:p + 1 + rmap[p]].decode('mac_roman')
+            found.setdefault(kind.decode('mac_roman'), {})[rid] = (name, fork[start + 4:start + 4 + length])
     return found
 
 

@@ -199,25 +199,20 @@ struct AudionFace {
     /// for that name and size, else the strike the resolved font carries (Geneva, Monaco), else none.
     /// An installed font wins here too: it draws its own strike or its outline.
     static func font(named name: String?, size: Int?) -> (font: CTFont, bitmap: AudionFaceBitmapFont?) {
-        let font: CTFont
-        var shipped: AudionFaceBitmapFont?
-        if let name {
-            if let size = size == 0 ? 12 : size, AudionFacePolicy.fontSizes.contains(size) {
-                if let installed = NSFont(name: name, size: CGFloat(size)) {
-                    font = installed
-                } else {
-                    font = AudionFaceOriginalFonts.font(named: name, size: CGFloat(size))
-                        ?? AudionFaceFontSubstitutes.font(for: name, size: CGFloat(size))
-                        ?? NSFont(name: "Helvetica", size: CGFloat(size))!
-                    shipped = AudionFaceOriginalFonts.bitmap(named: name, size: size)
-                }
-            } else {
-                font = NSFont(name: "Helvetica", size: 12)!
-            }
-        } else {
-            font = NSFont(name: "Geneva", size: 10)!
+        guard let name else {
+            let geneva = NSFont(name: "Geneva", size: 10)!
+            return (geneva, AudionFaceBitmapFont.strike(of: geneva))
         }
-        return (font, shipped ?? AudionFaceBitmapFont.strike(of: font))
+        guard let size = size == 0 ? 12 : size, AudionFacePolicy.fontSizes.contains(size) else {
+            return (NSFont(name: "Helvetica", size: 12)!, nil)
+        }
+        if let installed = NSFont(name: name, size: CGFloat(size)) {
+            return (installed, AudionFaceBitmapFont.strike(of: installed))
+        }
+        let font = AudionFaceOriginalFonts.font(named: name, size: CGFloat(size))
+            ?? AudionFaceFontSubstitutes.font(for: name, size: CGFloat(size))
+            ?? NSFont(name: "Helvetica", size: CGFloat(size))!
+        return (font, AudionFaceOriginalFonts.bitmap(named: name, size: size) ?? AudionFaceBitmapFont.strike(of: font))
     }
 
     /// FaceKit `decodeColor`'s output: 0–255 components, opaque.
