@@ -378,6 +378,31 @@ struct Track: Identifiable, Equatable {
         var bitrate: Int?
         var sampleRate: Int?
         var channels: Int?
+
+        /// Read from a local file, off the main thread. MPEG-4 Opus can fail to open natively or
+        /// report zero frames; its asset still has the duration, and when the file would not open at
+        /// all, the audio track's own sample rate and channels — without them the row would lack its
+        /// format for good and be read again at every load.
+        static func read(from url: URL) async -> Format {
+            let file = try? AVAudioFile(forReading: url)
+            var duration = file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
+            var sampleRate = file.map { Int($0.processingFormat.sampleRate) }
+            var channels = file.map { Int($0.processingFormat.channelCount) }
+            if duration <= 0, LocalAudioFile.mayNeedFallbackDecode(url) {
+                let asset = AVURLAsset(url: url)
+                duration = (try? await asset.load(.duration).seconds) ?? 0
+                if file == nil,
+                   let track = try? await asset.loadTracks(withMediaType: .audio).first,
+                   let description = try? await track.load(.formatDescriptions).first,
+                   let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee {
+                    sampleRate = Int(asbd.mSampleRate)
+                    channels = Int(asbd.mChannelsPerFrame)
+                }
+            }
+            return Format(duration: duration > 0 ? duration : nil,
+                          bitrate: Track.estimatedBitrateKbps(of: url, duration: duration),
+                          sampleRate: sampleRate, channels: channels)
+        }
     }
 
     /// True while any field of `Format` is still unknown (a zero duration counts as unknown).

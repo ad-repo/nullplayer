@@ -4122,17 +4122,7 @@ class AudioEngine {
         Task.detached(priority: .utility) { [weak self] in
             var fileFormats: [UUID: Track.Format] = [:]
             for item in needsFileIO {
-                let file = try? AVAudioFile(forReading: item.url)
-                // MPEG-4 Opus can fail to open natively or report zero frames; the asset still has a duration.
-                var dur = file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
-                if dur <= 0, LocalAudioFile.mayNeedFallbackDecode(item.url) {
-                    dur = (try? await AVURLAsset(url: item.url).load(.duration).seconds) ?? 0
-                }
-                let format = Track.Format(
-                    duration: dur > 0 ? dur : nil,
-                    bitrate: Track.estimatedBitrateKbps(of: item.url, duration: dur),
-                    sampleRate: file.map { Int($0.processingFormat.sampleRate) },
-                    channels: file.map { Int($0.processingFormat.channelCount) })
+                let format = await Track.Format.read(from: item.url)
                 if format.duration != nil || format.sampleRate != nil { fileFormats[item.id] = format }
             }
             guard !fileFormats.isEmpty else { return }
