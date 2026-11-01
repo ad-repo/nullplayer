@@ -650,6 +650,8 @@ extension WasabiSceneRenderer {
         // also carries an `action`, which the line above already accepts; this covers one that does
         // not and is driven from a script instead.
         if Self.isTextButton(object) { return true }
+        // The time readout is a control in Winamp: a click flips it between elapsed and remaining.
+        if WasabiTextMetrics.togglesTimeDisplay(object) { return true }
         // A container has **no region of its own** in Wasabi — its children supply one. MMD3 declares
         // `<group id="main.mmd3" move="1">` last in its layout, so it is topmost across the whole
         // window; accepting a bare group for `move="1"` made it swallow every click that was not over

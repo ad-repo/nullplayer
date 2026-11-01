@@ -2979,6 +2979,8 @@ final class WinampModernMainView: NSView {
             // engine.
             if flip == .config {
                 WindowManager.shared.refreshWinampModernSurfaces()
+            } else if WasabiTextMetrics.togglesTimeDisplay(object) {
+                host.showsRemainingTime.toggle()
             } else {
                 // A skin that draws the buttons and binds nothing (boom names its artwork
                 // `Player.shuffle-Selected` and declares no `cfgattrib` at all) still has to work,

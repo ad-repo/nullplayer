@@ -70,6 +70,9 @@ protocol WinampModernHost: AnyObject {
     var bitrateKbps: Int { get }
     var sampleRateHz: Int { get }
     var channelCount: Int { get }
+    /// Whether a `display="time"` readout counts down — the app's own elapsed/remaining choice,
+    /// which a click on the readout flips (`timeelapsed`/`timeremaining` are fixed and ignore it).
+    var showsRemainingTime: Bool { get set }
     /// What `System.getDecoderName()` answers — Winamp names the input plugin that is decoding the
     /// current track ("Nullsoft MPEG Audio Decoder"), and skins print it as a *Decoder* readout. The
     /// honest equivalent here is the format NullPlayer is decoding, so the string is a codec name.
@@ -205,6 +208,10 @@ extension WinampModernHost {
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
     var channelCount: Int { 0 }
+    var showsRemainingTime: Bool {
+        get { false }
+        set {}
+    }
     var decoderName: String { "" }
     var trackPath: String { "" }
     func revealInFinder(_ path: String) {}
@@ -729,6 +736,11 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         guard let track = engine.currentTrack else { return "" }
         guard let artist = track.artist, !artist.isEmpty else { return track.title }
         return "\(artist) - \(track.title)"
+    }
+
+    var showsRemainingTime: Bool {
+        get { WindowManager.shared.timeDisplayMode == .remaining }
+        set { WindowManager.shared.timeDisplayMode = newValue ? .remaining : .elapsed }
     }
 
     var bitrateKbps: Int {
