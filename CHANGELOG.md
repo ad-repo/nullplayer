@@ -67,7 +67,8 @@
   Geneva 9 faces drew it two pixels too high).
 - **Plasmat's colon no longer flickers on internet radio** (#640): a face's streaming animation now
   replaces the readouts under it instead of showing through their gaps. The Library Browser's corners
-  are transparent under Audion on non-Retina displays.
+  are transparent on non-Retina displays beside an Audion face, a `.wmz` skin, a Sonique skin or a
+  `.wal` skin, where they drew black.
 - **iPod 1.2's "<<< STREAMING" draws at its own size** instead of stretched over the display (#641).
 - **Long titles on Audion faces scroll in full** instead of being cut with "…" (Reduce Motion still cuts them).
 - **Text an Audion face draws outside its window shape shows**, as it did in Audion (X-factor,
