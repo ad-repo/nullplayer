@@ -1,0 +1,4 @@
+BitBit
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/HanStereo.sit.bin, https://download.panic.com/audion/faces/T13.sit.bin, https://download.panic.com/audion/faces/bitbit.sit.bin, https://download.panic.com/audion/faces/radium.sit.bin.
+Licence: LicenseRef-Freeware.

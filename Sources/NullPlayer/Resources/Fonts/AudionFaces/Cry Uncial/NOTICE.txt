@@ -1,0 +1,9 @@
+Cry Uncial
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/theonering.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: 2000 Iconian Fonts - this font named by Martin Ross
+
+What the face archives say about it:
+  Cry Uncial Readme: This font may be freely distributed and is free for all non-commercial uses.  This font is e-mailware; that is, if you like it, please e-mail the author at:

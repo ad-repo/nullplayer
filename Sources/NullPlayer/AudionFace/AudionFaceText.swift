@@ -23,20 +23,20 @@ import AppKit
 
 enum AudionFaceText {
     /// FaceKit `draw(text:…)`: the line rasterized at `scale`, in an image as wide as the whole
-    /// string. When justified or under Reduce Motion, a string wider than its box is cut from the
-    /// middle with an ellipsis. Nil for a string with no width.
+    /// string. Under Reduce Motion, a string wider than its box is cut from the middle with an
+    /// ellipsis. Nil for a string with no width.
     ///
     /// The same arguments give back the same image instance: a scene rebuilt every tick for the
     /// marquee rasterizes nothing, and `AudionFaceCanvas` sees by identity that the label is unchanged.
-    static func image(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
-                      reduceMotion: Bool) -> CGImage? {
-        let key = Key(text: text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+    static func image(_ text: String, line: AudionFace.TextLine, scale: Int, reduceMotion: Bool) -> CGImage? {
+        let key = Key(text: text, line: line, scale: scale, reduceMotion: reduceMotion)
         lock.lock()
         defer { lock.unlock() }
         if let image = cache[key] { return image }
         // ponytail: dropped whole when full; the window shows two lines, so 16 never thrashes.
         if cache.count >= 16 { cache.removeAll() }
-        let image = rasterize(text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+        var image = rasterize(text, line: line, scale: scale, reduceMotion: reduceMotion)
+        if line.inverse { image = image.flatMap { inverted($0, color: line.color) } }
         cache[key] = image
         return image
     }
@@ -44,7 +44,6 @@ enum AudionFaceText {
     private struct Key: Hashable {
         let text: String
         let line: AudionFace.TextLine
-        let justify: Bool
         let scale: Int
         let reduceMotion: Bool
     }
@@ -52,8 +51,11 @@ enum AudionFaceText {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [Key: CGImage?] = [:]
 
-    private static func rasterize(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
-                                  reduceMotion: Bool) -> CGImage? {
+    private static func rasterize(_ text: String, line: AudionFace.TextLine, scale: Int, reduceMotion: Bool) -> CGImage? {
+        if let image = line.bitmap?.image(text, color: line.color, style: line.style, boxWidth: line.rect.width,
+                                          truncate: reduceMotion, scale: scale) {
+            return image
+        }
         var font = line.font
         if scale > 1 {
             font = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font) * CGFloat(scale), nil, nil)
@@ -95,22 +97,48 @@ enum AudionFaceText {
         context.textMatrix = CGAffineTransform(translationX: 0, y: (CTFontGetAscent(font) - CTFontGetDescent(font)) / 2)
 
         let boxWidth = CGFloat(line.rect.width * scale)
-        guard justify || reduceMotion, size.width > boxWidth else {
+        guard reduceMotion, size.width > boxWidth else {
             CTLineDraw(CTLineCreateWithAttributedString(string), context)
             return context.makeImage()
         }
-        // FaceKit trims one character from each side of the middle until the line fits, and draws
-        // only on a strict fit. Stopping when nothing is left to trim is NullPlayer's: FaceKit
-        // would loop forever on a font whose ellipsis alone is wider than the box.
+        // FaceKit draws only on a strict fit: a cut exactly as wide as the box draws nothing.
+        if let cut = middleTruncated(text, toFit: boxWidth, width: {
+            NSAttributedString(string: $0, attributes: attributes).size().width
+        }), cut.width < boxWidth {
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: cut.text, attributes: attributes)), context)
+        }
+        return context.makeImage()
+    }
+
+    /// QuickDraw `notSrcCopy` text: the glyphs in the port's background colour, white, on a box of
+    /// the text colour as wide as the image and as tall as the line, as aPop's screenshots show.
+    private static func inverted(_ image: CGImage, color: CGColor) -> CGImage? {
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        guard let glyphs = CGContext.audionFaceBitmap(width: image.width, height: image.height),
+              let box = CGContext.audionFaceBitmap(width: image.width, height: image.height) else { return nil }
+        glyphs.draw(image, in: bounds)
+        glyphs.setBlendMode(.sourceIn)
+        glyphs.setFillColor(.white)
+        glyphs.fill(bounds)
+        box.setFillColor(color)
+        box.fill(bounds)
+        glyphs.makeImage().map { box.draw($0, in: bounds) }
+        return box.makeImage()
+    }
+
+    /// FaceKit trims one character from each side of the middle until the line is no wider than
+    /// the box; this is that cut, with its width. Nil when nothing is left to trim, which is
+    /// NullPlayer's: FaceKit would loop forever on a font whose ellipsis alone is wider than the box.
+    static func middleTruncated(_ text: String, toFit boxWidth: CGFloat,
+                                width: (String) -> CGFloat) -> (text: String, width: CGFloat)? {
         var head = Substring(text.prefix(text.count / 2)), tail = Substring(text.dropFirst(text.count / 2))
         while !head.isEmpty || !tail.isEmpty {
             head = head.dropLast()
             tail = tail.dropFirst()
-            let shortened = NSAttributedString(string: head + "…" + tail, attributes: attributes)
-            let width = shortened.size().width
-            if width < boxWidth { CTLineDraw(CTLineCreateWithAttributedString(shortened), context) }
-            if width <= boxWidth { break }
+            let shortened = String(head + "…" + tail)
+            let measured = width(shortened)
+            if measured <= boxWidth { return (shortened, measured) }
         }
-        return context.makeImage()
+        return nil
     }
 }

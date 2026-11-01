@@ -225,19 +225,32 @@ final class AudionFaceLoaderTests: XCTestCase {
         XCTAssertEqual(album.style, [])
         XCTAssertFalse(album.xor)
         XCTAssertEqual(album.color.components, [0, 0, 1, 1])
-        XCTAssertEqual(CTFontGetSize(album.font), 12, "no font name: Helvetica 12")
+        XCTAssertEqual(CTFontGetSize(album.font), 10, "no font name: Audion's default, Geneva 10")
+        XCTAssertEqual(CTFontCopyFamilyName(album.font) as String, "Geneva")
     }
 
-    /// Departure: a name macOS lacks resolves to a bundled lookalike before Helvetica, and every
-    /// bundled file loads (one name per file).
+    /// Departure: a name macOS lacks resolves to a lookalike before Helvetica, and every bundled
+    /// file loads (one name per file), as does a system one.
     func testUnresolvedFontNamesTakeTheBundledLookalike() {
         let expected = ["Chicago": "ChicagoKare-Regular", "Mini": "Tiny5-Regular", "Silkscreen": "Silkscreen-Regular",
-                        "Textile": "ComicNeue-BoldItalic", "SF Digital Readout Medium": "NullPlayerSegment14-Light"]
+                        "Textile": "ComicNeue-BoldItalic", "SF Digital Readout Medium": "NullPlayerSegment14-Light",
+                        "Capitals": "Copperplate", "Sand": "MarkerFelt-Wide", "Institution": "PathwayGothicOne-Regular",
+                        "Machine ITC TT": "BebasNeue-Regular", "Junior Pro": "Sniglet-ExtraBold",
+                        "Stencil": "StardosStencil-Bold", "Eurostile BoldExtendedTwo": "KronaOne-Regular",
+                        "Eurostile ExtendedTwo": "Michroma-Regular",
+                        // System fonts: a misspelt PostScript name would resolve to CoreText's fallback.
+                        "Arial Bl": "Arial-Black", "Arial MT Condensed Light": "ArialNarrow",
+                        "Bradley Hand ITC TT-Bold": "BradleyHandITCTT-Bold", "Futura Condensed": "Futura-CondensedMedium",
+                        "Century Gothic": "Futura-Medium", "New York": "Times-Roman", "VT100": "Monaco",
+                        "Espy Sans": "Geneva", "Facet": "Impact", "I/O Sans Italic": "Helvetica-BoldOblique",
+                        "Weathered SF Regular": "Times-Bold", "Monotype.com": "AndaleMono"]
         for (name, postScriptName) in expected {
-            let font = AudionFace.font(named: name, size: 12)
+            let font = AudionFace.font(named: name, size: 12).font
             XCTAssertEqual(CTFontCopyPostScriptName(font) as String, postScriptName, name)
         }
-        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "SF Digital Readout Medium", size: 12)), 12 * 0.56, accuracy: 0.001)
+        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "SF Digital Readout Medium", size: 12).font), 12 * 0.56, accuracy: 0.001)
+        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "Chicago", size: 12).font), 16, accuracy: 0.001)
+        XCTAssertEqual(CTFontGetMatrix(AudionFace.font(named: "Techno", size: 12).font).a, 0.8, accuracy: 0.001)
     }
 
     /// Departure: an artist line with no font name takes the album line's font and size.
@@ -249,7 +262,7 @@ final class AudionFaceLoaderTests: XCTestCase {
         ]).load()
         let artist = try XCTUnwrap(face.artist)
         XCTAssertEqual(CTFontCopyPostScriptName(artist.font) as String, "ChicagoKare-Regular")
-        XCTAssertEqual(CTFontGetSize(artist.font), 9)
+        XCTAssertEqual(CTFontGetSize(artist.font), 9 * 4 / 3, accuracy: 0.001)
     }
 
     func testRoleKeysMatchFaceKit() {

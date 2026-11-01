@@ -1,0 +1,6 @@
+hooge 05_53
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/CC.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: ©2001 | www.miniml.com | design by craig kroeger

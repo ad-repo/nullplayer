@@ -42,6 +42,7 @@ AUDION_RENDER_DUMP=/tmp/audion AUDION_RENDER_STATE=playing \
 | `AUDION_RENDER_CLICK` | `x,y` | Presses it. |
 | `AUDION_RENDER_SCALE` | 1–4 | Integer scale; text re-rasterized at that size. |
 | `AUDION_RENDER_PROBE` | any | One `PROBE` line per draw op. |
+| `AUDION_RENDER_TEXT` | `title\|artist\|album\|format` | Replaces the host text in every non-stopped state, so the lines fit their boxes and alignment shows (the contact sheets use `Peace Orchestra\|Kula Shaker\|Fantasma\|`). The sweep scripts pass it through. |
 
 The image label is `<state>[-f<tick>][-hover][-click][@<n>x]`; the canonical sweep's are `stopped`
 and `playing`.
@@ -98,6 +99,11 @@ are in `scripts/lib/audion_corpus.sh`. Never capture a baseline with `git stash`
 | `scripts/audion_render_sweep.sh compare <a> <b>` | Diffs two captures' invariant lines, then their images through `scripts/png_diff.py --summary`. |
 | `scripts/audion_facekit_reference.sh <out> [--corpus <dir>]` | The oracle: FaceKit's own rendering of every face in the sweep's face list, exclusions applied (below). |
 | `scripts/audion_oracle_compare.py <oracle-out> <sweep-out>` | Classifies each face against the oracle, taking the text boxes from the sweep's `PROBE … label:` lines (so the loader is the only reader of `index.json`; a capture without them is refused); writes `<sweep-out>/oracle-compare.tsv`. |
+| `scripts/audion_panic_originals.sh` | Mirrors Panic's original faces (`download.panic.com/audion/faces/*.sit.bin`, 846 archives) into `~/Library/Caches/NullPlayer/audion-panic/` (`download/`, `extract/<archive>/` with resource forks as AppleDouble `.rsrc` via `unar -k visible`), then maps each installed face to its archive (`map.tsv`; 843 of 856). 7 self-extracting archives do not extract. Nothing from the cache is ever committed: it is Panic's artwork. |
+| `scripts/audion_txtr.py decode <cache> <corpus>` | Decodes every mapped face's `Txtr` into `<cache>/txtr.tsv` and prints the agreement with `index.json` (`format.md` § *`Txtr`*) and the cohorts. |
+| `scripts/audion_txtr.py table <cache> <corpus> <out.swift>` | Regenerates `AudionFaceTextOverrides.swift`. |
+| `scripts/audion_face_fonts.py <cache> <corpus> [--ship <dir>]` | Extracts every font the archives carry into `<cache>/fonts/` with `fonts.tsv` (names, licence strings, readme lines, the faces that name it). `--ship Sources/NullPlayer/Resources/Fonts/AudionFaces` copies the `SHIP` families with their `NOTICE.txt` and prints their `third_party_components.tsv` rows. `SHIP` is the licence decision; never widen it without the evidence. |
+| `scripts/audion_font_sheet.py <cache> <corpus> <out> --before <capture> --after <capture> [--cohort <name>]` | Contact sheets: per face, Panic's screenshot (located in the JPG by masked cross-correlation) beside two sweep captures, with each text line cropped at 3×. Cohorts: `issue-642`, `dropped`, `txtr-128-only`, `no-txtr`, `right`, `centred`, `bitmap-strike`, `original-font`, `substitute`, `unresolved`. The only check for text work: the oracle draws FaceKit's fonts, not Audion's. |
 
 The census digest is SHA-256 over every regular file in the face, in UTF-8 byte order of its
 relative path: the path, a NUL, the contents. `AudionFaceHarness.digest(of:)` is its one definition:
@@ -153,6 +159,8 @@ At the commit that closed A3 (2026-10-08), over the 856 faces of Panic's 2021 di
 | `scripts/audion_render_sweep.sh capture` ×2, then `compare` | 856 faces, 8,601 invariant lines, 1,712 images per capture; the two captures **identical** (lines and images). ~29 s each. |
 | `scripts/audion_facekit_reference.sh` | 856 rendered, 0 refused, 0 died; 19 s on all cores. |
 | `scripts/audion_oracle_compare.py` | **856/856 geometry-identical**: identical 484, rounding 371, text-only 1 (`subzero`, playing: its album and artist boxes overlap by a row, and only its glyphs differ), geometry 0. |
+| `scripts/audion_oracle_compare.py`, after the `Txtr` fonts work (#642, 2026-11-01) | **856/856 geometry-identical**: identical 195, rounding 128, text-only 533, geometry 0. The text-only faces are the font, alignment and bitmap-strike departures; the sweep against the capture before it differed on 442 of 1,712 images, all recolour; the invariants differ only in the `PALETTE` of the six faces whose restored `Txtr` colour changed (Detonator b1, Gears, Mint 1.1, Mint 1.2 xp, OldTyme, Touchscreen). |
+| A12–A17 and the text/hit-test departures (2026-11-01), against `96b8f933` | **Oracle 856/856 geometry-identical**: identical 138, rounding 76, text-only 642, geometry 0. **Sweep**: invariants identical (9,457 lines); 538 of 1,712 images differ, all `playing` (gained 26, moved 278, recolour 232, lsb 2), every one inside a text box. **`streaming` state** (`AUDION_RENDER_STATE=streaming`, both trees): 627 of 856 differ; outside the streaming rect, only where `playing` differs too; inside it on 177 faces — 46 whose frames differ from their rect (A17), the rest a digit, indicator or text box under the frame (A16). `swift test --build-system native`: 3,409 tests, 27 skipped, 0 failures. |
 | `swift test --build-system native` | 3,007 tests, 19 skipped, 0 failures; `AudionFaceCorpusLoadTests` 856/856, 0 unranked, ~5.5 s. |
 | Phase 6 re-check (A8) | Census identical in tallies and headroom; the sweep identical to `93ff3dd4` (9,457 lines, 1,712 images, every `PROBE` line); oracle 856/856 geometry-identical (484 / 371 / 1 / 0); `swift test` 3,034, 19 skipped, 0 failures. |
 

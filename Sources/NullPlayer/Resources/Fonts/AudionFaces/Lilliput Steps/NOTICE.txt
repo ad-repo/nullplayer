@@ -1,0 +1,6 @@
+Lilliput Steps
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/minit1.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: (C) 1999 Ray Larabie - rlarabie@hotmail.com

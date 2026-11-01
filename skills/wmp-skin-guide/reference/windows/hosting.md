@@ -52,6 +52,8 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   shares every one of these painters and, since 2026-09-26, the gate too: it is true in `.wal` once
   the skin's palette has loaded (see `winamp-modern-skin-guide/reference/components.md` §
   *NullPlayer-owned hosted windows are lazy*). Classic and Original never reach it.
+  The Library Browser's window is clear at 1× in every `hostsForeignSkin` family: Classic's opaque
+  black 1× window showed black outside the rim and a borrowed frame's keyed-out corners (#640, 2026-11-01).
 - **A player the skin gives no close gets an invisible one (2026-09-26).** WMP drew a Windows title
   bar around a view unless it wrote `titleBar="false"` (about 30 archives do), so a skin that
   relied on that frame authors no close — `Classic` is a rectangle with a "Return to Full Mode"

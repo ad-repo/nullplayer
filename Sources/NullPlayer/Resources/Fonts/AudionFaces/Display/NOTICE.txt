@@ -1,0 +1,6 @@
+Display
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/display.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: Copyright 2000 by dustBUST Fonts.

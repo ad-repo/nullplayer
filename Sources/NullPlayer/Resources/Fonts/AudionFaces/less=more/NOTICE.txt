@@ -1,0 +1,6 @@
+less=more
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/less%3Dmore.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: ©2001 Max Kisman/maxk@maxkisman.com

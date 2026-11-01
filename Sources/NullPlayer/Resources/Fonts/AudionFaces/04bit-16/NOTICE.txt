@@ -1,0 +1,4 @@
+04bit-16
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/neon.sit.bin.
+Licence: LicenseRef-Freeware.

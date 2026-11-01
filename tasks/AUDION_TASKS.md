@@ -18,6 +18,7 @@ to the capture before it.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
+| A18 | JustApple draws nothing | JustApple (the only face) | Both `base-alpha.png` and `inactive-alpha.png` are wholly clear (alpha 0 everywhere, 211×228) while `base.png` carries the apple's own alpha; Panic's screenshot (`justapple.jpg`) shows the apple on its green streaks. The face renders 100% clear in every state, and since the whole face rectangle takes clicks it is an invisible window. Find what the 2021 conversion did to its mask (its original archive) before choosing between ignoring a wholly clear mask and rebuilding it from `base.png`'s alpha. **Done when** JustApple draws as its screenshot and no other face's render changes. |
 
 ## App integration
 

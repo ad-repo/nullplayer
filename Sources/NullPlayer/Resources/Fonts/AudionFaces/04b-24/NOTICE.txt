@@ -1,0 +1,6 @@
+04b-24
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/link.sit.bin, https://download.panic.com/audion/faces/streetcrab.sit.bin, https://download.panic.com/audion/faces/subzero.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 2000 / yuji oshimoto  / 04@jp.org / www.04.jp.org

@@ -1,0 +1,4 @@
+FreeceMini
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/FreeceX2.sit.bin.
+Licence: LicenseRef-Freeware.

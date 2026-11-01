@@ -1,4 +1,5 @@
 import CoreGraphics
+import CryptoKit
 import Foundation
 
 /// What `index.json` says, element by element, read the way FaceKit reads it but tolerantly:
@@ -32,6 +33,22 @@ struct AudionFaceDocument: Decodable {
     let faceInfo: [String]
     let findings: [AudionFaceFinding]
 
+    /// Decodes `json` with what it lost of its authored text restored: the `AudionFaceTextOverrides`
+    /// lines its SHA-256 names.
+    static func decode(_ json: Data) throws -> Self {
+        let digest = SHA256.hash(data: json).map { String(format: "%02x", $0) }.joined()
+        return try decode(json, overrides: AudionFaceTextOverrides.lines[digest] ?? [:])
+    }
+
+    static func decode(_ json: Data, overrides: [AudionFace.TextRole: AudionFaceTextOverrides.Line]) throws -> Self {
+        let decoder = JSONDecoder()
+        decoder.userInfo[textOverridesKey] = overrides
+        return try decoder.decode(Self.self, from: json)
+    }
+
+    /// Set by `decode`; a plain `JSONDecoder` leaves it unset and decodes with no overrides.
+    private static let textOverridesKey = CodingUserInfoKey(rawValue: "AudionFaceTextOverrides")!
+
     init(from decoder: Decoder) throws {
         var reader = Reader(container: try decoder.container(keyedBy: Key.self))
         var buttons: [AudionFace.ButtonRole: Button] = [:]
@@ -50,8 +67,9 @@ struct AudionFaceDocument: Decodable {
         for role in AudionFace.AnimationRole.allCases {
             animations[role] = reader.animation(role)
         }
-        artist = reader.textLine(.artist)
-        album = reader.textLine(.album)
+        let overrides = decoder.userInfo[Self.textOverridesKey] as? [AudionFace.TextRole: AudionFaceTextOverrides.Line]
+        artist = reader.textLine(.artist, override: overrides?[.artist])
+        album = reader.textLine(.album, override: overrides?[.album])
         self.buttons = buttons
         self.indicators = indicators
         self.digits = digits
@@ -190,7 +208,8 @@ private struct Reader {
         try? container.decode(String.self, forKey: Key(key))
     }
 
-    mutating func textLine(_ role: AudionFace.TextRole) -> AudionFace.TextLine? {
+    /// `override` is what index.json lost of the face's authored `Txtr`; each field it holds wins.
+    mutating func textLine(_ role: AudionFace.TextRole, override: AudionFaceTextOverrides.Line?) -> AudionFace.TextLine? {
         let element = "\(role) text"
         guard let rect = rect(role.rectKey, element: element) else { return nil }
         // FaceKit throws here too; see `digit`.
@@ -201,16 +220,21 @@ private struct Reader {
         // Departure: an artist line with no font name (Techno Jammo) takes the album line's font and
         // size, as the face's Audion screenshots show; FaceKit draws it in Helvetica 12.
         let fontRole: AudionFace.TextRole = name(role.fontNameKey) == nil ? .album : role
-        let fontName = name(fontRole.fontNameKey)
+        let fontName = override?.fontName ?? name(fontRole.fontNameKey)
         // FaceKit `decodeStyle`: if any one of the eight keys fails to decode, the style is empty.
         var style: AudionFace.TextStyle = []
         for (bit, key) in role.styleKeys.enumerated() {
             guard let on = try? container.decode(Bool.self, forKey: Key(key)) else { style = []; break }
             if on { style.insert(AudionFace.TextStyle(rawValue: 1 << bit)) }
         }
+        // Departure: `…Justify` is the face's `Txtr` justification, centre or right, and is drawn so;
+        // FaceKit draws every line left.
+        let alignment = override?.alignment ?? (style.contains(.justify) ? .center : .left)
+        let (font, bitmap) = AudionFace.font(named: fontName, size: override?.fontSize ?? int(fontRole.fontSizeKey))
         return AudionFace.TextLine(
-            rect: rect, font: AudionFace.font(named: fontName, size: int(fontRole.fontSizeKey)),
-            color: color(role.txtrColorKey) ?? color(role.faceColorKey) ?? AudionFace.color(red: 0, green: 0, blue: 0),
-            style: style, xor: mode & 2 != 0)
+            rect: rect, font: font,
+            color: override?.color ?? color(role.txtrColorKey) ?? color(role.faceColorKey) ?? AudionFace.color(red: 0, green: 0, blue: 0),
+            style: style, alignment: alignment, bitmap: bitmap, xor: mode & 2 != 0,
+            inverse: mode == 4)
     }
 }

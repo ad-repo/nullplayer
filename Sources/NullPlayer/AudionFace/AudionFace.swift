@@ -58,13 +58,26 @@ struct AudionFace {
         static let justify = TextStyle(rawValue: 1 << 7)
     }
 
+    /// The face's `Txtr` justification. index.json keeps only whether it is not left (`…Justify`,
+    /// which FaceKit reads as truncation and draws left); right comes from `AudionFaceTextOverrides`.
+    enum TextAlignment: Hashable {
+        case left, center, right
+    }
+
     struct TextLine: Hashable {
         let rect: AudionFaceRect
         let font: CTFont
         let color: CGColor
         let style: TextStyle
+        let alignment: TextAlignment
+        /// The line's 1-bit bitmap font, when it has one: drawn instead of `font` when the style
+        /// asks for nothing a bitmap cannot do (`AudionFaceText`).
+        let bitmap: AudionFaceBitmapFont?
         /// `…TextMode & 2`. Parsed, and deliberately not drawn (FaceKit does the same).
         let xor: Bool
+        /// `…TextMode` 4, QuickDraw's `notSrcCopy`: inverse video (aPop). A departure; FaceKit draws
+        /// it plainly.
+        let inverse: Bool
     }
 
     struct Button {
@@ -174,14 +187,32 @@ struct AudionFace {
     // MARK: - FaceKit's resolution rules
 
     /// FaceKit `decodeFont`: a name that does not resolve falls back to Helvetica at the authored
-    /// size; a missing name or size falls back to Helvetica 12, and so does a size outside
-    /// `AudionFacePolicy.fontSizes`. Departure: an unresolved name first tries a bundled
-    /// lookalike (`AudionFaceFontSubstitutes`).
-    static func font(named name: String?, size: Int?) -> CTFont {
-        guard let name, let size, AudionFacePolicy.fontSizes.contains(size) else { return NSFont(name: "Helvetica", size: 12)! }
-        return NSFont(name: name, size: CGFloat(size))
+    /// size; a missing size falls back to Helvetica 12, and so does a size outside
+    /// `AudionFacePolicy.fontSizes`. Departures: an unresolved name first tries the font the face's
+    /// author shipped (`AudionFaceOriginalFonts`), then a bundled lookalike
+    /// (`AudionFaceFontSubstitutes`); size 0 is QuickDraw's default, 12, in the named font; and no
+    /// name at all is Audion's own default, Geneva 10 — a face with no `Txtr` of its own, which
+    /// FaceKit draws as Helvetica 12. Every readable line in those faces' screenshots is Geneva 10's
+    /// width (A13).
+    ///
+    /// `bitmap` is the 1-bit font the line draws in when it can: a strike the face's author shipped
+    /// for that name and size, else the strike the resolved font carries (Geneva, Monaco), else none.
+    /// An installed font wins here too: it draws its own strike or its outline.
+    static func font(named name: String?, size: Int?) -> (font: CTFont, bitmap: AudionFaceBitmapFont?) {
+        guard let name else {
+            let geneva = NSFont(name: "Geneva", size: 10)!
+            return (geneva, AudionFaceBitmapFont.strike(of: geneva))
+        }
+        guard let size = size == 0 ? 12 : size, AudionFacePolicy.fontSizes.contains(size) else {
+            return (NSFont(name: "Helvetica", size: 12)!, nil)
+        }
+        if let installed = NSFont(name: name, size: CGFloat(size)) {
+            return (installed, AudionFaceBitmapFont.strike(of: installed))
+        }
+        let font = AudionFaceOriginalFonts.font(named: name, size: CGFloat(size))
             ?? AudionFaceFontSubstitutes.font(for: name, size: CGFloat(size))
             ?? NSFont(name: "Helvetica", size: CGFloat(size))!
+        return (font, AudionFaceOriginalFonts.bitmap(named: name, size: size) ?? AudionFaceBitmapFont.strike(of: font))
     }
 
     /// FaceKit `decodeColor`'s output: 0–255 components, opaque.

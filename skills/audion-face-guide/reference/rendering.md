@@ -25,9 +25,9 @@ FaceKit is a layer tree, not a draw list; `AudionFaceDrawOp.Layer` reproduces it
 |---|---|---|---|
 | `base` | the view's own layer | `base.png` stretched to the bounds, then the current animation frame | each op **clears its rect first**, so an animation frame's transparent pixels cut a hole in the base |
 | `buttons` | the `NSButton` subviews, zPosition 1 | the visible buttons in `ButtonRole.allCases` order (FaceKit's `addSubview` order: play, pause, stop, rw, ff, eject, close, info, volume, menu, music) | source-over |
-| `readouts` | `sublayer`, zPosition 2 | time digits 1–4, track digits 1–2, indicators CDDB, CD, NET, MP3, play, pause | its own transparent buffer, each op clearing its rect first, then source-over — **above the buttons** |
-| `labels` | the `LabelView`s, zPosition 10 | artist, then album | unscaled, top-aligned, clipped to the box |
+| `readouts` | `sublayer`, zPosition 2 | time digits 1–4, track digits 1–2, indicators CDDB, CD, NET, MP3, play, pause | its own transparent buffer, each op clearing its rect first, then source-over — **above the buttons**; the drawn animation frame's rect is cleared from it (below) |
 | `mask` | the layer mask | the active or inactive mask | keeps only the alpha it covers |
+| `labels` | the `LabelView`s, zPosition 10 | artist, then album | unscaled, top-aligned, clipped to the box — **above the mask** (below) |
 
 The zPosition order is the screen's. `CALayer.render(in:)` ignores it, which is why the oracle host
 sorts by it (`harness.md` § *The oracle*); 88 faces have a button overlapping a readout.
@@ -35,8 +35,10 @@ sorts by it (`harness.md` § *The oracle*); 88 faces have a button overlapping a
 ## Images
 
 - Every image draws with `interpolationQuality = .none`, stretched to its rect, at an integer
-  scale. Digits, indicators and animation frames fill their authored rect; a button's rect takes its
-  size from the sprite.
+  scale. Digits and indicators fill their authored rect; a button's rect takes its size from the
+  sprite. An animation frame smaller than its rect draws at its own size from the rect's top-left
+  corner, and a larger one is shrunk to the rect (A17, a departure: FaceKit stretches it, and iPod
+  1.2's 72×8 "<<< STREAMING" filled a 77×26 rect). The op's rect is the drawn size.
 - **Button state**, first match wins: disabled → `-disabled` (else normal); pressed → `-active`;
   hovered → `-hover`; normal. Stop is disabled with no track (`hasTrack`, below); every other button is
   enabled (all are wired, decision record § *Button mapping*) unless the window disables it.
@@ -50,6 +52,11 @@ when the face has one (FaceKit `updateMask`). It is drawn at its own size from t
 corner (`contentsGravity = .bottomLeft`), so a mask of another size (`AUD0008`) is anchored, never
 stretched, and pixels it does not cover become transparent. At a scale above 1 it is scaled
 nearest-neighbour (a departure; FaceKit uses high-quality resampling). No mask: the full rectangle.
+**Text is drawn after the mask**, so a line shows where the mask is clear (a departure: FaceKit's
+layer mask cuts the labels too). Panic's screenshots show Audion drew it over the desktop there —
+X-factor, Jack&Sally, Ugly, TarePanda, Darwin, M iv — as its opaque window would (Panic, "Magic
+Transparency Trick": Audion composited the face over a capture of the desktop). On 45 faces the mask hid
+part or all of a text box (26 lines wholly); on others a translucent mask no longer fades the text.
 **Decided in Phase 4: the inactive mask is used whenever the window is not key**, as FaceKit's
 host does through `isInactive`; `isWindowActive` follows key status (`windowDidBecomeKey` /
 `windowDidResignKey`). `useInactiveState` is not read: it is false in every corpus face (the
@@ -67,7 +74,11 @@ decision record's count), so gating on it would retire `inactive-alpha.png` ever
   radio has no duration, and FaceKit's rule left NET dark and stop disabled for it. The position
   slider still needs a duration (FaceKit's `showTimeSlider`).
 - Animation: `streamPhase` picks connecting, streaming or net-lag; the frame is
-  `(tick / FrameDelay) % count`, frame 0 when the delay is not positive.
+  `(tick / FrameDelay) % count`, frame 0 when the delay is not positive. **The drawn frame replaces
+  the readouts under it** (A16, a departure: FaceKit draws the readouts over it, so on Plasmat only
+  the gaps between the digits animated and its colon seemed to flicker). Faces like Nixie Tube,
+  Techno Blue, Escher and Display draw the animation as the readout's replacement. The buttons stay
+  above it: 84 faces put a button inside an animation rect.
 
 ## Text
 
@@ -78,8 +89,33 @@ line in an image as wide as the whole string, baseline at `(ascent − descent) 
 
 | Line | Text | Truncation | Marquee |
 |---|---|---|---|
-| artist | the title; nothing for an empty one | always cut from the middle with `…` | never |
-| album | `artist—album—format`, skipping absent parts | only when justified, or under Reduce Motion | scrolls unless Reduce Motion — **even when justified**, because FaceKit sets the album label's own `justify` to false |
+| artist | the title; nothing for an empty one | only under Reduce Motion, cut from the middle with `…` | when wider than its box, unless Reduce Motion |
+| album | `artist—album—format`, skipping absent parts | only under Reduce Motion | always, unless Reduce Motion |
+
+A departure (the user's call): FaceKit cuts the artist line, and a justified album line's text,
+rather than scroll them; the whole text scrolls instead. `AudionFaceScene.isAnimated` runs the clock
+for a scrolling line.
+
+**Alignment** (`AudionFaceScene.alignmentOffset`): a pinned line — the artist line, and the album
+line under Reduce Motion — narrower than its box is offset by half the room (centre) or all of it
+(right), in whole face pixels; a wider one stays left. A scrolling line ignores it.
+
+**Bitmap fonts** (`AudionFaceBitmapFont`, a departure): when the line's style holds nothing beyond
+bold, condense, extend and justify, and the line has a 1-bit font — a shipped `NFNT` strike at its
+size (`AudionFaceOriginalFonts`; a bitmap-only family takes its nearest strike), else the `bloc`/`bdat`
+strike the resolved font carries (Geneva 9–24, Monaco 9–14) — the line is drawn from that bitmap at
+1× and scaled nearest-neighbour. Bold smears each glyph one pixel right and adds a pixel to its
+advance, condense/extend take a pixel off or add one, as QuickDraw did. A `bdat` line sits on the
+strike's own `bloc` line metrics (ascent at bitmap-size-table entry +16, descent at +17: Geneva 9
+is 10 and 2, Monaco 9 is 9 and 3), the image keeping at least the outline line's height; that puts
+Geneva 9 two pixels and Monaco 9 one pixel lower than FaceKit's outline baseline, and matched the
+Panic screenshots on 91 of 118 Geneva 9 lines (3 before) and 9 of 14 Monaco 9 lines (0 before;
+A15). An `NFNT` line is QuickDraw's, ascent from the top. A strike missing `—`, `–` or `…` draws `-` and `...`; any other missing
+character draws the strike's missing-character glyph, and a character outside Mac Roman (or a
+`bdat` strike lacking a glyph) sends the whole line to the outline path. A bitmap cut exactly as
+wide as the box draws: whole-pixel widths make an exact fit common, and FaceKit's strict fit would
+leave those lines blank. The strike follows the outline's size rules (size 0 is 12; a size outside
+the policy is Helvetica 12, with no strike), and an installed font draws its own strike or outline.
 
 A box 12 px wide or narrower draws no text (FaceKit's `rect.width > 12`). The cut trims one character from each side of the middle
 until the line is strictly narrower than the box; one exactly as wide as the box draws nothing, as
@@ -90,6 +126,10 @@ the text re-entering from the right edge after a 60 px gap; all widths in device
 
 **XOR text** (`…TextMode & 2`) is drawn plainly. FaceKit parses it and leaves its invert filter
 commented out.
+
+**Inverse text** (`…TextMode` 4, QuickDraw's `notSrcCopy`; `TextLine.inverse`) is a box in the
+line's colour with the glyphs knocked out in white (`AudionFaceText.inverted`), as aPop 1–4's
+screenshot shows (A14, a departure). No other corpus line uses mode 4.
 
 ## Redrawing only what changed
 
@@ -121,4 +161,8 @@ nearest-neighbour with everything else.
 The table is the decision record's § *Deliberate departures from FaceKit*. Of those that touch
 rendering, the oracle comparison avoids each by construction: it renders at 1× (mask resampling) and
 with no track index (track digits); and FaceKit rendered every corpus face's canonical states
-without looping, so the text-trimming stop does not fire there.
+without looping, so the text-trimming stop does not fire there. The text departures (fonts,
+alignment, bitmap strikes, the `Txtr` overrides, inverse video, text above the mask) change only
+the text boxes, so the comparison classes them `text-only` and never `geometry`. The animation
+departures (native-size frames, frames replacing readouts) are outside the oracle's states, which
+have no stream phase; the `streaming` sweep is their check (`harness.md` § *Measured*).

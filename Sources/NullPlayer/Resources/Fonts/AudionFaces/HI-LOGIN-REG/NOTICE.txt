@@ -1,0 +1,11 @@
+HI-LOGIN-REG
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/ED1.sit.bin, https://download.panic.com/audion/faces/PolaScan.sit.bin, https://download.panic.com/audion/faces/polaflux.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: DESIGN THORSTEN.SCHRAUT@HI-SCORE.DE©000-->USAGE 9PT[6X5REGF] STYLISH HCID FACE…TYPE IS UMME…TYPE IS GEDÖNS…LASSE DÖNS…FREE DOWNLAOD-->WWW.HI-SCORE.DE
+
+What the face archives say about it:
+  PolaScan Instructions: 1. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de), in your Systems ‘Fonts’ folder.
+  READ ME FIRST: A. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de). Drag and Drop it on your System folder.
+  Set-up: A. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de). Drag and Drop it on your System folder, and re-start your Mac.

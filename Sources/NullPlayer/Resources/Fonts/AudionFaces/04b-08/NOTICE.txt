@@ -1,0 +1,9 @@
+04b-08
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/dvtn.sit.bin, https://download.panic.com/audion/faces/dwb.sit.bin, https://download.panic.com/audion/faces/dwb2.sit.bin, https://download.panic.com/audion/faces/dwb3.sit.bin, https://download.panic.com/audion/faces/ergo.sit.bin, https://download.panic.com/audion/faces/flamin.sit.bin, https://download.panic.com/audion/faces/lightpod.sit.bin, https://download.panic.com/audion/faces/m34.sit.bin, https://download.panic.com/audion/faces/mercurial.sit.bin, https://download.panic.com/audion/faces/musicplayer.sit.bin, https://download.panic.com/audion/faces/qt.sit.bin, https://download.panic.com/audion/faces/rob2.sit.bin, https://download.panic.com/audion/faces/rob3.sit.bin, https://download.panic.com/audion/faces/woody.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+What the face archives say about it:
+  READ ME FIRST: A. Install the enclosed freeware font, “04b-08.bmap” (Copyright 1998 - 2001 Yoji Oshimoto, http://www.dsg4.com/04/). Drag and Drop it onto your System folder.

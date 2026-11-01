@@ -66,33 +66,96 @@ measured in them.
 - Track digits: two, **11 frames** each; frame 10 is blank. FaceKit always draws frame 10.
 - **A digit with any frame missing is dropped whole**, and so is an animation (`return nil`).
 - Animations — `connecting`, `streaming`, `netLag` — have `NumPICTs` frames at `FrameDelay` ticks of
-  FaceKit's 60 Hz timer.
+  FaceKit's 60 Hz timer. **A frame and its rect often disagree**: 521 of the corpus's 2,208 animation
+  rects differ from their frames' size (iPod 1.2's 72×8 frames sit in a 77×26 rect). A smaller frame
+  draws at its own size from the rect's top-left corner; a larger one is shrunk to the rect (A17,
+  a departure: FaceKit stretches every frame to the rect).
 
 ## Text
 
 - Two lines: **artist** (`artistDisplayRect`) and **album** (`albumDisplayRect`).
 - Colour: the `…TextFaceColorFromTxtr` key when it decodes, else `…TextFaceColorFromFace`, else black.
-- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve tries a bundled lookalike
-  (`AudionFaceFontSubstitutes`: Chicago and its metric-twins, the pixel fonts, Textile, SF Digital
-  Readout), then falls back to Helvetica at that size; a missing name or size falls back to
-  Helvetica 12. An artist line with no font name takes the album line's name and size. Both are
-  departures from FaceKit.
+- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve tries the font the face's
+  author shipped (`AudionFaceOriginalFonts`), then a lookalike (`AudionFaceFontSubstitutes`, below),
+  then Helvetica at that size. No name is Geneva 10, Audion's default (A13: every readable line in
+  the 21 measurable no-`Txtr` screenshots is Geneva 10's width; Vintage Totem matches glyph for
+  glyph); size 0 is 12; a missing size is Helvetica 12. An artist line with no font name takes the
+  album line's name and size. All departures from FaceKit.
+- **Lookalikes** (A12), each judged against the faces' Audion screenshots with
+  `scripts/audion_font_sheet.py` and its per-font crops:
+
+  | Names | Lookalike | Notes |
+  |---|---|---|
+  | Chicago, Charcoal, Gadget | Chicago Kare (bundled), ×4/3 | its grid is 16 px to the em; at the authored size it drew three-quarters the size of the screenshots |
+  | Techno | Chicago Kare ×4/3, 0.8 wide | Chicago condensed |
+  | Sand | Marker Felt Wide, 1.2 wide | a felt-tip hand |
+  | Capitals | Copperplate | engraved capitals |
+  | Kidprint; Textile | Comic Neue Regular; Bold Italic (bundled) | |
+  | the pixel fonts with no original | Tiny5, Silkscreen (bundled) | |
+  | SF Digital Readout | NullPlayer Segment14 (bundled), ×0.56 | |
+  | Institution; Machine ITC; Junior Pro; Stencil | Pathway Gothic One; Bebas Neue; Sniglet ExtraBold; Stardos Stencil Bold (bundled, OFL) | one face each: Corrosion, Nova Watch, X-factor 1.1, chirico biscuit |
+  | Eurostile BoldExtendedTwo, Square721 Ex BT; Eurostile ExtendedTwo, Avalon Quest | Krona One; Michroma (bundled, OFL) | wide heavy; wide light |
+  | monotype.com | Andale Mono | its own later name |
+  | Arial Bl; Arial MT Condensed Light | Arial Black; Arial Narrow | the names macOS answers under |
+  | Century Gothic, Avant Guard, Futuri Light; Futura Condensed(Light) | Futura Medium; Futura Condensed Medium | |
+  | New York; Weathered SF; Facet; I/O Sans Italic | Times; Times Bold; Impact; Helvetica Bold Oblique | |
+  | VT100, Cubase Data Font; Espy Sans (Bold) | Monaco; Geneva | their 1-bit strikes |
+
+  Staying on Helvetica: Bell Centennial (Palm) and Seoul (cirque rouge), whose screenshots are a
+  plain sans Helvetica matches; braille (Alienated 2 and 3), since a braille font maps braille
+  codepoints, not the ASCII the line holds; Tango BT and SF Intermosaic, whose boxes are 1×1 and
+  never draw.
 - Style: eight booleans (bold, italic, underline, outline, shadow, condense, extend, justify). If
   **any one** of the eight keys fails to decode, the whole style is empty.
+- Alignment: `…Justify` centres a pinned line; a right-aligned line exists only in
+  `AudionFaceTextOverrides` (below).
+
+### `Txtr`, and what the conversion lost
+
+Panic's original faces (`.sit.bin` at `download.panic.com/audion/faces/`) were Mac resource files.
+Each line's text settings were a `Txtr` resource: **200** the artist line, **201** the album line
+(**128** is the face template's leftover, Geneva 9 centred black, which Audion ignored). Big-endian:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 2 | size (0: QuickDraw's default, 12) |
+| 2 | 2 | QuickDraw style bits: bold 1, italic 2, underline 4, outline 8, shadow 16, condense 32, extend 64 |
+| 4 | 2 | TextEdit justification: 0 default (left), 1 centre, −1 right, −2 force left |
+| 6 | 2 | transfer mode (`…TextMode`): 1 `srcOr`, 2 `srcXor`, 4 `notSrcCopy` (inverse video; aPop 1–4 only) |
+| 8 | 6 | RGBColor, three 16-bit channels |
+| 15 | — | the font name: the trailing run of printable bytes; empty means the system font |
+
+The 2021 conversion to `index.json` kept the name, size, style and the colour's high bytes (all
+1,467 lines agree), but turned justification into one boolean (`Justify` = centre or right), and
+**dropped a line whose `Txtr` named no font**. `scripts/audion_txtr.py table` regenerates
+`AudionFaceTextOverrides.swift` from the originals: per face, keyed by the SHA-256 of `index.json`,
+the dropped lines (system font → Charcoal, through its lookalike) and the right-aligned ones. A
+face edited after download no longer matches and keeps its own keys.
+
+### Fonts the faces shipped
+
+165 of the original archives carry fonts (`FOND`, `NFNT`/`FONT` bitmap strikes, `sfnt`), which the
+conversion dropped. `scripts/audion_face_fonts.py` extracts them with each one's licence evidence;
+the 29 freeware families an installed face names ship in `Resources/Fonts/AudionFaces/<family>/`
+as `sfnt-0.ttf` and `<size>-0.nfnt` with a `NOTICE.txt`. Commercial fonts and ones whose author
+prohibited redistribution never ship (Kidprint, Sand, Textile, VT100, the Monotype/ITC/Bitstream
+families, SF Digital Readout, Junior Pro and others); they keep lookalikes.
 - XOR text (`…TextMode & 2`) is parsed and drawn plainly: FaceKit leaves its invert filter
-  commented out.
-- The artist line truncates in the middle of the string. The album line scrolls as a marquee: an
-  80-frame startup hold, then one pixel per two frames, with a 60 px gap before it repeats. Only
-  Reduce Motion pins it; `justify` truncates its text but it still scrolls (FaceKit sets the album
-  label's own `justify` to false). `rendering.md` § *Text* has the full rule.
+  commented out. Mode 4 (`notSrcCopy`) draws inverse video, the line colour's box with the glyphs
+  knocked out in white (A14, a departure; FaceKit draws it plainly).
+- The album line scrolls as a marquee: an 80-frame startup hold, then one pixel per two frames,
+  with a 60 px gap before it repeats. The artist line scrolls the same way when it is wider than its
+  box, and is pinned when it fits. Only Reduce Motion stops them, and only then is a line cut in the
+  middle with `…` (a departure: FaceKit cuts the artist line, and a justified album line's text).
+  `rendering.md` § *Text* has the full rule.
 - Panic's player fills the artist line with the title (or the file name) and the album line with
   `artist—album—format`. NullPlayer does the same.
 
 ## Draw order and state
 
 Layers, bottom to top: `base` and the current animation; the buttons; time digits, track digits
-and indicators (FaceKit's `sublayer`, zPosition 2, **above** the buttons at 1); the labels; the
-mask. All images draw with `interpolationQuality = .none`. `rendering.md` § *Draw order* has how
+and indicators (FaceKit's `sublayer`, zPosition 2, **above** the buttons at 1); the mask; the
+labels (a departure: FaceKit masks them too). All images draw with `interpolationQuality = .none`. `rendering.md` § *Draw order* has how
 each layer composites.
 
 | Element | State rule (`AudionFaceView`) |

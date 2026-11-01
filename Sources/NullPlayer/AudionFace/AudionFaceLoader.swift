@@ -33,7 +33,7 @@ enum AudionFaceLoader {
         }
         let document: AudionFaceDocument
         do {
-            document = try JSONDecoder().decode(AudionFaceDocument.self, from: json)
+            document = try AudionFaceDocument.decode(json)
         } catch {
             throw AudionFaceFinding(.malformedIndex, "index.json is not a JSON object: \(error.localizedDescription)")
         }

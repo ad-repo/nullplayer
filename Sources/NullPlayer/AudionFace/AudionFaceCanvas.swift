@@ -17,14 +17,8 @@ final class AudionFaceCanvas {
     private var scene: AudionFaceScene?
     private var context: CGContext?
     /// The canvas's alpha, top row first, kept beside it: reading the image back would copy all of it.
-    /// It decides `Change.outlineChanged` and the window's hit test.
+    /// It decides `Change.outlineChanged`.
     private var alpha = Data()
-
-    /// Whether the device pixel at (x, y), top-left origin, is drawn at all.
-    func isOpaque(x: Int, y: Int) -> Bool {
-        guard let image, (0..<image.width).contains(x), (0..<image.height).contains(y) else { return false }
-        return alpha[y * image.width + x] > 0
-    }
 
     func draw(_ scene: AudionFaceScene) -> Change {
         let whole = AudionFaceRect(x: 0, y: 0, width: scene.width, height: scene.height)

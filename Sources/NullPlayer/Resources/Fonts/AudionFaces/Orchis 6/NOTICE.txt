@@ -1,0 +1,7 @@
+Orchis 6
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Essence.sit.bin, https://download.panic.com/audion/faces/GlassPill.sit.bin, https://download.panic.com/audion/faces/WWE.sit.bin, https://download.panic.com/audion/faces/alucard.sit.bin, https://download.panic.com/audion/faces/ecks.sit.bin, https://download.panic.com/audion/faces/joybang.sit.bin, https://download.panic.com/audion/faces/occam.sit.bin, https://download.panic.com/audion/faces/otoneo.sit.bin, https://download.panic.com/audion/faces/tokyobay.sit.bin.
+Licence: LicenseRef-Freeware.
+
+What the face archives say about it:
+  pleasereadme.txt: OTONE orchis © 2003 by markus kaes
