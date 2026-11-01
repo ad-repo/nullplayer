@@ -3598,7 +3598,7 @@ final class WasabiSceneRenderer {
             let color = index == active && palette.currentText != palette.listText
                 ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
                 : plain
-            drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
+            drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 0), color: color,
                             alignment: .left, pointSize: 9, context: context)
         }
         context.restoreGState()
@@ -4059,7 +4059,9 @@ final class WasabiSceneRenderer {
             let color = row.isCurrent && hasCurrentColor
                 ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
                 : plain
-            let textRect = rowRect.insetBy(dx: 3, dy: 1)
+            // No vertical inset: the rect is the line's clip, and `playlistTextPointSize` sizes the
+            // line to the whole row, so a pixel off each edge took the descenders at every Text Size.
+            let textRect = rowRect.insetBy(dx: 3, dy: 0)
             let columns = playlistRowColumns(text: textRect, duration: row.duration,
                                              pointSize: pointSize)
             if columns.timeInk != nil {
