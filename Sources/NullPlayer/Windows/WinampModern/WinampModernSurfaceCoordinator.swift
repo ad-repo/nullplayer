@@ -78,9 +78,10 @@ final class WinampModernSurfaceCoordinator {
         let concealEmbedded: (WinampModernComponentKind) -> Void
         /// Whether the window hosting the embedded surfaces is on screen.
         let isMainWindowVisible: () -> Bool
-        /// Whether the player draws this embedded surface right now: a visible holder of its kind,
-        /// or for the equalizer, the skin's own controls.
+        /// Whether the player draws this embedded surface right now: a visible holder of its kind.
         let showsEmbedded: (WinampModernComponentKind) -> Bool
+        /// Whether the player draws the skin's own equalizer controls right now.
+        let showsEmbeddedEqualizer: () -> Bool
         /// The native window hosting a container, if the controller made one.
         let window: (String) -> NSWindow?
         /// Show/hide a container's window.
@@ -159,12 +160,18 @@ final class WinampModernSurfaceCoordinator {
             // draws it: an SUI tab the skin switched away from is closed, though its window is up
             // (B350). The equalizer is open when its controls are drawn (B253).
             guard environment.isMainWindowVisible() else { return false }
-            return environment.showsEmbedded(kind)
+            return isSwitchedBySkin(kind) ? environment.showsEmbeddedEqualizer() : environment.showsEmbedded(kind)
         case .declaredContainer(let id), .synthesizedContainer(let id):
             return environment.window(id)?.isVisible == true
         case .classicFallback:
             return false
         }
+    }
+
+    /// An embedded surface the skin shows as one of its pages (an SUI's playlist or library tab),
+    /// as opposed to the equalizer it switches itself.
+    func isEmbeddedPage(_ kind: WinampModernComponentKind) -> Bool {
+        isEmbedded(kind) && !isSwitchedBySkin(kind)
     }
 
     /// Whether the Windows menu can open and close this surface: not one the skin switches itself.

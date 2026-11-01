@@ -2029,7 +2029,9 @@ class WindowManager {
             case .library: isOpen = isPlexBrowserVisible
             default: isOpen = isEqualizerVisible
             }
-            if wasOpen, !isOpen {
+            // A page inside the skin's own window is not opened either: which page an SUI shows is
+            // the skin's call, and opening one would reopen a ClassicPro tab the user closed (B350).
+            if wasOpen, !isOpen, !coordinator.isEmbeddedPage(kind) {
                 switch kind {
                 case .playlist: showPlaylist()
                 case .library: showPlexBrowser()

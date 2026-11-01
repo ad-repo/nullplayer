@@ -149,6 +149,7 @@ final class WinampModernPhase48Tests: XCTestCase {
                     return false
                 },
                 concealEmbedded: { _ in }, isMainWindowVisible: { true }, showsEmbedded: { _ in false },
+                showsEmbeddedEqualizer: { false },
                 window: { _ in nil },
                 setVisible: { id, visible in visibility[id] = visible },
                 closeCarriedOver: { _ in },

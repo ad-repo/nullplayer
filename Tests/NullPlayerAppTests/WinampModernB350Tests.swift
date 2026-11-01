@@ -31,7 +31,7 @@ final class WinampModernB350Tests: XCTestCase {
         XCTAssertEqual(scene.strip.tab(for: .playlist)?.label, "Playlist")
         XCTAssertNil(scene.strip.tab(for: .video), "only the two surfaces the host lists itself")
         let widget = try XCTUnwrap(scene.strip.tab(named: "Now Playing"))
-        XCTAssertEqual(widget.id, ClassicProTabStrip.widgetTabID)
+        XCTAssertEqual(widget.identity, .widget("centro.widgets.nowplaying"))
         XCTAssertEqual(widget.flagKey, "centro.widgets.nowplaying")
         XCTAssertNil(widget.kind)
     }
@@ -43,7 +43,7 @@ final class WinampModernB350Tests: XCTestCase {
     func testEngineTwoIsReadFromTheStripsScriptPath() throws {
         let scene = try makeScene(engine: "_v2")
         let webReader = try XCTUnwrap(scene.strip.tab(named: "Web Reader"))
-        XCTAssertEqual(webReader.id, 4)
+        XCTAssertEqual(webReader.identity, .engine(4))
 
         scene.strip.close(webReader)
         ClassicProTabStrip.prepareFlags(in: scene.loaded)

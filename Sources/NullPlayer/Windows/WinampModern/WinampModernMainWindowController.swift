@@ -982,9 +982,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
                 showsEmbedded: { [weak self] kind in
                     guard let self else { return false }
-                    if kind == .equalizer { return skinView?.renderer.showsEqualizerControls ?? false }
                     if let tab = classicProTabs?.tab(for: kind) { return tab.isInStrip }
                     return hasVisibleHolder(kind)
+                },
+                showsEmbeddedEqualizer: { [weak self] in
+                    self?.skinView?.renderer.showsEqualizerControls ?? false
                 },
                 window: { [weak self] id in
                     self?.auxiliaryContainer(id: id)?.window

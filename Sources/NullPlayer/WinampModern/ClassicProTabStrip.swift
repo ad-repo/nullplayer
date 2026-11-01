@@ -24,20 +24,30 @@ struct ClassicProTabStrip {
         /// The tab's long name — its button's tooltip. The label itself drops to `LIB`/`PLE` when the
         /// strip is narrow.
         let label: String
-        /// The engine's tab number, or `widgetTabID` for a widget tab, which `widget` then names.
-        let id: Int32
-        let widget: String
+        let identity: Identity
         let isInStrip: Bool
         let isActive: Bool
+
+        enum Identity: Equatable {
+            /// One of the engine's own tabs, by its tab number.
+            case engine(Int32)
+            /// A widget tab, by the widget's id.
+            case widget(String)
+        }
+
         /// The suffix of the tab's `…One.TabAutoClose.<key>` flag.
-        var flagKey: String { widget.isEmpty ? String(id) : widget }
+        var flagKey: String {
+            switch identity {
+            case .engine(let number): return String(number)
+            case .widget(let id): return id
+            }
+        }
         /// The host surface this tab is — Media Library the Library Browser, Playlist the Playlist
         /// Editor — so the Windows menu lists it under that item rather than its own.
         var kind: WinampModernComponentKind? {
-            guard widget.isEmpty else { return nil }
-            switch id {
-            case 0: return .library
-            case 1: return .playlist
+            switch identity {
+            case .engine(0): return .library
+            case .engine(1): return .playlist
             default: return nil
             }
         }
@@ -58,9 +68,10 @@ struct ClassicProTabStrip {
     private static let closedSection = "@nullplayer.tabs"
     private static let closedKey = "closed"
 
-    static let widgetTabID: Int32 = -666
+    /// The tab number `switch_to_tab` takes for a widget tab, which its widget argument then names.
+    private static let widgetTabNumber: Int32 = -666
     /// The engine's catch-all plugin page: hidden whenever it is not on screen, whatever anyone chose.
-    private static let pluginTabID: Int32 = 5
+    private static let pluginTabNumber: Int32 = 5
 
     private let runtime: WinampModernScriptRuntime
     private let buttons: WasabiObject
@@ -73,27 +84,37 @@ struct ClassicProTabStrip {
     /// `switch_to_tab`, which by default is sent to the SUI as `onaction`.
     init?(runtime: WinampModernScriptRuntime, switchTab: ((Tab) -> Void)? = nil) {
         let graph = runtime.loadedSkin.runtime.graph
+        guard let (buttons, sui) = Self.locate(in: graph) else { return nil }
+        self.runtime = runtime
+        self.buttons = buttons
+        widgetLoader = graph.objects(xmlID: "widget.loader").first
+        family = Self.family(of: buttons)
+        switchTo = switchTab ?? { tab in
+            let (widget, number): (String, Int32) = switch tab.identity {
+            case .engine(let number): ("", number)
+            case .widget(let id): (id, Self.widgetTabNumber)
+            }
+            _ = try? runtime.dispatch(object: sui, event: "onaction",
+                                      arguments: [.string("switch_to_tab"), .string(widget), .integer(number),
+                                                  .integer(0), .integer(0), .integer(0), .null])
+        }
+    }
+
+    /// The strip's buttons and the SUI that switches it, or nil when the skin runs no ClassicPro strip.
+    private static func locate(in graph: WasabiObjectGraph) -> (buttons: WasabiObject, sui: WasabiObject)? {
         guard let strip = graph.objects(xmlID: "Cpro.tabs").first,
               let buttons = graph.objects(xmlID: "cprotabs.buttons").first,
               let sui = sequence(first: strip, next: \.parent).prefix(64).first(where: {
                   $0.typeName.caseInsensitiveCompare("Centro:SUI") == .orderedSame
               })
         else { return nil }
-        self.runtime = runtime
-        self.buttons = buttons
-        widgetLoader = graph.objects(xmlID: "widget.loader").first
-        family = Self.family(of: buttons)
-        switchTo = switchTab ?? { tab in
-            _ = try? runtime.dispatch(object: sui, event: "onaction",
-                                      arguments: [.string("switch_to_tab"), .string(tab.widget), .integer(tab.id),
-                                                  .integer(0), .integer(0), .integer(0), .null])
-        }
+        return (buttons, sui)
     }
 
     /// Before the scripts start: flag the tabs closed at the last unload so the engine builds them
     /// hidden, and nothing else.
     static func prepareFlags(in loaded: WinampModernLoadedSkin) {
-        guard let buttons = loaded.runtime.graph.objects(xmlID: "cprotabs.buttons").first else { return }
+        guard let (buttons, _) = locate(in: loaded.runtime.graph) else { return }
         let configuration = loaded.configuration
         clearFlags(in: configuration)
         let prefix = family(of: buttons).publicPrefix
@@ -106,8 +127,8 @@ struct ClassicProTabStrip {
     /// the flags go and the tab menu's *Auto Close Tab* is withheld, so no tab leaves the strip on its
     /// own. Nil unless the loaded skin runs the strip.
     static func attach(to runtime: WinampModernScriptRuntime) -> ClassicProTabStrip? {
-        clearFlags(in: runtime.loadedSkin.configuration)
         guard let strip = ClassicProTabStrip(runtime: runtime) else { return nil }
+        clearFlags(in: runtime.loadedSkin.configuration)
         runtime.withheldPopupTitles.insert("Auto Close Tab")
         return strip
     }
@@ -204,19 +225,17 @@ struct ClassicProTabStrip {
     private func tab(of group: WasabiObject) -> Tab? {
         guard let button = group.children.first(where: { $0.xmlID == "cpro.tab.button" }),
               let label = button.attributes["tooltip"], !label.isEmpty else { return nil }
-        let id: Int32
-        var widget = ""
+        let identity: Tab.Identity
         if let index = family.internalNames.firstIndex(of: label) {
-            id = Int32(index)
-        } else if let ids = widgetID(named: label) {
-            id = Self.widgetTabID
-            widget = ids
+            identity = .engine(Int32(index))
+        } else if let id = widgetID(named: label) {
+            identity = .widget(id)
         } else {
             return nil
         }
-        guard id != Self.pluginTabID else { return nil }
+        guard identity != .engine(Self.pluginTabNumber) else { return nil }
         let visible = group.attributes["visible"]?.lowercased()
-        return Tab(label: label, id: id, widget: widget,
+        return Tab(label: label, identity: identity,
                    isInStrip: visible != "0" && visible != "false",
                    isActive: button.attributes["activated"] == "1")
     }
