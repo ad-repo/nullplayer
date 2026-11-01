@@ -74,10 +74,13 @@ final class WinampModernSurfaceCoordinator {
     struct Environment {
         /// Bring the main window forward and reveal an embedded surface inside it.
         let revealEmbedded: (WinampModernComponentKind, WasabiObjectID, Bool) -> Bool
+        /// Ask the skin to put an embedded surface away (`onGetCancelComponent(guid, false)`).
+        let concealEmbedded: (WinampModernComponentKind) -> Void
         /// Whether the window hosting the embedded surfaces is on screen.
         let isMainWindowVisible: () -> Bool
-        /// Whether the player draws the skin's own equalizer controls right now.
-        let showsEmbeddedEqualizer: () -> Bool
+        /// Whether the player draws this embedded surface right now: a visible holder of its kind,
+        /// or for the equalizer, the skin's own controls.
+        let showsEmbedded: (WinampModernComponentKind) -> Bool
         /// The native window hosting a container, if the controller made one.
         let window: (String) -> NSWindow?
         /// Show/hide a container's window.
@@ -152,12 +155,11 @@ final class WinampModernSurfaceCoordinator {
     func isSurfaceVisible(_ kind: WinampModernComponentKind) -> Bool {
         switch catalog[kind] {
         case .embedded:
-            // An embedded surface is part of the player window: it is as visible as that window is.
-            // There is no separate thing to hide, and nothing to hand to docking or persistence.
-            // A surface the skin switches itself is the exception (`isSwitchedBySkin`): it is open
-            // exactly when its controls are drawn (B253).
+            // An embedded surface lives in the player window, and is open exactly when the player
+            // draws it: an SUI tab the skin switched away from is closed, though its window is up
+            // (B350). The equalizer is open when its controls are drawn (B253).
             guard environment.isMainWindowVisible() else { return false }
-            return isSwitchedBySkin(kind) ? environment.showsEmbeddedEqualizer() : true
+            return environment.showsEmbedded(kind)
         case .declaredContainer(let id), .synthesizedContainer(let id):
             return environment.window(id)?.isVisible == true
         case .classicFallback:
@@ -191,7 +193,13 @@ final class WinampModernSurfaceCoordinator {
     func toggleSurface(_ kind: WinampModernComponentKind) {
         switch catalog[kind] {
         case .embedded(let containerID):
-            _ = environment.revealEmbedded(kind, containerID, true)
+            // Closing one is the skin's call too: it is told the component is going away and
+            // chooses the page that replaces it (cPro's `openDefaultTab`).
+            if isSurfaceVisible(kind) && !isSwitchedBySkin(kind) {
+                environment.concealEmbedded(kind)
+            } else {
+                _ = environment.revealEmbedded(kind, containerID, true)
+            }
         case .declaredContainer(let id), .synthesizedContainer(let id):
             environment.setVisible(id, !(environment.window(id)?.isVisible == true))
         case .classicFallback:

@@ -1547,18 +1547,29 @@ class WindowManager {
             .registeredSkinSettings.isEmpty ?? true)
     }
 
-    /// The `.wal` skin's own extra windows — the ones it declares, names, and binds no button to
-    /// (Defix's two speaker cabinets and its configurator). Safe default in every other mode.
-    var winampModernSkinWindows: [(id: String, name: String, isVisible: Bool)] {
+    /// The `.wal` skin's section of the Windows menu: the extra windows it declares, names, and
+    /// binds no button to (Defix's two speaker cabinets and its configurator), the items it adds to
+    /// Winamp's own Windows menu, and a ClassicPro strip's tabs (B350). In Winamp these live in its
+    /// Windows menu; without this they render and are unreachable. Empty in every other mode.
+    var winampModernSkinMenuEntries: [WinampModernSkinMenuEntry] {
         guard uiMode.controllerFamily == .winampModern else { return [] }
-        return (mainWindowController as? WinampModernMainWindowController)?.skinWindows ?? []
+        return (mainWindowController as? WinampModernMainWindowController)?.skinMenuEntries ?? []
     }
 
-    /// Show or hide one of them. In Winamp these live in its own Windows menu; without this they
-    /// render and are unreachable.
-    func toggleWinampModernSkinWindow(id: String) {
+    func toggleWinampModernSkinMenuEntry(_ target: WinampModernSkinMenuEntry.Target) {
         guard uiMode.controllerFamily == .winampModern else { return }
-        (mainWindowController as? WinampModernMainWindowController)?.toggleSkinWindow(id: id)
+        (mainWindowController as? WinampModernMainWindowController)?.toggleSkinMenuEntry(target)
+    }
+
+    /// Whether the loaded skin keeps a ClassicPro tab strip, which **Restore Default Tabs** resets.
+    var winampModernHasClassicProTabs: Bool {
+        guard uiMode.controllerFamily == .winampModern else { return false }
+        return (mainWindowController as? WinampModernMainWindowController)?.classicProTabs != nil
+    }
+
+    func restoreWinampModernDefaultTabs() {
+        guard uiMode.controllerFamily == .winampModern else { return }
+        (mainWindowController as? WinampModernMainWindowController)?.restoreDefaultClassicProTabs()
     }
 
     /// Whether the loaded `.wal` skin draws its own About page — the `skin.about.group` Winamp puts

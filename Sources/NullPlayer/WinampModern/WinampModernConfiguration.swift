@@ -49,12 +49,13 @@ final class WinampModernConfiguration {
         defaults.removeObject(forKey: storageKey(section: section, key: key))
     }
 
-    /// Unset every key in one section — the whole-skin reset behind a per-theme store.
+    /// Unset every key in one section — the whole-skin reset behind a per-theme store — or only the
+    /// keys in it that start with `keyPrefix` (ClassicPro's per-tab `Cpro.One.TabAutoClose.*`).
     ///
     /// Still sandboxed: the prefix is built from `storageKey`'s own components, so the sweep can only
     /// ever reach keys this configuration could itself have written, inside its own namespace.
-    func removeSection(_ section: String) {
-        let prefix = sectionPrefix(section)
+    func removeSection(_ section: String, keyPrefix: String? = nil) {
+        let prefix = keyPrefix.map { storageKey(section: section, key: $0) } ?? sectionPrefix(section)
         for name in defaults.dictionaryRepresentation().keys where name.hasPrefix(prefix) {
             defaults.removeObject(forKey: name)
         }

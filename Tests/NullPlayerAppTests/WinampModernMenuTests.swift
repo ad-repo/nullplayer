@@ -44,29 +44,31 @@ final class WinampModernMenuTests: XCTestCase {
 
         ContextMenuBuilder.addWinampModernSkinWindowSection(
             to: menu,
-            windows: [
-                (id: "speaker.left", name: "Left Speaker", isVisible: true),
-                (id: "configurator", name: "Configurator", isVisible: false),
+            entries: [
+                .init(title: "Left Speaker", isOn: true, target: .window("speaker.left")),
+                .init(title: "Configurator", isOn: false, target: .window("configurator")),
+                .init(title: "Video", isOn: true, isEnabled: false, target: .tab("Video")),
             ])
 
         XCTAssertEqual(menu.items.map(\.title),
-                       ["Debug Console", "", "Left Speaker", "Configurator"])
+                       ["Debug Console", "", "Left Speaker", "Configurator", "Video"])
         XCTAssertTrue(menu.items[1].isSeparatorItem,
                       "skin windows must be separated from NullPlayer-owned windows")
         XCTAssertNil(menu.items[2].submenu, "skin windows are direct rows, not another submenu")
-        XCTAssertEqual(menu.items[2].representedObject as? String, "speaker.left")
+        guard case .window("speaker.left") = menu.items[2].representedObject as? WinampModernSkinMenuEntry.Target
+        else { return XCTFail("the row carries its target") }
         XCTAssertEqual(menu.items[2].state, .on)
-        XCTAssertEqual(menu.items[3].representedObject as? String, "configurator")
         XCTAssertEqual(menu.items[3].state, .off)
         XCTAssertEqual(menu.items[3].action,
-                       #selector(MenuActions.toggleWinampModernSkinWindow(_:)))
+                       #selector(MenuActions.toggleWinampModernSkinMenuEntry(_:)))
+        XCTAssertFalse(menu.items[4].isEnabled, "the last open tab cannot be closed")
     }
 
     func testEmptySkinWindowListDoesNotCreateAnEmptySection() {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Debug Console", action: nil, keyEquivalent: ""))
 
-        ContextMenuBuilder.addWinampModernSkinWindowSection(to: menu, windows: [])
+        ContextMenuBuilder.addWinampModernSkinWindowSection(to: menu, entries: [])
 
         XCTAssertEqual(menu.items.map(\.title), ["Debug Console"])
     }

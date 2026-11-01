@@ -193,6 +193,16 @@ extension ContextMenuBuilder {
             skinSpecific.append(item)
         }
 
+        // ClassicPro's tab strip, back to every tab open in the engine's order (B350): the saved
+        // tab order and the tabs closed from the Windows menu, forgotten in one step.
+        if wm.winampModernHasClassicProTabs {
+            let item = NSMenuItem(title: "Restore Default Tabs",
+                                  action: #selector(MenuActions.restoreWinampModernDefaultTabs),
+                                  keyEquivalent: "")
+            item.target = MenuActions.shared
+            skinSpecific.append(item)
+        }
+
         // The skin's colour themes (Phase 32). A secondary route where the skin ships its own
         // picker, and the *only* route on the six measured skins that define themes and ship
         // none — in Winamp those live in its preferences dialog. Gated on more than one theme:

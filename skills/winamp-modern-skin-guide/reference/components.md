@@ -725,7 +725,9 @@ Two things about the embedded case that are easy to get wrong:
 - **An embedded library is revealed once at launch** (`revealEmbeddedLibraryAtStartup`, right after the
   catalog is reconciled) — cPro-Bento opens on its Media Library tab, and without this that tab is an
   empty pane until the user picks Windows → Library Browser. Only for `isEmbedded(.library)`, so a skin
-  with its own library window opens nothing at launch.
+  with its own library window opens nothing at launch. Not on a skin with a ClassicPro tab strip
+  (`ClassicProTabStrip`): the strip restores its own tabs, and the reveal would pull a Media Library
+  tab the user closed back in (B350).
 
 The four steps in full, since every request — a menu item, a skin button's `TOGGLE guid:…`, a restored
 session — resolves through this one catalog in this one order:

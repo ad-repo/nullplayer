@@ -193,7 +193,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    func loadSkin(at url: URL) {
+    func loadSkin(at url: URL, afterTeardown: (() -> Void)? = nil) {
         // Before the teardown, because the teardown is what makes them unreadable: which of
         // NullPlayer's own feature windows the user has open, in whichever chrome the outgoing skin
         // gave them. The incoming skin gets asked about each of them again once it is up.
@@ -203,6 +203,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // A new skin places NullPlayer's windows afresh rather than where the last skin left them.
         WindowManager.shared.forgetSkinWindowPlacement()
         tearDownSkin()
+        afterTeardown?()
         // A UI Size the outgoing skin set goes back to the user's level (B238).
         WindowManager.shared.endSkinUIScaleLevel()
         // A `setScale` that arrives while the skin is loading cannot be acted on: `loadSkin` runs
@@ -296,7 +297,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             WasabiTextMetrics.componentBucketTextProvider = { bucket.focusedTitle }
             wireContainerCallbacks(scripts: scripts, loaded: loaded, host: host,
                                    componentBridge: componentBridge)
+            ClassicProTabStrip.prepareFlags(in: loaded)
             try scripts.start()
+            ClassicProTabStrip.clearFlags(in: loaded.configuration)
+            classicProTabs = ClassicProTabStrip(runtime: scripts)
+            classicProTabs?.withholdAutoClose()
             // After `start()`, so the skin's own `switchToLayout` at load has already had its say and
             // this is the last word: a window the user left shaded comes back shaded (B44a). Before
             // `scriptsDidStart()`, so the seeding resize dispatch describes the layout that is
@@ -324,6 +329,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // After `start()`: the catalog is reconciled against the containers that actually opened,
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
+            #if DEBUG
+            tabTrace = WinampModernTabTrace(renderer: view.renderer)
+            #endif
             setupHostedWindowMaterializer(loaded: loaded, host: host, scripts: scripts,
                                           componentBridge: componentBridge)
             revealEmbeddedLibraryAtStartup()
@@ -604,6 +612,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     /// Surface routing for this skin: menus, skin buttons, and restoration all resolve through it.
     private(set) var surfaceCoordinator: WinampModernSurfaceCoordinator?
+    /// The loaded skin's ClassicPro tab strip, if it runs one (B350).
+    private(set) var classicProTabs: ClassicProTabStrip?
+    #if DEBUG
+    private var tabTrace: WinampModernTabTrace?
+    #endif
 
     /// The two visibility queries a `TOGGLE` button's lamp reads (BB36), kept so a hosted window
     /// that materializes *after* `makeSurfaceCoordinator` — which is every one of them — gets the
@@ -948,14 +961,31 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 revealEmbedded: { [weak self, weak scripts] kind, _, allowAutoOpenFallback in
                     guard let self, let scripts else { return false }
                     window?.makeKeyAndOrderFront(nil)
+                    if let strip = classicProTabs, let tab = strip.tab(for: kind) {
+                        strip.open(tab)
+                        skinView?.needsDisplay = true
+                        return true
+                    }
                     let revealed = self.revealEmbeddedSurface(
                         kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
                     skinView?.needsDisplay = true
                     return revealed
                 },
+                concealEmbedded: { [weak self, weak scripts] kind in
+                    guard let self, let scripts else { return }
+                    if let strip = classicProTabs, let tab = strip.tab(for: kind) {
+                        strip.close(tab)
+                    } else {
+                        self.concealEmbeddedSurface(kind, scripts: scripts)
+                    }
+                    skinView?.needsDisplay = true
+                },
                 isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
-                showsEmbeddedEqualizer: { [weak self] in
-                    self?.skinView?.renderer.showsEqualizerControls ?? false
+                showsEmbedded: { [weak self] kind in
+                    guard let self else { return false }
+                    if kind == .equalizer { return skinView?.renderer.showsEqualizerControls ?? false }
+                    if let tab = classicProTabs?.tab(for: kind) { return tab.isInStrip }
+                    return hasVisibleHolder(kind)
                 },
                 window: { [weak self] id in
                     self?.auxiliaryContainer(id: id)?.window
@@ -1032,8 +1062,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             guard let self else { return nil }
             // The same three roads `routeComponentToggle` walks, in its order.
             if let coordinator = surfaceCoordinator, coordinator.handles(kind) {
-                // An embedded surface has no window of its own: it is as visible as the player,
-                // which would pin the lamp on. Not an answer — the button keeps its `activated`.
+                // An embedded surface has no window of its own, and whether it is shown is read from
+                // the scene's holders — the scene walk that asks this question, so answering here
+                // would recurse. Not an answer — the button keeps its `activated`.
                 guard !coordinator.isEmbedded(kind) else { return nil }
                 return coordinator.isSurfaceVisible(kind)
             }
@@ -1258,7 +1289,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     private func revealEmbeddedLibraryAtStartup() {
-        guard let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
+        // A ClassicPro strip restores its own tabs, and revealing the library would pull a Media
+        // Library tab the user closed back into the strip (B350).
+        guard classicProTabs == nil,
+              let coordinator = surfaceCoordinator, coordinator.isEmbedded(.library) else { return }
         // Startup is advisory: let the skin reconcile its own selected tab from
         // onGetCancelComponent, but do not force hidden ancestors visible behind its bookkeeping.
         // Explicit user/script reveals still retain the Wasabi `autoopen` fallback below.
@@ -1369,6 +1403,20 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinView?.logHolders(tag: "reveal \(kind.rawValue)")
         #endif
         return handled > 0 || opened > 0
+    }
+
+    /// The other half of the contract: `System.onGetCancelComponent(guid, false)` tells the skin a
+    /// component is going away, and the skin picks what fills its place — ClassicPro's
+    /// `openDefaultTab` switches the SUI to another tab, or folds the side playlist away (B350).
+    /// No fallback: a skin that leaves the holder up has declined, and the page stays.
+    private func concealEmbeddedSurface(_ kind: WinampModernComponentKind,
+                                        scripts: WinampModernScriptRuntime) {
+        guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { return }
+        let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
+                                                   arguments: [.string(guid), .boolean(false)])) ?? 0
+        #if DEBUG
+        NSLog("WinampModern conceal %@ guid=%@ handlers=%d", kind.rawValue, guid, handled)
+        #endif
     }
 
     /// Showing one embedded page closes the page it displaces.
@@ -2693,7 +2741,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     func prepareForUITeardown() { tearDownSkin() }
 
+    /// The app is quitting, and no `.wal` script hears `onScriptUnloading` then.
+    func recordStateOnTermination() {
+        classicProTabs?.recordClosedTabs()
+    }
+
     private func tearDownSkin() {
+        classicProTabs?.recordClosedTabs()
+        classicProTabs = nil
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
         glue.detachAfterDrag()

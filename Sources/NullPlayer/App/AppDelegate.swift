@@ -322,6 +322,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // controller: no other skin mode has script handlers to run.
         (windowManager.mainWindowController as? WMPMainWindowController)?
             .flushCloseHandlersOnTermination()
+        // A ClassicPro skin's closed SUI tabs (B350); likewise unheard by any `.wal` script on quit.
+        (windowManager.mainWindowController as? WinampModernMainWindowController)?
+            .recordStateOnTermination()
 
         // Flush WAL to disk before exit so history survives hard shutdown / reboot
         MediaLibraryStore.shared.checkpoint()
