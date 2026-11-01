@@ -4928,7 +4928,7 @@ SOFTWARE.
 
 
 ================================================================================
-Comic Neue Bold Italic (Audion face font substitute)
+Comic Neue Regular and Bold Italic (Audion face font substitutes)
 ================================================================================
 License:    OFL-1.1
 Copyright:  Copyright 2014 The Comic Neue Project Authors
@@ -5704,5 +5704,484 @@ These image assets and their configuration file are redistributed here under the
 terms of the GPL-3.0. Only the meter template assets carry this license; the
 NullPlayer PeppyMeter rendering engine (Sources/NullPlayer/PeppyMeter/) is an
 independent Swift implementation.
+
+
+================================================================================
+04b-03 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-03
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Droid.sit.bin, https://download.panic.com/audion/faces/Untitled.sit.bin, https://download.panic.com/audion/faces/elphin.sit.bin, https://download.panic.com/audion/faces/jujulove.sit.bin, https://download.panic.com/audion/faces/musicplayer.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+What the face archives say about it:
+  elphin info and instructions: For best results, use the included custom freeware TrueType font.
+
+
+================================================================================
+04b-08 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-08
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/dvtn.sit.bin, https://download.panic.com/audion/faces/dwb.sit.bin, https://download.panic.com/audion/faces/dwb2.sit.bin, https://download.panic.com/audion/faces/dwb3.sit.bin, https://download.panic.com/audion/faces/ergo.sit.bin, https://download.panic.com/audion/faces/flamin.sit.bin, https://download.panic.com/audion/faces/lightpod.sit.bin, https://download.panic.com/audion/faces/m34.sit.bin, https://download.panic.com/audion/faces/mercurial.sit.bin, https://download.panic.com/audion/faces/musicplayer.sit.bin, https://download.panic.com/audion/faces/qt.sit.bin, https://download.panic.com/audion/faces/rob2.sit.bin, https://download.panic.com/audion/faces/rob3.sit.bin, https://download.panic.com/audion/faces/woody.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+What the face archives say about it:
+  READ ME FIRST: A. Install the enclosed freeware font, “04b-08.bmap” (Copyright 1998 - 2001 Yoji Oshimoto, http://www.dsg4.com/04/). Drag and Drop it onto your System folder.
+
+
+================================================================================
+04b-09 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-09
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/dvtn.sit.bin, https://download.panic.com/audion/faces/polaflux2.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+What the face archives say about it:
+  READ ME FIRST: A. Install the enclosed freeware font, “04b-09.suit” (Copyright 1998 - 2001 Yoji Oshimoto, http://www.dsg4.com/04/). Drag and Drop it onto your System folder.
+
+
+================================================================================
+04b-11 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-11
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Alien.sit.bin, https://download.panic.com/audion/faces/Droid.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+04b-20 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-20
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/CopperContraption.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+04b-24 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  2000 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04b-24
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/link.sit.bin, https://download.panic.com/audion/faces/streetcrab.sit.bin, https://download.panic.com/audion/faces/subzero.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 2000 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+
+================================================================================
+04bit-10 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04bit-10
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/pb.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+04bit-16 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+04bit-16
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/neon.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Architxt (Audion face font, original)
+================================================================================
+License:    LicenseRef-Public-Domain
+Copyright:  Developed by S.G. Moye 1991. Public Domain.
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Architxt
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/beenhexxed.sit.bin.
+Licence: LicenseRef-Public-Domain.
+
+The font's own notice: Developed by S.G. Moye 1991. Public Domain.
+
+
+================================================================================
+BitBit (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+BitBit
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/HanStereo.sit.bin, https://download.panic.com/audion/faces/T13.sit.bin, https://download.panic.com/audion/faces/bitbit.sit.bin, https://download.panic.com/audion/faces/radium.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Bitsumishi (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware-NonCommercial
+Copyright:  (c) Levi 2001
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Bitsumishi
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/PolaPulse.sit.bin, https://download.panic.com/audion/faces/PolaPulse2.sit.bin, https://download.panic.com/audion/faces/eggins.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: (c) Levi 2001
+
+What the face archives say about it:
+  Instructions: Place the freeware ‘Bitsumishi’ font in your ‘Fonts’ folder.
+  PolaPulse Instructions: Place the freeware ‘Bitsumishi’ font in your ‘Fonts’ folder.
+  ReadMe: This font is made by Levi and may be used free of charge for non-commercial projects.  Please contact me if you plan to use it for other purposes. It also may be distributed free of charge on any websites provided this file is intact.
+
+
+================================================================================
+Burton's Nightmare (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  From the Tim Burton film
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Burton's Nightmare
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/jacksall.sit.bin, https://download.panic.com/audion/faces/saturn.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: From the Tim Burton film
+
+What the face archives say about it:
+  Better Read This.  I'm Serious!: You'll really want to use the included custom font, a freeware TrueType
+
+
+================================================================================
+Cry Uncial (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware-NonCommercial
+Copyright:  2000 Iconian Fonts - this font named by Martin Ross
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Cry Uncial
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/theonering.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: 2000 Iconian Fonts - this font named by Martin Ross
+
+What the face archives say about it:
+  Cry Uncial Readme: This font may be freely distributed and is free for all non-commercial uses.  This font is e-mailware; that is, if you like it, please e-mail the author at:
+
+
+================================================================================
+Display (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  Copyright 2000 by dustBUST Fonts.
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Display
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/display.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: Copyright 2000 by dustBUST Fonts.
+
+
+================================================================================
+FreeceMini (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+FreeceMini
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/FreeceX2.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Froufrou Regular (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  http://members.xoom.com/freefont/
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Froufrou Regular
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/tare.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: http://members.xoom.com/freefont/
+
+
+================================================================================
+HI-LOGIN-REG (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  DESIGN THORSTEN.SCHRAUT@HI-SCORE.DE©000-->USAGE 9PT[6X5REGF] STYLISH HCID FACE…TYPE IS UMME…TYPE IS GEDÖNS…LASSE DÖNS…FREE DOWNLAOD-->WWW.HI-SCORE.DE
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+HI-LOGIN-REG
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/ED1.sit.bin, https://download.panic.com/audion/faces/PolaScan.sit.bin, https://download.panic.com/audion/faces/polaflux.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: DESIGN THORSTEN.SCHRAUT@HI-SCORE.DE©000-->USAGE 9PT[6X5REGF] STYLISH HCID FACE…TYPE IS UMME…TYPE IS GEDÖNS…LASSE DÖNS…FREE DOWNLAOD-->WWW.HI-SCORE.DE
+
+What the face archives say about it:
+  PolaScan Instructions: 1. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de), in your Systems ‘Fonts’ folder.
+  READ ME FIRST: A. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de). Drag and Drop it on your System folder.
+  Set-up: A. Install the enclosed freeware font, “HI-LOGIN-REG” (Copyright by HI-SCORE©2000. http://www.hi-score.de). Drag and Drop it on your System folder, and re-start your Mac.
+
+
+================================================================================
+hooge 05_53 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  ©2001 | www.miniml.com | design by craig kroeger
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+hooge 05_53
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/CC.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: ©2001 | www.miniml.com | design by craig kroeger
+
+
+================================================================================
+IceDogg (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  ©2002 by Götz Ulmer
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+IceDogg
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/iball.sit.bin, https://download.panic.com/audion/faces/ybne.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: ©2002 by Götz Ulmer
+
+
+================================================================================
+less=more (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  ©2001 Max Kisman/maxk@maxkisman.com
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+less=more
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/less%3Dmore.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: ©2001 Max Kisman/maxk@maxkisman.com
+
+
+================================================================================
+Lilliput Steps (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  (C) 1999 Ray Larabie - rlarabie@hotmail.com
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Lilliput Steps
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/minit1.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: (C) 1999 Ray Larabie - rlarabie@hotmail.com
+
+
+================================================================================
+LipoD-Nine (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+LipoD-Nine
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/stereog.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Mini (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Mini
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/DrewdropsP.sit.bin, https://download.panic.com/audion/faces/DrewdropsT.sit.bin, https://download.panic.com/audion/faces/FreeceX.sit.bin, https://download.panic.com/audion/faces/Pop2%21.sit.bin, https://download.panic.com/audion/faces/Puffhooka.sit.bin, https://download.panic.com/audion/faces/S1classic1.1.sit.bin, https://download.panic.com/audion/faces/S1limelight1.1.sit.bin, https://download.panic.com/audion/faces/S1tiny1.1.sit.bin, https://download.panic.com/audion/faces/SpinCycle1.sit.bin, https://download.panic.com/audion/faces/ThX.sit.bin, https://download.panic.com/audion/faces/WBv1blanco.sit.bin, https://download.panic.com/audion/faces/Y5.2.sit.bin, https://download.panic.com/audion/faces/bigMOUTH.sit.bin, https://download.panic.com/audion/faces/christmasface.sit.bin, https://download.panic.com/audion/faces/concentra2.sit.bin, https://download.panic.com/audion/faces/cryogenesis.sit.bin, https://download.panic.com/audion/faces/dakota.sit.bin, https://download.panic.com/audion/faces/dejected.sit.bin, https://download.panic.com/audion/faces/evo_ex.sit.bin, https://download.panic.com/audion/faces/f1.sit.bin, https://download.panic.com/audion/faces/gazz.sit.bin, https://download.panic.com/audion/faces/gazz-midget.sit.bin, https://download.panic.com/audion/faces/gun.sit.bin, https://download.panic.com/audion/faces/io.sit.bin, https://download.panic.com/audion/faces/iontight1.sit.bin, https://download.panic.com/audion/faces/iosaudio1.sit.bin, https://download.panic.com/audion/faces/iostight.sit.bin, https://download.panic.com/audion/faces/iostight12.sit.bin, https://download.panic.com/audion/faces/lexicon.sit.bin, https://download.panic.com/audion/faces/metalface.sit.bin, https://download.panic.com/audion/faces/mini.sit.bin, https://download.panic.com/audion/faces/mp3Dv2.sit.bin, https://download.panic.com/audion/faces/nchaind.sit.bin, https://download.panic.com/audion/faces/nexus.sit.bin, https://download.panic.com/audion/faces/ogameboy.sit.bin, https://download.panic.com/audion/faces/plexar.sit.bin, https://download.panic.com/audion/faces/qsa.sit.bin, https://download.panic.com/audion/faces/silence.sit.bin, https://download.panic.com/audion/faces/spacity.sit.bin, https://download.panic.com/audion/faces/tabface.sit.bin, https://download.panic.com/audion/faces/techblue.sit.bin, https://download.panic.com/audion/faces/thekla.sit.bin, https://download.panic.com/audion/faces/tob_1.sit.bin, https://download.panic.com/audion/faces/toky.sit.bin, https://download.panic.com/audion/faces/tunestick.sit.bin, https://download.panic.com/audion/faces/ultradiddy.sit.bin, https://download.panic.com/audion/faces/unity.sit.bin, https://download.panic.com/audion/faces/whale.sit.bin, https://download.panic.com/audion/faces/xmetal1.sit.bin, https://download.panic.com/audion/faces/xmetal2.sit.bin, https://download.panic.com/audion/faces/zen.sit.bin.
+Licence: LicenseRef-Freeware.
+
+What the face archives say about it:
+  about.htm: Mini 7 is freeware<br>
+
+
+================================================================================
+Mini Tight (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Mini Tight
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/DrewdropsP.sit.bin, https://download.panic.com/audion/faces/DrewdropsT.sit.bin, https://download.panic.com/audion/faces/FreeceX.sit.bin, https://download.panic.com/audion/faces/Pop2%21.sit.bin, https://download.panic.com/audion/faces/Puffhooka.sit.bin, https://download.panic.com/audion/faces/S1classic1.1.sit.bin, https://download.panic.com/audion/faces/S1limelight1.1.sit.bin, https://download.panic.com/audion/faces/S1tiny1.1.sit.bin, https://download.panic.com/audion/faces/SpinCycle1.sit.bin, https://download.panic.com/audion/faces/ThX.sit.bin, https://download.panic.com/audion/faces/WBv1blanco.sit.bin, https://download.panic.com/audion/faces/Y5.2.sit.bin, https://download.panic.com/audion/faces/bigMOUTH.sit.bin, https://download.panic.com/audion/faces/christmasface.sit.bin, https://download.panic.com/audion/faces/concentra2.sit.bin, https://download.panic.com/audion/faces/cryogenesis.sit.bin, https://download.panic.com/audion/faces/dakota.sit.bin, https://download.panic.com/audion/faces/dejected.sit.bin, https://download.panic.com/audion/faces/evo_ex.sit.bin, https://download.panic.com/audion/faces/f1.sit.bin, https://download.panic.com/audion/faces/gazz.sit.bin, https://download.panic.com/audion/faces/gazz-midget.sit.bin, https://download.panic.com/audion/faces/gun.sit.bin, https://download.panic.com/audion/faces/io.sit.bin, https://download.panic.com/audion/faces/iontight1.sit.bin, https://download.panic.com/audion/faces/iosaudio1.sit.bin, https://download.panic.com/audion/faces/iostight.sit.bin, https://download.panic.com/audion/faces/iostight12.sit.bin, https://download.panic.com/audion/faces/lexicon.sit.bin, https://download.panic.com/audion/faces/metalface.sit.bin, https://download.panic.com/audion/faces/mini.sit.bin, https://download.panic.com/audion/faces/mp3Dv2.sit.bin, https://download.panic.com/audion/faces/nchaind.sit.bin, https://download.panic.com/audion/faces/nexus.sit.bin, https://download.panic.com/audion/faces/ogameboy.sit.bin, https://download.panic.com/audion/faces/plexar.sit.bin, https://download.panic.com/audion/faces/qsa.sit.bin, https://download.panic.com/audion/faces/silence.sit.bin, https://download.panic.com/audion/faces/spacity.sit.bin, https://download.panic.com/audion/faces/tabface.sit.bin, https://download.panic.com/audion/faces/techblue.sit.bin, https://download.panic.com/audion/faces/thekla.sit.bin, https://download.panic.com/audion/faces/tob_1.sit.bin, https://download.panic.com/audion/faces/toky.sit.bin, https://download.panic.com/audion/faces/tunestick.sit.bin, https://download.panic.com/audion/faces/ultradiddy.sit.bin, https://download.panic.com/audion/faces/unity.sit.bin, https://download.panic.com/audion/faces/whale.sit.bin, https://download.panic.com/audion/faces/zen.sit.bin.
+Licence: LicenseRef-Freeware.
+
+What the face archives say about it:
+  about.htm: Mini 7 is freeware<br>
+
+
+================================================================================
+neo-geo (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  1999 - Iconian Fonts
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+neo-geo
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/assent.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 - Iconian Fonts
+
+
+================================================================================
+Orchis 5 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Orchis 5
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Clovis.sit.bin, https://download.panic.com/audion/faces/Coaster.sit.bin, https://download.panic.com/audion/faces/Epiphany.sit.bin, https://download.panic.com/audion/faces/NTVE.sit.bin, https://download.panic.com/audion/faces/SF1.1.sit.bin, https://download.panic.com/audion/faces/TS2mini.sit.bin, https://download.panic.com/audion/faces/bearing.sit.bin, https://download.panic.com/audion/faces/czizapzule.sit.bin, https://download.panic.com/audion/faces/f2.sit.bin, https://download.panic.com/audion/faces/robot.sit.bin, https://download.panic.com/audion/faces/sandstn.sit.bin, https://download.panic.com/audion/faces/setOne.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Orchis 6 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Orchis 6
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Essence.sit.bin, https://download.panic.com/audion/faces/GlassPill.sit.bin, https://download.panic.com/audion/faces/WWE.sit.bin, https://download.panic.com/audion/faces/alucard.sit.bin, https://download.panic.com/audion/faces/ecks.sit.bin, https://download.panic.com/audion/faces/joybang.sit.bin, https://download.panic.com/audion/faces/occam.sit.bin, https://download.panic.com/audion/faces/otoneo.sit.bin, https://download.panic.com/audion/faces/tokyobay.sit.bin.
+Licence: LicenseRef-Freeware.
+
+What the face archives say about it:
+  pleasereadme.txt: OTONE orchis © 2003 by markus kaes
+
+
+================================================================================
+Roundstyle-Regular (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware
+Copyright:  see NOTICE.txt
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Roundstyle-Regular
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/carbon.sit.bin.
+Licence: LicenseRef-Freeware.
+
+
+================================================================================
+Squarodynamic 08 (Audion face font, original)
+================================================================================
+License:    LicenseRef-Freeware-NonCommercial
+Copyright:  Squarodynamic, ©2000, Font•a•licious Fonts.
+Source:     https://download.panic.com/audion/faces/
+Version:    bundled
+
+Squarodynamic 08
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/ResurrectionII.sit.bin, https://download.panic.com/audion/faces/ufo.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: Squarodynamic, ©2000, Font•a•licious Fonts.
+
+What the face archives say about it:
+  fontalicious: All Fonts Copyright © 2001 Font-a-licious Fonts
+  fontalicious: If you are going to redistribute my font, please include this Read Me text file and a link to my page. That's it! Actually, you don't have to link to my page, but I sure would like it!
+  fontalicious: If you want postscript fonts, you can buy them on the website. If you want these fonts for commercial use, you can buy them here, too!
 
 

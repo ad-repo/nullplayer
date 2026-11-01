@@ -27,13 +27,16 @@ enum AudionFaceFontSubstitutes {
     private static let substitutes: [String: Substitute] = {
         var map: [String: Substitute] = [:]
         for name in ["chicago", "charcoal", "techno", "gadget", "sand", "capitals"] { map[name] = chicago }
-        for name in ["mini", "mini tight", "04b-03", "04b-08", "04b-09", "04b-11", "04b-20", "04b-24",
-                     "04bit-10", "04bit-16", "orchis 5", "orchis 6", "redensek", "bitbit", "bitsumishi",
-                     "squarodynamic 08", "hooge 05_53", "freecemini", "lilliput steps", "ikkio_square"] {
+        // Pixel fonts. Those whose originals NullPlayer ships draw in those (`AudionFaceOriginalFonts`);
+        // the bitmap-only ones keep this outline for a line their strike cannot draw.
+        for name in ["mini", "mini tight", "04b-11", "04b-20", "04bit-10", "04bit-16", "orchis 5", "orchis 6",
+                     "bitbit", "freecemini", "redensek", "ikkio_square"] {
             map[name] = tiny
         }
         map["silkscreen"] = Substitute(file: "Silkscreen-Regular")
         map["textile"] = Substitute(file: "ComicNeue-BoldItalic")
+        // Kidprint, Apple's rounded child's hand (Byte Me, ClassicPooh).
+        map["kidprint"] = Substitute(file: "ComicNeue-Regular")
         map["sf digital readout medium"] = segment
         return map
     }()

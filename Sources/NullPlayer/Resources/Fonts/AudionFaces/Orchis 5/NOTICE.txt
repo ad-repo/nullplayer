@@ -1,0 +1,4 @@
+Orchis 5
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Clovis.sit.bin, https://download.panic.com/audion/faces/Coaster.sit.bin, https://download.panic.com/audion/faces/Epiphany.sit.bin, https://download.panic.com/audion/faces/NTVE.sit.bin, https://download.panic.com/audion/faces/SF1.1.sit.bin, https://download.panic.com/audion/faces/TS2mini.sit.bin, https://download.panic.com/audion/faces/bearing.sit.bin, https://download.panic.com/audion/faces/czizapzule.sit.bin, https://download.panic.com/audion/faces/f2.sit.bin, https://download.panic.com/audion/faces/robot.sit.bin, https://download.panic.com/audion/faces/sandstn.sit.bin, https://download.panic.com/audion/faces/setOne.sit.bin.
+Licence: LicenseRef-Freeware.

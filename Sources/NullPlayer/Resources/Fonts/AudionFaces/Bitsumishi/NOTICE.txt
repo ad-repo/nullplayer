@@ -1,0 +1,11 @@
+Bitsumishi
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/PolaPulse.sit.bin, https://download.panic.com/audion/faces/PolaPulse2.sit.bin, https://download.panic.com/audion/faces/eggins.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: (c) Levi 2001
+
+What the face archives say about it:
+  Instructions: Place the freeware ‘Bitsumishi’ font in your ‘Fonts’ folder.
+  PolaPulse Instructions: Place the freeware ‘Bitsumishi’ font in your ‘Fonts’ folder.
+  ReadMe: This font is made by Levi and may be used free of charge for non-commercial projects.  Please contact me if you plan to use it for other purposes. It also may be distributed free of charge on any websites provided this file is intact.

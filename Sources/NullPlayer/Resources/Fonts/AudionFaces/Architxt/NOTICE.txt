@@ -1,0 +1,6 @@
+Architxt
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/beenhexxed.sit.bin.
+Licence: LicenseRef-Public-Domain.
+
+The font's own notice: Developed by S.G. Moye 1991. Public Domain.

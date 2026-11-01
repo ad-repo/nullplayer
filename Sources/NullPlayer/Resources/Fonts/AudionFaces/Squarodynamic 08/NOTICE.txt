@@ -1,0 +1,11 @@
+Squarodynamic 08
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/ResurrectionII.sit.bin, https://download.panic.com/audion/faces/ufo.sit.bin.
+Licence: LicenseRef-Freeware-NonCommercial.
+
+The font's own notice: Squarodynamic, ©2000, Font•a•licious Fonts.
+
+What the face archives say about it:
+  fontalicious: All Fonts Copyright © 2001 Font-a-licious Fonts
+  fontalicious: If you are going to redistribute my font, please include this Read Me text file and a link to my page. That's it! Actually, you don't have to link to my page, but I sure would like it!
+  fontalicious: If you want postscript fonts, you can buy them on the website. If you want these fonts for commercial use, you can buy them here, too!

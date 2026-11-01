@@ -225,7 +225,8 @@ final class AudionFaceLoaderTests: XCTestCase {
         XCTAssertEqual(album.style, [])
         XCTAssertFalse(album.xor)
         XCTAssertEqual(album.color.components, [0, 0, 1, 1])
-        XCTAssertEqual(CTFontGetSize(album.font), 12, "no font name: Helvetica 12")
+        XCTAssertEqual(CTFontGetSize(album.font), 9, "no font name: Audion's default, Geneva 9")
+        XCTAssertEqual(CTFontCopyFamilyName(album.font) as String, "Geneva")
     }
 
     /// Departure: a name macOS lacks resolves to a bundled lookalike before Helvetica, and every
@@ -234,10 +235,10 @@ final class AudionFaceLoaderTests: XCTestCase {
         let expected = ["Chicago": "ChicagoKare-Regular", "Mini": "Tiny5-Regular", "Silkscreen": "Silkscreen-Regular",
                         "Textile": "ComicNeue-BoldItalic", "SF Digital Readout Medium": "NullPlayerSegment14-Light"]
         for (name, postScriptName) in expected {
-            let font = AudionFace.font(named: name, size: 12)
+            let font = AudionFace.font(named: name, size: 12).font
             XCTAssertEqual(CTFontCopyPostScriptName(font) as String, postScriptName, name)
         }
-        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "SF Digital Readout Medium", size: 12)), 12 * 0.56, accuracy: 0.001)
+        XCTAssertEqual(CTFontGetSize(AudionFace.font(named: "SF Digital Readout Medium", size: 12).font), 12 * 0.56, accuracy: 0.001)
     }
 
     /// Departure: an artist line with no font name takes the album line's font and size.

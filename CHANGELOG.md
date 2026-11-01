@@ -50,6 +50,13 @@
 - **The CLI plays a local album through** instead of quitting after its first track, and `--repeat-all` no longer
   restarts at each track change. A queue in which nothing loads exits 1.
 - **A cast error no longer blocks the CLI** behind an alert window nobody can see.
+- **Audion faces draw their text the way their authors set it** (#642). Centred and right-aligned
+  lines are aligned again; Geneva and Monaco draw as the crisp Mac screen fonts instead of blurred
+  outlines; 29 freeware fonts face authors shipped with their faces (Mini, Orchis, the 04b family,
+  BitBit, IceDogg and others) now ship with NullPlayer and draw in place of lookalikes; Kidprint
+  draws in Comic Neue; a face that set no font draws in Audion's own Geneva 9; and the text
+  settings that were lost when the faces were converted in 2021 (Mint, Display, FX and others) are
+  restored from Panic's original downloads.
 
 ## 0.34.0
 

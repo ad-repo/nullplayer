@@ -72,13 +72,47 @@ measured in them.
 
 - Two lines: **artist** (`artistDisplayRect`) and **album** (`albumDisplayRect`).
 - Colour: the `…TextFaceColorFromTxtr` key when it decodes, else `…TextFaceColorFromFace`, else black.
-- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve tries a bundled lookalike
-  (`AudionFaceFontSubstitutes`: Chicago and its metric-twins, the pixel fonts, Textile, SF Digital
-  Readout), then falls back to Helvetica at that size; a missing name or size falls back to
-  Helvetica 12. An artist line with no font name takes the album line's name and size. Both are
-  departures from FaceKit.
+- Font: `…DisplayFontName` at `…FontSize`. A name that does not resolve tries the font the face's
+  author shipped (`AudionFaceOriginalFonts`), then a bundled lookalike (`AudionFaceFontSubstitutes`:
+  Chicago and its metric-twins, Kidprint, the pixel fonts with no original, Textile, SF Digital
+  Readout), then Helvetica at that size. No name is Geneva 9, Audion's default; size 0 is 12; a
+  missing size is Helvetica 12. An artist line with no font name takes the album line's name and
+  size. All departures from FaceKit.
 - Style: eight booleans (bold, italic, underline, outline, shadow, condense, extend, justify). If
   **any one** of the eight keys fails to decode, the whole style is empty.
+- Alignment: `…Justify` centres a pinned line; a right-aligned line exists only in
+  `AudionFaceTextOverrides` (below).
+
+### `Txtr`, and what the conversion lost
+
+Panic's original faces (`.sit.bin` at `download.panic.com/audion/faces/`) were Mac resource files.
+Each line's text settings were a `Txtr` resource: **200** the artist line, **201** the album line
+(**128** is the face template's leftover, Geneva 9 centred black, which Audion ignored). Big-endian:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 2 | size (0: QuickDraw's default, 12) |
+| 2 | 2 | QuickDraw style bits: bold 1, italic 2, underline 4, outline 8, shadow 16, condense 32, extend 64 |
+| 4 | 2 | TextEdit justification: 0 default (left), 1 centre, −1 right, −2 force left |
+| 6 | 2 | transfer mode (`…TextMode`) |
+| 8 | 6 | RGBColor, three 16-bit channels |
+| 15 | — | the font name: the trailing run of printable bytes; empty means the system font |
+
+The 2021 conversion to `index.json` kept the name, size, style and the colour's high bytes (all
+1,467 lines agree), but turned justification into one boolean (`Justify` = centre or right), and
+**dropped a line whose `Txtr` named no font**. `scripts/audion_txtr.py table` regenerates
+`AudionFaceTextOverrides.swift` from the originals: per face, keyed by the SHA-256 of `index.json`,
+the dropped lines (system font → Charcoal, through its lookalike) and the right-aligned ones. A
+face edited after download no longer matches and keeps its own keys.
+
+### Fonts the faces shipped
+
+165 of the original archives carry fonts (`FOND`, `NFNT`/`FONT` bitmap strikes, `sfnt`), which the
+conversion dropped. `scripts/audion_face_fonts.py` extracts them with each one's licence evidence;
+the 29 freeware families an installed face names ship in `Resources/Fonts/AudionFaces/<family>/`
+as `sfnt-0.ttf` and `<size>-0.nfnt` with a `NOTICE.txt`. Commercial fonts and ones whose author
+prohibited redistribution never ship (Kidprint, Sand, Textile, VT100, the Monotype/ITC/Bitstream
+families, SF Digital Readout, Junior Pro and others); they keep lookalikes.
 - XOR text (`…TextMode & 2`) is parsed and drawn plainly: FaceKit leaves its invert filter
   commented out.
 - The artist line truncates in the middle of the string. The album line scrolls as a marquee: an

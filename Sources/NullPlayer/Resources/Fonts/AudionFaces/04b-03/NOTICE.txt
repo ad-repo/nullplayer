@@ -1,0 +1,9 @@
+04b-03
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Droid.sit.bin, https://download.panic.com/audion/faces/Untitled.sit.bin, https://download.panic.com/audion/faces/elphin.sit.bin, https://download.panic.com/audion/faces/jujulove.sit.bin, https://download.panic.com/audion/faces/musicplayer.sit.bin.
+Licence: LicenseRef-Freeware.
+
+The font's own notice: 1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org
+
+What the face archives say about it:
+  elphin info and instructions: For best results, use the included custom freeware TrueType font.

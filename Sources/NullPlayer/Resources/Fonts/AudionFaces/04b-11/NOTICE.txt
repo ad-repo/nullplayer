@@ -1,0 +1,4 @@
+04b-11
+
+Shipped as the author released it, with the Audion face(s) that carried it: https://download.panic.com/audion/faces/Alien.sit.bin, https://download.panic.com/audion/faces/Droid.sit.bin.
+Licence: LicenseRef-Freeware.

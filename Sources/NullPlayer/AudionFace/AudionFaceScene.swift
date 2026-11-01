@@ -113,6 +113,18 @@ struct AudionFaceScene {
         return step > textWidth + margin ? boxWidth - (step - textWidth - margin) : -step
     }
 
+    /// A pinned line's offset in its box, in device pixels; a line wider than the box stays left.
+    /// Worked in face pixels, so a bitmap-font label stays on the face's pixel grid.
+    static func alignmentOffset(_ line: AudionFace.TextLine, textWidth: Int, scale: Int) -> Int {
+        let room = line.rect.width - textWidth / scale
+        guard room > 0 else { return 0 }
+        switch line.alignment {
+        case .left: return 0
+        case .center: return room / 2 * scale
+        case .right: return room * scale
+        }
+    }
+
     // MARK: - One function per element kind, in FaceKit's draw order
 
     private static func baseOps(_ face: AudionFace, _ host: AudionFaceHostState, frame: Int) -> [AudionFaceDrawOp] {
@@ -179,7 +191,8 @@ struct AudionFaceScene {
                   let image = AudionFaceText.image(text, line: line, justify: justify, scale: scale,
                                                    reduceMotion: host.reduceMotion) else { return nil }
             let pinned = role == .artist || host.reduceMotion
-            let offset = pinned ? 0 : marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
+            let offset = pinned ? alignmentOffset(line, textWidth: image.width, scale: scale)
+                : marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
             return AudionFaceDrawOp(element: .label(role, offset: offset), image: image, rect: line.rect)
         }
     }

@@ -34,6 +34,11 @@ struct AudionFaceProbe {
                 host.album = "Harness Album"
                 host.format = "MP3"
                 host.streamPhase = AudionFaceHostState.StreamPhase(rawValue: name) ?? .none
+                // `AUDION_RENDER_TEXT`: `title|artist|album|format` in place of the oracle's text.
+                if let text = env["AUDION_RENDER_TEXT"]?.split(separator: "|", omittingEmptySubsequences: false)
+                    .map(String.init), text.count == 4 {
+                    (host.title, host.artist, host.album, host.format) = (text[0], text[1], text[2], text[3])
+                }
             default: return nil
             }
             return (name, host)

@@ -54,6 +54,10 @@ enum AudionFaceText {
 
     private static func rasterize(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
                                   reduceMotion: Bool) -> CGImage? {
+        if let image = line.bitmap?.image(text, color: line.color, style: line.style, boxWidth: line.rect.width,
+                                          truncate: justify || reduceMotion, scale: scale) {
+            return image
+        }
         var font = line.font
         if scale > 1 {
             font = CTFontCreateCopyWithAttributes(font, CTFontGetSize(font) * CGFloat(scale), nil, nil)
@@ -99,18 +103,28 @@ enum AudionFaceText {
             CTLineDraw(CTLineCreateWithAttributedString(string), context)
             return context.makeImage()
         }
-        // FaceKit trims one character from each side of the middle until the line fits, and draws
-        // only on a strict fit. Stopping when nothing is left to trim is NullPlayer's: FaceKit
-        // would loop forever on a font whose ellipsis alone is wider than the box.
+        // FaceKit draws only on a strict fit: a cut exactly as wide as the box draws nothing.
+        if let cut = middleTruncated(text, toFit: boxWidth, width: {
+            NSAttributedString(string: $0, attributes: attributes).size().width
+        }), cut.width < boxWidth {
+            CTLineDraw(CTLineCreateWithAttributedString(NSAttributedString(string: cut.text, attributes: attributes)), context)
+        }
+        return context.makeImage()
+    }
+
+    /// FaceKit trims one character from each side of the middle until the line is no wider than
+    /// the box; this is that cut, with its width. Nil when nothing is left to trim, which is
+    /// NullPlayer's: FaceKit would loop forever on a font whose ellipsis alone is wider than the box.
+    static func middleTruncated(_ text: String, toFit boxWidth: CGFloat,
+                                width: (String) -> CGFloat) -> (text: String, width: CGFloat)? {
         var head = Substring(text.prefix(text.count / 2)), tail = Substring(text.dropFirst(text.count / 2))
         while !head.isEmpty || !tail.isEmpty {
             head = head.dropLast()
             tail = tail.dropFirst()
-            let shortened = NSAttributedString(string: head + "…" + tail, attributes: attributes)
-            let width = shortened.size().width
-            if width < boxWidth { CTLineDraw(CTLineCreateWithAttributedString(shortened), context) }
-            if width <= boxWidth { break }
+            let shortened = String(head + "…" + tail)
+            let measured = width(shortened)
+            if measured <= boxWidth { return (shortened, measured) }
         }
-        return context.makeImage()
+        return nil
     }
 }

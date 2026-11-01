@@ -81,6 +81,24 @@ line in an image as wide as the whole string, baseline at `(ascent − descent) 
 | artist | the title; nothing for an empty one | always cut from the middle with `…` | never |
 | album | `artist—album—format`, skipping absent parts | only when justified, or under Reduce Motion | scrolls unless Reduce Motion — **even when justified**, because FaceKit sets the album label's own `justify` to false |
 
+**Alignment** (`AudionFaceScene.alignmentOffset`): a pinned line — the artist line, and the album
+line under Reduce Motion — narrower than its box is offset by half the room (centre) or all of it
+(right), in whole face pixels; a wider one stays left. A scrolling line ignores it.
+
+**Bitmap fonts** (`AudionFaceBitmapFont`, a departure): when the line's style holds nothing beyond
+bold, condense, extend and justify, and the line has a 1-bit font — a shipped `NFNT` strike at its
+size (`AudionFaceOriginalFonts`; a bitmap-only family takes its nearest strike), else the `bloc`/`bdat`
+strike the resolved font carries (Geneva 9–24, Monaco 9–14) — the line is drawn from that bitmap at
+1× and scaled nearest-neighbour. Bold smears each glyph one pixel right and adds a pixel to its
+advance, condense/extend take a pixel off or add one, as QuickDraw did. A `bdat` line uses the
+outline's height and baseline so it sits where the outline did; an `NFNT` line is QuickDraw's,
+ascent from the top. A strike missing `—`, `–` or `…` draws `-` and `...`; any other missing
+character draws the strike's missing-character glyph, and a character outside Mac Roman (or a
+`bdat` strike lacking a glyph) sends the whole line to the outline path. A bitmap cut exactly as
+wide as the box draws: whole-pixel widths make an exact fit common, and FaceKit's strict fit would
+leave those lines blank. The strike follows the outline's size rules (size 0 is 12; a size outside
+the policy is Helvetica 12, with no strike), and an installed font draws its own strike or outline.
+
 A box 12 px wide or narrower draws no text (FaceKit's `rect.width > 12`). The cut trims one character from each side of the middle
 until the line is strictly narrower than the box; one exactly as wide as the box draws nothing, as
 in FaceKit. NullPlayer stops when nothing is left to trim, where FaceKit would loop forever.
@@ -121,4 +139,6 @@ nearest-neighbour with everything else.
 The table is the decision record's § *Deliberate departures from FaceKit*. Of those that touch
 rendering, the oracle comparison avoids each by construction: it renders at 1× (mask resampling) and
 with no track index (track digits); and FaceKit rendered every corpus face's canonical states
-without looping, so the text-trimming stop does not fire there.
+without looping, so the text-trimming stop does not fire there. The text departures (fonts,
+alignment, bitmap strikes, the `Txtr` overrides) change only glyphs, so the comparison classes them
+`text-only` and never `geometry`.

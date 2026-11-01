@@ -47,7 +47,7 @@ facekit	FaceKit (Panic Audion face viewer)	GPL-3.0-or-later	Copyright 2020-2021 
 # === Fonts and bundled assets ===
 departuremono	Departure Mono	OFL-1.1	Copyright (c) 2024 Helena Zhang	https://departuremono.com	1.422	Fonts/DepartureMono-LICENSE.txt	-
 chicagokare	Chicago Kare (Audion face font substitute)	MIT	Copyright (c) 2024 Duane King	https://github.com/KingDuane/Chicago-Kare	bundled	Fonts/ChicagoKare-LICENSE.txt	-
-comicneue	Comic Neue Bold Italic (Audion face font substitute)	OFL-1.1	Copyright 2014 The Comic Neue Project Authors	https://github.com/crozynski/comicneue	bundled	Fonts/ComicNeue-LICENSE.txt	-
+comicneue	Comic Neue Regular and Bold Italic (Audion face font substitutes)	OFL-1.1	Copyright 2014 The Comic Neue Project Authors	https://github.com/crozynski/comicneue	bundled	Fonts/ComicNeue-LICENSE.txt	-
 dseg14	NullPlayer Segment14 (Audion face font substitute)	OFL-1.1	Copyright (c) 2020, keshikan, with Reserved Font Name "DSEG"	https://www.keshikan.net	Modified Version of DSEG14 Classic Light: renamed, descent added	Fonts/DSEG14-LICENSE.txt	-
 silkscreen	Silkscreen (Audion face font substitute)	OFL-1.1	Copyright 2001 The Silkscreen Project Authors	https://github.com/googlefonts/silkscreen	bundled	Fonts/Silkscreen-LICENSE.txt	-
 tiny5	Tiny5 (Audion face font substitute)	OFL-1.1	Copyright 2022-2024 The Tiny5 Project Authors	https://github.com/Gissio/font_tiny5	bundled	Fonts/Tiny5-LICENSE.txt	-
@@ -58,3 +58,32 @@ dejavu-fonts	DejaVu Sans (in iTunes Miniplayer skin)	Bitstream-Vera AND LicenseR
 viridis	Viridis colormap	CC0-1.0	Copyright waived — Stéfan van der Walt and Nathaniel Smith (public domain via CC0)	https://github.com/BIDS/colormap	bundled constants	ThirdPartyLicenses/Viridis_NOTICE.txt	-
 simple-icons	Simple Icons brand marks	CC0-1.0	Copyright waived — Simple Icons contributors (public domain via CC0); logos are trademarks of their owners	https://github.com/simple-icons/simple-icons	GitHub, LinkedIn and Reddit marks	ThirdPartyLicenses/SimpleIcons_NOTICE.txt	-
 peppymeter	PeppyMeter meter templates	GPL-3.0-only	Copyright 2016-2024 PeppyMeter (peppy.player@gmail.com)	https://github.com/project-owner/PeppyMeter	480x320, 800x480, and 1280x400 template sets	ThirdPartyLicenses/PeppyMeter_NOTICE.txt	-
+audion-font-04b-03	04b-03 (Audion face font, original)	LicenseRef-Freeware	1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-03/NOTICE.txt	-
+audion-font-04b-08	04b-08 (Audion face font, original)	LicenseRef-Freeware	1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-08/NOTICE.txt	-
+audion-font-04b-09	04b-09 (Audion face font, original)	LicenseRef-Freeware	1999 / yuji oshimoto  / 04@jp.org / www.04.jp.org	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-09/NOTICE.txt	-
+audion-font-04b-11	04b-11 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-11/NOTICE.txt	-
+audion-font-04b-20	04b-20 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-20/NOTICE.txt	-
+audion-font-04b-24	04b-24 (Audion face font, original)	LicenseRef-Freeware	2000 / yuji oshimoto  / 04@jp.org / www.04.jp.org	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04b-24/NOTICE.txt	-
+audion-font-04bit-10	04bit-10 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04bit-10/NOTICE.txt	-
+audion-font-04bit-16	04bit-16 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/04bit-16/NOTICE.txt	-
+audion-font-architxt	Architxt (Audion face font, original)	LicenseRef-Public-Domain	Developed by S.G. Moye 1991. Public Domain.	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Architxt/NOTICE.txt	-
+audion-font-bitbit	BitBit (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/BitBit/NOTICE.txt	-
+audion-font-bitsumishi	Bitsumishi (Audion face font, original)	LicenseRef-Freeware-NonCommercial	(c) Levi 2001	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Bitsumishi/NOTICE.txt	-
+audion-font-burton-s-nightmare	Burton's Nightmare (Audion face font, original)	LicenseRef-Freeware	From the Tim Burton film	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Burton's Nightmare/NOTICE.txt	-
+audion-font-cry-uncial	Cry Uncial (Audion face font, original)	LicenseRef-Freeware-NonCommercial	2000 Iconian Fonts - this font named by Martin Ross	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Cry Uncial/NOTICE.txt	-
+audion-font-display	Display (Audion face font, original)	LicenseRef-Freeware	Copyright 2000 by dustBUST Fonts.	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Display/NOTICE.txt	-
+audion-font-freecemini	FreeceMini (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/FreeceMini/NOTICE.txt	-
+audion-font-froufrou-regular	Froufrou Regular (Audion face font, original)	LicenseRef-Freeware	http://members.xoom.com/freefont/	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Froufrou Regular/NOTICE.txt	-
+audion-font-hi-login-reg	HI-LOGIN-REG (Audion face font, original)	LicenseRef-Freeware	DESIGN THORSTEN.SCHRAUT@HI-SCORE.DE©000-->USAGE 9PT[6X5REGF] STYLISH HCID FACE…TYPE IS UMME…TYPE IS GEDÖNS…LASSE DÖNS…FREE DOWNLAOD-->WWW.HI-SCORE.DE	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/HI-LOGIN-REG/NOTICE.txt	-
+audion-font-hooge-05-53	hooge 05_53 (Audion face font, original)	LicenseRef-Freeware	©2001 | www.miniml.com | design by craig kroeger	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/hooge 05_53/NOTICE.txt	-
+audion-font-icedogg	IceDogg (Audion face font, original)	LicenseRef-Freeware	©2002 by Götz Ulmer	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/IceDogg/NOTICE.txt	-
+audion-font-less-more	less=more (Audion face font, original)	LicenseRef-Freeware	©2001 Max Kisman/maxk@maxkisman.com	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/less=more/NOTICE.txt	-
+audion-font-lilliput-steps	Lilliput Steps (Audion face font, original)	LicenseRef-Freeware	(C) 1999 Ray Larabie - rlarabie@hotmail.com	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Lilliput Steps/NOTICE.txt	-
+audion-font-lipod-nine	LipoD-Nine (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/LipoD-Nine/NOTICE.txt	-
+audion-font-mini	Mini (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Mini/NOTICE.txt	-
+audion-font-mini-tight	Mini Tight (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Mini Tight/NOTICE.txt	-
+audion-font-neo-geo	neo-geo (Audion face font, original)	LicenseRef-Freeware	1999 - Iconian Fonts	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/neo-geo/NOTICE.txt	-
+audion-font-orchis-5	Orchis 5 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Orchis 5/NOTICE.txt	-
+audion-font-orchis-6	Orchis 6 (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Orchis 6/NOTICE.txt	-
+audion-font-roundstyle-regular	Roundstyle-Regular (Audion face font, original)	LicenseRef-Freeware	see NOTICE.txt	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Roundstyle-Regular/NOTICE.txt	-
+audion-font-squarodynamic-08	Squarodynamic 08 (Audion face font, original)	LicenseRef-Freeware-NonCommercial	Squarodynamic, ©2000, Font•a•licious Fonts.	https://download.panic.com/audion/faces/	bundled	Fonts/AudionFaces/Squarodynamic 08/NOTICE.txt	-
