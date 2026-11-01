@@ -13,7 +13,7 @@ final class AudionFaceTextDepartureTests: XCTestCase {
             json["album\(suffix)"] = false
         }
         let data = try JSONSerialization.data(withJSONObject: json)
-        return try XCTUnwrap(AudionFaceDocument.decode(data, overrides: override.map { [.album: $0] }).album)
+        return try XCTUnwrap(AudionFaceDocument.decode(data, overrides: override.map { [.album: $0] } ?? [:]).album)
     }
 
     func testAnOverrideRestoresWhatTheConversionDropped() throws {
@@ -24,7 +24,7 @@ final class AudionFaceTextDepartureTests: XCTestCase {
         XCTAssertEqual(CTFontGetSize(line.font), 10)
         XCTAssertEqual(line.color.components, [1, 0, 0, 1])
         XCTAssertEqual(line.alignment, .right, "the override's right wins over Justify's centre")
-        XCTAssertTrue(line.style.contains(.justify), "truncation still follows Justify")
+        XCTAssertTrue(line.style.contains(.justify), "the Justify bit itself is kept")
     }
 
     func testJustifyCentresAndItsAbsenceLeavesLeft() throws {
@@ -46,7 +46,7 @@ final class AudionFaceTextDepartureTests: XCTestCase {
         XCTAssertFalse(try album([:]).inverse)
         let line = try album(["albumTextMode": 4, "albumDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 255]])
         XCTAssertTrue(line.inverse)
-        let image = try XCTUnwrap(AudionFaceText.image("H", line: line, justify: false, scale: 1, reduceMotion: true))
+        let image = try XCTUnwrap(AudionFaceText.image("H", line: line, scale: 1, reduceMotion: true))
         let corner = AudionFaceSceneTests.pixel(image, 0, 0)   // blue, give or take the colour space
         XCTAssertTrue(corner[0] < 32 && corner[1] < 64 && corner[2] > 230 && corner[3] == 255, "the box: \(corner)")
         let pixels = (0..<image.width).flatMap { x in (0..<image.height).map { AudionFaceSceneTests.pixel(image, x, $0) } }

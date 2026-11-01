@@ -124,20 +124,20 @@ struct AudionFaceBitmapFont: Hashable {
         guard style.subtracting([.justify, .bold, .condense, .extend]).isEmpty, let full = glyphs(text) else { return nil }
         let bold = style.contains(.bold) ? 1 : 0
         let spacing = bold + (style.contains(.condense) ? -1 : style.contains(.extend) ? 1 : 0)
-        var drawn: [Glyph]? = full
+        var drawn = full
         if truncate, width(full, spacing) > boxWidth {
             guard glyphs("…") != nil else { return nil }
             // Widths here are whole pixels, so an exact fit is common, and it draws: FaceKit's strict
-            // fit would leave those lines blank.
+            // fit would leave those lines blank. Nothing left to trim draws nothing.
             drawn = AudionFaceText.middleTruncated(text, toFit: CGFloat(boxWidth)) {
                 glyphs($0).map { CGFloat(width($0, spacing)) } ?? .infinity
-            }.flatMap { glyphs($0.text) }
+            }.flatMap { glyphs($0.text) } ?? []
         }
         guard let context = CGContext.audionFaceBitmap(width: width(full, spacing) * scale, height: height * scale)
         else { return nil }
         var pixels: [CGRect] = []
         var pen = 0
-        for glyph in drawn ?? [] {
+        for glyph in drawn {
             let stride = (glyph.width + 7) / 8
             for row in 0..<glyph.height {
                 let y = baseline + glyph.bearingY - 1 - row

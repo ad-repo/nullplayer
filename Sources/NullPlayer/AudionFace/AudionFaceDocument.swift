@@ -33,12 +33,16 @@ struct AudionFaceDocument: Decodable {
     let faceInfo: [String]
     let findings: [AudionFaceFinding]
 
-    /// Decodes `json` with what it lost of its authored text restored: `overrides`, or by default the
-    /// `AudionFaceTextOverrides` lines its SHA-256 names.
-    static func decode(_ json: Data, overrides: [AudionFace.TextRole: AudionFaceTextOverrides.Line]? = nil) throws -> Self {
-        let decoder = JSONDecoder()
+    /// Decodes `json` with what it lost of its authored text restored: the `AudionFaceTextOverrides`
+    /// lines its SHA-256 names.
+    static func decode(_ json: Data) throws -> Self {
         let digest = SHA256.hash(data: json).map { String(format: "%02x", $0) }.joined()
-        decoder.userInfo[textOverridesKey] = overrides ?? AudionFaceTextOverrides.lines[digest]
+        return try decode(json, overrides: AudionFaceTextOverrides.lines[digest] ?? [:])
+    }
+
+    static func decode(_ json: Data, overrides: [AudionFace.TextRole: AudionFaceTextOverrides.Line]) throws -> Self {
+        let decoder = JSONDecoder()
+        decoder.userInfo[textOverridesKey] = overrides
         return try decoder.decode(Self.self, from: json)
     }
 

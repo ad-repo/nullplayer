@@ -5,7 +5,8 @@ struct AudionFaceDrawOp {
     /// FaceKit's layer stack, bottom to top. `AudionFaceRenderer` composites each the way its
     /// layer does: `base` and `readouts` clear an op's rect before drawing it (FaceKit
     /// `context.clear`), `readouts` is its own transparent buffer (FaceKit's `sublayer`, zPosition 2,
-    /// above the buttons at 1), `mask` keeps only the alpha it covers, and `labels` draw unscaled and
+    /// above the buttons at 1) and is cleared under a stream animation's op (a departure: FaceKit draws
+    /// the readouts over it), `mask` keeps only the alpha it covers, and `labels` draw unscaled and
     /// clipped (zPosition 10). Departure: FaceKit masks the labels too; Audion drew them over the
     /// desktop where the mask is clear (X-factor, Jack&Sally, Ugly in their screenshots).
     enum Layer: CaseIterable { case base, buttons, readouts, mask, labels }
@@ -122,7 +123,7 @@ struct AudionFaceScene {
                                 _ host: AudionFaceHostState) -> Bool {
         guard !host.reduceMotion else { return false }
         guard role == .artist else { return true }
-        let width = AudionFaceText.image(text, line: line, justify: false, scale: 1, reduceMotion: false)?.width ?? 0
+        let width = AudionFaceText.image(text, line: line, scale: 1, reduceMotion: false)?.width ?? 0
         return width > line.rect.width
     }
 
@@ -216,8 +217,8 @@ struct AudionFaceScene {
     private static func labelOps(_ face: AudionFace, _ host: AudionFaceHostState, frame: Int,
                                  scale: Int) -> [AudionFaceDrawOp] {
         labels(face, host).compactMap { role, line, text in
-            guard let image = AudionFaceText.image(text, line: line, justify: false, scale: scale,
-                                                   reduceMotion: host.reduceMotion) else { return nil }
+            guard let image = AudionFaceText.image(text, line: line, scale: scale, reduceMotion: host.reduceMotion)
+            else { return nil }
             let offset = scrolls(role, line, text, host)
                 ? marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
                 : alignmentOffset(line, textWidth: image.width, scale: scale)

@@ -23,20 +23,19 @@ import AppKit
 
 enum AudionFaceText {
     /// FaceKit `draw(text:…)`: the line rasterized at `scale`, in an image as wide as the whole
-    /// string. When justified or under Reduce Motion, a string wider than its box is cut from the
-    /// middle with an ellipsis. Nil for a string with no width.
+    /// string. Under Reduce Motion, a string wider than its box is cut from the middle with an
+    /// ellipsis. Nil for a string with no width.
     ///
     /// The same arguments give back the same image instance: a scene rebuilt every tick for the
     /// marquee rasterizes nothing, and `AudionFaceCanvas` sees by identity that the label is unchanged.
-    static func image(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
-                      reduceMotion: Bool) -> CGImage? {
-        let key = Key(text: text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+    static func image(_ text: String, line: AudionFace.TextLine, scale: Int, reduceMotion: Bool) -> CGImage? {
+        let key = Key(text: text, line: line, scale: scale, reduceMotion: reduceMotion)
         lock.lock()
         defer { lock.unlock() }
         if let image = cache[key] { return image }
         // ponytail: dropped whole when full; the window shows two lines, so 16 never thrashes.
         if cache.count >= 16 { cache.removeAll() }
-        var image = rasterize(text, line: line, justify: justify, scale: scale, reduceMotion: reduceMotion)
+        var image = rasterize(text, line: line, scale: scale, reduceMotion: reduceMotion)
         if line.inverse { image = image.flatMap { inverted($0, color: line.color) } }
         cache[key] = image
         return image
@@ -45,7 +44,6 @@ enum AudionFaceText {
     private struct Key: Hashable {
         let text: String
         let line: AudionFace.TextLine
-        let justify: Bool
         let scale: Int
         let reduceMotion: Bool
     }
@@ -53,10 +51,9 @@ enum AudionFaceText {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cache: [Key: CGImage?] = [:]
 
-    private static func rasterize(_ text: String, line: AudionFace.TextLine, justify: Bool, scale: Int,
-                                  reduceMotion: Bool) -> CGImage? {
+    private static func rasterize(_ text: String, line: AudionFace.TextLine, scale: Int, reduceMotion: Bool) -> CGImage? {
         if let image = line.bitmap?.image(text, color: line.color, style: line.style, boxWidth: line.rect.width,
-                                          truncate: justify || reduceMotion, scale: scale) {
+                                          truncate: reduceMotion, scale: scale) {
             return image
         }
         var font = line.font
@@ -100,7 +97,7 @@ enum AudionFaceText {
         context.textMatrix = CGAffineTransform(translationX: 0, y: (CTFontGetAscent(font) - CTFontGetDescent(font)) / 2)
 
         let boxWidth = CGFloat(line.rect.width * scale)
-        guard justify || reduceMotion, size.width > boxWidth else {
+        guard reduceMotion, size.width > boxWidth else {
             CTLineDraw(CTLineCreateWithAttributedString(string), context)
             return context.makeImage()
         }

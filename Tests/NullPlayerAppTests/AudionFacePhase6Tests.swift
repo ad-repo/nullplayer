@@ -54,9 +54,9 @@ final class AudionFacePhase6Tests: XCTestCase {
     func testALineIsRasterizedOnce() async throws {
         let face = try await AudionFaceFuzzTests.everyElementFixture().load()
         let line = try XCTUnwrap(face.album)
-        let first = AudionFaceText.image("text", line: line, justify: false, scale: 2, reduceMotion: false)
-        let again = AudionFaceText.image("text", line: line, justify: false, scale: 2, reduceMotion: false)
-        let other = AudionFaceText.image("text", line: line, justify: false, scale: 3, reduceMotion: false)
+        let first = AudionFaceText.image("text", line: line, scale: 2, reduceMotion: false)
+        let again = AudionFaceText.image("text", line: line, scale: 2, reduceMotion: false)
+        let other = AudionFaceText.image("text", line: line, scale: 3, reduceMotion: false)
         XCTAssertTrue(first === again)
         XCTAssertFalse(first === other)
     }

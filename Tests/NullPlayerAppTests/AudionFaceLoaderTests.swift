@@ -237,7 +237,13 @@ final class AudionFaceLoaderTests: XCTestCase {
                         "Capitals": "Copperplate", "Sand": "MarkerFelt-Wide", "Institution": "PathwayGothicOne-Regular",
                         "Machine ITC TT": "BebasNeue-Regular", "Junior Pro": "Sniglet-ExtraBold",
                         "Stencil": "StardosStencil-Bold", "Eurostile BoldExtendedTwo": "KronaOne-Regular",
-                        "Eurostile ExtendedTwo": "Michroma-Regular"]
+                        "Eurostile ExtendedTwo": "Michroma-Regular",
+                        // System fonts: a misspelt PostScript name would resolve to CoreText's fallback.
+                        "Arial Bl": "Arial-Black", "Arial MT Condensed Light": "ArialNarrow",
+                        "Bradley Hand ITC TT-Bold": "BradleyHandITCTT-Bold", "Futura Condensed": "Futura-CondensedMedium",
+                        "Century Gothic": "Futura-Medium", "New York": "Times-Roman", "VT100": "Monaco",
+                        "Espy Sans": "Geneva", "Facet": "Impact", "I/O Sans Italic": "Helvetica-BoldOblique",
+                        "Weathered SF Regular": "Times-Bold", "Monotype.com": "AndaleMono"]
         for (name, postScriptName) in expected {
             let font = AudionFace.font(named: name, size: 12).font
             XCTAssertEqual(CTFontCopyPostScriptName(font) as String, postScriptName, name)
