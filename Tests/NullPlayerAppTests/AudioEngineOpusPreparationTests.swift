@@ -165,6 +165,25 @@ final class AudioEngineOpusPreparationTests: XCTestCase {
         XCTAssertEqual(recorder.failedURLs, [corrupt])
     }
 
+    /// The CLI exits on this notification, so a queue in which nothing opens must post it.
+    func testAPlayThatFailsThroughTheLastTrackExhaustsTheQueue() throws {
+        let (engine, restorePreferences) = makeEngine()
+        defer { engine.clearPlaylist(); restorePreferences() }
+        let corrupt = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        let secondBad = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).m4a")
+        defer {
+            try? FileManager.default.removeItem(at: corrupt)
+            try? FileManager.default.removeItem(at: secondBad)
+        }
+        try Data("not MPEG-4".utf8).write(to: corrupt)
+        try Data("also not MPEG-4".utf8).write(to: secondBad)
+        let exhausted = expectation(forNotification: .audioQueueDidExhaust, object: engine)
+        engine.setPlaylistTracks([Track(url: corrupt), Track(url: secondBad)])
+        engine.play()
+        wait(for: [exhausted], timeout: 3)
+        XCTAssertEqual(engine.state, .stopped)
+    }
+
     func testPlayNowSkipsBadM4AWithinItsBoundAndStartsTheOpusSuccessor() throws {
         let (engine, restorePreferences) = makeEngine()
         defer { engine.clearPlaylist(); restorePreferences() }

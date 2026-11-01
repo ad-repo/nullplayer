@@ -449,6 +449,16 @@ See [artwork-debugging-history.md](artwork-debugging-history.md) for historical 
 
 **HEAD requests:** Sonos sends HTTP HEAD before GET to check file size. LocalMediaServer handles both methods.
 
+**DLNA feature headers (DLNA TVs):** a DLNA renderer sends `getcontentFeatures.dlna.org: 1` on every
+HEAD/GET. `/media/` answers it with `contentFeatures.dlna.org: DLNA.ORG_OP=01;…` (byte seek) and
+`transferMode.dlna.org: Streaming` (`LocalMediaServer.answeringDLNAFeatureRequest`). Unanswered, the
+Samsung QN90BA never sent a `Range` request, so an MP4 with its `moov` index after `mdat` (ffmpeg's
+default without `+faststart`) showed *format not supported* although SetAVTransportURI and Play both
+returned 200 — DLNA has no status channel, so nothing in NullPlayer saw the failure. Answered, it
+reads `bytes=0-`, then jumps to the index (measured 2026-10-31). Only clients that ask get the
+headers; Sonos does not ask (measured, "Dining Room"), so its responses are unchanged. `/stream/` proxy responses do not answer
+it yet. The DIDL `protocolInfo` fourth field stays `*`: the headers alone were enough.
+
 **Radio streams:** MP3 radio streams use `x-rincon-mp3radio://` URI scheme for better Sonos buffering.
 
 **Error 701:** "Transition Not Available" - occurs when the speaker is busy. NullPlayer waits for transport ready state before retrying.

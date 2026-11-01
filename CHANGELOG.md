@@ -38,6 +38,19 @@
 - **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
 - **GoldenBeauty's in-skin equalizer draws the bands and follows a drag**: showing a group now tells the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its library button reading EQ is the author's art.)
 
+### Fixes
+
+- **A video the Chromecast rejects is reported, and the CLI exits 1** instead of sitting at 0:00 (#645). A Chromecast
+  cast that never starts playing within 30 s fails the same way; the player window shows a casting error.
+- **The CLI treats `.mpg` and `.mpeg` files as video** and casts them, instead of handing them to the audio engine and never exiting (#646).
+- **`--cast` accepts the device name other cast pickers show**, as well as its id with or without the `chromecast:`
+  prefix (#647). `--list-devices` shows each device's id, and `--json` adds its video support, address and port.
+- **Chromecasts are listed by their friendly name**, not the service instance name ending in a long hex suffix.
+- **A DLNA TV plays a local MP4 whose index is at the end of the file** instead of showing *format not supported*.
+- **The CLI plays a local album through** instead of quitting after its first track, and `--repeat-all` no longer
+  restarts at each track change. A queue in which nothing loads exits 1.
+- **A cast error no longer blocks the CLI** behind an alert window nobody can see.
+
 ## 0.34.0
 
 ### New features

@@ -122,6 +122,12 @@ class CLIPlayer: AudioEngineDelegate {
                 Self.exitAndRestoreTerminal(code: 1)
             }
         }
+
+        _ = NotificationCenter.default.addObserver(
+            forName: .audioQueueDidExhaust, object: audioEngine, queue: .main
+        ) { [weak self] _ in
+            self?.playlistDidEnd()
+        }
     }
 
     private var currentPlaylist: [Track] = []
@@ -204,9 +210,7 @@ class CLIPlayer: AudioEngineDelegate {
                 return true
             }
 
-            if let match = filteredDevices.first(where: {
-                $0.name.caseInsensitiveCompare(request.deviceName) == .orderedSame
-            }) {
+            if let match = filteredDevices.first(where: { Self.castDevice($0, matches: request.deviceName) }) {
                 return match
             }
 
@@ -221,6 +225,13 @@ class CLIPlayer: AudioEngineDelegate {
             }
             .map { "\($0.name) (\($0.type))" }
         throw CLIPlayerError.castDeviceNotFound(request.deviceName, available)
+    }
+
+    /// `--cast` names a device by its name, or by its id with or without its `chromecast:`-style type prefix.
+    static func castDevice(_ device: CastDevice, matches query: String) -> Bool {
+        let wanted = query.lowercased()
+        let id = device.id.lowercased()
+        return device.name.lowercased() == wanted || id == wanted || id.hasSuffix(":" + wanted)
     }
 
     private func setupCasting(castValue: String) async {
@@ -320,11 +331,27 @@ class CLIPlayer: AudioEngineDelegate {
 
     private var metadataTimer: Timer?
     private var videoProgressTimer: Timer?
-    private var videoCastActive = false
-    private var videoCastHasStartedPlaying = false
+
+    private enum VideoCastPhase {
+        /// Chromecast carries a deadline: a cast that reaches neither PLAYING nor BUFFERING by then
+        /// has failed silently. DLNA posts no media status, so it gets none.
+        case starting(deadline: Date?)
+        case playing(paused: Bool)
+        /// CastManager reported an error (the receiver rejected the media) and is tearing the cast down.
+        case failed
+
+        var isPaused: Bool {
+            if case .playing(paused: true) = self { return true }
+            return false
+        }
+    }
+    private static let videoCastStartTimeout: TimeInterval = 30
+    /// nil while no video cast is running.
+    private var videoCast: VideoCastPhase?
+    private var videoCastActive: Bool { videoCast != nil }
     private var videoSessionObserver: NSObjectProtocol?
     private var videoMediaStatusObserver: NSObjectProtocol?
-    private var videoCastIsPaused = false
+    private var videoCastErrorObserver: NSObjectProtocol?
 
     private func startRadioMetadataPoller() {
         // Poll RadioManager for metadata changes every 5 seconds
@@ -351,9 +378,7 @@ class CLIPlayer: AudioEngineDelegate {
             throw CLIPlayerError.sonosVideoUnsupported
         }
 
-        videoCastActive = true
-        videoCastHasStartedPlaying = false
-        videoCastIsPaused = false
+        videoCast = .starting(deadline: nil)
         installVideoCastObservers()
 
         do {
@@ -361,8 +386,13 @@ class CLIPlayer: AudioEngineDelegate {
             guard device.supportsVideo, device.type != .sonos else {
                 throw CLIPlayerError.sonosVideoUnsupported
             }
+            if device.type == .chromecast {
+                videoCast = .starting(deadline: Date().addingTimeInterval(Self.videoCastStartTimeout))
+            }
 
             display.printVideoInfo(title: item.displayTitle, device: device.name, manualQuitOnly: device.type == .dlnaTV)
+            // Started before the cast call, so a setup that never returns still meets the deadline.
+            startVideoProgressTimer()
 
             switch item {
             case .localFile(let url, let title):
@@ -381,12 +411,11 @@ class CLIPlayer: AudioEngineDelegate {
                 try await CastManager.shared.castEmbyEpisode(episode, to: device)
             }
         } catch {
-            videoCastActive = false
+            videoCast = nil
+            stopVideoProgressTimer()
             removeVideoCastObservers()
             throw error
         }
-
-        startVideoProgressTimer()
     }
 
     private func installVideoCastObservers() {
@@ -396,11 +425,15 @@ class CLIPlayer: AudioEngineDelegate {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self else { return }
-            if self.videoCastActive,
-               self.videoCastHasStartedPlaying,
-               CastManager.shared.currentCast == .none {
+            guard let self, let phase = self.videoCast, CastManager.shared.currentCast == .none else { return }
+            switch phase {
+            case .failed:
+                fputs("\nError: The cast device could not play this video\n", cliStderr)
+                self.exitAndRestoreTerminalAfterVideo(code: 1)
+            case .playing:
                 self.exitAndRestoreTerminalAfterVideo(code: 0)
+            case .starting:
+                break
             }
         }
 
@@ -410,16 +443,32 @@ class CLIPlayer: AudioEngineDelegate {
             queue: .main
         ) { [weak self] notification in
             guard let self,
-                  self.videoCastActive,
+                  let phase = self.videoCast,
                   let status = notification.userInfo?["status"] as? CastMediaStatus
             else { return }
-            if status.playerState == .playing || status.playerState == .buffering {
-                self.videoCastHasStartedPlaying = true
-                self.videoCastIsPaused = false
-            } else if status.playerState == .paused {
-                self.videoCastIsPaused = true
+            // A receiver can report BUFFERING and then reject the media; the failure stands.
+            if case .failed = phase { return }
+            switch status.playerState {
+            case .playing, .buffering: self.videoCast = .playing(paused: false)
+            case .paused: self.setVideoCastPaused(true)
+            default: break
             }
         }
+
+        // CastManager posts its error for the receiver's IDLE/ERROR, then stops the cast.
+        videoCastErrorObserver = NotificationCenter.default.addObserver(
+            forName: CastManager.errorNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.videoCastActive else { return }
+            self.videoCast = .failed
+        }
+    }
+
+    /// A pause before the cast has started leaves it starting: it has not played yet.
+    private func setVideoCastPaused(_ paused: Bool) {
+        if case .playing = videoCast { videoCast = .playing(paused: paused) }
     }
 
     private func removeVideoCastObservers() {
@@ -431,16 +480,25 @@ class CLIPlayer: AudioEngineDelegate {
             NotificationCenter.default.removeObserver(videoMediaStatusObserver)
             self.videoMediaStatusObserver = nil
         }
+        if let videoCastErrorObserver {
+            NotificationCenter.default.removeObserver(videoCastErrorObserver)
+            self.videoCastErrorObserver = nil
+        }
     }
 
     private func startVideoProgressTimer() {
         videoProgressTimer?.invalidate()
         videoProgressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self, self.videoCastActive else { return }
+            guard let self, let phase = self.videoCast else { return }
+            if case .starting(let deadline?) = phase, Date() > deadline {
+                fputs("\nError: The cast device did not start playing within \(Int(Self.videoCastStartTimeout)) seconds\n", cliStderr)
+                self.quit(code: 1)
+                return
+            }
             self.display.updateVideoProgress(
                 current: CastManager.shared.videoCastCurrentTime,
                 duration: CastManager.shared.videoCastDuration,
-                paused: self.videoCastIsPaused
+                paused: phase.isPaused
             )
         }
     }
@@ -453,7 +511,7 @@ class CLIPlayer: AudioEngineDelegate {
     private func exitAndRestoreTerminalAfterVideo(code: Int32) -> Never {
         stopVideoProgressTimer()
         removeVideoCastObservers()
-        videoCastActive = false
+        videoCast = nil
         Self.exitAndRestoreTerminal(code: code)
     }
 
@@ -463,11 +521,11 @@ class CLIPlayer: AudioEngineDelegate {
                 do {
                     if CastManager.shared.isVideoCastPlaying {
                         try await CastManager.shared.pause()
-                        videoCastIsPaused = true
+                        setVideoCastPaused(true)
                         display.printAboveProgress("[Paused]")
                     } else {
                         try await CastManager.shared.resume()
-                        videoCastIsPaused = false
+                        setVideoCastPaused(false)
                     }
                 } catch {
                     display.printAboveProgress("Cast control failed: \(error.localizedDescription.redactingSensitiveURLQueryItems)")
@@ -600,21 +658,17 @@ class CLIPlayer: AudioEngineDelegate {
     }
 
     func audioEngineDidChangeState(_ state: PlaybackState) {
-        // quit() owns the exit and its code; its own stop must not exit as end-of-playlist.
+        // quit() owns the exit and its code.
         guard !isQuitting else { return }
         // While a cast session owns playback, the local engine is intentionally
         // stopped for the handoff and re-enters .playing once the device reports
-        // status. Never treat a local .stopped as end-of-playlist here — audio is
-        // playing on the cast device, and exiting/restarting would kill or fight it.
+        // status; audio is playing on the cast device.
         if state == .stopped && castSessionActive {
             return
         }
 
-        // An error-induced stop (e.g. seek into EOF, network drop, dead server)
-        // surfaces as .stopped just like a natural end-of-playlist. Don't treat it
-        // as completion: skip both the repeat-all restart (which would hammer a
-        // failing stream in a tight loop) and the exit. Stay alive so the user can
-        // press > to skip or q to quit.
+        // An error-induced stop (e.g. seek into EOF, network drop, dead server) ends no queue,
+        // so the CLI stays alive: say how to go on.
         if state == .stopped && lastStopWasError {
             lastStopWasError = false
             display.printState(state)
@@ -622,22 +676,29 @@ class CLIPlayer: AudioEngineDelegate {
             return
         }
 
-        // Implement repeat-all: when playlist ends (state == .stopped),
-        // reload and restart from the beginning
-        if state == .stopped && options.repeatAll && !currentPlaylist.isEmpty {
-            audioEngine.loadTracks(currentPlaylist)
-            audioEngine.play()
-            return
-        }
         if state == .playing {
             hasStartedPlaying = true
             lastStopWasError = false  // Recovered — a later stop is a real one
         }
+        // A `.stopped` is not the end of the playlist: the engine also emits one while it prepares
+        // the next local track and when a file fails to load before it skips past it. The end is
+        // `.audioQueueDidExhaust` (playlistDidEnd).
         display.printState(state)
-        // Exit when playback finishes naturally and there is nothing left to play
-        if state == .stopped && hasStartedPlaying && !options.repeatAll {
+    }
+
+    /// The engine ran out of tracks, after playing them or failing to load the rest.
+    private func playlistDidEnd() {
+        // Posted just before the engine's own stop(), so act after it; a quit may have begun by then.
+        DispatchQueue.main.async { [self] in
+            guard !isQuitting, !castSessionActive else { return }
+            if options.repeatAll && hasStartedPlaying && !currentPlaylist.isEmpty {
+                audioEngine.loadTracks(currentPlaylist)
+                audioEngine.play()
+                return
+            }
             metadataTimer?.invalidate()
-            Self.exitAndRestoreTerminal(code: 0)
+            // Nothing played: every track failed to load (its error is already printed).
+            Self.exitAndRestoreTerminal(code: hasStartedPlaying ? 0 : 1)
         }
     }
 

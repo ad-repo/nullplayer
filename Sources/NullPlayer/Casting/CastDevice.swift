@@ -281,9 +281,7 @@ enum CastError: Error, LocalizedError {
 func detectContentType(for url: URL) -> (contentType: String, mediaType: MediaType) {
     let ext = url.pathExtension.lowercased()
     
-    // Video extensions
-    let videoExtensions = ["mp4", "m4v", "mkv", "webm", "avi", "mov", "ts", "m2ts", "mts", "wmv", "flv"]
-    if videoExtensions.contains(ext) {
+    if AudioFileValidator.supportedVideoExtensions.contains(ext) {
         let mimeType: String
         switch ext {
         case "mp4", "m4v": mimeType = "video/mp4"
@@ -292,6 +290,7 @@ func detectContentType(for url: URL) -> (contentType: String, mediaType: MediaTy
         case "avi": mimeType = "video/x-msvideo"
         case "mov": mimeType = "video/quicktime"
         case "ts", "m2ts", "mts": mimeType = "video/mp2t"
+        case "mpg", "mpeg": mimeType = "video/mpeg"
         case "wmv": mimeType = "video/x-ms-wmv"
         case "flv": mimeType = "video/x-flv"
         default: mimeType = "video/mp4"

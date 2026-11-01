@@ -349,7 +349,7 @@ This pairs with the connectivity fix: `checkConnectivity` now `await`s the backg
 
 `CLIKeyboard` reads stdin on a background `DispatchQueue` and dispatches all player calls to `DispatchQueue.main.async`.
 
-In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down. DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
+In video-cast mode, `Space` maps to cast pause/resume, left/right arrows seek on the cast session, and `q` stops casting before exiting. Track navigation, shuffle, repeat, mute, and volume are no-ops for video. Chromecast video exits automatically after active playback ends and the cast session is torn down (code 0). A video the receiver rejects (MEDIA_STATUS `IDLE` with `idleReason: ERROR`) exits 1 with *The cast device could not play this video*, even after a BUFFERING; a Chromecast cast that reaches neither PLAYING nor BUFFERING within 30 s exits 1 too. `CLIPlayer` holds this as one `VideoCastPhase?` (`starting(deadline:)`, `playing(paused:)`, `failed`; nil when no video cast runs): PLAYING/BUFFERING moves `starting` to `playing`, `CastManager.errorNotification` moves any phase to `failed` (which a later status cannot undo), and when the session ends `failed` exits 1, `playing` exits 0 and `starting` waits. The CLI does not read `idleReason` itself — `CastManager` decides the rejection (`chromecast-casting`, *IDLE with `idleReason: ERROR`*). DLNA video has no reliable end-of-stream signal in the current stack, so it prints approximate progress and requires `q` to stop the CLI.
 
 Local video files are served through `LocalMediaServer` on port `8765` before being handed to Chromecast or DLNA targets. If the main NullPlayer UI is already open, that process may own the port; CLI local-video casts should fail with a descriptive "port 8765 is unavailable" error. Tell users to quit the app UI or stop the other NullPlayer process, then retry. A port conflict can otherwise look like a DLNA `716 Resource not found` because the TV receives a `/media/<token>` URL that belongs to the CLI process, while another process is actually serving the port.
 
@@ -421,12 +421,27 @@ session endlessly. `CLIStderr.swift` handles this:
   framework logs return for debugging. `main.swift` reads it directly via
   `args.contains("--verbose")` (before options are parsed).
 
+## When Playback Ends
+
+The CLI exits when the engine's queue runs out — `.audioQueueDidExhaust`, posted by
+`AudioEngine.stopAfterQueueExhausted` — and never on a bare `.stopped` (`CLIPlayer.playlistDidEnd`).
+A `.stopped` is not the end of a playlist: the engine emits one while it prepares the next local
+file (the asynchronous preparation, since #616), and one when a file fails to load before it skips
+past it. Exiting on `.stopped` quit after the first track of every local album and restarted
+`--repeat-all` at each track change.
+
+- Exit 0 if anything played, 1 if nothing did (every track failed to load; each error is printed).
+- `--repeat-all` reloads the queue instead, unless nothing played (no loop over unloadable files).
+- The notification arrives just before the engine's own `stop()`, so the exit or restart runs on
+  the next main-queue turn.
+- A streaming error stop (`audioEngineDidEncounterPlaybackError`) ends no queue: the CLI stays up
+  and prints *Playback error — press > to skip or q to quit*.
+
 ## Casting Keep-Alive
 
 When `--cast` hands off to a device, `CastManager` calls `AudioEngine.stopLocalForCasting()`,
-which sets local `state = .stopped`. Without guarding, `CLIPlayer.audioEngineDidChangeState`
-treats that as end-of-playlist (`hasStartedPlaying && !repeatAll`) and calls `exit(0)` — the
-CLI would quit the instant the cast starts.
+which sets local `state = .stopped`. That `.stopped` ends no queue (see *When Playback Ends*), but
+the guard below still keeps a queue end from exiting while a cast owns playback.
 
 `CLIPlayer` guards this with `castSessionActive`, set `true` right before
 `CastManager.shared.castCurrentTrack(to:)`. While set, a local `.stopped` is ignored (no exit,
@@ -461,7 +476,7 @@ stop from a `Task` the exit cuts off, leaving a Sonos playing. A second quit whi
 | Code | Meaning |
 |------|---------|
 | 0 | Success / clean quit |
-| 1 | Error (auth failure, no matches, invalid args) |
+| 1 | Error (auth failure, no matches, invalid args), a queue in which nothing played, a video the cast receiver rejected or never started |
 | 130 | Interrupted (SIGINT / Ctrl+C) |
 
 ---
@@ -562,6 +577,26 @@ symlink them first (see the `swift-test-dylib-rpath` note):
 for d in Frameworks/libprojectM-4*.dylib; do ln -sf "$PWD/$d" ".build/debug/$(basename "$d")"; done
 ```
 
+### Live scripts
+
+```bash
+skills/cli/scripts/cli-end-test.sh                 # how playback ends: exit codes, skips, repeat-all
+skills/cast-testing/scripts/cast-test.sh           # casting to the LAN's TVs (cast-testing skill)
+```
+
+`cli-end-test.sh` needs no devices and runs muted (about 90 s): one track, two tracks through the
+local track change, `--shuffle`, an http stream's end, `[bad]`, `[bad, bad]`, `[bad, good]`,
+`[good, bad, good]`, `--repeat-all` (still running at 12 s on a 5 s track) and `--repeat-all` over
+an unloadable queue. It builds playlists with `NULLPLAYER_CLI_QUEUE`, not the library.
+
+**`NULLPLAYER_CLI_QUEUE`** (DEBUG builds only, `CLISourceResolver.resolve`): newline-separated
+local paths or `http(s)` URLs, queued as one playlist ahead of every other source flag — the CLI's
+`NULLPLAYER_PLAY`. Newlines, not the GUI's `:`, because a URL contains one.
+
+```bash
+NULLPLAYER_CLI_QUEUE="$(printf '%s\n' /abs/a.m4a /abs/bad.mp3 http://127.0.0.1:8799/b.mp3)" "$BIN" --cli
+```
+
 ### What is and isn't covered
 
 `CLIOptionsTests` uses `@testable import NullPlayer` and calls `CLIOptions.parse([String])`
@@ -571,6 +606,10 @@ no-op, all string/int/double value flags, and the query-vs-playback classificati
 (`isQueryMode`, and `isSearchQuery` flipping to playback when `--search` is combined with
 `--artist`/`--album`/`--playlist`/`--radio`/`--station`). The original Plex bug command
 shape (`--source plex --list-albums --artist …`) is pinned as a regression guard.
+
+Elsewhere: `CastingTests` covers `--cast` matching (`CLIPlayer.castDevice(_:matches:)`: name, id,
+bare id) and the IDLE/ERROR cast failure; `AudioEngineOpusPreparationTests` covers the queue end
+the CLI exits on when nothing opens (`testAPlayThatFailsThroughTheLastTrackExhaustsTheQueue`).
 
 **Not unit-tested (needs live servers or a spawned binary — do via manual QA):**
 

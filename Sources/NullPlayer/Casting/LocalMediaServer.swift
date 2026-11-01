@@ -292,7 +292,7 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return await self.handleMediaRequest(request)
+            return Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request)
         }
         
         // Add route handler for stream proxy (Subsonic/remote URLs)
@@ -308,7 +308,7 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return await self.handleMediaHeadRequest(request)
+            return Self.answeringDLNAFeatureRequest(await self.handleMediaHeadRequest(request), for: request)
         }
         
         await server.appendRoute("HEAD /stream/*") { [weak self] request in
@@ -743,6 +743,20 @@ class LocalMediaServer {
         }
     }
     
+    /// A DLNA renderer asks with `getcontentFeatures.dlna.org: 1`; left unanswered, a Samsung TV
+    /// (measured) never sends a Range request, so an MP4 with its index at the end is "format not
+    /// supported". `DLNA.ORG_OP=01` declares byte seek, which every /media/ response honours.
+    /// Clients that do not ask (Chromecast, Sonos) get nothing new.
+    private static func answeringDLNAFeatureRequest(_ response: HTTPResponse, for request: HTTPRequest) -> HTTPResponse {
+        guard request.headers[HTTPHeader("getcontentFeatures.dlna.org")] == "1" else { return response }
+        NSLog("LocalMediaServer: answering DLNA feature request")
+        var response = response
+        response.headers[HTTPHeader("contentFeatures.dlna.org")] =
+            "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01500000000000000000000000000000"
+        response.headers[HTTPHeader("transferMode.dlna.org")] = "Streaming"
+        return response
+    }
+
     // MARK: - HEAD Request Handlers (Fix 3)
     
     /// Handle HEAD requests for media files (return headers only, no body)
@@ -927,6 +941,22 @@ class LocalMediaServer {
         )
     }
     
+    /// The bytes a range spec (the header after `bytes=`) asks for, clamped to the file; nil when
+    /// unsatisfiable. Takes `start-end`, `start-` and the suffix `-N`, the last N bytes (RFC 9110 §14.1.2).
+    static func byteRange(_ spec: Substring, fileSize: Int64) -> ClosedRange<Int64>? {
+        let parts = spec.split(separator: "-", omittingEmptySubsequences: false)
+        let start: Int64
+        var end = fileSize - 1
+        if parts[0].isEmpty, parts.count > 1, let suffix = Int64(parts[1]) {
+            start = fileSize - min(suffix, fileSize)
+        } else {
+            start = Int64(parts[0]) ?? 0
+            if parts.count > 1, let last = Int64(parts[1]) { end = min(last, end) }
+        }
+        guard start < fileSize, start <= end else { return nil }
+        return start...end
+    }
+
     /// Handle Range request (critical for seeking)
     private func handleRangeRequest(_ rangeHeader: String, fileURL: URL, fileSize: Int64, contentType: String) -> HTTPResponse {
         // Parse "bytes=start-end" or "bytes=start-"
@@ -935,26 +965,16 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .badRequest)
         }
         
-        let rangeSpec = String(rangeHeader.dropFirst(6))
-        let parts = rangeSpec.split(separator: "-", omittingEmptySubsequences: false)
-        
-        let start = Int64(parts[0]) ?? 0
-        let end: Int64
-        if parts.count > 1 && !parts[1].isEmpty {
-            end = Int64(parts[1]) ?? (fileSize - 1)
-        } else {
-            end = fileSize - 1
-        }
-        
-        guard start < fileSize else {
-            NSLog("LocalMediaServer: Range start %lld >= file size %lld", start, fileSize)
+        guard let range = Self.byteRange(rangeHeader.dropFirst(6), fileSize: fileSize) else {
+            NSLog("LocalMediaServer: Unsatisfiable Range %@ for file size %lld", rangeHeader, fileSize)
             return HTTPResponse(
                 statusCode: .rangeNotSatisfiable,
                 headers: [HTTPHeader("Content-Range"): "bytes */\(fileSize)"]
             )
         }
-        
-        let clampedEnd = min(end, fileSize - 1)
+
+        let start = range.lowerBound
+        let clampedEnd = range.upperBound
         let length = clampedEnd - start + 1
 
         NSLog("LocalMediaServer: Serving range %lld-%lld/%lld (%lld bytes) for %@",
@@ -1182,6 +1202,8 @@ class LocalMediaServer {
             return "video/x-ms-wmv"
         case "flv":
             return "video/x-flv"
+        case "mpg", "mpeg":
+            return "video/mpeg"
         default:
             return "application/octet-stream"
         }

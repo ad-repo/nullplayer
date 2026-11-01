@@ -610,7 +610,15 @@ class CastManager {
                     // Only treat IDLE as "cast ended" after we've seen at least one PLAYING or
                     // BUFFERING status. The Chromecast sends an initial IDLE immediately after
                     // connecting, before the LOAD command is processed — that must be ignored.
-                    if status.playerState == .idle && self.chromecastHasSeenActivePlayback {
+                    // IDLE with idleReason ERROR is the receiver rejecting the media, at any point.
+                    // `.error` marks it handled: status polls keep arriving until the teardown lands.
+                    if status.playerState == .idle && status.idleReason == "ERROR" {
+                        guard self.activeSession?.state != .error else { return }
+                        NSLog("CastManager: Chromecast video IDLE/ERROR — receiver rejected the media, stopping cast")
+                        self.activeSession?.state = .error
+                        self.postError(.playbackFailed("the cast device could not play this video"))
+                        Task { await self.stopCasting() }
+                    } else if status.playerState == .idle && self.chromecastHasSeenActivePlayback {
                         NSLog("CastManager: Chromecast video IDLE after active playback — stopping cast (hasSeenActive=true)")
                         self.chromecastHasSeenActivePlayback = false
                         Task { await self.stopCasting() }
@@ -2768,7 +2776,9 @@ class CastManager {
                 object: nil,
                 userInfo: ["error": error]
             )
-            
+            // A modal alert would block the CLI's main thread; it reports errors itself.
+            guard !AudioEngine.isHeadless else { return }
+
             // Show alert to user
             let alert = NSAlert()
             alert.messageText = "Casting Error"
