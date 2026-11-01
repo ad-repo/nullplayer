@@ -30,6 +30,10 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         // NullPlayer's shadow either way: the face's own, or the unskinned player's in `present`.
         window.hasShadow = false
         window.isMovableByWindowBackground = false
+        // The whole face rectangle takes clicks, clear pixels included: Audion drew the desktop under
+        // the face into an opaque window (Panic, "Magic Transparency Trick"). Set explicitly, since
+        // left at its default macOS passes clicks on clear pixels through to the window behind.
+        window.ignoresMouseEvents = false
         window.title = "NullPlayer — Audion Faces"
         window.setAccessibilityIdentifier("AudionFaceMainWindow")
         window.center()

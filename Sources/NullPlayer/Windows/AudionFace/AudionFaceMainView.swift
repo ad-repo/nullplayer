@@ -137,15 +137,6 @@ final class AudionFaceMainView: NSView {
         return AudionFaceScene.timeDigitRects(face).first { $0.contains(x: point.x, y: point.y) }
     }
 
-    /// The window shape is the rendered alpha: a click on a clear pixel goes to whatever is behind.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        guard let image = canvas.image, let local = superview.map({ convert(point, from: $0) }),
-              bounds.contains(local) else { return super.hitTest(point) }
-        let x = Int(local.x * CGFloat(image.width) / bounds.width)
-        let y = Int(local.y * CGFloat(image.height) / bounds.height)
-        return canvas.isOpaque(x: x, y: y) ? self : nil
-    }
-
     // MARK: - Actions
 
     /// A button's press. Volume and info open this view's popups beneath the button; the rest are
