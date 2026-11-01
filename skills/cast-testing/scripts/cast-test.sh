@@ -11,7 +11,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 
-BIN=.build/arm64-apple-macosx/debug/NullPlayer
+BIN=.build/$(uname -m)-apple-macosx/debug/NullPlayer
 OUT=tmp/cast-test
 CC_NAME=""; DLNA_NAME=""; SONOS_ROOM=""
 while [ $# -gt 0 ]; do

@@ -10,7 +10,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 
-BIN=.build/arm64-apple-macosx/debug/NullPlayer
+BIN=.build/$(uname -m)-apple-macosx/debug/NullPlayer
 OUT=$PWD/tmp/cli-test
 HTTP_PORT=8799
 FAILS=0

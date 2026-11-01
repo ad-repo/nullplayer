@@ -391,6 +391,8 @@ class CLIPlayer: AudioEngineDelegate {
             }
 
             display.printVideoInfo(title: item.displayTitle, device: device.name, manualQuitOnly: device.type == .dlnaTV)
+            // Started before the cast call, so a setup that never returns still meets the deadline.
+            startVideoProgressTimer()
 
             switch item {
             case .localFile(let url, let title):
@@ -410,11 +412,10 @@ class CLIPlayer: AudioEngineDelegate {
             }
         } catch {
             videoCast = nil
+            stopVideoProgressTimer()
             removeVideoCastObservers()
             throw error
         }
-
-        startVideoProgressTimer()
     }
 
     private func installVideoCastObservers() {

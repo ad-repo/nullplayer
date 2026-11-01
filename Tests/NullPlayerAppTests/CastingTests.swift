@@ -238,6 +238,17 @@ final class CastingTests: XCTestCase {
         XCTAssertEqual(mts.contentType, "video/mp2t")
     }
 
+    func testLocalMediaServerByteRanges() {
+        XCTAssertEqual(LocalMediaServer.byteRange("0-", fileSize: 1000), 0...999)
+        XCTAssertEqual(LocalMediaServer.byteRange("100-199", fileSize: 1000), 100...199)
+        XCTAssertEqual(LocalMediaServer.byteRange("900-5000", fileSize: 1000), 900...999)
+        XCTAssertEqual(LocalMediaServer.byteRange("-500", fileSize: 1000), 500...999)
+        XCTAssertEqual(LocalMediaServer.byteRange("-5000", fileSize: 1000), 0...999)
+        XCTAssertNil(LocalMediaServer.byteRange("-0", fileSize: 1000))
+        XCTAssertNil(LocalMediaServer.byteRange("1000-", fileSize: 1000))
+        XCTAssertNil(LocalMediaServer.byteRange("500-100", fileSize: 1000))
+    }
+
     func testChromecastVideoIdleErrorBeforePlaybackFailsTheCast() {
         let wasHeadless = AudioEngine.isHeadless
         AudioEngine.isHeadless = true  // postError would otherwise run a modal alert
