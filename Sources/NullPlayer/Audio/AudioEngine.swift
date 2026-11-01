@@ -3902,7 +3902,7 @@ class AudioEngine {
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
-        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
 
     static func shouldStopRadioForIncomingTrack(
@@ -4014,8 +4014,7 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: validTracks)
 
-        let zeroDurationLocalIDs = validTracks.filter { (($0.duration ?? 0) == 0) && $0.url.isFileURL }.map(\.id)
-        enrichPlaylistDurationsAsync(for: zeroDurationLocalIDs)
+        enrichPlaylistFormatsAsync(for: validTracks.map(\.id))
 
         if !validTracks.isEmpty {
             if shuffleEnabled {
@@ -4083,75 +4082,77 @@ class AudioEngine {
         }
     }
 
-    /// Fills in duration for tracks that have duration == nil.
+    /// Fills in what a lightweight import leaves out — duration, bitrate, sample rate and channels.
     /// Looks up each URL in the MediaLibrary in-memory index first (instant, no I/O).
     /// Falls back to AVAudioFile only for tracks not in the library — done off the main thread.
-    private func enrichPlaylistDurationsAsync(for trackIDs: [UUID]) {
+    private func enrichPlaylistFormatsAsync(for trackIDs: [UUID]) {
         guard !trackIDs.isEmpty else { return }
         let idsToEnrich = Set(trackIDs)
 
         // Snapshot tracks needing enrichment from the main actor.
         let snapshots: [(id: UUID, url: URL)] = playlist.compactMap { t in
-            guard idsToEnrich.contains(t.id), (t.duration ?? 0) == 0, t.url.isFileURL else { return nil }
+            guard idsToEnrich.contains(t.id), t.lacksFormat, t.url.isFileURL else { return nil }
             return (id: t.id, url: t.url)
         }
         guard !snapshots.isEmpty else { return }
 
         // Try the MediaLibrary in-memory index first — O(1) per track, no disk I/O.
-        var durations: [UUID: TimeInterval] = [:]
+        var formats: [UUID: Track.Format] = [:]
         var needsFileIO: [(id: UUID, url: URL)] = []
         for item in snapshots {
-            if let lib = MediaLibrary.shared.findTrack(byURL: item.url), lib.duration > 0 {
-                durations[item.id] = lib.duration
+            if let lib = MediaLibrary.shared.findTrack(byURL: item.url), lib.duration > 0,
+               lib.bitrate != nil, lib.sampleRate != nil, lib.channels != nil {
+                formats[item.id] = Track.Format(duration: lib.duration, bitrate: lib.bitrate,
+                                                sampleRate: lib.sampleRate, channels: lib.channels)
             } else {
                 needsFileIO.append(item)
             }
         }
 
         // Apply library hits immediately on the main thread.
-        applyDurationUpdates(durations)
+        applyFormatUpdates(formats)
 
         // For anything not in the library, fall back to AVAudioFile on a background thread.
         guard !needsFileIO.isEmpty else { return }
         Task.detached(priority: .utility) { [weak self] in
-            var fileDurations: [UUID: TimeInterval] = [:]
+            var fileFormats: [UUID: Track.Format] = [:]
             for item in needsFileIO {
+                let file = try? AVAudioFile(forReading: item.url)
                 // MPEG-4 Opus can fail to open natively or report zero frames; the asset still has a duration.
-                var dur = (try? AVAudioFile(forReading: item.url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
+                var dur = file.map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
                 if dur <= 0, LocalAudioFile.mayNeedFallbackDecode(item.url) {
                     dur = (try? await AVURLAsset(url: item.url).load(.duration).seconds) ?? 0
                 }
-                if dur > 0 { fileDurations[item.id] = dur }
+                let format = Track.Format(
+                    duration: dur > 0 ? dur : nil,
+                    bitrate: Track.estimatedBitrateKbps(of: item.url, duration: dur),
+                    sampleRate: file.map { Int($0.processingFormat.sampleRate) },
+                    channels: file.map { Int($0.processingFormat.channelCount) })
+                if format.duration != nil || format.sampleRate != nil { fileFormats[item.id] = format }
             }
-            guard !fileDurations.isEmpty else { return }
+            guard !fileFormats.isEmpty else { return }
             // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable.
-            let durationUpdates = fileDurations
+            let formatUpdates = fileFormats
             await MainActor.run { [weak self] in
-                self?.applyDurationUpdates(durationUpdates)
+                self?.applyFormatUpdates(formatUpdates)
             }
         }
     }
 
-    /// Replaces playlist tracks whose UUIDs appear in `durations` with copies carrying the real duration.
-    /// Must be called on the main thread.
-    private func applyDurationUpdates(_ durations: [UUID: TimeInterval]) {
-        guard !durations.isEmpty else { return }
+    /// Replaces playlist tracks whose UUIDs appear in `formats` with copies carrying the file's
+    /// format, and the playing track too, so every readout of its bitrate and sample rate fills in
+    /// (as `streamingPlayerDidDetectFormat` does for a stream). Must be called on the main thread.
+    private func applyFormatUpdates(_ formats: [UUID: Track.Format]) {
+        guard !formats.isEmpty else { return }
         var changed = false
         for (idx, track) in playlist.enumerated() {
-            guard let dur = durations[track.id] else { continue }
-            playlist[idx] = Track(
-                id: track.id, url: track.url, title: track.title,
-                artist: track.artist, album: track.album, duration: dur,
-                bitrate: track.bitrate, sampleRate: track.sampleRate,
-                channels: track.channels, plexRatingKey: track.plexRatingKey,
-                plexServerId: track.plexServerId, subsonicId: track.subsonicId,
-                subsonicServerId: track.subsonicServerId, jellyfinId: track.jellyfinId,
-                jellyfinServerId: track.jellyfinServerId, embyId: track.embyId,
-                embyServerId: track.embyServerId, artworkThumb: track.artworkThumb,
-                mediaType: track.mediaType, genre: track.genre,
-                contentType: track.contentType
-            )
+            guard let format = formats[track.id] else { continue }
+            playlist[idx] = track.filling(format)
             changed = true
+        }
+        if let track = currentTrack, let format = formats[track.id] {
+            let filled = track.filling(format)
+            if filled != track { currentTrack = filled }
         }
         if changed { playlistDidChange() }
     }
@@ -4179,8 +4180,7 @@ class AudioEngine {
         cancelPendingLocalLoad()
         invalidateShufflePlaybackStateAfterPlaylistMutation()
         playlistDidChange()
-        let missingDuration = tracks.filter { ($0.duration ?? 0) == 0 && $0.url.isFileURL }.map(\.id)
-        enrichPlaylistDurationsAsync(for: missingDuration)
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
     
     /// Select a track by index for display without loading or playing it.
@@ -4516,7 +4516,7 @@ class AudioEngine {
         invalidateShufflePlaybackStateAfterPlaylistMutation()
 
         playlistDidChange()
-        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
     
     /// Routes a selection once. Local success/failure publication shares one completion seam;

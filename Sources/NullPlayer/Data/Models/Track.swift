@@ -145,13 +145,8 @@ struct Track: Identifiable, Equatable {
                     extractedDuration = Double(audioFile.length) / format.sampleRate
                 }
                 
-                // Estimate bitrate from file size and duration
-                if let duration = extractedDuration, duration > 0 {
-                    if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int {
-                        // Bitrate = (file size in bits) / duration in seconds
-                        let bitrateInBps = Double(fileSize * 8) / duration
-                        extractedBitrate = Int(bitrateInBps / 1000)  // Convert to kbps
-                    }
+                if let duration = extractedDuration {
+                    extractedBitrate = Self.estimatedBitrateKbps(of: url, duration: duration)
                 }
             } catch {
                 // Log the failure - this file will likely also fail during playback
@@ -190,11 +185,8 @@ struct Track: Identifiable, Equatable {
                 }
                 
                 // Estimate bitrate if not set
-                if extractedBitrate == nil, let duration = extractedDuration, duration > 0, url.isFileURL {
-                    if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int {
-                        let bitrateInBps = Double(fileSize * 8) / duration
-                        extractedBitrate = Int(bitrateInBps / 1000)
-                    }
+                if extractedBitrate == nil, let duration = extractedDuration, url.isFileURL {
+                    extractedBitrate = Self.estimatedBitrateKbps(of: url, duration: duration)
                 }
             }
         }
@@ -377,6 +369,44 @@ struct Track: Identifiable, Equatable {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// What a file's own header says about it — everything `init(lightweightURL:)` leaves out to
+    /// keep a bulk import fast, and the engine fills in afterwards.
+    struct Format: Sendable {
+        var duration: TimeInterval?
+        var bitrate: Int?
+        var sampleRate: Int?
+        var channels: Int?
+    }
+
+    /// True while any field of `Format` is still unknown (a zero duration counts as unknown).
+    var lacksFormat: Bool {
+        (duration ?? 0) == 0 || bitrate == nil || sampleRate == nil || channels == nil
+    }
+
+    /// A copy with each unknown `Format` field taken from `format`; a field already known wins.
+    func filling(_ format: Format) -> Track {
+        Track(id: id, url: url, title: title, artist: artist, album: album,
+              duration: (duration ?? 0) > 0 ? duration : format.duration,
+              bitrate: bitrate ?? format.bitrate, sampleRate: sampleRate ?? format.sampleRate,
+              channels: channels ?? format.channels,
+              plexRatingKey: plexRatingKey, plexServerId: plexServerId,
+              subsonicId: subsonicId, subsonicServerId: subsonicServerId,
+              jellyfinId: jellyfinId, jellyfinServerId: jellyfinServerId,
+              embyId: embyId, embyServerId: embyServerId, artworkThumb: artworkThumb,
+              mediaType: mediaType, genre: genre,
+              playHistoryContentTypeOverride: playHistoryContentTypeOverride,
+              contentType: contentType, cueStartOffset: cueStartOffset, cueEndOffset: cueEndOffset,
+              cueSourceURL: cueSourceURL, isRadioOrigin: isRadioOrigin, isYouTubeOrigin: isYouTubeOrigin)
+    }
+
+    /// The average bitrate a local file of this duration works out to, in kbps.
+    static func estimatedBitrateKbps(of url: URL, duration: TimeInterval) -> Int? {
+        guard duration > 0,
+              let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int
+        else { return nil }
+        return Int(Double(fileSize * 8) / duration / 1000)
     }
 
     /// True when this row is a state-restore placeholder awaiting URL refresh.
