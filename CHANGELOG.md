@@ -54,9 +54,26 @@
   lines are aligned again; Geneva and Monaco draw as the crisp Mac screen fonts instead of blurred
   outlines; 29 freeware fonts face authors shipped with their faces (Mini, Orchis, the 04b family,
   BitBit, IceDogg and others) now ship with NullPlayer and draw in place of lookalikes; Kidprint
-  draws in Comic Neue; a face that set no font draws in Audion's own Geneva 9; and the text
+  draws in Comic Neue; a face that set no font draws in Audion's own Geneva 10; and the text
   settings that were lost when the faces were converted in 2021 (Mint, Display, FX and others) are
   restored from Panic's original downloads.
+- **Audion faces' stand-in fonts look like the originals.** Chicago, Charcoal and Gadget draw at their
+  real size instead of three-quarters of it, Techno draws condensed, Sand as a felt-tip hand and
+  Capitals in engraved capitals; New York, Facet, Arial Black and a dozen other names find the
+  matching Mac font, and Institution, Machine, Junior Pro, Stencil, Eurostile and Square721 draw in
+  bundled open-licence lookalikes instead of Helvetica.
+- **aPop's lines draw in inverse video**, white text on a black box, as Audion drew them.
+- **Geneva and Monaco text on Audion faces sits on the right line** (Car Stereo and most other
+  Geneva 9 faces drew it two pixels too high).
+- **Plasmat's colon no longer flickers on internet radio** (#640): a face's streaming animation now
+  replaces the readouts under it instead of showing through their gaps. The Library Browser's corners
+  are transparent under Audion on non-Retina displays.
+- **iPod 1.2's "<<< STREAMING" draws at its own size** instead of stretched over the display (#641).
+- **Long titles on Audion faces scroll in full** instead of being cut with "…" (Reduce Motion still cuts them).
+- **Text an Audion face draws outside its window shape shows**, as it did in Audion (X-factor,
+  Jack&Sally, Smart, Ugly and others drew their titles over the desktop).
+- **A click on a clear part of an Audion face hits the face** instead of the window behind it, so
+  Smart's see-through display drags the player as Audion's did.
 
 ## 0.34.0
 

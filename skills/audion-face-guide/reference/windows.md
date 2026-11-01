@@ -15,13 +15,16 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 | `AudionFace/AudionFaceImporter.swift` | Installed faces, the `audionFaceName` selection, folder/zip install (validate the copy, then one move), remove |
 | `AudionFace/AudionFacePalette.swift` | The `SkinnedSurfaceStyle` NullPlayer's windows wear beside a face |
 
-- **Hit testing:** a pixel whose rendered alpha is 0 is not the window (`hitTest` returns nil; it
-  reads `AudionFaceCanvas.isOpaque`, the alpha plane the canvas keeps for `outlineChanged`);
-  then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`, a hit only if
+- **Hit testing:** the whole face rectangle is the window, clear pixels included: the view keeps
+  NSView's own `hitTest`, and the window sets `ignoresMouseEvents = false` explicitly, without which
+  macOS passes a click on a clear pixel to the window behind. Audion drew the desktop under the
+  face into an opaque window (Panic, "Magic Transparency Trick"), so its clear areas were its own;
+  on Smart, whose whole display is clear, a click there fell through to the desktop. Decided
+  2026-11-01 (the user's call), replacing Phase 4's alpha-0 rule. Then the topmost visible button by `AudionFaceScene.button(atX:y:face:host:)`, a hit only if
   `AudionFaceScene.isEnabled` (the rule `buttonOps` draws the disabled sprite by: stop needs a
   track, and `interaction.disabled`); then, with a track, a time digit (`AudionFaceScene.timeDigitRects`)
-  opens the position slider; anything else drags. `drag.png` is not read: every opaque non-button
-  pixel drags, a superset of the authored drag region, and FaceKit ignores the file too (decided in
+  opens the position slider; anything else drags. `drag.png` is not read: every non-button pixel
+  drags, a superset of the authored drag region, and FaceKit ignores the file too (decided in
   Phase 4; `format.md` § *Files FaceKit ignores*).
 - **Drag** goes through `WindowManager.windowWillStartDragging` / `windowWillMove` /
   `windowDidFinishDragging` (`SkinnedWindowDrag`, shared with Sonique, used by both the face and the unskinned
