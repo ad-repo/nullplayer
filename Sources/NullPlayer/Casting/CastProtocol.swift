@@ -161,6 +161,8 @@ struct CastMediaStatus {
     var duration: TimeInterval?
     /// Current player state
     var playerState: CastPlayerState = .unknown
+    /// Why the player went IDLE (`FINISHED`, `CANCELLED`, `INTERRUPTED`, `ERROR`); nil otherwise
+    var idleReason: String?
     /// Media session ID
     var mediaSessionId: Int = 0
 }
@@ -661,15 +663,16 @@ class CastSessionController {
                        let state = CastPlayerState(rawValue: stateString) {
                         mediaStatus.playerState = state
                     }
-                    
+                    mediaStatus.idleReason = status["idleReason"] as? String
+
                     // Extract duration from media object if present
                     if let media = status["media"] as? [String: Any],
                        let duration = media["duration"] as? Double {
                         mediaStatus.duration = duration
                     }
                     
-                    NSLog("CastSessionController: MEDIA_STATUS - sessionId: %d, time: %.1f, state: %@", 
-                          msid, mediaStatus.currentTime, mediaStatus.playerState.rawValue)
+                    NSLog("CastSessionController: MEDIA_STATUS - sessionId: %d, time: %.1f, state: %@, idleReason: %@",
+                          msid, mediaStatus.currentTime, mediaStatus.playerState.rawValue, mediaStatus.idleReason ?? "-")
                     
                     // Notify delegate on main thread
                     DispatchQueue.main.async { [weak self] in

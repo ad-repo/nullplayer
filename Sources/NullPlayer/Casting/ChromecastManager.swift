@@ -61,8 +61,9 @@ class ChromecastManager: CastSessionControllerDelegate {
         castDiscoveryLog("ChromecastManager: Starting discovery...")
         isDiscovering = true
         
-        // Browse for Chromecast devices via mDNS
-        let descriptor = NWBrowser.Descriptor.bonjour(type: "_googlecast._tcp", domain: "local.")
+        // Browse for Chromecast devices via mDNS. The TXT variant is what delivers `fn`/`id`
+        // (createDevice); plain `.bonjour` results carry no metadata.
+        let descriptor = NWBrowser.Descriptor.bonjourWithTXTRecord(type: "_googlecast._tcp", domain: "local.")
         let parameters = NWParameters()
         
         browser = NWBrowser(for: descriptor, using: parameters)

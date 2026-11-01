@@ -220,12 +220,24 @@ struct CLIQueryHandler {
             }
         }
 
+        struct DeviceRow: Encodable {
+            let name: String
+            let type: String
+            let id: String
+            let supportsVideo: Bool
+            let address: String
+            let port: Int
+        }
+
         if json {
-            CLIDisplay.printJSON(devices.map { ["name": $0.name, "type": "\($0.type)"] })
+            CLIDisplay.printJSON(devices.map {
+                DeviceRow(name: $0.name, type: "\($0.type)", id: $0.id,
+                          supportsVideo: $0.supportsVideo, address: $0.address, port: $0.port)
+            })
         } else {
             CLIDisplay.printTable(
-                headers: ["Name", "Type"],
-                rows: devices.map { [$0.name, "\($0.type)"] }
+                headers: ["Name", "Type", "ID"],
+                rows: devices.map { [$0.name, "\($0.type)", $0.id] }
             )
         }
     }

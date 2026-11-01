@@ -4684,6 +4684,9 @@ class AudioEngine {
                     loadTrack(at: currentIndex, intent: request.intent, transport: transport)
                 } else if let playNow = transport.playNow {
                     withdrawPlayNow(playNow, failure: first.failure, fileIsMissing: first.fileIsMissing)
+                } else if failure.folderIsPresent {
+                    // Nothing after it would open: the queue ran out, as `advancePastFailedTrack`'s end does.
+                    stopAfterQueueExhausted()
                 }
             }
         }

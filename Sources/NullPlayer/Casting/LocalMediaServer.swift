@@ -292,7 +292,7 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return await self.handleMediaRequest(request)
+            return Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request)
         }
         
         // Add route handler for stream proxy (Subsonic/remote URLs)
@@ -308,7 +308,7 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return await self.handleMediaHeadRequest(request)
+            return Self.answeringDLNAFeatureRequest(await self.handleMediaHeadRequest(request), for: request)
         }
         
         await server.appendRoute("HEAD /stream/*") { [weak self] request in
@@ -743,6 +743,20 @@ class LocalMediaServer {
         }
     }
     
+    /// A DLNA renderer asks with `getcontentFeatures.dlna.org: 1`; left unanswered, a Samsung TV
+    /// (measured) never sends a Range request, so an MP4 with its index at the end is "format not
+    /// supported". `DLNA.ORG_OP=01` declares byte seek, which every /media/ response honours.
+    /// Clients that do not ask (Chromecast, Sonos) get nothing new.
+    private static func answeringDLNAFeatureRequest(_ response: HTTPResponse, for request: HTTPRequest) -> HTTPResponse {
+        guard request.headers[HTTPHeader("getcontentFeatures.dlna.org")] == "1" else { return response }
+        NSLog("LocalMediaServer: answering DLNA feature request for %@", request.path)
+        var response = response
+        response.headers[HTTPHeader("contentFeatures.dlna.org")] =
+            "DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01500000000000000000000000000000"
+        response.headers[HTTPHeader("transferMode.dlna.org")] = "Streaming"
+        return response
+    }
+
     // MARK: - HEAD Request Handlers (Fix 3)
     
     /// Handle HEAD requests for media files (return headers only, no body)

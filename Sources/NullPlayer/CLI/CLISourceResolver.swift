@@ -75,6 +75,19 @@ struct CLISourceResolver {
     static func resolve(_ opts: CLIOptions) async throws -> CLIResolveResult {
         let source = opts.source ?? "local"
 
+        #if DEBUG
+        // Test hook, the CLI's NULLPLAYER_PLAY: newline-separated local paths or http(s) URLs queued
+        // as one playlist, so a script can build `[good, bad, good]` without a library. Newlines, not
+        // the GUI's `:`, because a URL contains one.
+        if let queue = ProcessInfo.processInfo.environment["NULLPLAYER_CLI_QUEUE"] {
+            return .tracks(queue.split(separator: "\n").map { entry in
+                let url = entry.hasPrefix("http") ? URL(string: String(entry))! : URL(fileURLWithPath: String(entry))
+                return Track(url: url, title: url.deletingPathExtension().lastPathComponent,
+                             contentType: detectContentType(for: url).contentType)
+            })
+        }
+        #endif
+
         if let filePath = opts.file {
             return try resolveFile(filePath)
         }

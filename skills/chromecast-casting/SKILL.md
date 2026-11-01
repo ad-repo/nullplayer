@@ -308,6 +308,8 @@ let slice = buffer[startIdx..<endIdx]
 swift scripts/test_chromecast.swift
 ```
 
+For the end-to-end CLI checks against a real Chromecast and DLNA TV, see `cast-testing`.
+
 ### `NULLPLAYER_UPNP_LOG` — the DLNA/UPnP wire log
 
 `UPnPManager` is silent unless this is set (`upnpLog`, an `EnvGatedLog` read once at launch);
