@@ -389,9 +389,14 @@ class AudioEngine {
         }
     }
     
-    /// Current track
+    private var currentTrackStorage: Track?
+
+    /// The playing track. Setting it is a track change: everything that reacts to a new song runs.
+    /// A field filled in on the same track goes through `refreshCurrentTrack` instead.
     private(set) var currentTrack: Track? {
-        didSet {
+        get { currentTrackStorage }
+        set {
+            currentTrackStorage = newValue
             delegate?.audioEngineDidChangeTrack(currentTrack)
             eqProfileController.trackDidChange(currentTrack)
             // Reset BPM detector for new track
@@ -4152,9 +4157,17 @@ class AudioEngine {
         }
         if let track = currentTrack, let format = formats[track.id] {
             let filled = track.filling(format)
-            if filled != track { currentTrack = filled }
+            if filled != track { refreshCurrentTrack(filled) }
         }
         if changed { playlistDidChange() }
+    }
+
+    /// The playing track with a field filled in after it started — its format, read from the file
+    /// or detected in the stream. Not a track change: the readouts redraw, and the BPM detector, the
+    /// playlists' jump to the playing row, the artwork and Now Playing are left alone.
+    private func refreshCurrentTrack(_ track: Track) {
+        currentTrackStorage = track
+        delegate?.audioEngineDidChangeTrack(track)
     }
 
     /// Append tracks to the playlist without starting playback
@@ -6808,41 +6821,13 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Only update if not already set
         if track.sampleRate == nil || track.channels == nil {
             NSLog("AudioEngine: Detected stream format - sampleRate: %d, channels: %d", sampleRate, channels)
-            
-            // Create updated track with format info
-            let updatedTrack = Track(
-                id: track.id,
-                url: track.url,
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration: track.duration,
-                bitrate: track.bitrate,
-                sampleRate: track.sampleRate ?? sampleRate,
-                channels: track.channels ?? channels,
-                plexRatingKey: track.plexRatingKey,
-                plexServerId: track.plexServerId,
-                subsonicId: track.subsonicId,
-                subsonicServerId: track.subsonicServerId,
-                jellyfinId: track.jellyfinId,
-                jellyfinServerId: track.jellyfinServerId,
-                embyId: track.embyId,
-                embyServerId: track.embyServerId,
-                artworkThumb: track.artworkThumb,
-                mediaType: track.mediaType,
-                genre: track.genre,
-                contentType: track.contentType
-            )
-            
-            currentTrack = updatedTrack
-            
+            let updatedTrack = track.filling(Track.Format(sampleRate: sampleRate, channels: channels))
+            refreshCurrentTrack(updatedTrack)
+
             // Update playlist entry as well
             if currentIndex >= 0 && currentIndex < playlist.count {
                 playlist[currentIndex] = updatedTrack
             }
-            
-            // Notify delegate of track update (for UI refresh)
-            delegate?.audioEngineDidChangeTrack(updatedTrack)
         }
     }
     
