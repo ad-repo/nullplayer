@@ -421,8 +421,12 @@ extension WasabiSceneRenderer {
             let phase = (clock() * Self.tickerSpeed).truncatingRemainder(dividingBy: cycle)
             return (CGFloat(phase <= span ? phase : cycle - phase), false)
         }
-        // One cycle carries the string its own width plus the gap, at which point the trailing copy
-        // has taken its place exactly.
+        return wrappingMotion(textWidth: textWidth)
+    }
+
+    /// The continuous scroll: one cycle carries the string its own width plus the gap, at which
+    /// point the trailing copy has taken its place exactly.
+    private func wrappingMotion(textWidth: CGFloat) -> (offset: CGFloat, wraps: Bool)? {
         let cycle = Double(textWidth + Self.tickerGap)
         guard cycle > 0 else { return nil }
         return (CGFloat((clock() * Self.tickerSpeed).truncatingRemainder(dividingBy: cycle)), true)
@@ -438,12 +442,12 @@ extension WasabiSceneRenderer {
     }
 
     /// Draw a run of bitmap-font glyphs. `ticker` is the object whose scroll state applies, or nil for
-    /// content NullPlayer draws itself (a playlist row never scrolls).
+    /// content NullPlayer draws itself, which scrolls only when `marquee` asks (the playing row).
     private func drawBitmapText(_ text: String, definition: WalResourceDefinition, frame: CGRect,
                                 alignment: NSTextAlignment,
                                 verticalAlignment: WasabiTextMetrics.VerticalAlignment = .center,
                                 colonWidth: CGFloat? = nil,
-                                ticker: WasabiObject?, context: WasabiDrawList) {
+                                ticker: WasabiObject?, marquee: Bool = false, context: WasabiDrawList) {
         guard let sheet = resources.fontSheet(for: definition) else { return }
         let run = WasabiTextMetrics.BitmapRun(definition: definition, colonWidth: colonWidth)
         let charWidth = run.charWidth
@@ -460,8 +464,9 @@ extension WasabiSceneRenderer {
         // the run at `frame.maxX`, so at rest the text sat entirely off the right edge and a long
         // title simply vanished instead of scrolling.
         var repeats: [CGFloat] = []
-        if run.advanceLength(of: text) > frame.width, let ticker,
-           let scroll = tickerMotion(for: ticker, overflow: width - frame.width, textWidth: width) {
+        if run.advanceLength(of: text) > frame.width,
+           let scroll = ticker.map({ tickerMotion(for: $0, overflow: width - frame.width, textWidth: width) })
+               ?? (marquee ? wrappingMotion(textWidth: width) : nil) {
             startX = frame.minX - scroll.offset
             repeats = scroll.wraps ? [width + Self.tickerGap] : []
         }
@@ -498,17 +503,19 @@ extension WasabiSceneRenderer {
     }
 
     /// Draw one line of NullPlayer-owned content (a playlist row, a status line) with the skin's own
-    /// font when it has one, and a system font when it does not.
+    /// font when it has one, and a system font when it does not. `marquee` scrolls a line that does
+    /// not fit, as every family's playlist scrolls its playing row, instead of cutting it short.
     func drawSurfaceText(_ text: String, in rect: CGRect, color: NSColor,
                                  alignment: NSTextAlignment, pointSize: CGFloat,
-                                 context: WasabiDrawList) {
+                                 marquee: Bool = false, context: WasabiDrawList) {
         if let definition = surfaceFont, definition.kind == "bitmapfont" {
             drawBitmapText(text, definition: definition, frame: rect, alignment: alignment,
-                           ticker: nil, context: context)
+                           ticker: nil, marquee: marquee, context: context)
             return
         }
         let font = surfaceTextFont(pointSize: pointSize)
-        drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment, context: context)
+        drawFlippedText(text, in: rect, font: font, color: color, alignment: alignment,
+                        marquee: marquee, context: context)
     }
 
     /// How wide `drawSurfaceText` will draw a string. Resolves the font by the same two branches, so
@@ -552,13 +559,15 @@ extension WasabiSceneRenderer {
     }
 
     private func drawFlippedText(_ text: String, in frame: CGRect, font: NSFont, color: NSColor,
-                                 alignment: NSTextAlignment, context: WasabiDrawList) {
+                                 alignment: NSTextAlignment, marquee: Bool = false,
+                                 context: WasabiDrawList) {
         context.saveGState()
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
         let width = resources.textWidth(of: text, font: font)
-        if width > frame.width {
+        let scroll = marquee && width > frame.width ? wrappingMotion(textWidth: width) : nil
+        if width > frame.width, scroll == nil {
             // **The row does not fit, so it keeps `NSString.draw`.** `.byTruncatingTail` is not just
             // a cut: AppKit first tightens inter-character spacing by up to
             // `tighteningFactorForTruncation` (0.05 by default) to save a character, and that drift
@@ -576,15 +585,19 @@ extension WasabiSceneRenderer {
             // alignment's own origin. `NSString.draw` scissored at the rect, so the rect becomes the
             // clip.
             context.clip(to: frame)
-            let x: CGFloat
+            var x: CGFloat
             switch alignment {
             case .right: x = frame.maxX - width
             case .center: x = frame.midX - width / 2
             default: x = frame.minX
             }
-            drawCachedLine(text, font: font, color: color, x: x,
-                           baseline: frame.maxY - resources.baselineOffset(of: font),
-                           context: context)
+            if let scroll { x = frame.minX - scroll.offset }
+            // A scrolling line draws its trailing copy too, so it never blanks between cycles.
+            for origin in scroll == nil ? [0] : [0, width + Self.tickerGap] {
+                drawCachedLine(text, font: font, color: color, x: x + origin,
+                               baseline: frame.maxY - resources.baselineOffset(of: font),
+                               context: context)
+            }
         }
         context.restoreGState()
     }

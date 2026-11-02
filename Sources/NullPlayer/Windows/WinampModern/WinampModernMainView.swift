@@ -286,26 +286,35 @@ final class WinampModernMainView: NSView {
         timeRectsCache = nil
     }
 
-    /// The boxes of everything in this scene that moves on its own — animated layers, song tickers,
-    /// ticker text, and any layer whose script has switched Layer FX on. A warped layer carries its
-    /// object, so a tick can skip it while its mesh holds still.
+    /// One thing in the scene that moves on its own, and what decides whether a tick repaints it.
+    private enum AnimatingRect {
+        /// Every tick: an animated layer, a song ticker, ticker text.
+        case always(NSRect)
+        /// Only when its mesh moved: a layer whose script has switched Layer FX on.
+        case warped(NSRect, WasabiObject)
+        /// Only the playing row's title, and only while it overflows and scrolls.
+        case playlist(WasabiObjectID)
+    }
+
+    /// Everything in this scene that moves on its own.
     ///
     /// Repainting *these* rather than the whole window is what keeps an animation smooth: Defix's
     /// player costs 19.3 ms a frame repainted whole at Retina scale and 6.9 ms clipped to its meters,
     /// and a 33 ms animation step cannot survive the first number. Cached because the scene walk is
     /// not free and the boxes only move when the scene itself does.
-    private func animatingRects() -> [(rect: NSRect, warped: WasabiObject?)] {
+    private func animatingRects() -> [AnimatingRect] {
         if let animatingRectsCache { return animatingRectsCache }
-        let rects = renderer.sceneNodes().compactMap { node -> (rect: NSRect, warped: WasabiObject?)? in
+        let rects = renderer.sceneNodes().compactMap { node -> AnimatingRect? in
             let object = node.object
             let rect = viewRect(fromSkin: node.frame).insetBy(dx: -2, dy: -2)
-            if object.tag.is(anyOf: [.animatedLayer, .songticker]) { return (rect, nil) }
+            if object.tag.is(anyOf: [.animatedLayer, .songticker]) { return .always(rect) }
             if object.tag.is(.text) {
                 // A plain `text` that opts into ticker scrolling also needs the redraw clock.
                 let ticker = (object.attributes["ticker"] ?? "0").lowercased()
-                if !["0", "off", "false", "no"].contains(ticker) { return (rect, nil) }
+                if !["0", "off", "false", "no"].contains(ticker) { return .always(rect) }
             }
-            return scripts.layerFXState(of: object)?.enabled == true ? (rect, object) : nil
+            if WasabiSceneRenderer.componentKind(of: object) == .playlist { return .playlist(object.stableID) }
+            return scripts.layerFXState(of: object)?.enabled == true ? .warped(rect, object) : nil
         }
         animatingRectsCache = rects
         return rects
@@ -317,9 +326,12 @@ final class WinampModernMainView: NSView {
             frames.owesWholeFrame = true
             return
         }
-        let rects = animatingRects().compactMap { rect, warped -> NSRect? in
-            guard let warped else { return rect }
-            return warpChanged(warped) ? rect : nil
+        let rects = animatingRects().compactMap { entry -> NSRect? in
+            switch entry {
+            case .always(let rect): return rect
+            case .warped(let rect, let object): return warpChanged(object) ? rect : nil
+            case .playlist(let id): return renderer.playlistMarqueeRects[id].map(viewRect(fromSkin:))
+            }
         }
         guard !rects.isEmpty else { return }
         // A scene with a great many moving parts is cheaper to repaint in one pass than to invalidate
@@ -346,7 +358,7 @@ final class WinampModernMainView: NSView {
     }
 
     /// Dropped whenever the scene itself may have changed shape.
-    private var animatingRectsCache: [(rect: NSRect, warped: WasabiObject?)]?
+    private var animatingRectsCache: [AnimatingRect]?
     /// The mesh each warped layer was last painted with (`warpChanged`).
     private var paintedWarps: [WasabiObjectID: WasabiLayerFXMesh?] = [:]
 
