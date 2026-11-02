@@ -123,10 +123,9 @@ let package = Package(
             publicHeadersPath: "include"
         ),
         // System library target for libprojectM (ProjectM visualization)
-        // To enable projectM support:
-        // 1. Build libprojectM v4.1.6+ as a universal binary
-        // 2. Place libprojectM-4.dylib in Frameworks/
-        // 3. Uncomment the CProjectM dependency in the NullPlayer target
+        // scripts/bootstrap.sh installs the headers here and the universal libprojectM-4.dylib in
+        // Frameworks/, from the tarball pinned by PROJECTM_FILE. To take a new version, build it
+        // universal (arm64 + x86_64), upload the tarball to the deps release, and update the pin.
         .systemLibrary(
             name: "CProjectM",
             path: "Frameworks/libprojectm-4",

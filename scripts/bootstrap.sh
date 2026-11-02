@@ -16,8 +16,8 @@ VLCKIT_FILE="VLCKit-macos.tar.gz"
 VLCKIT_SHA256="b36a06d9169fba85101dae8264be24ab3d92c0f2976001524d60f79e8fdece93"
 VLCKIT_TARGET="Frameworks/VLCKit.framework"
 
-PROJECTM_FILE="libprojectM-4.1.7-macos.tar.gz"
-PROJECTM_SHA256="273b81b89ef869ba3bbd88f08077c621f2b2270cd60f5a19b6bd3e2722a0d60c"
+PROJECTM_FILE="libprojectM-4.1.8-macos.tar.gz"
+PROJECTM_SHA256="cfc0f1db6c64b1036b94b43afb7acd077a21076a9b65414e7cb7a225e000562c"
 PROJECTM_TARGET="Frameworks/libprojectM-4.dylib"
 
 AUBIO_FILE="libaubio-macos.tar.gz"
@@ -219,7 +219,15 @@ main() {
     else
         log_success "VLCKit already installed"
     fi
-    
+    # The vendored VLCKit ships with an invalid signature, and dyld kills anything that maps it
+    # from Frameworks/ (the NullPlayerAppTests bundle) -- re-sign it ad-hoc, as kill_build_run.sh
+    # does for the app bundle's copy.
+    local vlckit="${REPO_ROOT}/${VLCKIT_TARGET}"
+    if [[ -d "$vlckit" ]] && ! codesign --verify "$vlckit" 2>/dev/null; then
+        log_info "Re-signing VLCKit ad-hoc..."
+        codesign --force --sign - "$vlckit" || failed=1
+    fi
+
     # libprojectM -- re-download when missing, forced, or the on-disk dylib's
     # version does not match the pinned archive. Unlike libaubio, this dylib is
     # not tracked in git, so a checkout that already bootstrapped an older release

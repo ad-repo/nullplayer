@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Visualization
+
+- **MilkDrop uses libprojectM 4.1.8** (was 4.1.7): an out-of-bounds read in custom waveforms and a
+  shader-parser hang are fixed, presets that failed to compile on operator precedence or
+  parenthesised declarations may now load, and shader transpiling is much faster. The crash-preset
+  blacklist stays.
+
 ## 0.34.1
 
 ### Casting and the CLI
