@@ -93,6 +93,8 @@
   length, and a restored playlist no longer reads its files again at every launch to fill them in.
 - **A stream's sample rate filling in no longer counts as a new track**: the playlist stays where it
   is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
+- **A long playing title scrolls again after a skin switch or pressing Play** in the Classic playlist
+  and main window, instead of standing still until the next track.
 
 ## 0.34.0
 
