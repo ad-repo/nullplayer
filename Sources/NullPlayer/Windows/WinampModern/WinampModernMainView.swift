@@ -5,6 +5,8 @@ final class WinampModernMainView: NSView {
     let scripts: WinampModernScriptRuntime
     let host: WinampModernHost
     weak var componentHost: WinampModernComponentHost?
+    /// `NSMenuItem.target` is weak, so the playlist menus' target lives as long as the view.
+    private(set) lazy var playlistMenuTarget = WinampModernPlaylistMenuTarget(view: self)
     /// Live library surfaces by holder id. Typed, so each one can be told about a palette change, a
     /// UI Size change, and its own teardown (Phase 13.8).
     private var librarySurfaces: [WasabiObjectID: WinampModernLibrarySurface] = [:]
@@ -2192,45 +2194,55 @@ final class WinampModernMainView: NSView {
     /// listens on; both are sent, as Winamp sends them.
     override func rightMouseDown(with event: NSEvent) {
         let point = skinPoint(convert(event.locationInWindow, from: nil))
+        let holder = renderer.componentHolder(at: point)
+        let object = renderer.object(at: point, button: .right)
         // A live visualization box answers for itself: the engine choice, the preset controls and the
         // host's Visualizations menu, at the pointer. The GL view passes its clicks through, so this
         // is the only place that right click can be caught (B20a).
-        if let holder = renderer.componentHolder(at: point), holder.kind == .visualization,
+        if let holder, holder.kind == .visualization,
            let surface = visualizationSurfaces[holder.object.stableID] {
             popUpMenu(surface.buildMenu(), from: nil, atMouse: true)
             return
         }
-        // An **unhosted** `{0000000A}` pane answers with the same question a `<vis>` box does —
-        // which engine, which mode — against its own selection (BB9). A holder is found whatever is
-        // stacked on it, so the same two conditions the `<vis>` rule below carries apply: the pane
-        // has to be what the pointer is actually over, and a skin control sitting on it (Big Bento's
+        // A component holder no skin script has claimed answers with the host's own menu. A holder
+        // is found whatever is stacked on it, so a skin control sitting on it (Big Bento's
         // `vis.full.buttons` overlap their pane) keeps its own right-button handler.
-        if renderer.componentHolder(at: point)?.kind == .visualization {
-            let claimed = renderer.object(at: point, button: .right).map {
-                scripts.hasBinding(for: $0, event: "onrightbuttondown")
-                    || scripts.hasBinding(for: $0, event: "onrightbuttonup")
-            } ?? false
-            if !claimed {
+        if let holder, !(object.map(hasRightButtonHandler) ?? false) {
+            switch holder.kind {
+            // An **unhosted** `{0000000A}` pane asks the same question a `<vis>` box does — which
+            // engine, which mode — against its own selection (BB9).
+            case .visualization:
                 showVisualizationHolderMenu(from: nil)
                 return
+            // The playlist list answers with the menu every other skin family's list opens — Show
+            // Artist / Show Album included, which a skin's PE_MISC button may not have.
+            case .playlist:
+                showPlaylistContextMenu(at: point, holder: holder)
+                return
+            default:
+                break
             }
         }
-        guard let object = renderer.object(at: point, button: .right) else { return }
+        guard let object else { return }
         // A `<vis>` box nothing else has claimed answers for itself: which engine paints it, that
         // engine's own options, and Winamp's own `<vis>` attributes (B53). Two conditions, and both
         // are the skin's right to be left alone — the box has to be the **topmost** object at the
         // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
         // skin's settings page, and that menu wins), and it must have no right-button handler of its
         // own (Love is War Miku's `visualizer.maki` binds one).
-        if object.tag.is(.vis),
-           !scripts.hasBinding(for: object, event: "onrightbuttondown"),
-           !scripts.hasBinding(for: object, event: "onrightbuttonup") {
+        if object.tag.is(.vis), !hasRightButtonHandler(object) {
             showVisualizationMenu(from: object)
             return
         }
         rightPressedObject = object
         dispatch(object: object, event: "onrightbuttondown", point: point)
         needsDisplay = true
+    }
+
+    /// A skin script claims the right button on `object`, so the host's own menu stays out of its way.
+    private func hasRightButtonHandler(_ object: WasabiObject) -> Bool {
+        scripts.hasBinding(for: object, event: "onrightbuttondown")
+            || scripts.hasBinding(for: object, event: "onrightbuttonup")
     }
 
     override func rightMouseUp(with event: NSEvent) {

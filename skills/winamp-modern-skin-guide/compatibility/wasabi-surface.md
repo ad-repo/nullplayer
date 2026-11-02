@@ -86,6 +86,12 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
     selection**, so the host seam gained `playlistSetSelection` / `playlistRemoveRows` and the
     snapshot a `selectedRows` set; `selectedIndex` is still the anchor a click and the Delete key
     mean, and both default in the protocol extension so a host without a selection model still works
+  - All five menus and **the right-click over a playlist component** share one target,
+    `WinampModernPlaylistMenuTarget` (`WinampModernMainView+PlaylistMenu.swift`) — an object, not the
+    view, because the view backs every `.wal` window and must not answer `selectAll(_:)` for all of
+    them. The right-click is `PlaylistMenuBuilder`'s menu, the one every other family's playlist
+    shows; `rightMouseDown` gives it to an unclaimed `.playlist` holder only, so a skin object over
+    the list with its own right-button handler keeps the click
   - `VID_FS` and `VID_MISC` drive the video window: fullscreen, and **its own context menu** (audio
     and subtitle tracks included), popped under the skin's button. Both are inert with no video
     window, because there is nothing to make fullscreen

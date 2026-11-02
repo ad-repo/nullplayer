@@ -545,12 +545,12 @@ extension WinampModernMainView {
         let menu = NSMenu(title: "Remove")
         menu.autoenablesItems = false
         for (title, selector, enabled) in
-            [("Remove Selected", #selector(playlistRemoveSelected(_:)), hasSelection),
-             ("Crop Selection", #selector(playlistCropSelection(_:)), hasSelection),
-             ("Remove All", #selector(playlistRemoveAll(_:)), true),
-             ("Remove Dead Files", #selector(playlistRemoveDeadFiles(_:)), true)] {
+            [("Remove Selected", #selector(PlaylistMenuTarget.removeSelected(_:)), hasSelection),
+             ("Crop Selection", #selector(PlaylistMenuTarget.cropSelection(_:)), hasSelection),
+             ("Remove All", #selector(PlaylistMenuTarget.removeAll(_:)), true),
+             ("Remove Dead Files", #selector(PlaylistMenuTarget.removeDeadFiles(_:)), true)] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = self
+            item.target = playlistMenuTarget
             item.isEnabled = enabled
             menu.addItem(item)
         }
@@ -561,11 +561,11 @@ extension WinampModernMainView {
     private func showPlaylistSelectMenu(from object: WasabiObject?) {
         let menu = NSMenu(title: "Select")
         menu.autoenablesItems = false
-        for (title, selector) in [("Select All", #selector(playlistSelectAll(_:))),
-                                  ("Select None", #selector(playlistSelectNone(_:))),
-                                  ("Invert Selection", #selector(playlistInvertSelection(_:)))] {
+        for (title, selector) in [("Select All", #selector(PlaylistMenuTarget.selectAll(_:))),
+                                  ("Select None", #selector(PlaylistMenuTarget.selectNone(_:))),
+                                  ("Invert Selection", #selector(PlaylistMenuTarget.invertSelection(_:)))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = self
+            item.target = playlistMenuTarget
             menu.addItem(item)
         }
         popUpMenu(menu, from: object)
@@ -575,13 +575,13 @@ extension WinampModernMainView {
     private func showPlaylistMiscMenu(from object: WasabiObject?) {
         let sort = NSMenu(title: "Sort")
         sort.autoenablesItems = false
-        for (title, selector) in [("Sort by Title", #selector(playlistSortByTitle(_:))),
-                                  ("Sort by Filename", #selector(playlistSortByFilename(_:))),
-                                  ("Sort by Path", #selector(playlistSortByPath(_:))),
-                                  ("Randomize", #selector(playlistRandomize(_:))),
-                                  ("Reverse", #selector(playlistReverse(_:)))] {
+        for (title, selector) in [("Sort by Title", #selector(PlaylistMenuTarget.sortByTitle(_:))),
+                                  ("Sort by Filename", #selector(PlaylistMenuTarget.sortByFilename(_:))),
+                                  ("Sort by Path", #selector(PlaylistMenuTarget.sortByPath(_:))),
+                                  ("Randomize", #selector(PlaylistMenuTarget.randomize(_:))),
+                                  ("Reverse", #selector(PlaylistMenuTarget.reverse(_:)))] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = self
+            item.target = playlistMenuTarget
             sort.addItem(item)
         }
         let menu = NSMenu(title: "Misc")
@@ -590,10 +590,10 @@ extension WinampModernMainView {
         sortItem.submenu = sort
         menu.addItem(sortItem)
         menu.addItem(.separator())
-        let info = NSMenuItem(title: "File Info...", action: #selector(playlistFileInfo(_:)),
+        let info = NSMenuItem(title: "File Info...", action: #selector(PlaylistMenuTarget.showFileInfo(_:)),
                               keyEquivalent: "")
-        info.target = self
-        info.isEnabled = selectedPlaylistTrack() != nil
+        info.target = playlistMenuTarget
+        info.isEnabled = playlistMenuTarget.selectedTrack != nil
         menu.addItem(info)
         EQProfileMenu.addAssignItem(to: menu, queueRows: componentHost?.playlistSnapshot().selectedRows ?? [])
         PlaylistRowFields.addItems(to: menu)
@@ -614,18 +614,9 @@ extension WinampModernMainView {
         popUpMenu(menu, from: object)
     }
 
-    /// The row `PE_MISC`'s File Info is about: the selection's anchor, or the playing track when the
-    /// user has not picked a row.
-    private func selectedPlaylistTrack() -> Track? {
-        let snapshot = componentHost?.playlistSnapshot() ?? .empty
-        let index = snapshot.selectedIndex
-        if index >= 0, engine.playlist.indices.contains(index) { return engine.playlist[index] }
-        return engine.currentTrack
-    }
-
     /// Everything a playlist command changes is visible in the skin's own embedded list, and in the
     /// classic playlist window if that is open too.
-    private func playlistDidChange() {
+    func playlistDidChange() {
         clampPlaylistScroll()
         WindowManager.shared.refreshWinampModernSurfaces()
         needsDisplay = true
@@ -673,109 +664,10 @@ extension WinampModernMainView {
         playlistDidChange()
     }
 
-    // MARK: PE_REM
-
-    @objc private func playlistRemoveSelected(_ sender: Any?) {
-        guard let componentHost else { return }
-        componentHost.playlistRemoveRows(componentHost.playlistSnapshot().selectedRows)
-        playlistDidChange()
-    }
-
-    @objc private func playlistCropSelection(_ sender: Any?) {
-        guard let componentHost else { return }
-        let snapshot = componentHost.playlistSnapshot()
-        let victims = WinampModernPlaylistSelection.cropVictims(keeping: snapshot.selectedRows,
-                                                               count: snapshot.rows.count)
-        guard !victims.isEmpty else { return }
-        componentHost.playlistRemoveRows(victims)
-        playlistDidChange()
-    }
-
-    @objc private func playlistRemoveAll(_ sender: Any?) {
-        engine.clearPlaylist()
-        componentHost?.playlistSetSelection([])
-        playlistDidChange()
-    }
-
-    /// Winamp's "remove dead files": every row whose file is gone, plus nothing else. A stream URL is
-    /// not a dead file — it has no path to check — so remote rows are left alone.
-    @objc private func playlistRemoveDeadFiles(_ sender: Any?) {
-        let dead = Set(engine.playlist.enumerated().filter { _, track in
-            track.url.isFileURL && !FileManager.default.fileExists(atPath: track.url.path)
-        }.map(\.offset))
-        guard !dead.isEmpty, let componentHost else { return }
-        componentHost.playlistRemoveRows(dead)
-        playlistDidChange()
-    }
-
-    // MARK: PE_SEL
-
-    @objc private func playlistSelectAll(_ sender: Any?) {
-        componentHost?.playlistSetSelection(
-            WinampModernPlaylistSelection.all(count: engine.playlist.count))
-        playlistDidChange()
-    }
-
-    @objc private func playlistSelectNone(_ sender: Any?) {
-        componentHost?.playlistSetSelection([])
-        playlistDidChange()
-    }
-
-    @objc private func playlistInvertSelection(_ sender: Any?) {
-        guard let componentHost else { return }
-        let snapshot = componentHost.playlistSnapshot()
-        componentHost.playlistSetSelection(
-            WinampModernPlaylistSelection.inverted(snapshot.selectedRows, count: snapshot.rows.count))
-        playlistDidChange()
-    }
-
-    // MARK: PE_MISC
-
-    @objc private func playlistSortByTitle(_ sender: Any?) {
-        engine.sortPlaylist(by: .title)
-        playlistDidChange()
-    }
-
-    @objc private func playlistSortByFilename(_ sender: Any?) {
-        engine.sortPlaylist(by: .filename)
-        playlistDidChange()
-    }
-
-    @objc private func playlistSortByPath(_ sender: Any?) {
-        engine.sortPlaylist(by: .path)
-        playlistDidChange()
-    }
-
-    @objc private func playlistRandomize(_ sender: Any?) {
-        engine.shufflePlaylist()
-        playlistDidChange()
-    }
-
-    @objc private func playlistReverse(_ sender: Any?) {
-        engine.reversePlaylist()
-        playlistDidChange()
-    }
-
-    /// The same File Info sheet `TRACKINFO` opens (Phase 36), aimed at the selected row rather than
-    /// at whatever is playing — never `runModal()`, for the reason recorded there.
-    @objc private func playlistFileInfo(_ sender: Any?) {
-        guard let window, let track = selectedPlaylistTrack() else { return }
-        let alert = NSAlert()
-        alert.messageText = track.displayTitle
-        alert.informativeText = [
-            "Artist: \(track.artist ?? "Unknown")",
-            "Album: \(track.album ?? "Unknown")",
-            "Duration: \(track.formattedDuration)",
-            track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)",
-            EQProfileResolver.shared.fileInfoLine(for: track)
-        ].compactMap { $0 }.joined(separator: "\n")
-        alert.beginSheetModal(for: window)
-    }
-
     // MARK: PE_LIST
 
     @objc private func playlistNew(_ sender: Any?) {
-        playlistRemoveAll(sender)
+        playlistMenuTarget.removeAll(sender)
     }
 
     @objc private func playlistSave(_ sender: Any?) {
