@@ -1986,6 +1986,13 @@ final class WasabiSceneRenderer {
         CGFloat((playlistTextPixelHeight(in: holder) * 1.1).rounded())
     }
 
+    /// The box a playlist row's text is drawn in. No vertical inset: the box is the line's clip,
+    /// `drawSurfaceText` hangs the line from its top, and `playlistTextPointSize` sizes the line to the
+    /// whole row, so a pixel off each edge took the descenders at every Text Size.
+    static func playlistTextRect(_ row: CGRect) -> CGRect {
+        row.insetBy(dx: 3, dy: 0)
+    }
+
     func playlistVisibleRowCount(in frame: CGRect, holder: WasabiObject? = nil) -> Int {
         max(0, Int(frame.height / playlistRowHeight(in: holder)))
     }
@@ -4059,7 +4066,7 @@ final class WasabiSceneRenderer {
             let color = row.isCurrent && hasCurrentColor
                 ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
                 : plain
-            let textRect = rowRect.insetBy(dx: 3, dy: 1)
+            let textRect = Self.playlistTextRect(rowRect)
             let columns = playlistRowColumns(text: textRect, duration: row.duration,
                                              pointSize: pointSize)
             if columns.timeInk != nil {

@@ -27,6 +27,7 @@ import Foundation
 enum WinampModernTextScale: Int, CaseIterable {
     /// Keyed on the hosting layout's declared size — see `cellPixelHeight(declaredHeight:)`.
     case auto = 0
+    case p90 = 90
     case p100 = 100
     case p125 = 125
     case p150 = 150

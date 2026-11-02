@@ -18,8 +18,9 @@ import CoreGraphics
 /// draws the two differently, so "the one I am pointing at" and "the one the skin is wearing" stay
 /// distinguishable.
 struct WasabiColorThemeListState: Equatable {
-    /// Row height in skin pixels. The same 12px the embedded playlist uses: no measured skin declares
-    /// a row height on its list, and 12 is what Winamp's own list metrics come out at.
+    /// Row height in skin pixels. Fixed, unlike the embedded playlist's (which follows Text Size and
+    /// is 12px only at 100%): no measured skin declares a row height on its list, and 12 is what
+    /// Winamp's own list metrics come out at.
     static let rowHeight: CGFloat = 12
 
     /// The row the user has picked out. Not necessarily the applied theme.
