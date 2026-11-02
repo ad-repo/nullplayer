@@ -40,6 +40,10 @@
 - **A click on a skin's time readout flips it between elapsed and remaining**, as in Winamp; remaining time
   draws with a leading minus. It is the same setting as Playback → Timer, and a drag that starts on the
   readout still moves the window.
+- **Show Artist / Show Album in every playlist's right-click menu.** Rows read `Artist - Title` by
+  default, and the two toggles add the album or drop the artist, the same in Classic, Original,
+  Winamp Modern and Windows Media Player skins. Winamp Modern playlists now show the artist too, and a
+  Windows Media Player skin's playlist pane numbers its rows and shows each track's length.
 
 ### Fixes
 

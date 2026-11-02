@@ -156,6 +156,8 @@ final class WMPPlaylistSurfaceView: NSView {
         style.background.setFill(); bounds.fill()
         let visibleRows = max(1, Int(bounds.height / rowHeight))
         let rows = rows, playing = playingRow
+        let truncating = NSMutableParagraphStyle()
+        truncating.lineBreakMode = .byTruncatingTail
         for index in firstVisibleIndex..<min(rows.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
@@ -164,13 +166,24 @@ final class WMPPlaylistSurfaceView: NSView {
                 style.selectionBackground.setFill()
                 rect.fill()
             }
+            // NullPlayer's own playlist row: `N. Artist - Title`, the duration right-aligned.
             let item = rows[index]
-            let prefix = index == playing ? "▶ " : ""
-            let artist = item.artist.isEmpty ? "" : " — \(item.artist)"
-            (prefix + EQProfileResolver.queueTitle(item.title, marked: item.hasEQProfile) + artist).draw(in: rect.insetBy(dx: 4, dy: 1), withAttributes: [
-                .font: NSFont.systemFont(ofSize: 11),
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11), .paragraphStyle: truncating,
                 .foregroundColor: selected ? style.selectionText :
-                    (index == playing ? style.currentText : style.text)])
+                    (index == playing ? style.currentText : style.text)]
+            var textRect = rect.insetBy(dx: 4, dy: 1)
+            if item.duration > 0 {
+                let duration = WMPHostSnapshot.timeString(item.duration)
+                let width = duration.size(withAttributes: attributes).width
+                duration.draw(in: NSRect(x: textRect.maxX - width, y: textRect.minY, width: width,
+                                         height: textRect.height), withAttributes: attributes)
+                textRect.size.width -= width + 6
+            }
+            let title = PlaylistRowFields.current.text(title: item.title, artist: item.artist,
+                                                       album: item.album, isVideo: item.isVideo)
+            ("\(index + 1). " + EQProfileResolver.queueTitle(title, marked: item.hasEQProfile))
+                .draw(in: textRect, withAttributes: attributes)
         }
     }
 
@@ -335,7 +348,10 @@ final class WMPDropdownPlaylistSurfaceView: NSPopUpButton {
 
     func update(_ snapshot: WMPHostSnapshot) {
         removeAllItems()
-        addItems(withTitles: snapshot.playlistItems.map { $0.artist.isEmpty ? $0.title : "\($0.title) — \($0.artist)" })
+        let fields = PlaylistRowFields.current
+        addItems(withTitles: snapshot.playlistItems.map {
+            fields.text(title: $0.title, artist: $0.artist, album: $0.album, isVideo: $0.isVideo)
+        })
         if snapshot.playlistItems.indices.contains(snapshot.playlistIndex) { selectItem(at: snapshot.playlistIndex) }
         target = self; action = #selector(selected(_:))
     }

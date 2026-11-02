@@ -57,7 +57,6 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         let rows = engine.playlist.enumerated().map { index, track in
             var row = WinampModernPlaylistRow(
                 title: track.title,
-                secondary: [track.artist, track.album].compactMap { $0 }.joined(separator: " — "),
                 duration: track.duration ?? 0,
                 isCurrent: index == engine.currentIndex,
                 artist: track.artist ?? "",
@@ -65,6 +64,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
                 filePath: track.url.isFileURL ? track.url.path : track.url.absoluteString
             )
             row.hasEQProfile = EQProfileResolver.shared.appliesProfile(to: track)
+            row.isVideo = track.mediaType == .video
             return row
         }
         return WinampModernPlaylistSnapshot(rows: rows,

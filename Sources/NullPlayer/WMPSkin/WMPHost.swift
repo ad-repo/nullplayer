@@ -70,6 +70,9 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     /// An EQ profile runs on this queue row's track: `<PLAYLIST>` draws NullPlayer's marker. Not
     /// part of anything a script reads, so coding and `isSameItem` leave it out.
     var hasEQProfile = false
+    /// The rest of what `<PLAYLIST>` draws through `Track.playlistTitle`; no skin reads either.
+    var album = ""
+    var isVideo = false
 
     private enum CodingKeys: String, CodingKey { case title, artist, duration, sourceURL }
 
@@ -219,7 +222,8 @@ struct WMPHostSnapshot: Hashable, Codable {
         }
     }
 
-    private static func timeString(_ value: TimeInterval) -> String {
+    /// `m:ss`, the one WMP spelling of a duration; a non-finite one reads `0:00`.
+    static func timeString(_ value: TimeInterval) -> String {
         let seconds = max(0, Int(value.isFinite ? value : 0))
         return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }

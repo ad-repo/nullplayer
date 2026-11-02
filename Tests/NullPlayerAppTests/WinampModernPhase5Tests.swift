@@ -29,8 +29,7 @@ final class WinampModernPhase5Tests: XCTestCase {
 
     private final class MockComponentHost: WinampModernComponentHost {
         var playlist = WinampModernPlaylistSnapshot(
-            rows: (0..<8).map { WinampModernPlaylistRow(title: "Track \($0)", secondary: "",
-                                                        duration: 100, isCurrent: $0 == 2) },
+            rows: (0..<8).map { WinampModernPlaylistRow(title: "Track \($0)", duration: 100, isCurrent: $0 == 2) },
             currentIndex: 2, selectedIndex: -1)
         var eq = WinampModernEQSnapshot.flat
         var selected = -1, played = -1, removed = -1

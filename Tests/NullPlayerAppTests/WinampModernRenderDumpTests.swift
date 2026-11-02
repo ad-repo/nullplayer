@@ -294,8 +294,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
             if playlistHost == nil {
                 WasabiTextMetrics.componentTextProvider = {
                     WinampModernPlaylistSnapshot(
-                        rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
-                                                                    duration: 120, isCurrent: $0 == 0) },
+                        rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", duration: 120, isCurrent: $0 == 0) },
                         currentIndex: 0, selectedIndex: 0)
                 }
             }
@@ -1923,8 +1922,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
         func playlistSnapshot() -> WinampModernPlaylistSnapshot {
             WinampModernPlaylistSnapshot(
                 rows: rows.enumerated().map { index, row in
-                    WinampModernPlaylistRow(title: row.title, secondary: row.artist,
-                                            duration: TimeInterval(120 + index),
+                    WinampModernPlaylistRow(title: row.title, duration: TimeInterval(120 + index),
                                             isCurrent: index == current,
                                             artist: row.artist, album: row.album, filePath: row.path)
                 },

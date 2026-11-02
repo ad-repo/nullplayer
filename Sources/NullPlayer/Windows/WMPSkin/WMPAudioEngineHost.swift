@@ -172,7 +172,8 @@ final class WMPAudioEngineHost: WMPHost {
             WMPPlaylistItemSnapshot(title: $0.title, artist: $0.artist ?? "",
                                     duration: Self.finite($0.duration ?? 0),
                                     sourceURL: Self.sourceURLSpelling($0.url),
-                                    hasEQProfile: EQProfileResolver.shared.appliesProfile(to: $0))
+                                    hasEQProfile: EQProfileResolver.shared.appliesProfile(to: $0),
+                                    album: $0.album ?? "", isVideo: $0.mediaType == .video)
         }
         let sourceLayout = engine.eqConfiguration
         let sourceGains = (0..<sourceLayout.bandCount).map { engine.getEQBand($0) }

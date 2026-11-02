@@ -3434,9 +3434,10 @@ class WindowManager {
         mainWindowController?.playlistContentDidChange()
     }
 
-    /// Repaint every queue without reloading it: an EQ profile change moves the ∿ row markers, not
-    /// the queue, and a reload would drop the selection the user just assigned a profile to.
-    private func redrawPlaylistViews() {
+    /// Repaint every queue without reloading it: an EQ profile change moves the ∿ row markers and
+    /// Show Artist / Show Album change the row text, not the queue, and a reload would drop the
+    /// selection.
+    func redrawPlaylistViews() {
         playlistWindowController?.window?.contentView?.markSubtreeForDisplayAndLayout()
         compactWindowController?.window?.contentView?.markSubtreeForDisplayAndLayout()
         mainWindowController?.playlistMarkersDidChange()

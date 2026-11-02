@@ -596,6 +596,7 @@ extension WinampModernMainView {
         info.isEnabled = selectedPlaylistTrack() != nil
         menu.addItem(info)
         EQProfileMenu.addAssignItem(to: menu, queueRows: componentHost?.playlistSnapshot().selectedRows ?? [])
+        PlaylistRowFields.addItems(to: menu)
         popUpMenu(menu, from: object)
     }
 

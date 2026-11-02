@@ -951,8 +951,8 @@ final class WinampModernPhase13Tests: XCTestCase {
 
         WasabiTextMetrics.componentTextProvider = {
             WinampModernPlaylistSnapshot(
-                rows: [WinampModernPlaylistRow(title: "A", secondary: "", duration: 90, isCurrent: true),
-                       WinampModernPlaylistRow(title: "B", secondary: "", duration: 30, isCurrent: false)],
+                rows: [WinampModernPlaylistRow(title: "A", duration: 90, isCurrent: true),
+                       WinampModernPlaylistRow(title: "B", duration: 30, isCurrent: false)],
                 currentIndex: 0, selectedIndex: 1)
         }
         addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
@@ -985,7 +985,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         let host = TestHost()
         WasabiTextMetrics.componentTextProvider = {
             WinampModernPlaylistSnapshot(
-                rows: [WinampModernPlaylistRow(title: "A", secondary: "", duration: 90, isCurrent: true)],
+                rows: [WinampModernPlaylistRow(title: "A", duration: 90, isCurrent: true)],
                 currentIndex: 0, selectedIndex: 0)
         }
         addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }
@@ -1078,7 +1078,7 @@ final class WinampModernPhase13Tests: XCTestCase {
 
         WasabiTextMetrics.componentTextProvider = {
             WinampModernPlaylistSnapshot(
-                rows: [WinampModernPlaylistRow(title: "a", secondary: "", duration: 120, isCurrent: true)],
+                rows: [WinampModernPlaylistRow(title: "a", duration: 120, isCurrent: true)],
                 currentIndex: 0, selectedIndex: 0)
         }
         runtime.refreshBoundText()
@@ -1100,7 +1100,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         func snapshot(_ durations: [TimeInterval], selected: Int = -1,
                       rows extra: Set<Int>? = nil) -> WinampModernPlaylistSnapshot {
             WinampModernPlaylistSnapshot(
-                rows: durations.map { WinampModernPlaylistRow(title: "t", secondary: "", duration: $0,
+                rows: durations.map { WinampModernPlaylistRow(title: "t", duration: $0,
                                                               isCurrent: false) },
                 currentIndex: -1, selectedIndex: selected, selectedRows: extra)
         }

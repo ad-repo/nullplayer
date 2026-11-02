@@ -4073,7 +4073,9 @@ final class WasabiSceneRenderer {
                 drawSurfaceText(Self.playlistTimeText(row.duration), in: textRect, color: color,
                                 alignment: .right, pointSize: pointSize, context: context)
             }
-            let label = "\(index + 1). \(EQProfileResolver.queueTitle(row.title, marked: row.hasEQProfile))"
+            let title = PlaylistRowFields.current.text(title: row.title, artist: row.artist,
+                                                       album: row.album, isVideo: row.isVideo)
+            let label = "\(index + 1). \(EQProfileResolver.queueTitle(title, marked: row.hasEQProfile))"
             drawSurfaceText(label, in: columns.label, color: color,
                             alignment: .left, pointSize: pointSize, context: context)
         }

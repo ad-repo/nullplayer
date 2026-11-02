@@ -35,6 +35,7 @@ nothing behind them*.
 
 | ID | Item | Reach | Notes |
 |---|---|---|---|
+| W319 | A `<PLAYLIST>` pane showing a **library** playlist draws no EQ profile marker (`∿`) on rows whose track has a profile; the queue's rows do | **Read from code 2026-11-02, not seen on screen.** Found while checking the shared playlist row format across the four skin families (Classic, Original, `.wal` and the `.wmz` queue all draw the marker, checked live on `Xbox Live Skin`). Only skins that point a pane at a library playlist (W136, `playlist1.playlist = …`) reach it | `WMPObjectModel.widgetState()` builds the library rows from `WMPLibraryCatalog.Track` and never sets `WMPPlaylistItemSnapshot.hasEQProfile`. The queue's rows get it from `EQProfileResolver.shared.appliesProfile(to:)` in `WMPAudioEngineHost`. Three things stand in the way: a catalog track is not a `Track`, so it lacks the scope keys `appliesProfile` resolves; the object model runs on the script queue, not the main actor; and `playlistRowsCache` keeps the rows for the whole catalog, so an assignment made later would never reach them. **Direction:** resolve the marker on the main actor at draw time in `WMPPlaylistSurfaceView` (it already redraws on `playlistMarkersDidChange`), keyed by the row's `sourceURL`, rather than storing it in the cached rows. **First step:** find a corpus skin that shows a library playlist in a `<PLAYLIST>`, assign a profile to one of its tracks, and confirm on screen that the marker is missing. |
 
 ## NullPlayer's own windows beside a skin
 

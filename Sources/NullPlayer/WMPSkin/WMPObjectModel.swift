@@ -610,7 +610,8 @@ final class WMPObjectModel {
                         let track = library.tracks[$0]
                         return WMPPlaylistItemSnapshot(title: track.title, artist: track.artist,
                                                        duration: track.duration,
-                                                       sourceURL: track.sourceURL)
+                                                       sourceURL: track.sourceURL,
+                                                       album: track.album, isVideo: track.isVideo)
                     }, tracks: tracks)
                     // An unloaded server playlist answers empty until its fetch lands, and a
                     // scratch playlist grows while a search fills it: neither is final yet.
@@ -726,7 +727,7 @@ final class WMPObjectModel {
             case "name": return .value(.string(track.title))
             case "sourceurl": return .value(.string(track.sourceURL))
             case "duration": return .value(.number(track.duration))
-            case "durationstring": return .value(.string(Self.timeString(track.duration)))
+            case "durationstring": return .value(.string(WMPHostSnapshot.timeString(track.duration)))
             case "getiteminfo", "getiteminfobyatom": return .function
             default: return .unrecognised("media member")
             }
@@ -855,7 +856,7 @@ final class WMPObjectModel {
             // — both were reading a track name as a URL (W41).
             case "sourceurl": return .value(.string(item.sourceURL))
             case "duration": return .value(.number(item.duration))
-            case "durationstring": return .value(.string(WMPObjectModel.timeString(item.duration)))
+            case "durationstring": return .value(.string(WMPHostSnapshot.timeString(item.duration)))
             case "getiteminfo", "getiteminfobyatom": return .function
             default: return .unrecognised("playlist item member")
             }
@@ -2264,11 +2265,6 @@ final class WMPObjectModel {
         case "album", "wm/albumtitle": return album
         default: return ""
         }
-    }
-
-    private static func timeString(_ value: TimeInterval) -> String {
-        let seconds = max(0, Int(value.isFinite ? value : 0))
-        return String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
     static let standardNumericProperties: Set<String> = [

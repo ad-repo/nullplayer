@@ -72,7 +72,7 @@ final class WMPPlaylistMenuTests: XCTestCase {
         let menu = try menu(at: 3, view)
         XCTAssertEqual(menu.items.map(\.title),
                        ["Play", "", "Remove Selected", "Clear Playlist", "Remove Dead Files", "",
-                        "Selection", "Sort", "", "File Info..."])
+                        "Selection", "Sort", "", "File Info...", "", "Show Artist", "Show Album"])
         XCTAssertEqual(menu.items[6].submenu?.items.map(\.title),
                        ["Select All", "Select None", "Invert Selection", "Crop Selection"])
         XCTAssertEqual(menu.items[7].submenu?.items.map(\.title),
