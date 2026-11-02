@@ -389,9 +389,14 @@ class AudioEngine {
         }
     }
     
-    /// Current track
+    private var currentTrackStorage: Track?
+
+    /// The playing track. Setting it is a track change: everything that reacts to a new song runs.
+    /// A format filled in on the same track goes through `applyFormatUpdates` instead.
     private(set) var currentTrack: Track? {
-        didSet {
+        get { currentTrackStorage }
+        set {
+            currentTrackStorage = newValue
             delegate?.audioEngineDidChangeTrack(currentTrack)
             eqProfileController.trackDidChange(currentTrack)
             // Reset BPM detector for new track
@@ -3902,7 +3907,7 @@ class AudioEngine {
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
         NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
         loadTracks(tracks)
-        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
 
     static func shouldStopRadioForIncomingTrack(
@@ -4014,8 +4019,7 @@ class AudioEngine {
         playlist.removeAll()
         playlist.append(contentsOf: validTracks)
 
-        let zeroDurationLocalIDs = validTracks.filter { (($0.duration ?? 0) == 0) && $0.url.isFileURL }.map(\.id)
-        enrichPlaylistDurationsAsync(for: zeroDurationLocalIDs)
+        enrichPlaylistFormatsAsync(for: validTracks.map(\.id))
 
         if !validTracks.isEmpty {
             if shuffleEnabled {
@@ -4083,75 +4087,72 @@ class AudioEngine {
         }
     }
 
-    /// Fills in duration for tracks that have duration == nil.
+    /// Fills in what a lightweight import leaves out — duration, bitrate, sample rate and channels.
     /// Looks up each URL in the MediaLibrary in-memory index first (instant, no I/O).
     /// Falls back to AVAudioFile only for tracks not in the library — done off the main thread.
-    private func enrichPlaylistDurationsAsync(for trackIDs: [UUID]) {
+    private func enrichPlaylistFormatsAsync(for trackIDs: [UUID]) {
         guard !trackIDs.isEmpty else { return }
         let idsToEnrich = Set(trackIDs)
 
         // Snapshot tracks needing enrichment from the main actor.
         let snapshots: [(id: UUID, url: URL)] = playlist.compactMap { t in
-            guard idsToEnrich.contains(t.id), (t.duration ?? 0) == 0, t.url.isFileURL else { return nil }
+            guard idsToEnrich.contains(t.id), t.lacksFormat, t.url.isFileURL else { return nil }
             return (id: t.id, url: t.url)
         }
         guard !snapshots.isEmpty else { return }
 
         // Try the MediaLibrary in-memory index first — O(1) per track, no disk I/O.
-        var durations: [UUID: TimeInterval] = [:]
+        var formats: [UUID: Track.Format] = [:]
         var needsFileIO: [(id: UUID, url: URL)] = []
         for item in snapshots {
-            if let lib = MediaLibrary.shared.findTrack(byURL: item.url), lib.duration > 0 {
-                durations[item.id] = lib.duration
+            if let lib = MediaLibrary.shared.findTrack(byURL: item.url), lib.duration > 0,
+               lib.bitrate != nil, lib.sampleRate != nil, lib.channels != nil {
+                formats[item.id] = Track.Format(duration: lib.duration, bitrate: lib.bitrate,
+                                                sampleRate: lib.sampleRate, channels: lib.channels)
             } else {
                 needsFileIO.append(item)
             }
         }
 
         // Apply library hits immediately on the main thread.
-        applyDurationUpdates(durations)
+        applyFormatUpdates(formats)
 
         // For anything not in the library, fall back to AVAudioFile on a background thread.
         guard !needsFileIO.isEmpty else { return }
         Task.detached(priority: .utility) { [weak self] in
-            var fileDurations: [UUID: TimeInterval] = [:]
+            var fileFormats: [UUID: Track.Format] = [:]
             for item in needsFileIO {
-                // MPEG-4 Opus can fail to open natively or report zero frames; the asset still has a duration.
-                var dur = (try? AVAudioFile(forReading: item.url)).map { Double($0.length) / $0.processingFormat.sampleRate } ?? 0
-                if dur <= 0, LocalAudioFile.mayNeedFallbackDecode(item.url) {
-                    dur = (try? await AVURLAsset(url: item.url).load(.duration).seconds) ?? 0
-                }
-                if dur > 0 { fileDurations[item.id] = dur }
+                fileFormats[item.id] = await Track.Format.read(from: item.url)
             }
-            guard !fileDurations.isEmpty else { return }
+            guard !fileFormats.isEmpty else { return }
             // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable.
-            let durationUpdates = fileDurations
+            let formatUpdates = fileFormats
             await MainActor.run { [weak self] in
-                self?.applyDurationUpdates(durationUpdates)
+                self?.applyFormatUpdates(formatUpdates)
             }
         }
     }
 
-    /// Replaces playlist tracks whose UUIDs appear in `durations` with copies carrying the real duration.
-    /// Must be called on the main thread.
-    private func applyDurationUpdates(_ durations: [UUID: TimeInterval]) {
-        guard !durations.isEmpty else { return }
+    /// Fills each unknown format field of the tracks whose UUIDs appear in `formats` — read from
+    /// the file, or detected in the stream — in the playlist and on the playing track. Not a track
+    /// change: the readouts redraw, and the BPM detector, the playlists' jump to the playing row,
+    /// the artwork and Now Playing are left alone. Must be called on the main thread.
+    private func applyFormatUpdates(_ formats: [UUID: Track.Format]) {
+        guard !formats.isEmpty else { return }
         var changed = false
         for (idx, track) in playlist.enumerated() {
-            guard let dur = durations[track.id] else { continue }
-            playlist[idx] = Track(
-                id: track.id, url: track.url, title: track.title,
-                artist: track.artist, album: track.album, duration: dur,
-                bitrate: track.bitrate, sampleRate: track.sampleRate,
-                channels: track.channels, plexRatingKey: track.plexRatingKey,
-                plexServerId: track.plexServerId, subsonicId: track.subsonicId,
-                subsonicServerId: track.subsonicServerId, jellyfinId: track.jellyfinId,
-                jellyfinServerId: track.jellyfinServerId, embyId: track.embyId,
-                embyServerId: track.embyServerId, artworkThumb: track.artworkThumb,
-                mediaType: track.mediaType, genre: track.genre,
-                contentType: track.contentType
-            )
+            guard let format = formats[track.id] else { continue }
+            let filled = track.filling(format)
+            guard filled != track else { continue }
+            playlist[idx] = filled
             changed = true
+        }
+        if let track = currentTrack, let format = formats[track.id] {
+            let filled = track.filling(format)
+            if filled != track {
+                currentTrackStorage = filled
+                delegate?.audioEngineDidChangeTrack(filled)
+            }
         }
         if changed { playlistDidChange() }
     }
@@ -4179,8 +4180,7 @@ class AudioEngine {
         cancelPendingLocalLoad()
         invalidateShufflePlaybackStateAfterPlaylistMutation()
         playlistDidChange()
-        let missingDuration = tracks.filter { ($0.duration ?? 0) == 0 && $0.url.isFileURL }.map(\.id)
-        enrichPlaylistDurationsAsync(for: missingDuration)
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
     
     /// Select a track by index for display without loading or playing it.
@@ -4516,7 +4516,7 @@ class AudioEngine {
         invalidateShufflePlaybackStateAfterPlaylistMutation()
 
         playlistDidChange()
-        enrichPlaylistDurationsAsync(for: tracks.map(\.id))
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
     
     /// Routes a selection once. Local success/failure publication shares one completion seam;
@@ -6804,46 +6804,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata
         guard let track = currentTrack else { return }
-        
-        // Only update if not already set
-        if track.sampleRate == nil || track.channels == nil {
-            NSLog("AudioEngine: Detected stream format - sampleRate: %d, channels: %d", sampleRate, channels)
-            
-            // Create updated track with format info
-            let updatedTrack = Track(
-                id: track.id,
-                url: track.url,
-                title: track.title,
-                artist: track.artist,
-                album: track.album,
-                duration: track.duration,
-                bitrate: track.bitrate,
-                sampleRate: track.sampleRate ?? sampleRate,
-                channels: track.channels ?? channels,
-                plexRatingKey: track.plexRatingKey,
-                plexServerId: track.plexServerId,
-                subsonicId: track.subsonicId,
-                subsonicServerId: track.subsonicServerId,
-                jellyfinId: track.jellyfinId,
-                jellyfinServerId: track.jellyfinServerId,
-                embyId: track.embyId,
-                embyServerId: track.embyServerId,
-                artworkThumb: track.artworkThumb,
-                mediaType: track.mediaType,
-                genre: track.genre,
-                contentType: track.contentType
-            )
-            
-            currentTrack = updatedTrack
-            
-            // Update playlist entry as well
-            if currentIndex >= 0 && currentIndex < playlist.count {
-                playlist[currentIndex] = updatedTrack
-            }
-            
-            // Notify delegate of track update (for UI refresh)
-            delegate?.audioEngineDidChangeTrack(updatedTrack)
-        }
+        applyFormatUpdates([track.id: Track.Format(sampleRate: sampleRate, channels: channels)])
     }
     
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError) {

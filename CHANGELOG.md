@@ -82,6 +82,10 @@
   after a relaunch. The skin's own Windows-menu items (Web Browser, widget tabs) are listed too.
   *Auto Close Tab* is gone from the tab's right-click menu, since it hid tabs nothing could bring back,
   and **Skins → Restore Default Tabs** puts the strip back to every tab in its original order.
+- **Dropped, added and restored files show their bitrate, sample rate and channels**, not only their
+  length, and a restored playlist no longer reads its files again at every launch to fill them in.
+- **A stream's sample rate filling in no longer counts as a new track**: the playlist stays where it
+  is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
 
 ## 0.34.0
 

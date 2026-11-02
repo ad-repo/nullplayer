@@ -56,11 +56,12 @@ struct Track: Identifiable, Equatable {
     let title: String
     let artist: String?
     let album: String?
-    let duration: TimeInterval?
-    let bitrate: Int?
-    let sampleRate: Int?
-    let channels: Int?
-    
+    /// The `Format` fields: the only part of a track filled in after it is made (`filling`).
+    private(set) var duration: TimeInterval?
+    private(set) var bitrate: Int?
+    private(set) var sampleRate: Int?
+    private(set) var channels: Int?
+
     /// Plex rating key for play tracking (nil for local files)
     let plexRatingKey: String?
 
@@ -128,31 +129,13 @@ struct Track: Identifiable, Equatable {
         var extractedTitle = url.deletingPathExtension().lastPathComponent
         var extractedArtist: String?
         var extractedAlbum: String?
-        var extractedDuration: TimeInterval?
-        var extractedBitrate: Int?
-        var extractedSampleRate: Int?
-        var extractedChannels: Int?
+        var format = Format()
         var extractedGenre: String?
-        
+
         // Try AVAudioFile first for local files (more reliable for audio format info)
         if url.isFileURL {
             do {
-                let audioFile = try AVAudioFile(forReading: url)
-                let format = audioFile.processingFormat
-                extractedSampleRate = Int(format.sampleRate)
-                extractedChannels = Int(format.channelCount)
-                if audioFile.length > 0 {
-                    extractedDuration = Double(audioFile.length) / format.sampleRate
-                }
-                
-                // Estimate bitrate from file size and duration
-                if let duration = extractedDuration, duration > 0 {
-                    if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int {
-                        // Bitrate = (file size in bits) / duration in seconds
-                        let bitrateInBps = Double(fileSize * 8) / duration
-                        extractedBitrate = Int(bitrateInBps / 1000)  // Convert to kbps
-                    }
-                }
+                format = Format(file: try AVAudioFile(forReading: url), url: url)
             } catch {
                 // Log the failure - this file will likely also fail during playback
                 NSLog("Track: AVAudioFile failed for '%@': %@ (will try AVAsset fallback)", url.lastPathComponent, error.localizedDescription)
@@ -164,15 +147,15 @@ struct Track: Identifiable, Equatable {
         let asset = AVAsset(url: url)
         
         // Get duration if not already set
-        if extractedDuration == nil {
+        if format.duration == nil {
             let durationTime = asset.duration
             if durationTime.timescale > 0 && !durationTime.seconds.isNaN {
-                extractedDuration = CMTimeGetSeconds(durationTime)
+                format.duration = CMTimeGetSeconds(durationTime)
             }
         }
-        
+
         // Get audio format properties if not already set
-        if extractedSampleRate == nil || extractedChannels == nil {
+        if format.sampleRate == nil || format.channels == nil {
             let audioTracks = asset.tracks(withMediaType: .audio)
             if let audioTrack = audioTracks.first {
                 // Get format descriptions
@@ -180,29 +163,26 @@ struct Track: Identifiable, Equatable {
                 if let formatDesc = formatDescriptions?.first {
                     // Get audio stream basic description
                     if let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)?.pointee {
-                        if extractedSampleRate == nil {
-                            extractedSampleRate = Int(asbd.mSampleRate)
+                        if format.sampleRate == nil {
+                            format.sampleRate = Int(asbd.mSampleRate)
                         }
-                        if extractedChannels == nil {
-                            extractedChannels = Int(asbd.mChannelsPerFrame)
+                        if format.channels == nil {
+                            format.channels = Int(asbd.mChannelsPerFrame)
                         }
                     }
                 }
-                
+
                 // Estimate bitrate if not set
-                if extractedBitrate == nil, let duration = extractedDuration, duration > 0, url.isFileURL {
-                    if let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int {
-                        let bitrateInBps = Double(fileSize * 8) / duration
-                        extractedBitrate = Int(bitrateInBps / 1000)
-                    }
+                if format.bitrate == nil, let duration = format.duration, url.isFileURL {
+                    format.bitrate = Self.estimatedBitrateKbps(of: url, duration: duration)
                 }
             }
         }
         
         // Try to get ID3/metadata tags
         let metadataFormats = asset.availableMetadataFormats
-        for format in metadataFormats {
-            let metadata = asset.metadata(forFormat: format)
+        for metadataFormat in metadataFormats {
+            let metadata = asset.metadata(forFormat: metadataFormat)
             for item in metadata {
                 if let commonKey = item.commonKey {
                     switch commonKey {
@@ -234,10 +214,10 @@ struct Track: Identifiable, Equatable {
         self.title = extractedTitle
         self.artist = extractedArtist
         self.album = extractedAlbum
-        self.duration = extractedDuration
-        self.bitrate = extractedBitrate
-        self.sampleRate = extractedSampleRate
-        self.channels = extractedChannels
+        self.duration = format.duration
+        self.bitrate = format.bitrate
+        self.sampleRate = format.sampleRate
+        self.channels = format.channels
         self.plexRatingKey = nil  // Local files don't have Plex rating keys
         self.plexServerId = nil
         self.subsonicId = nil     // Local files don't have Subsonic IDs
@@ -379,6 +359,64 @@ struct Track: Identifiable, Equatable {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    /// What a file's own header says about it — everything `init(lightweightURL:)` leaves out to
+    /// keep a bulk import fast, and the engine fills in afterwards.
+    struct Format: Sendable {
+        var duration: TimeInterval?
+        var bitrate: Int?
+        var sampleRate: Int?
+        var channels: Int?
+
+        /// Read from a local file, off the main thread. MPEG-4 Opus can fail to open natively or
+        /// report zero frames; its asset still has the duration, and when the file would not open at
+        /// all, the audio track's own sample rate and channels — without them the row would lack its
+        /// format for good and be read again at every load.
+        static func read(from url: URL) async -> Format {
+            let file = try? AVAudioFile(forReading: url)
+            var format = file.map { Format(file: $0, url: url) } ?? Format()
+            guard format.duration == nil, LocalAudioFile.mayNeedFallbackDecode(url) else { return format }
+            let asset = AVURLAsset(url: url)
+            if let seconds = try? await asset.load(.duration).seconds, seconds > 0 {
+                format.duration = seconds
+                format.bitrate = Track.estimatedBitrateKbps(of: url, duration: seconds)
+            }
+            if file == nil,
+               let track = try? await asset.loadTracks(withMediaType: .audio).first,
+               let description = try? await track.load(.formatDescriptions).first,
+               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description)?.pointee {
+                format.sampleRate = Int(asbd.mSampleRate)
+                format.channels = Int(asbd.mChannelsPerFrame)
+            }
+            return format
+        }
+    }
+
+    /// False for a missing duration and for a zero one, which a file that would not decode reports.
+    private var knowsDuration: Bool { (duration ?? 0) > 0 }
+
+    /// True while any field of `Format` is still unknown.
+    var lacksFormat: Bool {
+        !knowsDuration || bitrate == nil || sampleRate == nil || channels == nil
+    }
+
+    /// A copy with each unknown `Format` field taken from `format`; a field already known wins.
+    func filling(_ format: Format) -> Track {
+        var filled = self
+        if !knowsDuration { filled.duration = format.duration }
+        filled.bitrate = bitrate ?? format.bitrate
+        filled.sampleRate = sampleRate ?? format.sampleRate
+        filled.channels = channels ?? format.channels
+        return filled
+    }
+
+    /// The average bitrate a local file of this duration works out to, in kbps.
+    static func estimatedBitrateKbps(of url: URL, duration: TimeInterval) -> Int? {
+        guard duration > 0,
+              let fileSize = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int
+        else { return nil }
+        return Int(Double(fileSize * 8) / duration / 1000)
+    }
+
     /// True when this row is a state-restore placeholder awaiting URL refresh.
     var isStreamingPlaceholder: Bool {
         url.absoluteString == "about:blank"
@@ -473,6 +511,18 @@ struct Track: Identifiable, Equatable {
         case .local, .radio, .youtube:
             return nil
         }
+    }
+}
+
+extension Track.Format {
+    /// What an open file's processing format says; a file of zero frames has no duration.
+    /// In an extension so the struct keeps its memberwise initializer.
+    init(file: AVAudioFile, url: URL) {
+        let processing = file.processingFormat
+        let duration = file.length > 0 ? Double(file.length) / processing.sampleRate : nil
+        self.init(duration: duration,
+                  bitrate: duration.flatMap { Track.estimatedBitrateKbps(of: url, duration: $0) },
+                  sampleRate: Int(processing.sampleRate), channels: Int(processing.channelCount))
     }
 }
 

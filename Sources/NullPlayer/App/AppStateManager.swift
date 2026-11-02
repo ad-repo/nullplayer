@@ -110,7 +110,12 @@ class AppStateManager {
         var artist: String?
         var album: String?
         var duration: Double?
-        
+
+        // A local file's format, so a restored row is not read from disk again to fill it in
+        var bitrate: Int?
+        var sampleRate: Int?
+        var channels: Int?
+
         // MIME content type hint for casting (e.g. "audio/flac")
         // Preserves content type across restarts so Sonos casting doesn't default to audio/mpeg
         var contentType: String?
@@ -125,7 +130,10 @@ class AppStateManager {
                     title: track.title,
                     artist: track.artist,
                     album: track.album,
-                    duration: track.duration
+                    duration: track.duration,
+                    bitrate: track.bitrate,
+                    sampleRate: track.sampleRate,
+                    channels: track.channels
                 )
             } else if let plexKey = track.plexRatingKey {
                 return SavedTrack(
@@ -1116,6 +1124,9 @@ class AppStateManager {
                         artist: savedTrack.artist,
                         album: savedTrack.album,
                         duration: savedTrack.duration,
+                        bitrate: savedTrack.bitrate,
+                        sampleRate: savedTrack.sampleRate,
+                        channels: savedTrack.channels,
                         // SavedTrack doesn't persist mediaType and this initializer defaults it
                         // to .audio, so re-derive it from the file extension (cheap, no file I/O)
                         // — otherwise restored local videos come back as audio and misroute to
