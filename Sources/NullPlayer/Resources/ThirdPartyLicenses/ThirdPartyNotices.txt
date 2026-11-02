@@ -931,7 +931,7 @@ libprojectM
 License:    LGPL-2.1-or-later
 Copyright:  Copyright (c) 2003-2024 the projectM Team
 Source:     https://github.com/projectM-visualizer/projectm
-Version:    4.1.7
+Version:    4.1.8
 
                   GNU LESSER GENERAL PUBLIC LICENSE
                        Version 2.1, February 1999
