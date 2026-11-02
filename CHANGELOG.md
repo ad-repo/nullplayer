@@ -40,6 +40,12 @@
 - **A click on a skin's time readout flips it between elapsed and remaining**, as in Winamp; remaining time
   draws with a leading minus. It is the same setting as Playback → Timer, and a drag that starts on the
   readout still moves the window.
+- **Show Artist / Show Album in every playlist's right-click menu.** Rows read `Artist - Title` by
+  default, and the two toggles add the album or drop the artist, the same in Classic, Original,
+  Winamp Modern and Windows Media Player skins. Winamp Modern playlists now show the artist too, and a
+  Windows Media Player skin's playlist pane numbers its rows and shows each track's length. In both,
+  a playing row too long for the window scrolls, as it does in Classic and Original, instead of being
+  cut short.
 
 ### Fixes
 
@@ -89,6 +95,8 @@
   length, and a restored playlist no longer reads its files again at every launch to fill them in.
 - **A stream's sample rate filling in no longer counts as a new track**: the playlist stays where it
   is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
+- **A long playing title scrolls again after a skin switch or pressing Play** in the Classic playlist
+  and main window, instead of standing still until the next track.
 
 ## 0.34.0
 

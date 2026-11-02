@@ -334,21 +334,7 @@ struct Track: Identifiable, Equatable {
     /// Display title (artist - title or just title)
     /// Sanitizes newlines and control characters for proper display
     var displayTitle: String {
-        let result: String
-        if let artist = artist, !artist.isEmpty {
-            result = "\(artist) - \(title)"
-        } else {
-            result = title
-        }
-        // Remove newlines and other control characters that break playlist display
-        return result.replacingOccurrences(of: "\n", with: " ")
-                     .replacingOccurrences(of: "\r", with: " ")
-                     .replacingOccurrences(of: "\t", with: " ")
-    }
-
-    /// The title a playlist row draws: a video is marked with its glyph, audio is not.
-    var playlistTitle: String {
-        mediaType == .video ? "\(mediaType.rowMarker) \(displayTitle)" : displayTitle
+        PlaylistRowFields().text(title: title, artist: artist, album: nil, isVideo: false)
     }
     
     /// Formatted duration string (MM:SS)

@@ -175,12 +175,10 @@ struct WinampModernComponentHolder {
 
 struct WinampModernPlaylistRow: Equatable {
     let title: String
-    let secondary: String
     let duration: TimeInterval
     let isCurrent: Bool
-    /// The three fields `PlEdit.getMetaData(track, field)` is asked for, kept per row rather than
-    /// derived from `secondary`: the display string joins artist and album with an em dash, and a
-    /// script that asks for one of them must not be handed both.
+    /// The fields `PlEdit.getMetaData(track, field)` is asked for, kept apart so a script that asks
+    /// for one is never handed a joined string. The drawn row joins them with `PlaylistRowFields`.
     let artist: String
     let album: String
     /// What `PlEdit.getFileName(track)` answers. Defix reads it off the current entry to derive the
@@ -190,11 +188,12 @@ struct WinampModernPlaylistRow: Equatable {
     /// An EQ profile runs on this row's track: the row is drawn with NullPlayer's queue marker. Not
     /// part of anything a script reads.
     var hasEQProfile = false
+    /// The row's track is a video: it is drawn with the video glyph. Not script-facing either.
+    var isVideo = false
 
-    init(title: String, secondary: String, duration: TimeInterval, isCurrent: Bool,
+    init(title: String, duration: TimeInterval, isCurrent: Bool,
          artist: String = "", album: String = "", filePath: String = "") {
         self.title = title
-        self.secondary = secondary
         self.duration = duration
         self.isCurrent = isCurrent
         self.artist = artist

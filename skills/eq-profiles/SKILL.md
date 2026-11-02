@@ -72,7 +72,7 @@ queue row's title. Classic and Modern call `queueTitle(for:)`; the `.wal` and `.
 `hasEQProfile` (`WinampModernPlaylistRow`, `WMPPlaylistItemSnapshot`) and call
 `queueTitle(_:marked:)`. `WMPPlaylistItemSnapshot` leaves `hasEQProfile` out of equality, hashing and
 coding: a marker change is not a queue change (`WMPObjectModel.queueGeneration`) and no script reads it.
-`Track.playlistTitle` does not consult profiles.
+`PlaylistRowFields.text(for:)` does not consult profiles.
 
 Scopes (`Track.eqProfileScopes`, in the resolver's file; an `EQProfileScope` per level), most specific first, names
 lower-cased and trimmed, a level omitted when its names are empty. `source` is `plex:<serverId>`

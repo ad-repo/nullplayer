@@ -816,6 +816,9 @@ final class WasabiSceneRenderer {
     /// Weak so the retained graph never keeps the host (owned by the window controller) alive.
     weak var componentHost: WinampModernComponentHost?
     private(set) var playlistScrollOffset = 0
+    /// Per playlist holder, the playing row's title box (skin coordinates) while its text overflows
+    /// and scrolls, as the last draw left it. The view's animation clock repaints exactly these.
+    private(set) var playlistMarqueeRects: [WasabiObjectID: CGRect] = [:]
     /// The scroll position `revealPlaylistRow` computes, for the tests that assert the arithmetic.
     var playlistScrollOffsetForTesting: Int { playlistScrollOffset }
     /// How large NullPlayer draws its own text on this scene's host surfaces — the embedded playlist
@@ -4030,6 +4033,7 @@ final class WasabiSceneRenderer {
         let palette = rowPalette
         context.setFillColor(palette.contentBackground.cgColor)
         context.fill(frame)
+        playlistMarqueeRects[holder.stableID] = nil
         guard let snapshot = componentHost?.playlistSnapshot() else { return }
         let rowHeight = playlistRowHeight(in: holder)
         let visible = playlistVisibleRowCount(in: frame, holder: holder)
@@ -4043,6 +4047,7 @@ final class WasabiSceneRenderer {
         context.clip(to: frame)
         if let scrollbar { drawPlaylistScrollbar(scrollbar, context: context) }
         let rowWidth = frame.width - (scrollbar?.track.width ?? 0)
+        let fields = PlaylistRowFields.current
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
@@ -4073,9 +4078,12 @@ final class WasabiSceneRenderer {
                 drawSurfaceText(Self.playlistTimeText(row.duration), in: textRect, color: color,
                                 alignment: .right, pointSize: pointSize, context: context)
             }
-            let label = "\(index + 1). \(EQProfileResolver.queueTitle(row.title, marked: row.hasEQProfile))"
-            drawSurfaceText(label, in: columns.label, color: color,
-                            alignment: .left, pointSize: pointSize, context: context)
+            let title = fields.text(title: row.title, artist: row.artist, album: row.album, isVideo: row.isVideo)
+            let label = "\(index + 1). \(EQProfileResolver.queueTitle(title, marked: row.hasEQProfile))"
+            let scrolls = row.isCurrent && surfaceTextWidth(label, pointSize: pointSize) > columns.label.width
+            if scrolls { playlistMarqueeRects[holder.stableID] = columns.label.intersection(frame) }
+            drawSurfaceText(label, in: columns.label, color: color, alignment: .left,
+                            pointSize: pointSize, marquee: scrolls, context: context)
         }
         context.restoreGState()
     }

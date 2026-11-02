@@ -446,7 +446,10 @@ class MarqueeLayer: CALayer {
     
     /// Resume animation (for when window becomes visible)
     func resumeAnimation() {
-        guard let layer = contentLayer else { return }
+        // Only a paused layer: on a running one this rewinds the clock behind the scroll
+        // animation's start, freezing it until a new title adds a fresh one. A window shown for
+        // the first time reports visible with no pause before it.
+        guard let layer = contentLayer, layer.speed == 0 else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         let pausedTime = layer.timeOffset

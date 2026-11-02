@@ -178,6 +178,13 @@ class PlaylistView: NSView {
                                                name: .connectedWindowHighlightDidChange, object: nil)
     }
 
+    /// `WindowManager.redrawPlaylistViews` marks the view for layout when the row text changes
+    /// (an EQ marker, Show Artist / Show Album) without the queue changing.
+    override func layout() {
+        super.layout()
+        updateCurrentTrackTextWidth()
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil && playlistMarqueeLayer == nil {

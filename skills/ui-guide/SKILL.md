@@ -504,6 +504,19 @@ the bitmap glyphs blur into halos — invisible-ish on Retina, obvious at 1x (#6
 `ClassicMarqueeScaleTests`. The Classic playlist's marquee (`PlaylistView`) uses the same transform
 with backing scale only.
 
+### Pause and resume
+
+`MarqueeLayer.pauseAnimation` freezes the content layer (`speed = 0`, clock saved in `timeOffset`);
+`resumeAnimation` acts **only on a paused layer**. Resuming a running one rewound its clock behind
+the scroll animation's start and froze the title until the next track added a fresh animation — the
+Classic playlist and main-window marquee stood still after a skin switch or Play, because a window
+shown for the first time reports visible with no pause before it.
+
+The Classic playlist re-measures the playing row in `PlaylistView.layout()`:
+`WindowManager.redrawPlaylistViews` marks every playlist for layout when row text changes without the
+queue changing (an EQ marker, Show Artist / Show Album), the same hook `ModernPlaylistView.layout()`
+uses to re-set its marquee text.
+
 ## White Text Rendering
 
 Some UI elements (like library/server names in the browser) require white text instead of the standard green skin font. This is implemented in `SkinRenderer.drawSkinTextWhite()`.

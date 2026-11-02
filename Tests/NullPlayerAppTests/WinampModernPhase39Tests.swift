@@ -178,8 +178,7 @@ final class WinampModernPhase39Tests: XCTestCase {
     /// The anchor is still the anchor: a click, the Delete key and a skin's own readouts all mean the
     /// single row by "the selection", while `PE_SEL` works on the set.
     func testSnapshotSelectionDefaultsToTheAnchor() {
-        let rows = (0..<3).map { WinampModernPlaylistRow(title: "\($0)", secondary: "",
-                                                         duration: 0, isCurrent: false) }
+        let rows = (0..<3).map { WinampModernPlaylistRow(title: "\($0)", duration: 0, isCurrent: false) }
         let anchored = WinampModernPlaylistSnapshot(rows: rows, currentIndex: 0, selectedIndex: 1)
         XCTAssertEqual(anchored.selectedRows, [1])
         XCTAssertTrue(anchored.isSelected(1))

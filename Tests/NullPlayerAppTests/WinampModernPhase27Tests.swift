@@ -335,8 +335,7 @@ final class WinampModernPhase27Tests: XCTestCase {
 
         WasabiTextMetrics.componentTextProvider = {
             WinampModernPlaylistSnapshot(
-                rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", secondary: "",
-                                                            duration: 60, isCurrent: $0 == 0) },
+                rows: (0..<3).map { WinampModernPlaylistRow(title: "t\($0)", duration: 60, isCurrent: $0 == 0) },
                 currentIndex: 0, selectedIndex: 0)
         }
         addTeardownBlock { WasabiTextMetrics.componentTextProvider = nil }

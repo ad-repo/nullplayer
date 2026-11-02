@@ -110,6 +110,7 @@ enum PlaylistMenuBuilder {
         menu.addItem(item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)),
                           enabled: state.selectionCount == 1 && canEdit))
         if canEdit { EQProfileMenu.addAssignItem(to: menu, queueRows: state.selectedRows) }
+        PlaylistRowFields.addItems(to: menu)
         return menu
     }
 

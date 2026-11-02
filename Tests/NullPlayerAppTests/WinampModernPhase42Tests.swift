@@ -135,8 +135,8 @@ final class WinampModernPhase42Tests: XCTestCase {
     func testGetLengthIsATimeStringAndEmptyWhenUnknown() throws {
         let (runtime, host) = try makeRuntime()
         host.rows = [
-            WinampModernPlaylistRow(title: "a", secondary: "", duration: 245, isCurrent: true),
-            WinampModernPlaylistRow(title: "b", secondary: "", duration: 0, isCurrent: false),
+            WinampModernPlaylistRow(title: "a", duration: 245, isCurrent: true),
+            WinampModernPlaylistRow(title: "b", duration: 0, isCurrent: false),
         ]
 
         XCTAssertEqual(call(runtime, "getlength", .integer(0)).stringValue, "4:05")
@@ -310,7 +310,7 @@ final class WinampModernPhase42Tests: XCTestCase {
 
     private static func rows(_ count: Int, current: Int) -> [WinampModernPlaylistRow] {
         (0..<count).map {
-            WinampModernPlaylistRow(title: "Track \($0 + 1)", secondary: "", duration: 120,
+            WinampModernPlaylistRow(title: "Track \($0 + 1)", duration: 120,
                                     isCurrent: $0 == current, artist: "Artist \($0 + 1)",
                                     album: "Album \($0 + 1)", filePath: "/queue/track\($0 + 1).mp3")
         }
