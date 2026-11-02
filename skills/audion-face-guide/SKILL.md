@@ -27,8 +27,8 @@ support is [reference/user-guide.md](reference/user-guide.md).
 needs the user's explicit permission first. A change in shared code (`App/WindowManager.swift` above
 all) is gated on `controllerFamily == .audion`, never justified by reasoning that it "should be a
 no-op". Each phase that touches `App/` ends with the
-other families' sweeps byte-identical to the capture before it. A Classic or Original diff is a
-regression by definition. `skin-subsystem-blueprint` § *The rule that outranks everything* is the
+other families' sweeps byte-identical to the capture before it. A diff in a family with a fixed
+reference is a regression by definition. `skin-subsystem-blueprint` § *The rule that outranks everything* is the
 worked version.
 
 ## This engine is a port, and it has an oracle
@@ -112,6 +112,6 @@ The probe flags and the launch command are in `reference/harness.md`.
 - `swift test --build-system native` in the worktree (the toolchain's default build system cannot
   find VLCKit; see `scripts/lib/swiftpm.sh`).
 - From Phase 2: the census, the render sweep and the oracle comparison, per `reference/harness.md`.
-- From Phase 3: the Classic, Original, `.wal` and `.wmz` sweeps byte-identical, and
+- From Phase 3: the Classic, Original, `.wal`, `.wmz` and Sonique sweeps byte-identical, and
   `skin-mode-switch-test.sh`.
 - Do not commit faces, oracle output or rendered PNGs.
