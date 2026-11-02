@@ -1255,6 +1255,16 @@ why the deferral is scoped to layers that do **not** bind the press: one that do
 on the press, unchanged, which is what makes this narrow where B59 rated the general form risky.
 `move="0"` and `action=` remain refusals — there the skin has said what it wants.
 
+**A `display="time"` readout primes too** (PR 653). Its click flips elapsed/remaining — the app's own
+`timeDisplayMode`, through `WinampModernHost.showsRemainingTime` — so `isInteractive` claims it, and a
+claimed object no longer passes its press to the drag handle behind it. The first cut left it at
+that, and dragging from the clock stopped moving the window (Electrolium: the track title dragged,
+the clock did not). It has nothing to do on the press, so it takes the layer rule above rather
+than a rule of its own: under 3pt a click flips the time, over it the window moves and the setting
+is untouched. Measured on Electrolium with 2pt steps: a drag of +60,+30 from the clock moved the
+window +56,+28 — the step that crossed the threshold is not travelled, the same as the toolbar.
+A synthetic drag whose first step is large loses that whole step, which reads like a short drag.
+
 **⌘-drag moves the window from anywhere**, ahead of the menu bar, the divider, the resize border, every
 holder and every control. The corpus is why: median draggable share is **72%** across 120 containers,
 but **29 of them** have a top-24px strip under 25% draggable — Ujola Cat's player is 24%, meridian's

@@ -208,6 +208,8 @@ extension WinampModernHost {
     var bitrateKbps: Int { 0 }
     var sampleRateHz: Int { 0 }
     var channelCount: Int { 0 }
+    // A host with no app-wide timer setting (the render harness, a test double) counts up and
+    // swallows the flip, the way `currentTrackRating` swallows a rating.
     var showsRemainingTime: Bool {
         get { false }
         set {}

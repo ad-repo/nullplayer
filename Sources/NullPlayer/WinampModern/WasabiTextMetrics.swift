@@ -762,11 +762,13 @@ final class WasabiTextMetrics {
     static let scriptTextKey = "nullplayer.script.text"
 
     private static func bound(_ object: WasabiObject, host: WinampModernHost) -> String {
-        switch object.attributes["display"]?.lowercased() {
-        // `time` is the readout a click flips to the time remaining, drawn with a leading minus;
-        // `timeelapsed` always counts up (64 and 4 declarations in the corpus respectively).
-        case "time" where host.showsRemainingTime && host.duration > 0:
+        // The readout a click flips draws the time remaining with a leading minus. Asked through the
+        // same predicate the click uses, so what flips and what draws flipped cannot drift apart.
+        if togglesTimeDisplay(object), host.showsRemainingTime, host.duration > 0 {
             return "-" + clock(host.duration - host.currentTime, on: object)
+        }
+        switch object.attributes["display"]?.lowercased() {
+        // `timeelapsed` always counts up (64 `time` and 4 `timeelapsed` declarations in the corpus).
         case "time", "timeelapsed": return clock(host.currentTime, on: object)
         case "songlength": return clock(host.duration, on: object)
         // Winamp's "song name" is the playlist's display title — "Artist - Title" — which is exactly
