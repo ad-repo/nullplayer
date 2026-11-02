@@ -23,10 +23,11 @@ support is [reference/user-guide.md](reference/user-guide.md).
 
 ## The rule that outranks everything
 
-**Audion work must never change Classic, Original, `.wal` or `.wmz` behaviour.** A change in shared
-code (`App/WindowManager.swift` above all) is gated on `controllerFamily == .audion`, never justified
-by reasoning that it "should be a no-op". Each phase that touches `App/` ends with Classic, Original,
-`.wal` and `.wmz` sweeps byte-identical to the capture before it. A Classic or Original diff is a
+**Audion work must not change how any other family behaves**, and a deliberate multi-family change
+needs the user's explicit permission first. A change in shared code (`App/WindowManager.swift` above
+all) is gated on `controllerFamily == .audion`, never justified by reasoning that it "should be a
+no-op". Each phase that touches `App/` ends with the
+other families' sweeps byte-identical to the capture before it. A Classic or Original diff is a
 regression by definition. `skin-subsystem-blueprint` § *The rule that outranks everything* is the
 worked version.
 
