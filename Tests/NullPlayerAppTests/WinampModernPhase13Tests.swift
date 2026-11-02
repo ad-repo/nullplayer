@@ -729,13 +729,17 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(catalog.playlist, .embedded(containerID: mainContainer.stableID))
 
         var revealed: [(WinampModernComponentKind, Bool)] = []
+        var concealed: [WinampModernComponentKind] = []
+        var pageShown = false
         var classicCalls: [WinampModernComponentKind] = []
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { kind, _, allowAutoOpenFallback in
                 revealed.append((kind, allowAutoOpenFallback))
                 return true
             },
-            isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
+            concealEmbedded: { concealed.append($0) },
+            isMainWindowVisible: { true }, showsEmbedded: { _ in pageShown },
+            showsEmbeddedEqualizer: { false },
             window: { _ in nil },
             setVisible: { _, _ in XCTFail("an embedded surface has no window to show") },
             closeCarriedOver: { _ in },
@@ -752,7 +756,16 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertTrue(classicCalls.isEmpty)
         XCTAssertNil(coordinator.nativeWindow(for: .playlist),
                      "embedded surfaces must stay out of docking and frame persistence")
+        XCTAssertFalse(coordinator.isSurfaceVisible(.playlist), "a tab the skin is not showing is closed")
+        XCTAssertTrue(concealed.isEmpty)
+
+        // B350: once the skin shows the page, the menu tick follows it and a toggle asks the skin
+        // to put it away rather than revealing it again.
+        pageShown = true
         XCTAssertTrue(coordinator.isSurfaceVisible(.playlist))
+        coordinator.toggleSurface(.playlist)
+        XCTAssertEqual(concealed, [.playlist])
+        XCTAssertEqual(revealed.count, 3, "an open tab is not revealed again")
 
         // The library, which this skin does not host at all, goes to the classic window instead.
         XCTAssertFalse(coordinator.handles(.library))
@@ -771,7 +784,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         let windows: [String: NSWindow] = [:]
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
             revealEmbedded: { _, _, _ in XCTFail("nothing is embedded here"); return false },
-            isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false },
+            concealEmbedded: { _ in }, isMainWindowVisible: { true }, showsEmbedded: { _ in false },
+            showsEmbeddedEqualizer: { false },
             window: { windows[$0] },
             setVisible: { id, visible in visibility[id] = visible },
             closeCarriedOver: { _ in },
@@ -793,7 +807,8 @@ final class WinampModernPhase13Tests: XCTestCase {
                                                  video: .classicFallback(reason: "no video window"),
                                                  visualization: .classicFallback(reason: "no AVS window"))
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true }, showsEmbeddedEqualizer: { false }, window: { _ in nil },
+            revealEmbedded: { _, _, _ in true }, concealEmbedded: { _ in }, isMainWindowVisible: { true }, showsEmbedded: { _ in false },
+            showsEmbeddedEqualizer: { false }, window: { _ in nil },
             setVisible: { _, _ in }, closeCarriedOver: { _ in }, classicFallback: { _, _ in },
             redraw: {}))
         XCTAssertEqual(coordinator.summary,
@@ -811,8 +826,8 @@ final class WinampModernPhase13Tests: XCTestCase {
                                                  visualization: .classicFallback(reason: "no AVS window"))
         var drawn = false
         let coordinator = WinampModernSurfaceCoordinator(catalog: catalog, environment: .init(
-            revealEmbedded: { _, _, _ in true }, isMainWindowVisible: { true },
-            showsEmbeddedEqualizer: { drawn }, window: { _ in nil },
+            revealEmbedded: { _, _, _ in true }, concealEmbedded: { _ in }, isMainWindowVisible: { true },
+            showsEmbedded: { _ in false }, showsEmbeddedEqualizer: { drawn }, window: { _ in nil },
             setVisible: { _, _ in }, closeCarriedOver: { _ in }, classicFallback: { _, _ in },
             redraw: {}))
         XCTAssertFalse(coordinator.isSurfaceVisible(.equalizer))
@@ -821,6 +836,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertFalse(coordinator.isMenuToggleable(.equalizer))
         XCTAssertTrue(coordinator.isMenuToggleable(.playlist))
         XCTAssertTrue(coordinator.isMenuToggleable(.library))
+        XCTAssertTrue(coordinator.isEmbeddedPage(.playlist), "a skin switch leaves the skin's pages alone")
+        XCTAssertFalse(coordinator.isEmbeddedPage(.equalizer), "but still reopens its equalizer")
     }
 
     /// The scene half of B253: EQ controls in a hidden or fully transparent group are not shown.

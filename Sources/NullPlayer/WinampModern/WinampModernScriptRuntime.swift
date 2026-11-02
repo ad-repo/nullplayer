@@ -131,6 +131,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **window-client space** — the space
     /// `clientToScreenX/Y` answer in, which is what every measured caller computes the point with.
     var popupPresenter: (([WinampModernPopupMenuItem], CGPoint?) -> Int32)?
+    /// Items left out of every script-built popup, by title: a skin's own item the host has taken
+    /// over (ClassicPro's *Auto Close Tab*, B350).
+    var withheldPopupTitles: Set<String> = []
     /// What Winamp's `popAtMouse`/`popAtXY` answer for a menu that was dismissed or never shown. Not
     /// 0: skins number their first command 0 and test `res < 0` for a cancel — Anunaki's wheel
     /// (0 = Volume), lights (0 = Off) and player-mode (0 = normal) menus all do — so answering 0 ran

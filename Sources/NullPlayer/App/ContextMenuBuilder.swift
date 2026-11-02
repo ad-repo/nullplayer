@@ -210,7 +210,7 @@ class ContextMenuBuilder {
         // container routed as a playlist, EQ, library, video, or visualization window, so none of
         // these entries overlaps the NullPlayer-owned window list above.
         if wm.uiMode.controllerFamily == .winampModern {
-            addWinampModernSkinWindowSection(to: menu, windows: wm.winampModernSkinWindows)
+            addWinampModernSkinWindowSection(to: menu, entries: wm.winampModernSkinMenuEntries)
         }
 
         menu.addItem(NSMenuItem.separator())
@@ -289,21 +289,23 @@ class ContextMenuBuilder {
         return menu
     }
 
-    /// Appends the loaded `.wal` skin's unique windows as a flat, separated section. Kept internal
+    /// Appends the loaded `.wal` skin's section — its unique windows, the items it put in Winamp's
+    /// Windows menu, a ClassicPro strip's tabs — as a flat, separated section. Kept internal
     /// so the menu contract can be exercised without loading an archive or creating real windows.
     static func addWinampModernSkinWindowSection(
         to menu: NSMenu,
-        windows: [(id: String, name: String, isVisible: Bool)]
+        entries: [WinampModernSkinMenuEntry]
     ) {
-        guard !windows.isEmpty else { return }
+        guard !entries.isEmpty else { return }
         menu.addItem(NSMenuItem.separator())
-        for skinWindow in windows {
-            let item = NSMenuItem(title: skinWindow.name,
-                                  action: #selector(MenuActions.toggleWinampModernSkinWindow(_:)),
+        for entry in entries {
+            let item = NSMenuItem(title: entry.title,
+                                  action: #selector(MenuActions.toggleWinampModernSkinMenuEntry(_:)),
                                   keyEquivalent: "")
             item.target = MenuActions.shared
-            item.representedObject = skinWindow.id
-            item.state = skinWindow.isVisible ? .on : .off
+            item.representedObject = entry.target
+            item.state = entry.isOn ? .on : .off
+            item.isEnabled = entry.isEnabled
             menu.addItem(item)
         }
     }
@@ -4013,9 +4015,13 @@ class MenuActions: NSObject {
     // MARK: - Modern (Winamp 5.x `.wal`)
     // Picking and loading a skin, in every family, is in ContextMenuBuilder+SkinFamilies.swift.
 
-    @objc func toggleWinampModernSkinWindow(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        WindowManager.shared.toggleWinampModernSkinWindow(id: id)
+    @objc func toggleWinampModernSkinMenuEntry(_ sender: NSMenuItem) {
+        guard let target = sender.representedObject as? WinampModernSkinMenuEntry.Target else { return }
+        WindowManager.shared.toggleWinampModernSkinMenuEntry(target)
+    }
+
+    @objc func restoreWinampModernDefaultTabs() {
+        WindowManager.shared.restoreWinampModernDefaultTabs()
     }
 
     @objc func selectWinampModernColorTheme(_ sender: NSMenuItem) {

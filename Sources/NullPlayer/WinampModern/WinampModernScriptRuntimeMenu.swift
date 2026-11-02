@@ -18,6 +18,13 @@ extension WinampModernScriptRuntime {
         var submenu: UInt64?
     }
 
+    /// Show a resolved menu, less the withheld items. No presenter means no menu was shown, which a
+    /// skin reads as a dismissal.
+    func presentPopup(_ items: [WinampModernPopupMenuItem], at point: CGPoint?) -> Int32 {
+        popupPresenter?(items.filter { !withheldPopupTitles.contains($0.title) }, point)
+            ?? Self.popupDismissed
+    }
+
     /// Resolve a menu and everything it nests into the presenter's shape. A skin could attach a menu
     /// to itself, so the walk is depth-bounded rather than trusting the graph of menus to be a tree.
     private func popupItems(of id: UInt64, depth: Int) -> [WinampModernPopupMenuItem] {
@@ -72,10 +79,8 @@ extension WinampModernScriptRuntime {
             }
             return .null
         }
-        // No presenter means no menu was shown, which a skin reads as a dismissal.
         table.add("popatmouse", 0) { runtime, call in
-            .integer(runtime.popupPresenter?(runtime.popupItems(of: call.id, depth: 0), nil)
-                     ?? WinampModernScriptRuntime.popupDismissed)
+            .integer(runtime.presentPopup(runtime.popupItems(of: call.id, depth: 0), at: nil))
         }
         table.add("popatxy", 2) { runtime, call in
             // ClassicPro positions its tab-strip and "goto" menus with
@@ -83,8 +88,7 @@ extension WinampModernScriptRuntime {
             // whatever those conversions answer, so the two have to agree. They do: both are
             // window-client space, and the presenter places the menu in that window.
             let point = CGPoint(x: Int(call.arguments[0].integerValue), y: Int(call.arguments[1].integerValue))
-            return .integer(runtime.popupPresenter?(runtime.popupItems(of: call.id, depth: 0), point)
-                            ?? WinampModernScriptRuntime.popupDismissed)
+            return .integer(runtime.presentPopup(runtime.popupItems(of: call.id, depth: 0), at: point))
         }
         return table
     }()
