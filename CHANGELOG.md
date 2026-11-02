@@ -9,6 +9,12 @@
   parenthesised declarations may now load, and shader transpiling is much faster. The crash-preset
   blacklist stays.
 
+### Audion faces
+
+- **A face's top line shows the artist and its second line the track title** (#662), as Panic's face
+  previews and RackView's ARTIST/TRACK labels show. They were the other way round, with album and
+  format appended.
+
 ## 0.34.1
 
 ### Casting and the CLI

@@ -174,7 +174,6 @@ final class AudionFaceFuzzTests: XCTestCase {
                 host.durationSeconds = elapsed * 2
                 host.title = "A title long enough to need cutting from the middle"
                 host.artist = "Artist"
-                host.album = "Album"
                 host.streamPhase = phase
                 host.isWindowActive = track != 150
                 host.reduceMotion = track == 1

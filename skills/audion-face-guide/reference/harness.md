@@ -42,7 +42,7 @@ AUDION_RENDER_DUMP=/tmp/audion AUDION_RENDER_STATE=playing \
 | `AUDION_RENDER_CLICK` | `x,y` | Presses it. |
 | `AUDION_RENDER_SCALE` | 1–4 | Integer scale; text re-rasterized at that size. |
 | `AUDION_RENDER_PROBE` | any | One `PROBE` line per draw op. |
-| `AUDION_RENDER_TEXT` | `title\|artist\|album\|format` | Replaces the host text in every non-stopped state, so the lines fit their boxes and alignment shows (the contact sheets use `Peace Orchestra\|Kula Shaker\|Fantasma\|`). The sweep scripts pass it through. |
+| `AUDION_RENDER_TEXT` | `artist\|title` | Replaces the host text in every non-stopped state, so the lines fit their boxes and alignment shows (the contact sheets use `Cornelius\|Fantasma`); any other field count is ignored with a printed line. The sweep scripts pass it through. |
 
 The image label is `<state>[-f<tick>][-hover][-click][@<n>x]`; the canonical sweep's are `stopped`
 and `playing`.

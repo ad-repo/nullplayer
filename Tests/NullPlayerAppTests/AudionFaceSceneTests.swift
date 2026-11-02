@@ -77,7 +77,7 @@ final class AudionFaceSceneTests: XCTestCase {
         var host = AudionFaceHostState()
         host.reduceMotion = true
         XCTAssertFalse(Self.hasInk(try XCTUnwrap(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host)))))
-        host.artist = "HHH"
+        host.title = "HHH"
         XCTAssertTrue(Self.hasInk(try XCTUnwrap(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host)))))
     }
 
@@ -189,7 +189,7 @@ final class AudionFaceSceneTests: XCTestCase {
         host.streamPhase = .streaming
         XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
         host.streamPhase = .none
-        host.artist = "Someone"
+        host.title = "Something"
         XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "the album line scrolls")
         host.reduceMotion = true
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host))
@@ -207,9 +207,9 @@ final class AudionFaceSceneTests: XCTestCase {
         let face = try await fixture.load()
 
         var host = AudionFaceHostState()
-        host.title = "Hi"
+        host.artist = "Hi"
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "it fits: pinned")
-        host.title = "A title far too long for a forty pixel box"
+        host.artist = "An artist far too long for a forty pixel box"
         XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
         host.reduceMotion = true
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "Reduce Motion cuts it instead")

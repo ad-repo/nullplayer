@@ -31,7 +31,6 @@ final class AudionFacePhase6Tests: XCTestCase {
         host.trackIndex = 4
         host.title = "A title long enough to need cutting from the middle"
         host.artist = "An artist with a long name"
-        host.album = "An album"
         try step("a track starts")
         try step("the marquee holds", frame: 40, rects: [])
         try step("the marquee moves only the album box", frame: 200, rects: [albumBox], outline: false)

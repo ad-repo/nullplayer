@@ -6,7 +6,7 @@ This file owns the one draw path the harness and the screen share:
 
 | Type | Role |
 |---|---|
-| `AudionFaceHostState` | pure playback snapshot: play state, elapsed and duration, track index, title/artist/album/format, stream phase, window active, Reduce Motion; derives `hasTrack`, `artistLine` and `albumLine` |
+| `AudionFaceHostState` | pure playback snapshot: play state, elapsed and duration, track index, title and artist, stream phase, window active, Reduce Motion; derives `hasTrack`, `artistLine` and `albumLine` |
 | `AudionFaceInteractionState` | hovered and pressed button, and buttons the window disables (the volume button while its slider is open) |
 | `AudionFaceScene` | `(face, host, interaction, frame, scale) → [AudionFaceDrawOp]`, one function per element kind; also `visibleButtons` and `button(atX:y:)`, the hit test. Each op's `Element` (`.button(.stop)`, `.label(.album, offset:)`, …) decides its layer |
 | `AudionFaceText` | one text line to a `CGImage`, adapted from FaceKit's `draw(text:…)` (carries Panic's header) |
@@ -89,8 +89,8 @@ line in an image as wide as the whole string, baseline at `(ascent − descent) 
 
 | Line | Text | Truncation | Marquee |
 |---|---|---|---|
-| artist | the title; nothing for an empty one | only under Reduce Motion, cut from the middle with `…` | when wider than its box, unless Reduce Motion |
-| album | `artist—album—format`, skipping absent parts | only under Reduce Motion | always, unless Reduce Motion |
+| artist | the artist; nothing for an empty one | only under Reduce Motion, cut from the middle with `…` | when wider than its box, unless Reduce Motion |
+| album | the title; nothing for an empty one | only under Reduce Motion | always, unless Reduce Motion |
 
 A departure (the user's call): FaceKit cuts the artist line, and a justified album line's text,
 rather than scroll them; the whole text scrolls instead. `AudionFaceScene.isAnimated` runs the clock

@@ -15,8 +15,6 @@ struct AudionFaceHostState: Equatable {
     var trackIndex: Int?
     var title: String?
     var artist: String?
-    var album: String?
-    var format: String?
     var streamPhase = StreamPhase.none
     var isWindowActive = true
     /// Pins the album marquee and truncates it instead (FaceKit reads the system setting).
@@ -32,12 +30,8 @@ struct AudionFaceHostState: Equatable {
     /// position slider only then.
     var isSeekable: Bool { durationSeconds > 0 }
 
-    /// The artist line shows the title, as Panic's player fills it; an empty one shows nothing.
-    var artistLine: String? { title.flatMap { $0.isEmpty ? nil : $0 } }
-
-    /// The album line is `artist—album—format`, skipping the parts there are none of.
-    var albumLine: String? {
-        let parts = [artist, album, format].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? nil : parts.joined(separator: "—")
-    }
+    /// The artist line shows the artist and the album line the title, as Panic's face previews and
+    /// Rackview's ARTIST/TRACK labels show (#662); an empty one shows nothing.
+    var artistLine: String? { artist.flatMap { $0.isEmpty ? nil : $0 } }
+    var albumLine: String? { title.flatMap { $0.isEmpty ? nil : $0 } }
 }

@@ -27,8 +27,6 @@ enum AudionFaceAudioEngineHost {
         state.trackIndex = engine.currentIndex >= 0 ? engine.currentIndex + 1 : nil
         state.title = track?.title
         state.artist = track?.artist
-        state.album = track?.album
-        state.format = track.map { $0.url.pathExtension.uppercased() }.flatMap { $0.isEmpty ? nil : $0 }
         state.streamPhase = streamPhase(of: track)
         state.isWindowActive = isWindowActive
         state.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
