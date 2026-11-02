@@ -3598,7 +3598,7 @@ final class WasabiSceneRenderer {
             let color = index == active && palette.currentText != palette.listText
                 ? legibleCurrentRowColor(on: selected ? bar : palette.contentBackground, plain: plain)
                 : plain
-            drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 0), color: color,
+            drawSurfaceText(names[index], in: rowRect.insetBy(dx: 3, dy: 1), color: color,
                             alignment: .left, pointSize: 9, context: context)
         }
         context.restoreGState()
