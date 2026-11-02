@@ -75,6 +75,10 @@
   Jack&Sally, Smart, Ugly and others drew their titles over the desktop).
 - **A click on a clear part of an Audion face hits the face** instead of the window behind it, so
   Smart's see-through display drags the player as Audion's did.
+- **Dropped, added and restored files show their bitrate, sample rate and channels**, not only their
+  length, and a restored playlist no longer reads its files again at every launch to fill them in.
+- **A stream's sample rate filling in no longer counts as a new track**: the playlist stays where it
+  is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
 
 ## 0.34.0
 

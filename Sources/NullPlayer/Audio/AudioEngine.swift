@@ -392,7 +392,7 @@ class AudioEngine {
     private var currentTrackStorage: Track?
 
     /// The playing track. Setting it is a track change: everything that reacts to a new song runs.
-    /// A field filled in on the same track goes through `refreshCurrentTrack` instead.
+    /// A format filled in on the same track goes through `applyFormatUpdates` instead.
     private(set) var currentTrack: Track? {
         get { currentTrackStorage }
         set {
@@ -4122,8 +4122,7 @@ class AudioEngine {
         Task.detached(priority: .utility) { [weak self] in
             var fileFormats: [UUID: Track.Format] = [:]
             for item in needsFileIO {
-                let format = await Track.Format.read(from: item.url)
-                if format.duration != nil || format.sampleRate != nil { fileFormats[item.id] = format }
+                fileFormats[item.id] = await Track.Format.read(from: item.url)
             }
             guard !fileFormats.isEmpty else { return }
             // Snapshot before the actor hop: `MainActor.run`'s closure is @Sendable.
@@ -4134,30 +4133,28 @@ class AudioEngine {
         }
     }
 
-    /// Replaces playlist tracks whose UUIDs appear in `formats` with copies carrying the file's
-    /// format, and the playing track too, so every readout of its bitrate and sample rate fills in
-    /// (as `streamingPlayerDidDetectFormat` does for a stream). Must be called on the main thread.
+    /// Fills each unknown format field of the tracks whose UUIDs appear in `formats` — read from
+    /// the file, or detected in the stream — in the playlist and on the playing track. Not a track
+    /// change: the readouts redraw, and the BPM detector, the playlists' jump to the playing row,
+    /// the artwork and Now Playing are left alone. Must be called on the main thread.
     private func applyFormatUpdates(_ formats: [UUID: Track.Format]) {
         guard !formats.isEmpty else { return }
         var changed = false
         for (idx, track) in playlist.enumerated() {
             guard let format = formats[track.id] else { continue }
-            playlist[idx] = track.filling(format)
+            let filled = track.filling(format)
+            guard filled != track else { continue }
+            playlist[idx] = filled
             changed = true
         }
         if let track = currentTrack, let format = formats[track.id] {
             let filled = track.filling(format)
-            if filled != track { refreshCurrentTrack(filled) }
+            if filled != track {
+                currentTrackStorage = filled
+                delegate?.audioEngineDidChangeTrack(filled)
+            }
         }
         if changed { playlistDidChange() }
-    }
-
-    /// The playing track with a field filled in after it started — its format, read from the file
-    /// or detected in the stream. Not a track change: the readouts redraw, and the BPM detector, the
-    /// playlists' jump to the playing row, the artwork and Now Playing are left alone.
-    private func refreshCurrentTrack(_ track: Track) {
-        currentTrackStorage = track
-        delegate?.audioEngineDidChangeTrack(track)
     }
 
     /// Append tracks to the playlist without starting playback
@@ -6807,18 +6804,7 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata
         guard let track = currentTrack else { return }
-        
-        // Only update if not already set
-        if track.sampleRate == nil || track.channels == nil {
-            NSLog("AudioEngine: Detected stream format - sampleRate: %d, channels: %d", sampleRate, channels)
-            let updatedTrack = track.filling(Track.Format(sampleRate: sampleRate, channels: channels))
-            refreshCurrentTrack(updatedTrack)
-
-            // Update playlist entry as well
-            if currentIndex >= 0 && currentIndex < playlist.count {
-                playlist[currentIndex] = updatedTrack
-            }
-        }
+        applyFormatUpdates([track.id: Track.Format(sampleRate: sampleRate, channels: channels)])
     }
     
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError) {

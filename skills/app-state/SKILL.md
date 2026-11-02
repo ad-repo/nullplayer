@@ -37,6 +37,11 @@ dictionary) is still written because older builds decode it as required; a state
 
 Restore state in two phases: settings first with `restoreSettingsState`, then the playlist with `restorePlaylistState`. Load streaming tracks as placeholder `Track` objects, then replace them asynchronously through `engine.replaceTrack(at:with:)`.
 
+A local row is restored from its saved metadata, never by re-reading the file on main. That
+metadata includes the format (`bitrate`, `sampleRate`, `channels`) as well as the duration, because
+the engine reads from disk any restored row that still lacks one (`audio-system` § *Track change vs.
+format fill-in*): without it, every local row of a restored playlist was read again on every launch.
+
 Restore never overrides a preference that is written on every change: the UI mode (`uiMode`, or a
 `-uiMode` launch argument) and each family's skin selection (`modernSkinName`, `metalSkinName`,
 `wmpSkinName`/`wmpSkinViewID`, `audionFaceName`; Sonique's `soniqueSkinName` is never in the

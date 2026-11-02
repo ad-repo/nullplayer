@@ -112,6 +112,20 @@ Shuffle-specific behavior in `AudioEngine`:
 - Explicit track selection while shuffle is enabled re-anchors the cycle on that selected track.
 - Queue replacement, `playNow`, and empty-queue insertion all start playback from the shuffled `currentIndex`, not from index `0`.
 
+### Track change vs. format fill-in
+
+Setting `currentTrack` **is** the track change: the delegate, `eqProfileController.trackDidChange`,
+the BPM reset and `.audioTrackDidChange` (playlists jump to the playing row, artwork reloads, Now
+Playing updates). A format learned after the track started is not a track change. It goes through
+`applyFormatUpdates([id: Track.Format])`, which fills each unknown field (`Track.filling`) in the
+playlist rows and on the playing track, writes the latter through `currentTrackStorage`, and calls
+only the delegate, so the readouts redraw. Two sources feed it. One is
+`enrichPlaylistFormatsAsync`, run after any load or append: for rows still `lacksFormat`, it takes
+the `MediaLibrary` index when that has all four fields, and otherwise reads the file off main with
+`Track.Format.read`. The other is `streamingPlayerDidDetectFormat` (a stream's sample rate and
+channels). `Track`'s four format fields are `private(set) var`, so `filling` copies the struct and
+can never drop a field added later.
+
 ### StreamingAudioPlayer (`Audio/StreamingAudioPlayer.swift`)
 
 Wrapper around [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) library:

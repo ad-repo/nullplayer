@@ -50,4 +50,23 @@ final class TrackFormatTests: XCTestCase {
         XCTAssertTrue(filled.isRadioOrigin)
         XCTAssertTrue(filled.isYouTubeOrigin)
     }
+
+    /// A saved local row keeps its format, so a restored playlist is not read from disk again to
+    /// fill it in; a state saved before the format was kept still decodes, with the format unknown.
+    func testASavedLocalTrackKeepsItsFormat() throws {
+        let track = Track(url: URL(fileURLWithPath: "/tmp/song.flac"), title: "Song", duration: 200,
+                          bitrate: 900, sampleRate: 96_000, channels: 2)
+        let data = try JSONEncoder().encode(AppStateManager.SavedTrack.from(track, radioStations: []))
+        let saved = try JSONDecoder().decode(AppStateManager.SavedTrack.self, from: data)
+
+        XCTAssertEqual(saved.bitrate, 900)
+        XCTAssertEqual(saved.sampleRate, 96_000)
+        XCTAssertEqual(saved.channels, 2)
+
+        let old = try JSONDecoder().decode(AppStateManager.SavedTrack.self,
+                                           from: Data(#"{"localURL":"file:///tmp/song.flac","title":"Song","duration":200}"#.utf8))
+        XCTAssertNil(old.bitrate)
+        XCTAssertNil(old.sampleRate)
+        XCTAssertNil(old.channels)
+    }
 }
