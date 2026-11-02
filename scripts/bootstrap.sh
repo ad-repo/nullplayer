@@ -219,7 +219,15 @@ main() {
     else
         log_success "VLCKit already installed"
     fi
-    
+    # The vendored VLCKit ships with an invalid signature, and dyld kills anything that maps it
+    # from Frameworks/ (the NullPlayerAppTests bundle) -- re-sign it ad-hoc, as kill_build_run.sh
+    # does for the app bundle's copy.
+    local vlckit="${REPO_ROOT}/${VLCKIT_TARGET}"
+    if [[ -d "$vlckit" ]] && ! codesign --verify "$vlckit" 2>/dev/null; then
+        log_info "Re-signing VLCKit ad-hoc..."
+        codesign --force --sign - "$vlckit" || failed=1
+    fi
+
     # libprojectM -- re-download when missing, forced, or the on-disk dylib's
     # version does not match the pinned archive. Unlike libaubio, this dylib is
     # not tracked in git, so a checkout that already bootstrapped an older release
