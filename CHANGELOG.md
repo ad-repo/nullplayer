@@ -2,103 +2,135 @@
 
 ## Unreleased
 
-### Winamp Modern (`.wal`) skins
+### Casting and the CLI
 
-- **27 more Winamp Modern (`.wal`) skins checked and fixed in the app** (corpus intake five):
-  American Rag, AS-FxS, Braun CC 50, Bubble Tea - Updated, D-Shock, Dracula's Helmet, Electrolium,
-  GoldenBeauty, Graviton, HALOAMP, i-Skin, iPlay, Kepler 1.1, MD Iwakura Lain the Fourth, Mercury,
-  Official Foo Fighter, Official Midnight Club 2, Official The Hives, QL2, Sony Walkman, SpongeBob
-  Squarepants, Stargate Winamp - SG1 Edition, The XP Style WinaMP3 Player, Winamp Media Tower v11,
-  X-Theme, Xenon, XP Blue ver2.
-- **Braun_CC_50's About window draws its artwork and credits.** Its `@DEFAULTSKINPATH@/../about/` paths now
-  resolve inside the skin instead of naming a skin that is not installed.
-- **Bubble_Tea_-_Updated's Playlist Editor lists the queue.** A frame whose scripts only draw chrome no longer
-  counts as one that builds its content; QL2's playlist window is built the same way.
-- **Bubble_Tea_-_Updated's spectrum stays inside the cup** instead of drawing bars over the desktop beside it.
-- **Bubble_Tea_-_Updated's Playlist Editor has its Add / Rem / Sel / Misc / List buttons.** A playlist window that
-  names no component, and hosts only the playlist, now gets the command bar; LCDx's embedded playlist gets it too.
-- **_Mercury's Playlist Editor opens whole.** It was laid out 335px tall inside a 116px window, so only a black pane and
-  the command bar showed; PAD's playlist had the same cut.
-- **Xenon's round Equalizer is the round art** instead of a black rectangle beside the ball.
-- **Xenon's transport, volume, seek and window trays open on hover.** `onMouseMove` now reaches the object under the
-  pointer, not only a pressed one.
-- **XP_Blue_ver2's playlist stays opaque when the window loses focus**, so the author's e-mail no longer shows through it.
-- **HALOAMP's artist and album strings no longer float below the player** over the desktop.
-- **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art** (no white fringe round -Graviton-'s
-  and OrbFace's circles).
-- **Xenon and Hoop Life draw their time (and Hoop Life its title)**: a font whose size table was stored with a
-  sign bit no longer throws its line out of its box.
-- **Auburn's component-bucket label is no longer hidden** when the layout's own artwork is missing from the skin.
-- **iPlay's song title moves one cell at a time**, as its own script steps it, instead of also sliding (#643).
-- **QL2's window title bars read their window's name**, not `:COMPONENTNAME`, and its thinger shows an icon between the arrows.
-- **Midnight Club 2's shaded player draws its display**, ticker, timer, volume knob and transport glyphs instead of an empty box.
-- **Kepler's main window drags by its title logo**: a button with no action or script is a drag surface, not a dead control.
-- **Stargate's turning dial no longer draws outside its circle**: a layer rotated about its centre with wrapping on is no longer tiled into its corners.
-- **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
-- **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
-- **GoldenBeauty's in-skin equalizer draws the bands and follows a drag**: showing a group now tells the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its library button reading EQ is the author's art.)
-- **A click on a skin's time readout flips it between elapsed and remaining**, as in Winamp; remaining time
-  draws with a leading minus. It is the same setting as Playback → Timer, and a drag that starts on the
-  readout still moves the window.
-- **Show Artist / Show Album in every playlist's right-click menu.** Rows read `Artist - Title` by
-  default, and the two toggles add the album or drop the artist, the same in Classic, Original,
-  Winamp Modern and Windows Media Player skins. Winamp Modern playlists now show the artist too, and a
-  Windows Media Player skin's playlist pane numbers its rows and shows each track's length. In both,
-  a playing row too long for the window scrolls, as it does in Classic and Original, instead of being
-  cut short.
-
-### Fixes
-
-- **A video the Chromecast rejects is reported, and the CLI exits 1** instead of sitting at 0:00 (#645). A Chromecast
-  cast that never starts playing within 30 s fails the same way; the player window shows a casting error.
-- **The CLI treats `.mpg` and `.mpeg` files as video** and casts them, instead of handing them to the audio engine and never exiting (#646).
-- **`--cast` accepts the device name other cast pickers show**, as well as its id with or without the `chromecast:`
-  prefix (#647). `--list-devices` shows each device's id, and `--json` adds its video support, address and port.
-- **Chromecasts are listed by their friendly name**, not the service instance name ending in a long hex suffix.
-- **A DLNA TV plays a local MP4 whose index is at the end of the file** instead of showing *format not supported*.
-- **The CLI plays a local album through** instead of quitting after its first track, and `--repeat-all` no longer
-  restarts at each track change. A queue in which nothing loads exits 1.
+- **A video the Chromecast rejects is reported, and the CLI exits 1** instead of sitting at 0:00 (#645).
+  A cast that hasn't started playing after 30 s fails the same way, and the player window shows a
+  casting error.
+- **The CLI casts `.mpg` and `.mpeg` files as video** instead of handing them to the audio engine and
+  never exiting (#646).
+- **`--cast` accepts the device name other cast pickers show**, as well as its id with or without the
+  `chromecast:` prefix (#647). `--list-devices` shows each device's id; `--json` adds its video
+  support, address and port.
+- **Chromecasts are listed by their friendly name**, not the service name ending in a long hex suffix.
+- **A DLNA TV plays a local MP4 whose index is at the end of the file** instead of showing *format not
+  supported*.
+- **The CLI plays a local album through** instead of quitting after its first track, and
+  `--repeat-all` no longer restarts at each track change. A queue in which nothing loads exits 1.
 - **A cast error no longer blocks the CLI** behind an alert window nobody can see.
-- **Audion faces draw their text the way their authors set it** (#642). Centred and right-aligned
-  lines are aligned again; Geneva and Monaco draw as the crisp Mac screen fonts instead of blurred
-  outlines; 29 freeware fonts face authors shipped with their faces (Mini, Orchis, the 04b family,
-  BitBit, IceDogg and others) now ship with NullPlayer and draw in place of lookalikes; Kidprint
-  draws in Comic Neue; a face that set no font draws in Audion's own Geneva 10; and the text
-  settings that were lost when the faces were converted in 2021 (Mint, Display, FX and others) are
-  restored from Panic's original downloads.
-- **Audion faces' stand-in fonts look like the originals.** Chicago, Charcoal and Gadget draw at their
-  real size instead of three-quarters of it, Techno draws condensed, Sand as a felt-tip hand and
-  Capitals in engraved capitals; New York, Facet, Arial Black and a dozen other names find the
-  matching Mac font, and Institution, Machine, Junior Pro, Stencil, Eurostile and Square721 draw in
-  bundled open-licence lookalikes instead of Helvetica.
-- **aPop's lines draw in inverse video**, white text on a black box, as Audion drew them.
-- **Geneva and Monaco text on Audion faces sits on the right line** (Car Stereo and most other
-  Geneva 9 faces drew it two pixels too high).
-- **Plasmat's colon no longer flickers on internet radio** (#640): a face's streaming animation now
-  replaces the readouts under it instead of showing through their gaps. The Library Browser's corners
-  are transparent on non-Retina displays beside an Audion face, a `.wmz` skin, a Sonique skin or a
-  `.wal` skin, where they drew black.
-- **iPod 1.2's "<<< STREAMING" draws at its own size** instead of stretched over the display (#641).
-- **Long titles on Audion faces scroll in full** instead of being cut with "…" (Reduce Motion still cuts them).
-- **Text an Audion face draws outside its window shape shows**, as it did in Audion (X-factor,
-  Jack&Sally, Smart, Ugly and others drew their titles over the desktop).
-- **A click on a clear part of an Audion face hits the face** instead of the window behind it, so
-  Smart's see-through display drags the player as Audion's did.
-- **ClassicPro skins' tabs open and close from the Windows menu** (cPro Bento, reported on r/nullPlayer,
-  and the cPro2 skins).
-  Each tab has a menu item ticked while it is in the strip — Media Library and Playlist are the Library
-  Browser and Playlist Editor items — choosing it closes or reopens the tab, and closed tabs stay closed
-  after a relaunch. The skin's own Windows-menu items (Web Browser, widget tabs) are listed too.
-  *Auto Close Tab* is gone from the tab's right-click menu, since it hid tabs nothing could bring back,
-  and **Skins → Restore Default Tabs** puts the strip back to every tab in its original order.
+
+### Playlist and Library Browser
+
+- **Show Artist / Show Album in every playlist's right-click menu**, in Classic, Original, Winamp
+  Modern and Windows Media Player skins. Rows read `Artist - Title` by default; the toggles add the
+  album or drop the artist.
+  - Winamp Modern playlists now show the artist too.
+  - Windows Media Player playlists number their rows and show each track's length.
+  - In both, a playing row too long for the window scrolls, as in Classic and Original, instead of
+    being cut short.
 - **Dropped, added and restored files show their bitrate, sample rate and channels**, not only their
   length, and a restored playlist no longer reads its files again at every launch to fill them in.
 - **A stream's sample rate filling in no longer counts as a new track**: the playlist stays where it
   is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
-- **A long playing title scrolls again after a skin switch or pressing Play** in the Classic playlist
-  and main window, instead of standing still until the next track.
-- **Winamp Modern playlist rows keep their descenders** (g, j, p, q, y) at every Text Size instead of
-  having them cut off, and **Text Size** gains a **90%** step.
+- **The Library Browser's corners are transparent on non-Retina displays** beside an Audion face or a
+  `.wmz`, Sonique or `.wal` skin, where they drew black.
+
+### Classic skins
+
+- **A long playing title scrolls again after a skin switch or pressing Play** in the playlist and main
+  window, instead of standing still until the next track.
+
+### Winamp Modern (`.wal`) skins
+
+- **27 more skins checked and fixed** (corpus intake five): American Rag, AS-FxS, Braun CC 50, Bubble
+  Tea - Updated, D-Shock, Dracula's Helmet, Electrolium, GoldenBeauty, Graviton, HALOAMP, i-Skin,
+  iPlay, Kepler 1.1, MD Iwakura Lain the Fourth, Mercury, Official Foo Fighter, Official Midnight
+  Club 2, Official The Hives, QL2, Sony Walkman, SpongeBob Squarepants, Stargate Winamp - SG1
+  Edition, The XP Style WinaMP3 Player, Winamp Media Tower v11, X-Theme, Xenon, XP Blue ver2.
+- **A click on a skin's time readout flips it between elapsed and remaining**, as in Winamp; remaining
+  time draws with a leading minus. It is the same setting as Playback → Timer, and a drag that starts
+  on the readout still moves the window.
+- **ClassicPro skins' tabs open and close from the Windows menu** (cPro Bento, reported on
+  r/nullPlayer, and the cPro2 skins).
+  - Each tab has a menu item, ticked while the tab is in the strip (Media Library and Playlist are the
+    Library Browser and Playlist Editor items). Choosing it closes or reopens the tab, and closed tabs
+    stay closed after a relaunch.
+  - The skin's own Windows-menu items (Web Browser, widget tabs) are listed too.
+  - **Skins → Restore Default Tabs** puts back every tab in its original order. *Auto Close Tab* is
+    gone from the tab's right-click menu, since it hid tabs nothing could bring back.
+- **Playlist rows keep their descenders** (g, j, p, q, y) at every Text Size instead of having them
+  cut off, and **Text Size** gains a **90%** step.
+- **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art**: no white fringe
+  round Graviton's and OrbFace's circles.
+
+#### Fixes in individual skins
+
+- **American Rag**: the shaded player has a way back. A switch that names its own container
+  (`param="main"`) returns to the container's default layout.
+- **Auburn**: the component-bucket label is no longer hidden when the layout's own artwork is missing
+  from the skin.
+- **Braun CC 50**: the About window draws its artwork and credits. `@DEFAULTSKINPATH@/../about/` paths
+  resolve inside the skin instead of naming a skin that is not installed.
+- **Bubble Tea - Updated**:
+  - The Playlist Editor lists the queue. A frame whose scripts only draw chrome no longer counts as one
+    that builds its content (QL2's playlist window is built the same way).
+  - The Playlist Editor has its Add / Rem / Sel / Misc / List buttons. A playlist window that names no
+    component and hosts only the playlist now gets the command bar (LCDx's embedded playlist too).
+  - The spectrum stays inside the cup instead of drawing bars over the desktop beside it.
+- **Dracula's Helmet**: the Glass and Display Opacity sliders start at their stored value and change
+  the window's alpha. An `embed_xui` that names no object in its group now speaks for the group's
+  only slider.
+- **GoldenBeauty**: the in-skin equalizer draws its bands and follows a drag. Showing a group now tells
+  the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its
+  library button reading EQ is the author's art.)
+- **HALOAMP**: the artist and album strings no longer float below the player over the desktop.
+- **iPlay**: the song title moves one cell at a time, as its script steps it, instead of also sliding
+  (#643).
+- **Kepler**: the main window drags by its title logo. A button with no action or script is a drag
+  surface, not a dead control.
+- **Mercury**: the Playlist Editor opens whole. It was laid out 335px tall inside a 116px window, so
+  only a black pane and the command bar showed (PAD's playlist had the same cut).
+- **Midnight Club 2**: the shaded player draws its display, ticker, timer, volume knob and transport
+  glyphs instead of an empty box.
+- **QL2**: window title bars read their window's name, not `:COMPONENTNAME`, and the thinger shows an
+  icon between the arrows.
+- **Stargate**: the turning dial no longer draws outside its circle. A layer rotated about its centre
+  with wrapping on is no longer tiled into its corners.
+- **Xenon**:
+  - The round Equalizer is the round art instead of a black rectangle beside the ball.
+  - The transport, volume, seek and window trays open on hover. `onMouseMove` now reaches the object
+    under the pointer, not only a pressed one.
+- **Xenon and Hoop Life** draw their time (and Hoop Life its title): a font whose size table was
+  stored with a sign bit no longer throws its line out of its box.
+- **XP Blue ver2**: the playlist stays opaque when the window loses focus, so the author's e-mail no
+  longer shows through it.
+
+### Audion faces
+
+- **Faces draw their text the way their authors set it** (#642):
+  - Centred and right-aligned lines are aligned again.
+  - Geneva and Monaco draw as the crisp Mac screen fonts instead of blurred outlines, and sit on the
+    right line (Car Stereo and most other Geneva 9 faces drew two pixels too high).
+  - 29 freeware fonts face authors shipped with their faces (Mini, Orchis, the 04b family, BitBit,
+    IceDogg and others) now ship with NullPlayer and draw in place of lookalikes; Kidprint draws in
+    Comic Neue.
+  - A face that set no font draws in Audion's own Geneva 10.
+  - Text settings lost when the faces were converted in 2021 (Mint, Display, FX and others) are
+    restored from Panic's original downloads.
+- **Stand-in fonts look like the originals.** Chicago, Charcoal and Gadget draw at their real size
+  instead of three-quarters of it; Techno draws condensed, Sand as a felt-tip hand and Capitals in
+  engraved capitals. New York, Facet, Arial Black and a dozen other names find the matching Mac font,
+  and Institution, Machine, Junior Pro, Stencil, Eurostile and Square721 draw in bundled open-licence
+  lookalikes instead of Helvetica.
+- **Long titles scroll in full** instead of being cut with "…" (Reduce Motion still cuts them).
+- **Text a face draws outside its window shape shows**, as it did in Audion (X-factor, Jack&Sally,
+  Smart, Ugly and others drew their titles over the desktop).
+- **A click on a clear part of a face hits the face** instead of the window behind it, so Smart's
+  see-through display drags the player as Audion's did.
+- **aPop's lines draw in inverse video**, white text on a black box, as Audion drew them.
+- **Plasmat's colon no longer flickers on internet radio** (#640): a face's streaming animation now
+  replaces the readouts under it instead of showing through their gaps.
+- **iPod 1.2's "<<< STREAMING" draws at its own size** instead of stretched over the display (#641).
 
 ## 0.34.0
 
