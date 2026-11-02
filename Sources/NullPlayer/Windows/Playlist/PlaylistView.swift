@@ -1750,21 +1750,7 @@ class PlaylistView: NSView {
     }
 
     @objc func removeDeadFiles(_ sender: Any?) {
-        // Remove files that no longer exist
-        let engine = WindowManager.shared.audioEngine
-        let fileManager = FileManager.default
-
-        var indicesToRemove: [Int] = []
-        for (index, track) in engine.playlist.enumerated() {
-            if !track.url.isFileURL || !fileManager.fileExists(atPath: track.url.path) {
-                indicesToRemove.append(index)
-            }
-        }
-
-        for index in indicesToRemove.reversed() {
-            engine.removeTrack(at: index)
-        }
-
+        PlaylistMenuBuilder.removeDeadFiles()
         selectedIndices.removeAll()
         selectionAnchor = nil
         needsDisplay = true

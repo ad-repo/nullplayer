@@ -34,6 +34,10 @@
   is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
 - **The Library Browser's corners are transparent on non-Retina displays** beside an Audion face or a
   `.wmz`, Sonique or `.wal` skin, where they drew black.
+- **Remove Dead Files keeps streams and server tracks**: it removes only local files that are gone
+  from disk, in every playlist. It used to clear every radio, Plex, Jellyfin, Emby and Subsonic row.
+- **File Info shows a stream's URL** instead of an empty path, and `--:--` for an unknown length
+  instead of `0:00`.
 
 ### Classic skins
 
@@ -62,6 +66,10 @@
   cut off, and **Text Size** gains a **90%** step.
 - **Skins that ask for Winamp's `Enable desktop alpha` get their translucent art**: no white fringe
   round Graviton's and OrbFace's circles.
+- **A right-click on the playlist opens the same menu every other skin's playlist has**: Play,
+  Remove, Selection, Sort (by artist and album too), File Info, EQ profile and Show Artist / Show
+  Album. A row outside the selection is selected first. A skin that handles the right button itself
+  keeps it.
 
 #### Fixes in individual skins
 

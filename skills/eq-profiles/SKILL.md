@@ -107,7 +107,8 @@ and folders pass nil, which ticks nothing. A pick still fetches the row's tracks
 scopes. **Every write is a menu pick**: nothing else writes assignments except the launch prune, so a
 track-level row nobody chose came from a menu acting on more rows than the user meant.
 
-The set it acts on is the queue view's selection: Classic, Original and WMP right-click through
+The set it acts on is the queue view's selection: Classic, Original, WMP, `.wal` and Audion (whose
+queue is the Classic playlist window) right-click through
 `PlaylistMenuBuilder.menu(target:clickedRow:state:)`, which selects a clicked row outside the
 selection first, and `.wal` Misc ▸ Assign uses the bridge's selection. Every queue change re-bases
 that selection onto the playing row, and an assignment only repaints (`.eqProfilesDidChange` →

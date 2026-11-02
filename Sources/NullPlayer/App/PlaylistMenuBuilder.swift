@@ -128,32 +128,35 @@ enum PlaylistMenuBuilder {
         removeTracks(at: Set(0..<WindowManager.shared.audioEngine.playlist.count).subtracting(indices))
     }
 
+    /// Rows whose file is gone from disk. A stream or server track has no file to check, so it is
+    /// never dead.
+    static func deadFileRows() -> Set<Int> {
+        Set(WindowManager.shared.audioEngine.playlist.enumerated().filter { _, track in
+            track.url.isFileURL && !FileManager.default.fileExists(atPath: track.url.path)
+        }.map(\.offset))
+    }
+
     static func removeDeadFiles() {
-        let engine = WindowManager.shared.audioEngine
-        var indicesToRemove: [Int] = []
-        for (index, track) in engine.playlist.enumerated() {
-            if !track.url.isFileURL || !FileManager.default.fileExists(atPath: track.url.path) {
-                indicesToRemove.append(index)
-            }
-        }
-        for index in indicesToRemove.reversed() {
-            engine.removeTrack(at: index)
-        }
+        removeTracks(at: deadFileRows())
     }
 
     static func showFileInfo(forTrackAt index: Int) {
         let tracks = WindowManager.shared.audioEngine.playlist
         guard index < tracks.count else { return }
-        let track = tracks[index]
+        fileInfoAlert(for: tracks[index]).runModal()
+    }
+
+    /// The File Info sheet every playlist shows; the caller picks modal or sheet.
+    static func fileInfoAlert(for track: Track) -> NSAlert {
         let alert = NSAlert()
         alert.messageText = track.displayTitle
         alert.informativeText = [
             "Artist: \(track.artist ?? "Unknown")",
             "Album: \(track.album ?? "Unknown")",
-            "Duration: \(String(format: "%d:%02d", Int(track.duration ?? 0) / 60, Int(track.duration ?? 0) % 60))",
-            "Path: \(track.url.path)",
+            "Duration: \(track.formattedDuration)",
+            track.url.isFileURL ? "Path: \(track.url.path)" : "URL: \(track.url.absoluteString)",
             EQProfileResolver.shared.fileInfoLine(for: track)
         ].compactMap { $0 }.joined(separator: "\n")
-        alert.runModal()
+        return alert
     }
 }
