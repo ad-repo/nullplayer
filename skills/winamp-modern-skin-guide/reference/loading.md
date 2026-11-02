@@ -849,7 +849,11 @@ instead: an axis is grown only when
 - the container declares a `component=` (a window that exists *to* host one — a player parks holders
   it is not showing, and Lobe's `main/normal` and `main/switch` each keep a 25px one), **and**
 - the skin states no size for that axis anywhere — neither on the layout nor on its container, **and**
-- the holder it feeds resolves under 32px.
+- the holder it feeds resolves under 24px (`degenerateComponentExtent`, two 12px rows). It was 32
+  until B325 (2026-10-30): _Mercury's and PAD's `Pledit` state only `minimum_h="116"` and leave a
+  31px list, so the canvas grew to 335 under a window that opened at 116, and the user saw the bottom
+  of the scene, a black pane and the command bar. AVS's 2px sliver still grows
+  (`testAShortButAuthoredComponentBoxIsNotGrown`).
 
 It is then grown to give the component 250px, which reproduces stock Winamp Modern's own 354×280
 visualization window rather than inventing a number. Across the corpus as it then stood — 69 skins, 590 rendered

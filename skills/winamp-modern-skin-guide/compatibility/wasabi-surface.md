@@ -20,8 +20,9 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   (T800 gives `player.main.cms` one body for its full player and another for its shade layout).
   A reference with no document position of its own — `System.newGroup`, a synthesized node — takes
   the newest version, and one written before every definition of its id takes the first
-- Window dragging from the layout background, from a bare `move="1"` group, and from an `action`-less
-  layer; `move="0"` opts a piece out (a layer whose own script owns the press)
+- Window dragging from the layout background, from a bare `move="1"` group, from an `action`-less
+  layer, and from an inert `<button>` (B342); `move="0"` opts a piece out (a layer whose own script
+  owns the press)
 - Button actions: `PLAY` / `PAUSE` / `STOP` / `PREV` / `NEXT` / `EJECT` / `SEEK` / `SWITCH` /
   `TOGGLE guid:…` / `EQ_TOGGLE` / `EQ_AUTO` / `EQ_BAND` / `EQ_PREAMP` / `MENU presets` /
   `MINIMIZE` / `CLOSE` / `VOLUME` / `COLORTHEMES_SWITCH` / `_NEXT` / `_PREVIOUS` /
@@ -36,6 +37,12 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   (`SWITCH;shade`) or a sibling `dblclickparam=`/`rightclickparam=`, the explicit one winning. The
   tail split applies to `action=` too, so `action="SWITCHTO;<group>"` decodes. Measured: 62 uses in 9
   of the 17 skins — every skin's winshade switch is one
+- **A `SWITCH` naming its own container goes to that container's default (first) layout** (B348,
+  2026-10-31). American_Rag's shade button is `action="switch" param="main"`, and `main` is the
+  container's id, not a layout (`normal`, `shade`), so `activateLayout` found nothing and the shade
+  had no way back. Only it and LG_Free_touch_the_music_ do this in gold+silver; a switch naming
+  *another* container (iCandy-2's and i-Skin's `pledit`) is unchanged, and a missing layout name is
+  still dead (Abducted's `stick`). `testSwitchNamingTheContainerReturnsToItsDefaultLayout`
 - **`TRACKINFO` / `TRACKMENU`** (Phase 36) — the two song-title commands, reached through those
   attributes. `TRACKINFO` opens a File Info **sheet** for the playing track (never a modal run loop:
   the action is script-reachable); `TRACKMENU` opens a track menu — File Info / Copy Title / Reveal in

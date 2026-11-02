@@ -97,9 +97,11 @@ synthesized and nothing left to the classic fallback.
 - Transport, volume, mute, the kbps/kHz/stereo readouts, the clock, the menu bar, the drawer, the
   embedded library browser, the embedded EQ, and the colour themes.
 - **The script-built menus placed at a computed point** (`popAtXY`, 6 call sites, with
-  `clientToScreenX/Y` behind it). Right-clicking a tab opens its `Show Status Bar` / `Auto Close Tab`
-  menu under the tab — measured with `RENDER_CLICK`, which prints the point the menu is placed at
-  (`CLICK menu at 10,130` for the first tab, whose own frame is `(10, 104, 35, 29)`). Phase 24.
+  `clientToScreenX/Y` behind it). Right-clicking a tab opens its `Show Status Bar` menu under the tab
+  — measured with `RENDER_CLICK`, which prints the point the menu is placed at
+  (`CLICK menu at 10,130` for the first tab, whose own frame is `(10, 104, 35, 29)`). Phase 24. The
+  skin's `Auto Close Tab` item is withheld since B350: tabs open and close from the Windows menu
+  instead ([components.md](../reference/components.md) § *ClassicPro's SUI tab strip*).
 
 - **Colour themes** (Phase 32) — the engine's own `<ColorThemes:List id="colorthemes">` (in
   `player-normal-group.xml` / `xui/CentroSUI/_v2/drawer.xml`) populates with the six themes, and the

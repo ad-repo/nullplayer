@@ -187,6 +187,12 @@ object the hit test returned:
 - a **`layer`** with no `action` — *unless a script hooks a mouse event on it*, which makes it a
   control rather than a handle (the same thing `move="0"` says explicitly, for the skins that do not
   bother to say it). Dragging the window off an invisible trigger eats the click it exists for.
+- an **inert `<button>`** (B342, 2026-10-31): no `action`, `dblclickaction`, `rightclickaction`,
+  `cfgattrib` or `param`, and no script bound to a mouse event. Kepler_1.1's title logo is
+  `<button id="about">`, a 478x283 button opaque only over the logo, with none of those; refused as a
+  control, the one title-shaped handle swallowed every press. A button with any command is still a
+  control (`testAnInertButtonDragsButACommandButtonDoesNot`). The headless sweeps never call the drag
+  policy, so only `WINAMP_MODERN_DRAG_TRACE` live shows it (`object=button#about drags=true`).
 - never anything with `move="0"` (T800's volume strip is a layer whose script owns the drag), and
   never the named transport/title objects on the exclusion list.
 

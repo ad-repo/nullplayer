@@ -674,6 +674,13 @@ broken on its own, and each fix looked like it had done nothing until the next o
   artwork-less `Wasabi:Button` wrapper drew its fallback label *and* the embedded button drew the
   real one. Five cPro skins showed a doubled, bold-looking `Search`, and only Azenis²'s grid hid the
   wrapper's copy. The rule is `WasabiSceneRenderer.ownLabel(of:)`, which the plain-button label in `draw` and the label in `drawTextButton`'s border both use.
+- **An `embed_xui` that names no child means the group's only slider** (B349, 2026-10-31).
+  Draculas_Helmet's `<Drac:Conf-Slider>` says `embed_xui="slider.button"` over one `<Wasabi:HSlider
+  id="slider">`. Nothing has that id, so nothing was embedded: `setPosition` landed on the bare group
+  (thumbs at 0) and `onSetPosition` never reached the group `configure.m` listens on, so the opacity
+  sliders never called `setAlpha`. 8 gold+silver skins carry the pattern (_Mercury, BOOM, Bubble_Tea,
+  D-Shock, Draculas_Helmet, impulse, plus Hal's Eye and Prakrit, where no lone slider answers);
+  `testAnUnmatchedEmbedNameMeansTheGroupsOnlySlider`.
 
 Two related rules that fell out of the same investigation:
 

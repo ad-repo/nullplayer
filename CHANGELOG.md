@@ -97,6 +97,8 @@
   is, and the artwork and Now Playing are not reloaded. The playlist row shows the sample rate too.
 - **A long playing title scrolls again after a skin switch or pressing Play** in the Classic playlist
   and main window, instead of standing still until the next track.
+- **Winamp Modern playlist rows keep their descenders** (g, j, p, q, y) at every Text Size instead of
+  having them cut off, and **Text Size** gains a **90%** step.
 
 ## 0.34.0
 
