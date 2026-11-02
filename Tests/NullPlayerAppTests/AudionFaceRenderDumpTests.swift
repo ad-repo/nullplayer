@@ -31,13 +31,15 @@ struct AudionFaceProbe {
                 host.durationSeconds = 213
                 host.title = "A Fairly Long Track Title For The Oracle"
                 host.artist = "Harness Artist"
-                host.album = "Harness Album"
-                host.format = "MP3"
                 host.streamPhase = AudionFaceHostState.StreamPhase(rawValue: name) ?? .none
-                // `AUDION_RENDER_TEXT`: `title|artist|album|format` in place of the oracle's text.
+                // `AUDION_RENDER_TEXT`: `artist|title`, top line first, in place of the oracle's text.
                 if let text = env["AUDION_RENDER_TEXT"]?.split(separator: "|", omittingEmptySubsequences: false)
-                    .map(String.init), text.count == 4 {
-                    (host.title, host.artist, host.album, host.format) = (text[0], text[1], text[2], text[3])
+                    .map(String.init) {
+                    if text.count == 2 {
+                        (host.artist, host.title) = (text[0], text[1])
+                    } else {
+                        print("AUDION_RENDER_TEXT ignored: expected artist|title, got \(text.count) fields")
+                    }
                 }
             default: return nil
             }

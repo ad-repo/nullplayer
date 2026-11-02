@@ -148,8 +148,9 @@ families, SF Digital Readout, Junior Pro and others); they keep lookalikes.
   box, and is pinned when it fits. Only Reduce Motion stops them, and only then is a line cut in the
   middle with `…` (a departure: FaceKit cuts the artist line, and a justified album line's text).
   `rendering.md` § *Text* has the full rule.
-- Panic's player fills the artist line with the title (or the file name) and the album line with
-  `artist—album—format`. NullPlayer does the same.
+- The artist line shows the artist and the album line the track title (#662): Panic's face
+  previews put the artist on top (FX, Car Stereo, Mint 1.2), and RackView labels its lines ARTIST
+  and TRACK.
 
 ## Draw order and state
 

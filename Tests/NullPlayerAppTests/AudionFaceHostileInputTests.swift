@@ -154,7 +154,7 @@ final class AudionFaceHostileInputTests: XCTestCase {
         XCTAssertEqual(face.findings.map(\.code), [.elementDropped, .elementDropped, .elementDropped])
         XCTAssertEqual(CTFontGetSize(try XCTUnwrap(face.artist).font), 12, "an out-of-range size reads as absent")
         var host = AudionFaceHostState()
-        host.title = String(repeating: "W", count: 200)
+        host.artist = String(repeating: "W", count: 200)
         XCTAssertNotNil(AudionFaceRenderer.render(AudionFaceScene(face: face, host: host, scale: 6)))
     }
 

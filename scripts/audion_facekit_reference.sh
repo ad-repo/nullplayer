@@ -83,8 +83,8 @@ func render(_ face: AudionFace, playing: Bool) -> CGImage {
     if playing {
         view.durationInSeconds = 213
         view.timeInSeconds = 83
-        view.artistText = "A Fairly Long Track Title For The Oracle"
-        view.albumText = "Harness Artist—Harness Album—MP3"
+        view.artistText = "Harness Artist"
+        view.albumText = "A Fairly Long Track Title For The Oracle"
         view.play()
     } else {
         view.stop()
