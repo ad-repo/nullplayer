@@ -118,10 +118,10 @@ struct ClassicProTabStrip {
     static func prepareFlags(in loaded: WinampModernLoadedSkin) {
         guard let (buttons, _) = locate(in: loaded.runtime.graph) else { return }
         let configuration = loaded.configuration
-        clearFlags(in: configuration)
-        let prefix = family(of: buttons).publicPrefix
+        let family = family(of: buttons)
+        clearFlags(family, in: configuration)
         for key in closedKeys(in: configuration) {
-            configuration.setInteger(1, section: "@public", key: "\(prefix).One.TabAutoClose.\(key)")
+            configuration.setInteger(1, section: "@public", key: "\(family.publicPrefix).One.TabAutoClose.\(key)")
         }
     }
 
@@ -130,15 +130,13 @@ struct ClassicProTabStrip {
     /// own. Nil unless the loaded skin runs the strip.
     static func attach(to runtime: WinampModernScriptRuntime) -> ClassicProTabStrip? {
         guard let strip = ClassicProTabStrip(runtime: runtime) else { return nil }
-        clearFlags(in: runtime.loadedSkin.configuration)
+        clearFlags(strip.family, in: runtime.loadedSkin.configuration)
         runtime.withheldPopupTitles.insert("Auto Close Tab")
         return strip
     }
 
-    static func clearFlags(in configuration: WinampModernConfiguration) {
-        for family in [one, two] {
-            configuration.removeSection("@public", keyPrefix: "\(family.publicPrefix).One.TabAutoClose.")
-        }
+    private static func clearFlags(_ family: Family, in configuration: WinampModernConfiguration) {
+        configuration.removeKeys(section: "@public", prefix: "\(family.publicPrefix).One.TabAutoClose.")
     }
 
     /// The tabs out of the strip now: after each open and close, and as the skin unloads or the app
@@ -211,7 +209,7 @@ struct ClassicProTabStrip {
     /// engine's own order. Only between unloading the skin and loading it again: `CproTabs.m` writes
     /// the order back from `onScriptUnloading`.
     static func resetLayout(in configuration: WinampModernConfiguration) {
-        configuration.removeSection("ClassicPro", keyPrefix: "TabOrder_")
+        configuration.removeKeys(section: "ClassicPro", prefix: "TabOrder_")
         configuration.removeSection(closedSection)
     }
 

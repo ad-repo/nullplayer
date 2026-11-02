@@ -2040,6 +2040,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
+    func prepareForTermination() { flushCloseHandlersOnTermination() }
+
     /// **Quitting is a close too, and the app does not come back to finish an asynchronous one.**
     ///
     /// `applicationWillTerminate` returns and the process exits, so the `Task` an ordinary close
@@ -2052,8 +2054,6 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// `WMPScriptContext` or `WMPObjectModel` — so the wait cannot deadlock against the thread it
     /// blocks. It is bounded anyway, and each handler is separately capped by
     /// `WMPPhase0Limits.scriptExecutionSeconds`.
-    func prepareForTermination() { flushCloseHandlersOnTermination() }
-
     func flushCloseHandlersOnTermination(timeout: TimeInterval = 2) {
         guard let scriptRuntime, let skin = loadedSkin else { return }
         let snapshot = host.snapshot

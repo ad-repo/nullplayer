@@ -959,32 +959,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             environment: .init(
                 revealEmbedded: { [weak self, weak scripts] kind, _, allowAutoOpenFallback in
                     guard let self, let scripts else { return false }
-                    window?.makeKeyAndOrderFront(nil)
-                    if let strip = classicProTabs, let tab = strip.tab(for: kind) {
-                        strip.open(tab)
-                        skinView?.needsDisplay = true
-                        return true
-                    }
-                    let revealed = self.revealEmbeddedSurface(
-                        kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
-                    skinView?.needsDisplay = true
-                    return revealed
+                    return revealEmbeddedPage(kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
                 },
                 concealEmbedded: { [weak self, weak scripts] kind in
                     guard let self, let scripts else { return }
-                    if let strip = classicProTabs, let tab = strip.tab(for: kind) {
-                        strip.close(tab)
-                    } else {
-                        self.concealEmbeddedSurface(kind, scripts: scripts)
-                    }
-                    skinView?.needsDisplay = true
+                    concealEmbeddedPage(kind, scripts: scripts)
                 },
                 isMainWindowVisible: { [weak self] in self?.window?.isVisible == true },
-                showsEmbedded: { [weak self] kind in
-                    guard let self else { return false }
-                    if let tab = classicProTabs?.tab(for: kind) { return tab.isInStrip }
-                    return hasVisibleHolder(kind)
-                },
+                showsEmbedded: { [weak self] kind in self?.showsEmbeddedPage(kind) ?? false },
                 showsEmbeddedEqualizer: { [weak self] in
                     self?.skinView?.renderer.showsEqualizerControls ?? false
                 },
@@ -1374,9 +1356,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// — cPro-Bento holds video in its tab, in the mini view *and* in the drawer, three holders all
     /// declaring `autoopen="1"` — so forcing every one of them open after the skin had already
     /// switched to the right tab put two more copies of the surface on screen beside it.
-    private func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
-                                       scripts: WinampModernScriptRuntime,
-                                       allowAutoOpenFallback: Bool) -> Bool {
+    func revealEmbeddedSurface(_ kind: WinampModernComponentKind,
+                               scripts: WinampModernScriptRuntime,
+                               allowAutoOpenFallback: Bool) -> Bool {
         guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else {
             // The equalizer has no component GUID; a skin-drawn EQ is already on screen wherever the
             // skin drew it, so revealing the player window is the whole job.
@@ -1404,20 +1386,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         skinView?.logHolders(tag: "reveal \(kind.rawValue)")
         #endif
         return handled > 0 || opened > 0
-    }
-
-    /// The other half of the contract: `System.onGetCancelComponent(guid, false)` tells the skin a
-    /// component is going away, and the skin picks what fills its place — ClassicPro's
-    /// `openDefaultTab` switches the SUI to another tab, or folds the side playlist away (B350).
-    /// No fallback: a skin that leaves the holder up has declined, and the page stays.
-    private func concealEmbeddedSurface(_ kind: WinampModernComponentKind,
-                                        scripts: WinampModernScriptRuntime) {
-        guard let guid = WinampModernComponentRegistry.canonicalGUID(for: kind) else { return }
-        let handled = (try? scripts.dispatchSystem(event: "ongetcancelcomponent",
-                                                   arguments: [.string(guid), .boolean(false)])) ?? 0
-        #if DEBUG
-        NSLog("WinampModern conceal %@ guid=%@ handlers=%d", kind.rawValue, guid, handled)
-        #endif
     }
 
     /// Showing one embedded page closes the page it displaces.
@@ -1488,7 +1456,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     /// Whether the player's current scene already shows a holder for this surface.
-    private func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
+    func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
         skinView?.renderer.componentHolders().contains { $0.kind == kind } ?? false
     }
 

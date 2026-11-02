@@ -202,7 +202,7 @@ final class WinampModernSurfaceCoordinator {
         case .embedded(let containerID):
             // Closing one is the skin's call too: it is told the component is going away and
             // chooses the page that replaces it (cPro's `openDefaultTab`).
-            if isSurfaceVisible(kind) && !isSwitchedBySkin(kind) {
+            if isEmbeddedPage(kind) && isSurfaceVisible(kind) {
                 environment.concealEmbedded(kind)
             } else {
                 _ = environment.revealEmbedded(kind, containerID, true)

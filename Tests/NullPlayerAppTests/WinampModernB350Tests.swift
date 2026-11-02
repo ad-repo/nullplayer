@@ -150,7 +150,7 @@ final class WinampModernB350Tests: XCTestCase {
         XCTAssertTrue(scene.isFlagged("centro.widgets.nowplaying"))
         XCTAssertFalse(scene.isFlagged("4"))
 
-        ClassicProTabStrip.clearFlags(in: scene.loaded.configuration)
+        _ = ClassicProTabStrip.attach(to: scene.scripts)
         XCTAssertFalse(scene.isFlagged("2"))
         XCTAssertFalse(scene.isFlagged("centro.widgets.nowplaying"))
     }
