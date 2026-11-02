@@ -223,18 +223,27 @@ final class WinampModernB130Tests: XCTestCase {
 
     /// Why 0.9 and not 1.0: a row is its cell plus 10%, so the line the point size produces has to fit
     /// inside that row. At a ratio of 1.0 an 11px cell draws an ~12.7px line into a 12px row and the
-    /// descenders meet the row beneath. Checked across the range `auto` can reach (11px floor to the
-    /// 18px cap) and at the explicit scales.
-    func testEveryCellHeightDrawsALineThatFitsItsRow() throws {
-        let family = try XCTUnwrap(NSFontManager.shared.font(withFamily: "Arial", traits: [],
-                                                             weight: 5, size: 11))
-        for cell in [11.0, 12.5, 13.75, 16.5, 18.0, 22.0] {
-            let pointSize = cell * WasabiSceneRenderer.playlistCellToPointSize
-            let rowHeight = (cell * 1.1).rounded()
-            let font = try XCTUnwrap(NSFont(descriptor: family.fontDescriptor, size: pointSize))
-            let line = ceil(font.ascender - font.descender)
-            XCTAssertLessThanOrEqual(line, rowHeight,
-                                     "a \(cell)px cell draws a \(line)px line into a \(rowHeight)px row")
+    /// descenders meet the row beneath.
+    ///
+    /// Measured through the renderer's own row height and text rect, as `drawSurfaceText` draws: the
+    /// line hangs from the top of the rect and is clipped to it, so the descenders end
+    /// `baselineOffset - descender` down and that has to land inside the rect. Every Text Size is
+    /// checked, `auto` at its 11px floor and its 18px cap, so a new size is covered here unasked.
+    /// This used to check a copy of the row height and not the rect, and passed while a 1px inset on
+    /// the rect cut the descenders off at every size.
+    func testEveryTextSizeDrawsALineThatFitsItsRow() throws {
+        for declaredHeight in [400, 878] {
+            let renderer = try makeRenderer(declaredHeight: declaredHeight)
+            for scale in WinampModernTextScale.allCases {
+                renderer.textScale = scale
+                let row = CGRect(x: 0, y: 0, width: 200, height: renderer.playlistRowHeight())
+                let text = WasabiSceneRenderer.playlistTextRect(row)
+                let font = try XCTUnwrap(NSFontManager.shared.font(
+                    withFamily: "Arial", traits: [], weight: 5, size: renderer.playlistTextPointSize()))
+                let inkBottom = renderer.resources.baselineOffset(of: font) - font.descender
+                XCTAssertLessThanOrEqual(inkBottom, text.height,
+                                         "\(scale.menuTitle) in a \(declaredHeight)px layout: the descenders end \(inkBottom)px down a \(text.height)px text rect")
+            }
         }
     }
 
@@ -251,9 +260,23 @@ final class WinampModernB130Tests: XCTestCase {
         // An explicit choice is not capped.
         XCTAssertEqual(WinampModernTextScale.p125.cellPixelHeight(declaredHeight: 400) * ratio,
                        12.375, accuracy: 0.0001)
+        // Nor floored: 90% is the one size under auto's 11px floor.
+        XCTAssertEqual(WinampModernTextScale.p90.cellPixelHeight(declaredHeight: 400) * ratio,
+                       8.91, accuracy: 0.0001)
     }
 
     // MARK: - Harness
+
+    private func makeRenderer(declaredHeight: Int) throws -> WasabiSceneRenderer {
+        let loaded = try makeWinampModernSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="600" h="\(declaredHeight)"/></container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: WinampModernStubHost())
+        addTeardownBlock { renderer.teardown() }
+        return renderer
+    }
 
     private func makeSkin(xml: String) throws -> WinampModernLoadedSkin {
         let directory = FileManager.default.temporaryDirectory
