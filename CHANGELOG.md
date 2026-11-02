@@ -37,6 +37,9 @@
 - **American Rag's shaded player has a way back**: a switch that names its own container (`param="main"`) now returns to the container's default layout.
 - **Draculas_Helmet's opacity sliders work**: an `embed_xui` that names no object in its group now speaks for the group's only slider, so the Glass and Display Opacity sliders start at their stored value and change the window's alpha.
 - **GoldenBeauty's in-skin equalizer draws the bands and follows a drag**: showing a group now tells the objects inside it, and dragging an `EQ_BAND` slider tells the skin's `onSetPosition`. (Its library button reading EQ is the author's art.)
+- **A click on a skin's time readout flips it between elapsed and remaining**, as in Winamp; remaining time
+  draws with a leading minus. It is the same setting as Playback → Timer, and a drag that starts on the
+  readout still moves the window.
 
 ### Fixes
 

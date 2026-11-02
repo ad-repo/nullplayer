@@ -538,6 +538,11 @@ final class WasabiTextMetrics {
         }.max() ?? font.pointSize
     }
 
+    /// Whether a click on this object flips elapsed/remaining time — Winamp's `display="time"`.
+    static func togglesTimeDisplay(_ object: WasabiObject) -> Bool {
+        object.attributes["display"]?.lowercased() == "time"
+    }
+
     /// Whether this object's text is a playback time — the only text drawn as a clock run.
     private static func isClockDisplay(_ object: WasabiObject) -> Bool {
         switch object.attributes["display"]?.lowercased() {
@@ -757,9 +762,13 @@ final class WasabiTextMetrics {
     static let scriptTextKey = "nullplayer.script.text"
 
     private static func bound(_ object: WasabiObject, host: WinampModernHost) -> String {
+        // The readout a click flips draws the time remaining with a leading minus. Asked through the
+        // same predicate the click uses, so what flips and what draws flipped cannot drift apart.
+        if togglesTimeDisplay(object), host.showsRemainingTime, host.duration > 0 {
+            return "-" + clock(host.duration - host.currentTime, on: object)
+        }
         switch object.attributes["display"]?.lowercased() {
-        // `time` and `timeelapsed` are the same value under two spellings; both are live in the
-        // corpus (64 and 4 declarations respectively).
+        // `timeelapsed` always counts up (64 `time` and 4 `timeelapsed` declarations in the corpus).
         case "time", "timeelapsed": return clock(host.currentTime, on: object)
         case "songlength": return clock(host.duration, on: object)
         // Winamp's "song name" is the playlist's display title — "Artist - Title" — which is exactly

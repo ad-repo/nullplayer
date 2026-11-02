@@ -1970,11 +1970,15 @@ final class WinampModernMainView: NSView {
     /// is what makes it safe where B59 rated the general form risky: a layer that does bind the press
     /// still gets it, on the press, exactly as before, and the threshold changes nothing for it.
     /// `move="0"` and `action=` are still refusals, because there the skin has said what it wants.
+    ///
+    /// A `display="time"` readout is the same shape of control: its click flips elapsed/remaining and
+    /// it does nothing on the press, so primed it keeps both the click and the drag it sits on.
     func shouldPrimeWindowDrag(from object: WasabiObject) -> Bool {
         guard !shouldDragWindow(from: object) else { return false }
-        guard object.tag.is(.layer) else { return false }
         guard object.attributes["move"] != "0", object.attributes["action"] == nil else { return false }
         guard !scripts.hasBinding(for: object, event: "onleftbuttondown") else { return false }
+        if WasabiTextMetrics.togglesTimeDisplay(object) { return true }
+        guard object.tag.is(.layer) else { return false }
         return Self.mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
     }
 
@@ -2979,6 +2983,8 @@ final class WinampModernMainView: NSView {
             // engine.
             if flip == .config {
                 WindowManager.shared.refreshWinampModernSurfaces()
+            } else if WasabiTextMetrics.togglesTimeDisplay(object) {
+                host.showsRemainingTime.toggle()
             } else {
                 // A skin that draws the buttons and binds nothing (boom names its artwork
                 // `Player.shuffle-Selected` and declares no `cfgattrib` at all) still has to work,
