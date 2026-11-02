@@ -329,7 +329,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // and against the holders the skin's own scripts built while starting.
             makeSurfaceCoordinator(loaded: loaded, scripts: scripts)
             #if DEBUG
-            tabTrace = WinampModernTabTrace(renderer: view.renderer)
+            tabTrace = WinampModernTabTrace(renderer: view.renderer, strip: classicProTabs)
             #endif
             setupHostedWindowMaterializer(loaded: loaded, host: host, scripts: scripts,
                                           componentBridge: componentBridge)
