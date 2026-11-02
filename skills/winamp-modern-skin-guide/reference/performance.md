@@ -487,7 +487,12 @@ pixel by pixel, what one Core Graphics draw does under a transform. `WasabiLayer
 fits the map from three corners and checks every vertex against it (to 1e-4 of the layer). If every
 vertex fits and the mesh does not wrap, `drawWarped` draws the layer's own image through the
 inverse map, clipped to its box. There is no pixel loop, no intermediate raster and no new
-`CGImage` per frame. A mesh that bends, or one that wraps, still takes `resample`.
+`CGImage` per frame. A mesh that bends, or one that wraps, still takes `resample` — **except a
+wrapping rotation about the centre** (`isRotationAboutCentre`: affine, determinant 1, centre fixed),
+which draws unwrapped here too (B345, 2026-10-31). Stargate's 444x440 glyph ring turns with
+`fx_setWrap(1)`, and the resample sampled past the image edge from the opposite side, tiling the
+corners the circle leaves empty with the ring's rim. A wrap that scrolls or scales still wraps
+(`testAWrappingRotationAboutTheCentreIsNotTiled`).
 
 It also draws **sharper**. The resample rasterized the warp at the layer's point size and then
 scaled it up to the backing store. The transform draw samples the source once, at device

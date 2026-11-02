@@ -392,6 +392,13 @@ and the readout drew `1:03: 16`, nine pixels of empty cell per colon.
 - **`width(of:)`'s bitmap branch sums per-glyph advances** for the same reason `getTextWidth()` goes
   through `clockRun` on the other path: a skin lays out the total time from what it measures, and a
   measurement that kept the full-cell advance would put the separator nine pixels off the readout.
+- **Whether a bitmap run overflows is decided by advances alone** (`BitmapRun.advanceLength(of:)`,
+  B320, 2026-10-31, GitHub #643). `width(of:)` adds the last cell's overhang, which centring needs
+  (#581) and the ticker's overflow test does not. iPlay's `marqueeUpdate` cuts its title to 14 cells
+  of 12px (`charwidth="16" hspacing="-4"`) for a 170px box, the author's arithmetic; measured as 172,
+  it overflowed, and the host ticker that `global.m` switches on slid it at 30 px/s on top of the
+  skin's own per-cell step. 12 gold+silver skins have a negative-`hspacing` bitmap font
+  (`testABitmapRunThatFitsByAdvanceIsNotAnOverflow`).
 
 Reach: the **whole cPro family**, through the engine, plus Enkera, TRON Legacy and impulse — the
 corpus's other bitmap-font clocks that declare a colon cell (9 or 11px atlas advance against a 5, 6
@@ -415,6 +422,12 @@ because `songinfo.maki` reads a text object back out and tokenises it:
    override. These are stored apart (`WasabiTextMetrics.scriptAlternateTextKey`) precisely because
    they are different things: promoting the declared one to an override pinned MMD3's whole display
    to its shipped placeholder, "updating songticker", for the entire session.
+
+A placeholder (`:componentname` and the rest, `resolvePlaceholder`) resolves wherever the string came
+from: the `default` attribute **or a script's `setText`** (B336, 2026-10-31). QL2's `upper.m` does
+`setText(":componentname")` and uppercases whatever `onTextChanged` hands it; the script-set text used
+to be stored raw, so every frame's title bar read `:COMPONENTNAME`. Of the six gold+silver skins whose
+scripts name `:componentname`, only QL2 moved.
 
 A script measures the same strings two ways, and the difference matters: **`getAutoWidth()`** is how
 wide the object *wants to be* (a named `autowidthsource` plus that source's inset, else a declared
@@ -632,6 +645,12 @@ drew 14.4. Two things fix the constants in place:
 - **0.9, not 1.0**, because `playlistRowHeight` is the same cell plus 10%: at 1.0 an 11px cell draws
   an ~12.7px line into a 12px row and the descenders meet the row beneath. `WinampModernB130Tests`
   checks the line against the row across the whole range `auto` can reach.
+- **A playlist row's text rect has no vertical inset** (`playlistTextRect`, PR 654, 2026-11-01).
+  `drawSurfaceText` hangs the line from the rect's top and clips to it, and the line above is sized to
+  the whole row, so the 1px inset the rows used to take cut the descenders off at every Text Size.
+  `WinampModernB130Tests` measures where the descenders end inside that same rect at every
+  `WinampModernTextScale` case; it used to check a copy of the row height and passed over the cut.
+  (The colour-theme list draws at a fixed 9pt and keeps its inset.)
 - **The 0.8 does not move.** It is measured against a skin's own reference render and governs every
   `<text>` the skin declares. Fixing a host surface by retuning it would break the corpus to fix the
   playlist.

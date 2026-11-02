@@ -573,6 +573,10 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - An engine imported by an earlier build holds a stubbed PlaylistPro definition, which strips the
   **playlist search bar** from `one`-family cPro skins (cPro-Bento among them). Reimporting the
   installer is what fixes it — there is no automatic repair.
+- A cPro skin's tabs open and close from the **Windows** menu: each tab's item is ticked while it is
+  in the strip (Media Library and Playlist are the **Library Browser** and **Playlist Editor** items),
+  and closed tabs stay closed after a relaunch. **Skins > Modern > Restore Default Tabs** puts every
+  tab back in its original order.
 
 ### UI Size Mode
 - **Original/Original-Metal UI**: choose context menu -> **UI Size** -> **50%**, **90%**, **100%**, **105%**, **110%**, **115%**, **125%**, **135%**, **150%**, or **200%**

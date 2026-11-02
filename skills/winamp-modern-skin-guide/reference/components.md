@@ -333,7 +333,10 @@ things are worth knowing:
   axis** in both orientations — and sizes square icons from the cross axis, capped at Winamp's 32px.
   Negative margins are honoured, not clamped (mmd3's shade buckets use `leftmargin="-3"`), and a box
   narrower than one icon plus its margins still shows one: Lobe's is 40×25, and showing nothing there
-  is the empty strip again.
+  is the empty strip again. That includes margins that eat the whole box (B337, 2026-10-31):
+  `visibleCount` needs only a non-empty box on the scroll axis, so QL2's thingers (`w=50
+  rightmargin=50`, the shade's 30/30, `qt.xml`'s 100/100, the only such buckets in gold+silver) show
+  one icon between their arrows instead of none.
 - **A bucket has no bitmap**, so it has to be named in *both* `isRenderable` and `isInteractive` or
   it can neither draw nor be clicked — the same pair `<ColorThemes:List>` needed for the same reason.
   The draw dispatch tests `componentbucket` **before** the holder branch: a bucket is a holder
@@ -752,6 +755,36 @@ session — resolves through this one catalog in this one order:
 
 Which skin lands on which step is measured per skin: see the routing table in
 [compatibility.md](../compatibility.md#hosted-components).
+
+#### ClassicPro's SUI tab strip (B350, 2026-11-01)
+
+On a ClassicPro skin (either engine: `Cpro…` keys in `_v1`, `cpro2…` in `_v2`) the embedded pages are
+tabs in a strip `CproTabs.m` owns, and `ClassicProTabStrip` is the host's whole view of it. A tab is
+**open** while it is in the strip, and the Windows menu ticks exactly the open ones. Media Library and
+Playlist are the Library Browser and Playlist Editor items (`tab(for:)`, routed in
+`…+EmbeddedPages.swift`); every other tab, widget tabs included, is a row in the skin section
+(`skinMenuEntries`), which replaces the skin's own `Web Browser` and widget-name items. The plugin
+page is never listed. The last open tab cannot be closed (its item is disabled).
+
+- **The host never edits the strip.** It sends the SUI the engine's own `switch_to_tab`: switching to a
+  hidden tab pulls it back in, and a tab whose `…One.TabAutoClose.<n>` flag is set leaves the strip as it
+  is switched away from. A close therefore sets the flag, switches away (to the tab and back when it was
+  not the selected one), and clears the flag.
+- **The flag is load-time only.** Left set, it removes a tab behind the user's back, because the engine
+  reopens tabs by itself (a film switches to Video). The closed set is the host's record instead:
+  `@nullplayer.tabs`/`closed` in the skin's state, snapshotted after each open and close and as the skin
+  unloads. `prepareFlags` sets the closed tabs' flags before the scripts start, so the engine builds them
+  hidden, and `attach` clears every flag once the strip is built.
+- **The tab's own *Auto Close Tab* is withheld** from its right-click menu
+  (`WinampModernScriptRuntime.withheldPopupTitles`): it set the same flag and took tabs out of the strip
+  where no menu could bring them back.
+- **Skins → Modern → Restore Default Tabs** (only while a strip is loaded) reloads the skin, and between
+  unload and load forgets `ClassicPro`/`TabOrder_*` and the closed set: every tab open, in the engine's
+  order. It has to run there, because `CproTabs.m` writes its order back from `onScriptUnloading`.
+
+`WinampModernB350Tests` pins the host's half against a stand-in engine on both spellings;
+`app-control/scripts/bento_tabs.sh` drives the real strip off `WINAMP_MODERN_TAB_TRACE` (see
+[harness.md](harness.md)).
 
 #### Synthesizing a missing window
 
@@ -1437,7 +1470,7 @@ all derived from.
 
 ```
 auto cell (px) = clamp(declaredHeight / 48, 11, 18)
-explicit cell  = 11 * percent / 100      // 100…200%, and an explicit choice is NOT capped at 18
+explicit cell  = 11 * percent / 100      // 90…200%, and an explicit choice is NOT capped at 18 (or floored at 11)
 content scale  = cell / 11               // what the library multiplies its own scale by
 ```
 
