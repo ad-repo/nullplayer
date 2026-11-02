@@ -280,6 +280,22 @@ extension WinampModernScriptRuntime {
         registeredSettings.filter { !Self.namesAnItem(configAttributeValue($0)) }
     }
 
+    /// Winamp's own Windows menu as a config page: every attribute a skin registers on it is a menu
+    /// item, ticked while its value is `"1"`, and choosing it flips the value — the skin acts in
+    /// `onDataChanged`. ClassicPro adds its Web Browser and each widget tab here, and those items
+    /// are the only way back to a tab its strip has hidden (B350).
+    static let windowsMenuSection = "{6559CA61-7EB2-4415-A8A9-A2AEEF762B7F}"
+
+    var windowsMenuItems: [RegisteredSetting] {
+        registeredSettings.filter { $0.section.caseInsensitiveCompare(Self.windowsMenuSection) == .orderedSame }
+    }
+
+    /// Choose one of them, as Winamp's menu does.
+    func toggleWindowsMenuItem(_ item: RegisteredSetting) {
+        setConfigAttribute(section: item.section, key: item.name,
+                           value: configAttributeValue(item) == "1" ? "0" : "1")
+    }
+
     static func namesAnItem(_ value: String) -> Bool {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         return trimmed.hasPrefix("{") && trimmed.hasSuffix("}")

@@ -2040,6 +2040,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
     }
 
+    func prepareForTermination() { flushCloseHandlersOnTermination() }
+
     /// **Quitting is a close too, and the app does not come back to finish an asynchronous one.**
     ///
     /// `applicationWillTerminate` returns and the process exits, so the `Task` an ordinary close

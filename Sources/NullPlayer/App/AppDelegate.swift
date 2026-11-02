@@ -317,11 +317,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Compact Mode's floating frame is its own store, saved on quit whatever Remember State says.
         windowManager.persistCompactFloatingFrame()
 
-        // A `.wmz` saves its state in `onClose`, and quitting never gave it the chance —
-        // see `WMPMainWindowController.flushCloseHandlersOnTermination`. Gated on the WMP
-        // controller: no other skin mode has script handlers to run.
-        (windowManager.mainWindowController as? WMPMainWindowController)?
-            .flushCloseHandlersOnTermination()
+        // A skin's scripts never hear the app quit; the main window saves what they would have.
+        windowManager.mainWindowController?.prepareForTermination()
 
         // Flush WAL to disk before exit so history survives hard shutdown / reboot
         MediaLibraryStore.shared.checkpoint()
