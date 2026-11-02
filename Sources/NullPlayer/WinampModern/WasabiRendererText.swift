@@ -465,7 +465,7 @@ extension WasabiSceneRenderer {
         // title simply vanished instead of scrolling.
         var repeats: [CGFloat] = []
         if run.advanceLength(of: text) > frame.width,
-           let scroll = ticker.map({ tickerMotion(for: $0, overflow: width - frame.width, textWidth: width) })
+           let scroll = ticker.flatMap({ tickerMotion(for: $0, overflow: width - frame.width, textWidth: width) })
                ?? (marquee ? wrappingMotion(textWidth: width) : nil) {
             startX = frame.minX - scroll.offset
             repeats = scroll.wraps ? [width + Self.tickerGap] : []

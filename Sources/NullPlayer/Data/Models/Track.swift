@@ -336,12 +336,6 @@ struct Track: Identifiable, Equatable {
     var displayTitle: String {
         PlaylistRowFields().text(title: title, artist: artist, album: nil, isVideo: false)
     }
-
-    /// The title a playlist row draws, as Show Artist / Show Album allow: a video is marked with
-    /// its glyph, audio is not.
-    var playlistTitle: String {
-        PlaylistRowFields.current.text(title: title, artist: artist, album: album, isVideo: mediaType == .video)
-    }
     
     /// Formatted duration string (MM:SS)
     var formattedDuration: String {

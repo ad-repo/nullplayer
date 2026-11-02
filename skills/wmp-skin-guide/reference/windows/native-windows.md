@@ -81,8 +81,12 @@ reasoning.
   element and the skin contributes only the palette above, so one row renderer serves all 170
   archives that declare one — a defect here is never one skin's. `WMPPlaylistSurfaceView` carries two
   distinct marks: the highlight bar is `selectedRows` (the user's selection; `selectedIndex` is only the
-  arrow-key cursor inside it — see W272 below) and the `▶` prefix plus
-  `currentText` colour is `snapshot.playlistIndex` (the playing track). Seeding `selectedIndex` from
+  arrow-key cursor inside it — see W272 below) and the `currentText` colour is
+  `snapshot.playlistIndex` (the playing track). A row reads `N. Artist - Title` through
+  `PlaylistRowFields` (Show Artist / Show Album, shared with every skin family) with its duration
+  right-aligned through `WMPHostSnapshot.timeString`; the playing row, when it overflows, is handed
+  to a `ModernMarqueeLayer` sized to one line, which scrolls on its own clock so a scroll step never
+  redraws the list. Seeding `selectedIndex` from
   `playlistIndex` once, at first update, left the bar parked on row 1 for the whole session while the
   marker walked down on its own — reported 2026-09-16 against `nvidia`, but visible in every skin.
   `update(_:)` now re-homes the highlight whenever `playlistIndex` changes (a click or an arrow key

@@ -148,7 +148,7 @@ final class EQProfileResolver {
     }
 
     func queueTitle(for track: Track) -> String {
-        Self.queueTitle(track.playlistTitle, marked: appliesProfile(to: track))
+        Self.queueTitle(PlaylistRowFields.current.text(for: track), marked: appliesProfile(to: track))
     }
 
     /// What resolves for `track`: "Warm (album)" or "Off (track)"; nil when nothing is assigned.

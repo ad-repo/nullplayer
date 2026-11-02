@@ -4047,6 +4047,7 @@ final class WasabiSceneRenderer {
         context.clip(to: frame)
         if let scrollbar { drawPlaylistScrollbar(scrollbar, context: context) }
         let rowWidth = frame.width - (scrollbar?.track.width ?? 0)
+        let fields = PlaylistRowFields.current
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
@@ -4077,8 +4078,7 @@ final class WasabiSceneRenderer {
                 drawSurfaceText(Self.playlistTimeText(row.duration), in: textRect, color: color,
                                 alignment: .right, pointSize: pointSize, context: context)
             }
-            let title = PlaylistRowFields.current.text(title: row.title, artist: row.artist,
-                                                       album: row.album, isVideo: row.isVideo)
+            let title = fields.text(title: row.title, artist: row.artist, album: row.album, isVideo: row.isVideo)
             let label = "\(index + 1). \(EQProfileResolver.queueTitle(title, marked: row.hasEQProfile))"
             let scrolls = row.isCurrent && surfaceTextWidth(label, pointSize: pointSize) > columns.label.width
             if scrolls { playlistMarqueeRects[holder.stableID] = columns.label.intersection(frame) }

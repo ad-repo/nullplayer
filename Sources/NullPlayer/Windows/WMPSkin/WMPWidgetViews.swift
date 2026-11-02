@@ -158,7 +158,8 @@ final class WMPPlaylistSurfaceView: NSView {
         let rows = rows, playing = playingRow
         let truncating = NSMutableParagraphStyle()
         truncating.lineBreakMode = .byTruncatingTail
-        marqueeRect = nil
+        let fields = PlaylistRowFields.current
+        var scrolling: (text: String, rect: NSRect, color: NSColor)?
         for index in firstVisibleIndex..<min(rows.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
@@ -169,10 +170,9 @@ final class WMPPlaylistSurfaceView: NSView {
             }
             // NullPlayer's own playlist row: `N. Artist - Title`, the duration right-aligned.
             let item = rows[index]
+            let color = selected ? style.selectionText : (index == playing ? style.currentText : style.text)
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11), .paragraphStyle: truncating,
-                .foregroundColor: selected ? style.selectionText :
-                    (index == playing ? style.currentText : style.text)]
+                .font: Self.rowFont, .paragraphStyle: truncating, .foregroundColor: color]
             var textRect = rect.insetBy(dx: 4, dy: 1)
             if item.duration > 0 {
                 let duration = WMPHostSnapshot.timeString(item.duration)
@@ -181,57 +181,50 @@ final class WMPPlaylistSurfaceView: NSView {
                                          height: textRect.height), withAttributes: attributes)
                 textRect.size.width -= width + 6
             }
-            let title = PlaylistRowFields.current.text(title: item.title, artist: item.artist,
-                                                       album: item.album, isVideo: item.isVideo)
+            let title = fields.text(title: item.title, artist: item.artist, album: item.album, isVideo: item.isVideo)
             let label = "\(index + 1). " + EQProfileResolver.queueTitle(title, marked: item.hasEQProfile)
-            let labelWidth = label.size(withAttributes: attributes).width
-            if index == playing, labelWidth > textRect.width {
-                // The playing row scrolls a title that does not fit, as every family's playlist
-                // does, with a trailing copy so it never blanks between cycles.
-                let cycle = labelWidth + Self.marqueeGap
-                let x = textRect.minX - CGFloat((CACurrentMediaTime() * Self.marqueeSpeed)
-                    .truncatingRemainder(dividingBy: Double(cycle)))
-                NSGraphicsContext.saveGraphicsState()
-                textRect.clip()
-                for origin in [x, x + cycle] {
-                    label.draw(at: NSPoint(x: origin, y: textRect.minY), withAttributes: attributes)
-                }
-                NSGraphicsContext.restoreGraphicsState()
-                marqueeRect = textRect
+            let size = label.size(withAttributes: attributes)
+            if index == playing, size.width > textRect.width {
+                // The playing row scrolls a title that does not fit, as every family's playlist does.
+                // One line tall, so the layer's vertical centring lands on the static rows' baseline.
+                scrolling = (label, NSRect(x: textRect.minX, y: textRect.minY,
+                                           width: textRect.width, height: size.height), color)
             } else {
                 label.draw(in: textRect, withAttributes: attributes)
             }
         }
-        updateMarqueeTimer()
+        placeMarquee(scrolling)
     }
 
-    /// The playing row's title box while it scrolls; nil when nothing does.
-    private var marqueeRect: NSRect?
-    private var marqueeTimer: Timer?
-    /// Classic's playlist marquee speed, in points per second.
-    private static let marqueeSpeed: Double = 24
-    private static let marqueeGap: CGFloat = 30
+    private static let rowFont = NSFont.systemFont(ofSize: 11)
 
-    /// Repaint the scrolling row 30 times a second while there is one, and only while this view is
-    /// in a window; the clock stops itself otherwise.
-    private func updateMarqueeTimer() {
-        guard marqueeRect != nil, window != nil else {
-            marqueeTimer?.invalidate()
-            marqueeTimer = nil
-            return
+    /// The playing row's scrolling title, at Classic's playlist speed. The layer runs its own clock,
+    /// so a scroll step repaints nothing here.
+    private lazy var marquee: ModernMarqueeLayer = {
+        let marquee = ModernMarqueeLayer()
+        marquee.scrollSpeed = 24
+        marquee.scrollGap = 30
+        marquee.textFont = Self.rowFont
+        layer?.addSublayer(marquee)
+        return marquee
+    }()
+
+    private func placeMarquee(_ row: (text: String, rect: NSRect, color: NSColor)?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let row {
+            marquee.frame = row.rect
+            if marquee.textColor != row.color { marquee.textColor = row.color }
         }
-        guard marqueeTimer == nil else { return }
-        let timer = Timer(timeInterval: 1 / 30, repeats: true) { [weak self] timer in
-            guard let self, self.window != nil, let rect = self.marqueeRect else {
-                timer.invalidate()
-                self?.marqueeTimer = nil
-                return
-            }
-            self.setNeedsDisplay(rect)
-        }
-        // `.common`: the default mode alone stops firing while a window is dragged or a menu is open.
-        RunLoop.main.add(timer, forMode: .common)
-        marqueeTimer = timer
+        // Empty text stops the layer's clock.
+        marquee.text = row?.text ?? ""
+        marquee.isHidden = row == nil
+        CATransaction.commit()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil { placeMarquee(nil) }
     }
 
     override func mouseDown(with event: NSEvent) {

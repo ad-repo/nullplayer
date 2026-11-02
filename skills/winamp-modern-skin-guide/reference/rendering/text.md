@@ -560,6 +560,14 @@ surfaces inside the skin's frame. They go through `WasabiSceneRenderer.drawSurfa
 `surfaceTextWidth`, and neither the face nor the size comes from anywhere the skin stated. Both were
 wrong in the same direction, and the second was hidden by the first.
 
+**The playing playlist row scrolls.** A row's text comes from `PlaylistRowFields` (Show Artist /
+Show Album, shared with every skin family). When the current row overflows its title column,
+`drawPlaylistComponent` passes `drawSurfaceText(marquee: true)`, which scrolls it with the skin
+tickers' `wrappingMotion` (bitmap and Core Text alike, trailing copy included) instead of
+truncating, and records the column in `playlistMarqueeRects[holder]`. `WinampModernMainView`'s
+animation clock repaints exactly that rect (`AnimatingRect.playlist`) and nothing while no row
+scrolls.
+
 #### No skin declares a list font. Not one.
 
 `surfaceFont` looks up `pledit.font`, `wasabi.list.font` and `studio.list.font`. Swept across the

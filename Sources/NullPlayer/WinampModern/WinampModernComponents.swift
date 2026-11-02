@@ -178,7 +178,7 @@ struct WinampModernPlaylistRow: Equatable {
     let duration: TimeInterval
     let isCurrent: Bool
     /// The fields `PlEdit.getMetaData(track, field)` is asked for, kept apart so a script that asks
-    /// for one is never handed a joined string. The drawn row joins them with `Track.playlistTitle`.
+    /// for one is never handed a joined string. The drawn row joins them with `PlaylistRowFields`.
     let artist: String
     let album: String
     /// What `PlEdit.getFileName(track)` answers. Defix reads it off the current entry to derive the

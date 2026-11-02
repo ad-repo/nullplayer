@@ -91,11 +91,11 @@ final class EQProfileTests: XCTestCase {
         XCTAssertNil(profiles.resolve(track)?.profile)
         XCTAssertEqual(profiles.resolve(track)?.level, .track)
         XCTAssertFalse(profiles.appliesProfile(to: track))
-        XCTAssertEqual(profiles.queueTitle(for: track), track.playlistTitle)
+        XCTAssertEqual(profiles.queueTitle(for: track), PlaylistRowFields.current.text(for: track))
         profiles.assign(nil, level: .track, tracks: [track])
         XCTAssertEqual(profiles.resolve(track)?.profile?.name, "A")
         XCTAssertTrue(profiles.appliesProfile(to: track), "a change invalidates the cached marker")
-        XCTAssertEqual(profiles.queueTitle(for: track), "∿ \(track.playlistTitle)")
+        XCTAssertEqual(profiles.queueTitle(for: track), "∿ \(PlaylistRowFields.current.text(for: track))")
     }
 
     func testSameAlbumTitleUnderTwoArtistsStaysSeparate() {

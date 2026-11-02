@@ -70,7 +70,7 @@ struct WMPPlaylistItemSnapshot: Hashable, Codable {
     /// An EQ profile runs on this queue row's track: `<PLAYLIST>` draws NullPlayer's marker. Not
     /// part of anything a script reads, so coding and `isSameItem` leave it out.
     var hasEQProfile = false
-    /// The rest of what `<PLAYLIST>` draws through `Track.playlistTitle`; no skin reads either.
+    /// The rest of what `<PLAYLIST>` draws through `PlaylistRowFields`; no skin reads either.
     var album = ""
     var isVideo = false
 

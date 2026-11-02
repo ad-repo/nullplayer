@@ -54,7 +54,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | Window | Description | Toggle |
 |--------|-------------|--------|
 | **Main Window** | Primary player with transport controls | Always visible |
-| **Playlist Editor** | Track list and playlist management. Rows read `Artist - Title`; the right-click menu's **Show Artist** / **Show Album** toggles choose the fields, the same in every skin family (Classic, Original, `.wal`, and a `.wmz` skin's `<PLAYLIST>` pane), and in every one the playing row scrolls when it is too long to fit. Code: `PlaylistRowFields` in `App/PlaylistMenuBuilder.swift` | PL button or context menu |
+| **Playlist Editor** | Track list and playlist management. Rows read `Artist - Title`; the right-click menu's **Show Artist** / **Show Album** toggles choose the fields, the same in every skin family (Classic, Original, `.wal`, and a `.wmz` skin's `<PLAYLIST>` pane), and in every one the playing row scrolls when it is too long to fit. Code: `App/PlaylistRowFields.swift` | PL button or context menu |
 | **Equalizer** | Classic 10-band EQ or modern 21-band EQ with presets | EQ button or context menu |
 | **Equalizer Studio** | Makes and edits EQ profiles (see *EQ Profiles* below). Wears each skin family's own window frame and title bar, snaps and docks with the other windows, resizes (never below its default size), and draws a Console or Boutique DSP faceplate in the skin's colours. Stays open, restyled, across a skin-family switch | Windows menu, or **Assign EQ Profile ▸ Equalizer Studio…** |
 | **Spectrum Analyzer** | Large spectrum visualization | Context menu or Window menu |
