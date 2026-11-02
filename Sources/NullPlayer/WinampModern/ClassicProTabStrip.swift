@@ -87,7 +87,9 @@ struct ClassicProTabStrip {
         guard let (buttons, sui) = Self.locate(in: graph) else { return nil }
         self.runtime = runtime
         self.buttons = buttons
-        widgetLoader = graph.objects(xmlID: "widget.loader").first
+        // The strip's own bucket, beside its buttons: the player's drawer has a `widget.loader` too
+        // (`centro.widgets.drawer`), and Venus Alpha declares that one first.
+        widgetLoader = buttons.parent?.children.first { $0.xmlID == "widget.loader" }
         family = Self.family(of: buttons)
         switchTo = switchTab ?? { tab in
             let (widget, number): (String, Int32) = switch tab.identity {

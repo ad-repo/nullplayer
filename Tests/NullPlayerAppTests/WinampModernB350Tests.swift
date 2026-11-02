@@ -36,6 +36,16 @@ final class WinampModernB350Tests: XCTestCase {
         XCTAssertNil(widget.kind)
     }
 
+    /// The player's drawer has a `widget.loader` bucket of its own, and Venus Alpha declares it
+    /// first: the strip reads its widget tabs from the bucket beside its buttons, or they are no tabs.
+    func testWidgetTabsAreNamedFromTheStripsOwnBucketNotTheDrawers() throws {
+        let scene = try makeScene(drawerBucket: true)
+        let first = try XCTUnwrap(scene.loaded.runtime.graph.objects(xmlID: "widget.loader").first)
+        XCTAssertEqual(first.children.first?.xmlID, "widget.drawer", "the drawer's bucket comes first")
+
+        XCTAssertEqual(scene.strip.tab(named: "Now Playing")?.identity, .widget("centro.widgets.nowplaying"))
+    }
+
     /// Engine two names the browser tab Web Reader and spells its flags `cpro2.…`. Which engine
     /// built the strip is read from where its `CproTabs.maki` lives, which is known before any script
     /// runs — a key the engine writes on its first tab switch left a fresh cPro2 skin read as engine
@@ -223,7 +233,8 @@ final class WinampModernB350Tests: XCTestCase {
     /// cPro's strip as `engine` (`_v1` or `_v2`) builds it: the SUI, `Cpro.tabs` inside it, one group per tab in
     /// `cprotabs.buttons` with its `cpro.tab.button`, the plugin page among them, and the component
     /// bucket the widget tabs are named from. Media Library starts selected.
-    private func makeScene(engine: String = "_v1") throws -> Scene {
+    /// `drawerBucket` puts the player drawer's own `widget.loader` ahead of the strip's.
+    private func makeScene(engine: String = "_v1", drawerBucket: Bool = false) throws -> Scene {
         func tab(_ id: String, _ label: String, x: Int, active: Bool = false) -> String {
             #"<group id="\#(id)" x="\#(x)" y="0" w="50" h="25"><button id="cpro.tab.button" tooltip="\#(label)" activated="\#(active ? 1 : 0)"/></group>"#
         }
@@ -252,6 +263,7 @@ final class WinampModernB350Tests: XCTestCase {
           </groupdef>
           <container id="main">
             <layout id="normal" w="400" h="200">
+              \(drawerBucket ? #"<componentbucket id="widget.loader" x="0" y="0" w="20" h="20" visible="0"><group id="widget.drawer" name="Drawer Widget;DW" userdata="centro.widgets.drawer.one;1"/></componentbucket>"# : "")
               <Centro:SUI id="sui" x="0" y="0" w="400" h="200"/>
             </layout>
           </container>
