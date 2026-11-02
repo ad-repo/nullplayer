@@ -230,6 +230,14 @@ When adding or refactoring top menu bar content:
 - For Sonos room selection UX, use `SonosRoomCheckboxView` when persistent-open submenu behavior is required.
 - For library-browser column visibility menus, use `ColumnVisibilityCheckboxView` for persistent-open checkbox rows. Keep column preferences mode-scoped: Modern uses `BrowserVisible*Columns`; Classic uses `ClassicBrowserVisible*Columns`.
 
+## Adding a Window
+
+Create its folder under `Windows/`, add its controller and view, and register it in
+`WindowManager.swift`. When classic and modern implementations share behavior, add an `App/`
+provider protocol (see the center-stack list below). A NullPlayer-owned window that should inherit
+`.wal` chrome goes through the hosted-window registry; see
+`winamp-modern-skin-guide/reference/components.md`.
+
 ## Dockable Center-Stack Windows
 
 Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, Flow, and Sonos Rooms all participate in the center stack managed by `WindowManager`.

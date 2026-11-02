@@ -21,10 +21,11 @@ and an oracle: real Sonique 1.96 under Wine, scripted to capture any skin in any
 
 ## The rule that outranks everything
 
-**Sonique work must never change Classic, Original, `.wal`, `.wmz` or Audion behaviour.** A change in
-shared code (`App/WindowManager.swift` above all) is gated on `controllerFamily == .sonique`, never
-justified by reasoning that it "should be a no-op". A Classic or Original diff is a regression by
-definition. `skin-subsystem-blueprint` § *The rule that outranks everything* is the worked version.
+**Sonique work must not change how any other family behaves**, and a deliberate multi-family change
+needs the user's explicit permission first. A change in shared code (`App/WindowManager.swift` above
+all) is gated on `controllerFamily == .sonique`, never
+justified by reasoning that it "should be a no-op". A diff in a family with a fixed reference
+is a regression by definition. `skin-subsystem-blueprint` § *The rule that outranks everything* is the worked version.
 
 ## What kind of engine this is
 

@@ -24,31 +24,15 @@ behavior works.
 guess, not against Winamp.** An engine-wide change that moves skins nobody reported is often
 unlocking behaviour those skins were silently missing — or it is collateral. A diff is unclassified
 until it is judged against the skin's own artwork and script; the method is
-`skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression*. (Classic and Original
-are the exception: a diff there is always a regression — see below.)
+`skin-subsystem-blueprint` § *A sweep diff is unclassified, not a regression*. (The families with a
+fixed reference are the exception: a diff there is always a regression — see below.)
 
 ## The rule that outranks everything below
 
-**Winamp Modern must never change how Classic or Original skins behave.** Those modes work; this one
-is the one under construction, and a regression there is a regression in the part of the app people
-already rely on.
-
-The trap is not `import` — that is already covered by the `ModernSkin/`/`Windows/Modern*/` rule in
-CLAUDE.md. It is **shared code every mode runs**, `App/WindowManager.swift` above all. Adding
-behavior there and reasoning that it "should be a no-op for the other modes" is not good enough, and
-has already produced one live regression (B56: a screen clamp added for `.wal` window placement moved
-Classic's sub-windows too). Gate on the mode explicitly —
-`uiMode.controllerFamily == .winampModern` — so the other modes run the identical code path they ran
-before, and the claim is enforced by the compiler rather than by an argument.
-
-**The rule forbids side effects, not deliberate fixes.** It protects Classic from being changed *as a
-consequence of* `.wal` work; it does not mean a bug in shared code can never be fixed. 2026-09-03: the
-`.wal` video pass correctly kept the end-of-media session leak out of its own change — an additive
-flag only the `.wal` host reads — but the underlying bug hit Classic too (B107), and its sibling B108
-killed Plex/Jellyfin/Emby finish-scrobbling and video-playlist advance in **every** mode. Fixing those
-necessarily changed Classic, and that was legitimate as its own scoped change with the impact stated
-up front. Do not let the rule turn a shared bug into one nobody is allowed to fix — say plainly that
-it is separate work and let the user decide.
+**Winamp Modern work must not change how any other family behaves.** The rule, the shared-code trap
+(`App/WindowManager.swift`) and the need for the user's explicit permission before a deliberate
+multi-family change are in `skin-subsystem-blueprint` § *The rule that outranks everything*. Here: gate on `uiMode.controllerFamily == .winampModern`, so
+the other modes run the identical code path they ran before.
 
 Three corollaries follow from it, each of which has already cost a phase. They are one line here and
 a worked example in [reference/harness.md](reference/harness.md):
@@ -351,7 +335,7 @@ named section of [reference/harness.md](reference/harness.md).
   the `<vis>` analyzer. §*The measurement that finds scale bugs*.
 - **When a probe reports nothing, check the probe can see the thing at all.** Three harness blind spots
   each made a real defect look absent. §*A blind instrument reads as a working feature*.
-- The three corollaries of the Classic-safety rule above — probe-is-not-a-picture, a-number-that-moved,
+- The three corollaries of the isolation rule above — probe-is-not-a-picture, a-number-that-moved,
   and verify-geometry-in-the-running-app — are debugging rules too.
 
 

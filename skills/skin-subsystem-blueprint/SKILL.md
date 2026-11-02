@@ -24,19 +24,27 @@ what you are building before writing anything.
 
 ## The rule that outranks everything
 
-**A new skin family must never change how the existing families behave.** They work; yours is the one
-under construction, and a regression there is a regression in what people already rely on.
+**A change for one skin family must not unintentionally change another.** The families work; the
+one under construction (or being fixed) is the one allowed to move, and a regression in another is a
+regression in what people already rely on. This is the CLAUDE.md rule; the family skills restate only their own gate.
 
 The trap is not `import` — CLAUDE.md already forbids `ModernSkin/`/`Windows/Modern*/` importing from
 `Skin/`. It is **shared code every mode runs**, `App/WindowManager.swift` above all. Adding behaviour
 there and reasoning that it "should be a no-op for the other modes" is not good enough and has
-already produced live regressions (B56 in `.wal`). Gate explicitly on
-`uiMode.controllerFamily == .<yours>` so the other families run the identical code path, and the
-claim is enforced by the compiler rather than by an argument.
+already produced live regressions (B56 in `.wal`: a screen clamp added for `.wal` window placement
+moved Classic's sub-windows too). Gate explicitly on `uiMode.controllerFamily == .<yours>` so the
+other families run the identical code path, and the claim is enforced by the compiler rather than by
+an argument.
 
-The rule forbids side effects, not deliberate fixes: a genuine bug in shared code may be fixed as its
-own scoped change with the impact stated up front. See `winamp-modern-skin-guide/SKILL.md` for the
-worked version of both halves.
+**A deliberate change to more than one family needs the user's explicit permission first.** The rule
+forbids side effects, not fixes: a genuine bug in shared code may be fixed, but as its own scoped
+change, with the families named and what changes for each, before the edit. 2026-09-03: the `.wal`
+video pass correctly kept the end-of-media session leak out of its own change — an additive flag only
+the `.wal` host reads — but the underlying bug hit Classic too (B107), and its sibling B108 killed
+Plex/Jellyfin/Emby finish-scrobbling and video-playlist advance in **every** mode. Fixing those
+necessarily changed Classic, and that was legitimate as separate work with the impact stated up
+front. Do not let the rule turn a shared bug into one nobody is allowed to fix — say plainly that it
+is separate work and let the user decide.
 
 ## Prefer an enum the compiler checks over a boolean it cannot
 
@@ -290,8 +298,9 @@ look — the skin that disproved it (EPS High-End, identical artwork declared `"
 139 of 535 and was right — the invariants diff held still, and ten pre-chosen unrelated skins were
 each a repair on their own evidence. Neither verdict came from the image count.
 
-**This applies only to the engines under construction.** Classic and Original are finished; there is
-no missing behaviour in them for a change to unlock, so any diff there from `.wal`/`.wmz` work is a
+**This applies only to `.wal` and `.wmz`, which have no reference to diff against.** Classic and
+Original are finished, Audion has FaceKit and Sonique has real Sonique under Wine, so there is no
+missing behaviour in them for a change to unlock: any diff there from another family's work is a
 regression by definition — see *The rule that outranks everything*.
 
 ## Debugging a live defect
