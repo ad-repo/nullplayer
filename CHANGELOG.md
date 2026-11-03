@@ -28,6 +28,16 @@
 - **Save Playlist keeps a stream's full URL** in the `.m3u`. It wrote the URL's path, which did not
   play when loaded back.
 
+### Windows Media Player skins
+
+- **A skin with no ring frame lends NullPlayer's windows nothing**, and they wear the fallback
+  glass. A drawer nine-sliced into a frame carried the drawer's own close box and edges into our
+  windows; on `anemone` it left a square outline and shadow behind the skin and an Equalizer Studio
+  that could not be closed.
+- **A skin's drawers open while a track is playing.** On `anemone` the playlist and EQ trays did
+  nothing when pressed during playback.
+- **Hosted windows no longer grow on every relaunch** under a skin that lends a frame.
+
 ## 0.34.1
 
 ### Casting and the CLI

@@ -1761,6 +1761,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let existing {
             existing.loadTask?.cancel()
             existing.scriptTask?.cancel()
+            existing.hostEventTask?.cancel()
             existing.stopAllTimers()
             existing.mainView?.cancelInputCapture()
         } else if pendingOpenTasks[key] != nil {
@@ -2505,8 +2506,15 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             for name in events where !presentation.pendingHostEvents.contains(name) {
                 presentation.pendingHostEvents.append(name)
             }
-            presentation.scriptTask?.cancel()
-            presentation.scriptTask = Task { [weak self, weak presentation] in
+            // **A tick waits for the transaction in flight; it never cancels it.** The events are
+            // already coalesced in `pendingHostEvents`, so only the waiter is replaced. Cancelling
+            // the build instead starved the window whenever a rebuild outlasted the 100 ms clock:
+            // `anemone`'s opened drawer takes ~127 ms in a debug build, so with a track playing every
+            // tick killed the last one's build and the drawer never opened.
+            let inFlight = presentation.scriptTask
+            presentation.hostEventTask?.cancel()
+            presentation.hostEventTask = Task { [weak self, weak presentation] in
+                await inFlight?.value
                 try? await Task.sleep(nanoseconds: 16_000_000)
                 guard !Task.isCancelled, let self, let presentation else { return }
                 // Open, play, status, mode, buffering, then reception order — the dispatch order

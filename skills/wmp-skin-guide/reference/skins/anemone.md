@@ -26,11 +26,10 @@ raised.** `plb` and `acb` are `sticky="true"` with `onclick="setVisibility('open
 handler runs. It also writes the latch back by name from inside the tray (`plb.down = false` in the
 `closePlaylist` case, raised by the tray's own ×), so the skin exercises both directions. See W206.
 
-**It is the corpus's reference *panel* donor** — the class W207 added beside the ring. Its
-`playlisttray` is `trayplaylist.bmp`, 328x261, with the list at 83,72 155x116, so the four slice
-lines are 83 / 72 / 90 / 73 and the tray nine-slices into a frame for NullPlayer's own windows. It is
-also what showed that a drawer is authored shut and parked off-canvas, and that a window shorter than
-the borders is the open question rather than a case to refuse.
+**It lends no frame.** It has no ring, so NullPlayer's own windows wear the fallback glass. It was
+the reference *panel* donor from W207 until 2026-11-02, when the panel path was dropped: its tray,
+nine-sliced, carried the tray's own close box and keyed-out edges into our windows (W318). See
+`windows/hosted-chrome.md`.
 
 ```bash
 WMP_SKIN="$HOME/Library/Application Support/NullPlayer/WMPSkins/anemone.wmz" \
@@ -41,11 +40,6 @@ WMP_SKIN="$HOME/Library/Application Support/NullPlayer/WMPSkins/anemone.wmz" \
 # CLICK myview@185,71 hit=plb#9 kind=button action=- sticky=true handlers=1
 # CLICK myview@185,71 changed=[… plb.down=true playlisttray.visible=true …] viewSize=635x268
 # CLICK myview@206,86 hit=acb#10 … changed=[acb.down=true controlstray.visible=true]
-
-WMP_SKIN=…/anemone.wmz WMP_HOSTED_FRAME=550x464 WMP_HOSTED_FRAME_DUMP=/tmp/f \
-  swift test --filter WMPRenderDumpTests/testSweepsSkinOrCorpus 2>&1 | grep '^HOSTED-FRAME'
-# HOSTED-FRAME view=myview panel=sliced size=550x464 caption=72 corner=90
-#   left=83 right=83 bottom=73 content=83,72 384x319 scaled=no
 ```
 
 The clicks are at `185,71` (playlist) and `206,86` (audio controls) — the centres of `plb` and `acb`,
@@ -60,9 +54,14 @@ decoded from the markup rather than from the picture.
   artwork's state and never the script's, so both drawers took their handler's `else` branch on
   every press. **A headless click reproduced the defect rather than the behaviour**, which is why
   `WMP_RENDER_CLICK`'s own `drive()` now keeps the latch too.
-- **W207 (open) — the panel donor and what it costs the windows that wear it.** Three answers to
-  "a window shorter than the borders" were shipped and reported wrong in one session; the row
-  records all three, and this skin is the case for each.
+- **W207 — the panel donor.** Three answers to "a window shorter than the borders" were shipped
+  and reported wrong in one session; this skin was the case for each. Dropped on 2026-11-02.
+- **W318 — a square outline and shadow around the skin.** The window's skin shadow was traced
+  from the palette chrome a hosted window wore before its sliced-panel frame landed. Gone with the
+  panel path (2026-11-02).
+- **Drawers that would not open while a track played (2026-11-02).** The 100 ms host tick
+  cancelled the scene rebuild in flight, and this skin's opened drawer takes longer than that in a
+  debug build, so it never landed. A tick now waits for the transaction (`hostEventTask`).
 - **The cava / `flow` / PeppyMeter black box.** Not a defect of this skin's, but this skin is what
   exposed it: those three views filled their whole window before drawing the chrome, which is
   invisible under a ring and is the window under a silhouette. `SkinnedSurfaceChrome.hostedGroundRect`.

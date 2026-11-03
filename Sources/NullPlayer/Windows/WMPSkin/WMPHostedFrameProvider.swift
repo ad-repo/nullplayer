@@ -652,13 +652,10 @@ final class WMPHostedFrameProvider {
         let started = DispatchTime.now()
         Task { [weak self] in
             var produced: SkinnedSurfaceFrameArtwork?
-            var unslicable = false
             var ringOpen = false
             do {
                 produced = try await template.artwork(builder: builder, renderer: renderer,
                                                      size: key.size, backingScale: scale)
-            } catch WMPHostedFrameRefusal.panelCannotBeSliced {
-                unslicable = true
             } catch WMPHostedFrameRefusal.ringDoesNotClose {
                 ringOpen = true
             } catch {
@@ -667,13 +664,13 @@ final class WMPHostedFrameProvider {
             guard let self else { return }
             await MainActor.run {
                 guard self.owns(slot) else { return }
-                self.landed(key, produced: produced, unslicable: unslicable, ringOpen: ringOpen,
+                self.landed(key, produced: produced, ringOpen: ringOpen,
                             in: slot, isDragBuild: isDragBuild, started: started)
             }
         }
     }
 
-    private func landed(_ key: Key, produced: SkinnedSurfaceFrameArtwork?, unslicable: Bool,
+    private func landed(_ key: Key, produced: SkinnedSurfaceFrameArtwork?,
                         ringOpen: Bool, in slot: Slot, isDragBuild: Bool, started: DispatchTime) {
         slot.inFlight.remove(key)
         let stagedEntry = staged?.slot === slot ? staged : nil
@@ -712,16 +709,7 @@ final class WMPHostedFrameProvider {
                 }
                 return
             }
-            if !unslicable { slot.refused.insert(key) }
-            // **A panel that cannot be sliced lends nothing, and only the artwork pass knows**
-            // (W207). Only the donor's own verdict drops it, and only while nothing has ever been
-            // produced: a window too short for the panel's borders is answered nil per size.
-            if unslicable, slot.template?.panelNodeID != nil, slot.mostRecent == nil {
-                slot.template = nil
-                if slot === live {
-                    NotificationCenter.default.post(name: .hostedSurfaceStyleDidChange, object: nil)
-                }
-            }
+            slot.refused.insert(key)
             return
         }
         // A drag build is transient unless the drag has already ended *at* it.

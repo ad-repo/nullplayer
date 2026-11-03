@@ -128,30 +128,4 @@ final class WMPHostedFramePrimingTests: XCTestCase {
         XCTAssertEqual(wrapped.bottom, direct.bottom, accuracy: 0.5)
         XCTAssertEqual(wrapped.right, direct.right, accuracy: 0.5)
     }
-
-    /// **A panel donor primes nothing, and that is correct rather than a shortfall.**
-    ///
-    /// A panel's borders are four constants of its own bitmap, read without composing anything, so
-    /// there is no picture here to hand back. It is also the answer the provider's own 15% guard
-    /// wants: a nine-patch stretched from the donor's size onto a window is exactly the squash the
-    /// slice exists to refuse, so a panel keeps the palette for its first open. 88 of the 185
-    /// archives lend a ring and 32 lend a panel — this fix reaches the former.
-    func testAPanelDonorPrimesNothing() async throws {
-        let tray = """
-            <SUBVIEW id="tray" left="0" top="0" width="328" height="261"
-                     backgroundImage="tray.png">
-                <ITEMSPLAYLIST id="rows" left="83" top="72" width="155" height="116"/>
-            </SUBVIEW>
-            """
-        let loaded = try await skin("""
-        <THEME><VIEW id="plview" width="328" height="261">\(tray)</VIEW></THEME>
-        """, images: ["tray.png": try block(width: 328, height: 261)])
-        let (template, builder, renderer) = try parts(loaded, playerViewID: nil)
-        XCTAssertNotNil(template.panelNodeID, "the fixture did not derive a panel")
-
-        let border = try await template.border(builder: builder, renderer: renderer, backingScale: 1)
-
-        XCTAssertNotNil(border.insets, "a panel still answers its four constants")
-        XCTAssertNil(border.primed, "a panel handed back a stand-in the 15% guard would refuse")
-    }
 }

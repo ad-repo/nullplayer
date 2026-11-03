@@ -55,56 +55,21 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   why three rounds of artwork fixes changed nothing the reporter could see. Verify it with live-host,
   multi-frame captures. A hosted window with a fast path takes a
   full redraw whenever a skin lent a frame.
-- **Shape, the second donor class — a *panel* (W207).** Over half the corpus lends no ring: measured
-  at the library's own 550x464 on 2026-09-16, **88 of 185 archives lend a ring and 97 lend nothing**.
-  But 77 of those 97 do state a window style, as **one fixed bitmap with the list inset inside it** —
-  `anemone`'s `<subview id="playlisttray" backgroundImage="trayplaylist.bmp">`, 328x261 with its
-  `<ITEMSPLAYLIST>` at 83,72 155x116 — which the ring rule rejected for having no edges to stretch.
-  None are needed: **the hole states the four slice lines**, so the panel is nine-sliced (corners
-  1:1, edge strips stretched, centre transparent) and resizes like any nine-patch. **32 archives lend
-  one**, and the ring's 88 lines are byte-identical either side of the change, because a panel is
-  only looked for when the skin states no ring anywhere. Three things the corpus forced, each of
-  which read as "the derivation is broken": a drawer is authored `visible="false"` and a node that is
-  not drawn **resolves no frame**, so the frame is built with the panel and its hole forced visible;
-  a drawer is **parked outside the window it slides into** (`anemone`'s tray is at `left="307"` in a
-  321-wide view), so the scene is built a second time on a canvas that contains it and the geometry
-  re-read there; and **a player body with a list in it is not a frame** — `Erektorset`'s panel is its
-  whole player, so a panel carrying the transport, the host sliders or the equaliser is refused, as
-  the ring path refuses the player view by scoring it -100. What a panel cannot exclude is the
-  donor's own *painted* controls: `Gorillaz` has a button strip in its bitmap, and those are pixels,
-  not nodes.
-- **A playlist that hides its items is not a hole (2026-09-26).** `firstHole` skips a
-  `<PLAYLIST playlistItemsVisible="false">`: it draws only a toolbar, so it is a strip, not where the
-  skin puts rows. `Heart_Butterfly`'s `panel` is a plain 149x205 blue box with such a strip 22pt
-  tall at its foot, and slicing there put a 170pt band of blank panel above every hosted window
-  (`caption=170`); `Josie_and_the_Pussycats`, the same Tattoo Media template, had `caption=44
-  bottom=124`. Both now lend nothing and take palette chrome. Four archives author the attribute;
-  `Compact`'s sits beside its real drawer list and `Radio` lends nothing, and both lines are
-  byte-identical either side of the change (361x330 and 550x464). **`Compact`'s own frame is broken
-  independently** — its drawer is three bitmaps and only the top one is sliced; see below (W314).
-- **A panel with no top edge borrows its bottom edge (2026-09-26).** `activate`'s
-  `playlist_drawer.bmp` is a U: rails and a rounded bottom, and a keyed-out 6px band where the tray
-  slides out from under the player. Every hosted window wearing it had no top border and nothing
-  opaque to drag by. `WMPHostedFrameTemplate.closingOpenTop` runs on the panel's slices: where the
-  top strip between the slice lines is at least 90% transparent (alpha < 128 — the render leaves a
-  faint fringe, and `activate`'s 9px right rail pokes one column past its 8px slice line), the
-  bottom band is flipped into its place and the top margin becomes the bottom's. `borderInsets`
-  reads the same slices, so growth follows. `activate` at 560x506: `caption=6` → `caption=13`.
-  Panels only; a ring with an open top is not handled. Corpus on 2026-09-26 (180 archives, 45
-  panels, 550x464 and 550x890, scale 1 and 2, A/B via `WMP_OPEN_TOP=0`): **one line moves in every
-  configuration, `activate`'s**, top-edge gap 0.965 → 0.007 at 1x.
-- **A panel still open on any side after that is refused (W314, 2026-09-26).** `Compact`'s
-  `playlistDrawer` wears `drawer_right_top.bmp`, 185 of its 261 rows — the rest of its right rail
-  and its bottom cap are child subviews, and it has no left edge because it slides out from under
-  the player. `hasOpenSide` measures each band after `closingOpenTop` with the same 90%-transparent
-  rule and throws `panelCannotBeSliced`, so the window keeps palette chrome. Assembling the panel
-  with its artwork children was the other direction; it would still need a missing left side
-  invented, and the reporter accepted the fallback. The top is only checked while `closingOpenTop`
-  is on, so `WMP_OPEN_TOP=0` stays its own A/B; `WMP_OPEN_SIDE=0` is this rule's. Corpus on
-  2026-09-26 (180 archives, 550x464, scale 1 and 2): **one line moves, `Compact`'s**.
+- **A skin with no ring lends nothing; our windows wear the fallback glass (2026-11-02).** 88 of
+  185 archives lend a ring and 97 do not. From W207 (2026-09-16) to 2026-11-02 the ring-less ones
+  lent a **panel**: a drawer bitmap with a list inset in it (`anemone`'s `playlisttray`, 328x261,
+  list at 83,72 155x116), nine-sliced at the list's four edges. It took five follow-up rules
+  (hidden-items playlists, open tops, open sides, overrun bitmaps, a transport refusal) and still
+  carried what a drawer paints for itself into our windows — `anemone`'s tray close box, where no
+  hit area could find it, and its keyed-out edges, which the skin shadow traced as a square
+  outline (W318). The reporter asked for the glass instead, and the panel path was deleted. What
+  it learned that still holds: a drawer is authored `visible="false"` (a node that is not drawn
+  resolves no frame) and is parked outside the window it slides into, so any future reading of a
+  drawer has to force both.
 - **Two archives lend no frame by name (2026-09-26): `Ocean` and `Plus! Pulsar`**
   (`WMPHostedFrameTemplate.lendsNoFrame`). `Ocean`'s `background_pl.bmp` carries the player's
-  aquarium panel beside the list, so the sliced panel put that picture into every hosted window.
+  aquarium panel beside the list, so the sliced panel put that picture into every hosted window
+  (moot since panels were dropped, 2026-11-02).
   `Pulsar`'s `plView` ring came out 0.33–0.41 bare on every side. No rule separates them: a
   bare-edge threshold that takes Pulsar also takes `deepbluesomething`, `The_Last_Samurai` and
   `KungFuChaos`. So they are named, the reporter accepted the palette fallback, and
@@ -115,9 +80,7 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   one central rule for the nine registered growth participants listed in `windows/hosting.md`, driven off
   `WMPHostedFrameProvider.donorInsets`, which answers a donor's four borders *without reference to any window* because a 600x150 analyser can
   never render a frame carrying `anemone`'s 173x145 and so could never learn its insets from one.
-  A panel too small to carry its borders at 1:1 is answered nil and keeps palette chrome until
-  growth lands. Exact panels preserve their sliced borders; rings can scale below the donor floor
-  or when mapping their cropped extent onto the target. Pending renders may return provisional
+  Rings can scale below the donor floor or when mapping their cropped extent onto the target. Pending renders may return provisional
   artwork, re-laid out from the nearest render rather than scaled. `wasScaledToFit`
   records extent-to-target scaling or provisional scaling, not exclusively a below-floor case.
   Three answers preceded it and each was reported wrong:
@@ -162,14 +125,6 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   byte-identical. **A column-wise measure was tried first and is wrong**: it re-refused exactly
   those four racks, which is the 2026-09-15 *"reclaim it, we have no content for it"* report coming
   back.
-- **A panel declared larger than its bitmap ends where the bitmap does (2026-09-29).** `Kids`
-  declares `vPl` 201x137 over a 127-tall `background_pl.bmp`, so the slice's bottom 10pt was empty
-  and every hosted window wore a see-through strip under its bottom edge (`gaps=` bottom 1.000).
-  `panelSlices` trims transparent rows and columns off the **bottom and right only** — a bitmap is
-  drawn from its top-left — and never past `minimumBorder` outside the hole. `WMP_PANEL_TRIM=0` is
-  the A/B. Corpus at 430x306 and 550x464: 13 panel lines move, `Kids` to 0 bare on every edge, and
-  a before/after picture of each showed none worse (`Grinch`, `deepbluesomething` and `New Super
-  Mario Bros` reach the window edge where they fell short).
 - **A view drawn whole cannot come apart, but it can still be drawn short (W212).** The frame build
   is outside the script runtime, so a side tile whose height only the skin's `onResize` sets keeps
   its bitmap's — a 20% bare run down each side of `Alienware Invader`, which is the desktop showing
@@ -349,7 +304,7 @@ resize strips, and its title bar and buttons are declared controls wired to acti
 window is *mounted* in the skin's frame and we draw no chrome at all. Nothing is inferred, and none
 of this class of defect exists there. A `.wmz` has no frame system: no title-bar element, no close
 element, no standard client-rect contract. Donor selection uses authored geometry and alignment;
-rings are rendered whole after subtraction and panels are nine-sliced at their content hole.
+rings are rendered whole after subtraction, and a skin with no ring lends nothing.
 The close target remains a convention rather than a declared skin control.
 **When a `.wmz` question can only be answered by reading the artwork,
 that is the signal to stop answering it.**
