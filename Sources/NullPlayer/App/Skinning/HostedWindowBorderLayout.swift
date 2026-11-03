@@ -136,10 +136,7 @@ final class HostedWindowBorderLayout {
         // the last session's border, so seeding it as `frame − own chrome` before the skin answers
         // took that border for interior, and the donor's was added again on top: every relaunch grew
         // the library and the visualizer by the whole border (858 → 1012 → 1166 under `anemone`).
-        guard WindowManager.shared.hostedSurfaceBordersAreSettled else {
-            releaseSettledHolds()
-            return
-        }
+        guard WindowManager.shared.hostedSurfaceBordersAreSettled else { return }
         syncScope()
         let border = WindowManager.shared.hostedSurfaceBorderInsets
         Self.traceRun(border)

@@ -66,15 +66,13 @@ Theming is two layers, and the second is the one a skin with styled panels is as
   it learned that still holds: a drawer is authored `visible="false"` (a node that is not drawn
   resolves no frame) and is parked outside the window it slides into, so any future reading of a
   drawer has to force both.
-- **Two archives lend no frame by name (2026-09-26): `Ocean` and `Plus! Pulsar`**
-  (`WMPHostedFrameTemplate.lendsNoFrame`). `Ocean`'s `background_pl.bmp` carries the player's
-  aquarium panel beside the list, so the sliced panel put that picture into every hosted window
-  (moot since panels were dropped, 2026-11-02).
-  `Pulsar`'s `plView` ring came out 0.33–0.41 bare on every side. No rule separates them: a
-  bare-edge threshold that takes Pulsar also takes `deepbluesomething`, `The_Last_Samurai` and
-  `KungFuChaos`. So they are named, the reporter accepted the palette fallback, and
-  `WMP_FRAME_DENYLIST=0` is the A/B. Corpus at 550x464, scale 2: those two lines move and nothing
-  else. A skin added here should have failed the same search for a rule first.
+- **One archive lends no frame by name (2026-09-26): `Plus! Pulsar`**
+  (`WMPHostedFrameTemplate.lendsNoFrame`). Its `plView` ring came out 0.33–0.41 bare on every
+  side, and a bare-edge threshold that takes it also takes `deepbluesomething`,
+  `The_Last_Samurai` and `KungFuChaos`. So it is named, the reporter accepted the palette fallback,
+  and `WMP_FRAME_DENYLIST=0` is the A/B. A skin added here should have failed the same search for a
+  rule first. (`Ocean` was named too, for its sliced panel; it lends nothing since panels were
+  dropped, 2026-11-02, and its entry went with them.)
 - **How the window and the border share the space: the window is grown (W207, closed 2026-09-16).**
   **The interior keeps its size and the border is added around it** — `HostedWindowBorderLayout`,
   one central rule for the nine registered growth participants listed in `windows/hosting.md`, driven off

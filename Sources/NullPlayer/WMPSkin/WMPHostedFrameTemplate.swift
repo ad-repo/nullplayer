@@ -170,12 +170,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         ProcessInfo.processInfo.environment["WMP_FRAME_SPAN_TILES"] != "0"
 
     /// Archives whose frame no rule derives correctly, so they lend none and every hosted window
-    /// takes palette chrome. `Ocean`'s playlist drawer bitmap carries the player's aquarium panel
-    /// beside the list, and `Plus! Pulsar`'s `plView` ring comes out ~40% bare on every side. No
-    /// markup or `gaps=` signature separates them from skins that frame correctly — a bare-edge
-    /// threshold also takes `deepbluesomething`, `The_Last_Samurai` and `KungFuChaos` — so they are
-    /// named. `WMP_FRAME_DENYLIST=0` derives them anyway — the A/B switch.
-    static let lendsNoFrame: Set<String> = ["ocean", "plus! pulsar"]
+    /// takes palette chrome. `Plus! Pulsar`'s `plView` ring comes out ~40% bare on every side, and
+    /// no markup or `gaps=` signature separates it from skins that frame correctly — a bare-edge
+    /// threshold also takes `deepbluesomething`, `The_Last_Samurai` and `KungFuChaos` — so it is
+    /// named. `WMP_FRAME_DENYLIST=0` derives it anyway — the A/B switch.
+    static let lendsNoFrame: Set<String> = ["plus! pulsar"]
     static let obeysFrameDenylist: Bool =
         ProcessInfo.processInfo.environment["WMP_FRAME_DENYLIST"] != "0"
 
