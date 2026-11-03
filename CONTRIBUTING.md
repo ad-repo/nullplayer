@@ -46,7 +46,7 @@ These services have restrictive APIs and licensing terms that are incompatible w
 2. Confirm there is a GitHub issue for the bug, feature, or refactor before writing the PR
 3. Make your changes following the code style below
 4. Test your changes thoroughly
-5. Run the code quality review (see [Code Quality Review](#code-quality-review)) and address its findings
+5. Run the code quality review in a fresh agent session (see [Code Quality Review](#code-quality-review)) and address its findings
 6. Collect proof of the issue and proof of testing for the PR description
 7. Add a PR comment with reviewer-facing step-by-step "How to test" instructions
 8. Commit with clear, descriptive messages
@@ -116,7 +116,9 @@ Before opening a PR, run the strict maintainability review in
 [skills/thermo-nuclear-code-quality-review/SKILL.md](skills/thermo-nuclear-code-quality-review/SKILL.md)
 over your whole branch (diff against `origin/main`, plus any uncommitted changes). Claude Code runs
 it as the `thermo-nuclear-code-quality-review` skill; with any other agent, have it follow that file.
-If you use an agent to write the change, the agent runs this review before it opens the PR.
+
+Run it in a fresh agent with no context from writing the change, never the agent that wrote it;
+the skill's *Who Runs It* section says how.
 
 ### Required PR Description
 
@@ -126,7 +128,7 @@ Every PR must include all of the following:
 - **Problem evidence:** reproduction steps, logs, screenshots, crash details, or a clear explanation of the real user impact
 - **What changed:** short summary of the implementation
 - **Proof of testing:** build results, test results, and manual verification notes
-- **Code quality review:** a line stating `thermo-nuclear-code-quality-review` was run on this branch, with its findings fixed or why they were not
+- **Code quality review:** a statement that `thermo-nuclear-code-quality-review` was run on this branch by a fresh agent, listing every finding, each fixed or with why not
 - **How to test:** a comment on the PR with step-by-step instructions another reviewer can follow
 
 PRs without an issue, without proof of testing, or without a reviewer-facing how to test comment may be closed.
@@ -172,7 +174,7 @@ Include a checklist in the PR description and mark every backend or integration 
 - [ ] PR links to an issue
 - [ ] PR includes proof of the issue
 - [ ] PR includes proof of testing
-- [ ] Code quality review run and noted in the PR description
+- [ ] Code quality review run by a fresh agent, every finding listed in the PR description, each fixed or with why not
 - [ ] PR includes a reviewer-facing comment with "How to test"
 
 ### Comment Resolution

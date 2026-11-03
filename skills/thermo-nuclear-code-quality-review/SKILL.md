@@ -9,6 +9,19 @@ Use this skill for an unusually strict review focused on implementation quality,
 
 Above all, this skill should push the reviewer to be **ambitious** about code structure. Do not merely identify local cleanup opportunities. Actively search for "code judo" moves: restructurings that preserve behavior while making the implementation dramatically simpler, smaller, more direct, and more elegant.
 
+## Who Runs It
+
+This section covers the pre-PR review that `CLAUDE.md` and `CONTRIBUTING.md` require; other reviews
+are unaffected. That review is never run by the agent that wrote the change, which reads it through
+the decisions it already made and talks itself out of the findings. Run it in a fresh agent with no
+context from the authoring session: in Claude Code, a new subagent (not a fork, which inherits the
+conversation) or a new session; with another tool, a new chat. Give it only the branch and any
+uncommitted changes to review, and this skill — no account of what the change does or why it was
+built that way.
+
+The PR description lists every finding as it came back, each fixed or with why not; the author does
+not drop or soften one before recording it.
+
 ## Core Prompt
 
 Start from this baseline:
