@@ -292,7 +292,7 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return Self.allowingCrossOrigin(
+            return CastSubtitles.allowingCrossOrigin(
                 Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request),
                 for: request
             )
@@ -760,16 +760,6 @@ class LocalMediaServer {
         return response
     }
 
-    /// A Chromecast fetches a text track (`CastSubtitles`) with CORS, sending `Origin`, and drops a
-    /// response without `Access-Control-Allow-Origin`. Requests without `Origin` get nothing new.
-    private static func allowingCrossOrigin(_ response: HTTPResponse, for request: HTTPRequest) -> HTTPResponse {
-        guard request.headers[HTTPHeader("Origin")] != nil else { return response }
-        NSLog("LocalMediaServer: allowing cross-origin GET %@", request.path)
-        var response = response
-        response.headers[HTTPHeader("Access-Control-Allow-Origin")] = "*"
-        return response
-    }
-
     // MARK: - HEAD Request Handlers (Fix 3)
     
     /// Handle HEAD requests for media files (return headers only, no body)
@@ -794,7 +784,7 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .internalServerError)
         }
         
-        let ct = self.contentType(for: url)
+        let ct = Self.contentType(for: url)
         NSLog("LocalMediaServer: HEAD /media/ - %@ (%lld bytes)", url.lastPathComponent, fileSize)
         return HTTPResponse(
             statusCode: .ok,
@@ -920,7 +910,7 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .internalServerError)
         }
         
-        let contentType = self.contentType(for: url)
+        let contentType = Self.contentType(for: url)
         
         // Handle Range requests (for seeking)
         if let rangeHeader = request.headers[HTTPHeader("Range")] {
@@ -1179,7 +1169,7 @@ class LocalMediaServer {
     }
 
     /// Detect content type from file extension
-    private func contentType(for url: URL) -> String {
+    static func contentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         // Audio formats
         case "mp3":
@@ -1218,8 +1208,10 @@ class LocalMediaServer {
         case "mpg", "mpeg":
             return "video/mpeg"
         // Text tracks (CastSubtitles)
-        case "vtt", "ttml":
-            return CastSubtitles.contentType(for: url)
+        case "vtt":
+            return "text/vtt"
+        case "ttml":
+            return "application/ttml+xml"
         default:
             return "application/octet-stream"
         }
