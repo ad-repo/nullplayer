@@ -292,7 +292,10 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request)
+            return Self.allowingCrossOrigin(
+                Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request),
+                for: request
+            )
         }
         
         // Add route handler for stream proxy (Subsonic/remote URLs)
@@ -757,6 +760,16 @@ class LocalMediaServer {
         return response
     }
 
+    /// A Chromecast fetches a text track (`CastSubtitles`) with CORS, sending `Origin`, and drops a
+    /// response without `Access-Control-Allow-Origin`. Requests without `Origin` get nothing new.
+    private static func allowingCrossOrigin(_ response: HTTPResponse, for request: HTTPRequest) -> HTTPResponse {
+        guard request.headers[HTTPHeader("Origin")] != nil else { return response }
+        NSLog("LocalMediaServer: allowing cross-origin GET %@", request.path)
+        var response = response
+        response.headers[HTTPHeader("Access-Control-Allow-Origin")] = "*"
+        return response
+    }
+
     // MARK: - HEAD Request Handlers (Fix 3)
     
     /// Handle HEAD requests for media files (return headers only, no body)
@@ -1204,6 +1217,9 @@ class LocalMediaServer {
             return "video/x-flv"
         case "mpg", "mpeg":
             return "video/mpeg"
+        // Text tracks (CastSubtitles)
+        case "vtt", "ttml":
+            return CastSubtitles.contentType(for: url)
         default:
             return "application/octet-stream"
         }

@@ -129,6 +129,8 @@ struct CastMetadata {
     let resolution: String?   // e.g., "1920x1080"
     let year: Int?
     let summary: String?
+    /// A served sidecar subtitle file, sent to a Chromecast as the LOAD's one text track
+    let textTrackURL: URL?
     
     init(
         title: String,
@@ -140,7 +142,8 @@ struct CastMetadata {
         mediaType: MediaType = .audio,
         resolution: String? = nil,
         year: Int? = nil,
-        summary: String? = nil
+        summary: String? = nil,
+        textTrackURL: URL? = nil
     ) {
         self.title = title
         self.artist = artist
@@ -152,6 +155,7 @@ struct CastMetadata {
         self.resolution = resolution
         self.year = year
         self.summary = summary
+        self.textTrackURL = textTrackURL
     }
     
     /// Generate DIDL-Lite metadata for UPnP devices

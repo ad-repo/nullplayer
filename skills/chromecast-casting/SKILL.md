@@ -236,6 +236,28 @@ Chromecast and other cast sessions can still trigger `AVAudioEngineConfiguration
 }
 ```
 
+### Sidecar subtitles (`CastSubtitles`)
+
+A local video cast to a Chromecast (`CastManager._castVideoTrackCore`, which the CLI, the player
+window and the library menus all reach) looks beside the file for `<name>.vtt`, `.ttml` or `.srt`,
+in that order, then a language-tagged `<name>.<tag>.<ext>`. `CastSubtitles.castableSidecar` converts
+an `.srt` (UTF-8, else Windows-1252) to WebVTT in a temp file; `LocalMediaServer` serves it as
+`text/vtt` (`application/ttml+xml` for TTML), and it goes into `CastMetadata.textTrackURL`.
+`loadMedia` then adds one track and turns it on:
+
+```json
+"media": { …, "tracks": [{ "trackId": 1, "type": "TEXT", "subtype": "SUBTITLES",
+  "trackContentId": "http://…/media/<token>.vtt", "trackContentType": "text/vtt", "name": "Subtitles" }] },
+"activeTrackIds": [1]
+```
+
+The receiver fetches the track with CORS (an `Origin` header) right after PLAYING and drops a
+response without `Access-Control-Allow-Origin`; `LocalMediaServer.allowingCrossOrigin` adds it to
+`/media/` GETs that send `Origin` and logs `allowing cross-origin GET`. Video fetches carry no
+`Origin`, and neither do DLNA or Sonos, so their responses are unchanged. Server videos and DLNA get
+no text track. Not done: tracks embedded in the video file (needs a demuxer) and the player window's
+subtitle delay. Live check: `cast-testing`.
+
 ## Playback Control
 
 After successful LOAD, use the `transportId` for media commands:
