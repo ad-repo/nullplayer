@@ -1761,6 +1761,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let existing {
             existing.loadTask?.cancel()
             existing.scriptTask?.cancel()
+            existing.hostEventTask?.cancel()
             existing.stopAllTimers()
             existing.mainView?.cancelInputCapture()
         } else if pendingOpenTasks[key] != nil {
@@ -2505,9 +2506,22 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             for name in events where !presentation.pendingHostEvents.contains(name) {
                 presentation.pendingHostEvents.append(name)
             }
-            presentation.scriptTask?.cancel()
-            presentation.scriptTask = Task { [weak self, weak presentation] in
-                try? await Task.sleep(nanoseconds: 16_000_000)
+            // **A tick waits for the transaction in flight; it never cancels it.** The events are
+            // already coalesced in `pendingHostEvents`, so only the waiter is replaced. Cancelling
+            // the build instead starved the window whenever a rebuild outlasted the 100 ms clock:
+            // `anemone`'s opened drawer takes ~127 ms in a debug build, so with a track playing every
+            // tick killed the last one's build and the drawer never opened. **It waits on whatever is
+            // in flight when it is about to dispatch**, not on what was in flight when it was
+            // scheduled: a click landing during the wait starts a transaction of its own, and
+            // dispatching over it would cancel the click.
+            presentation.hostEventTask?.cancel()
+            presentation.hostEventTask = Task { [weak self, weak presentation] in
+                var awaited: Task<Void, Never>?
+                repeat {
+                    awaited = presentation?.scriptTask
+                    await awaited?.value
+                    try? await Task.sleep(nanoseconds: 16_000_000)
+                } while !Task.isCancelled && presentation?.scriptTask != awaited
                 guard !Task.isCancelled, let self, let presentation else { return }
                 // Open, play, status, mode, buffering, then reception order — the dispatch order
                 // the host contract fixes, whichever refresh each event was decided by.

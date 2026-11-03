@@ -758,26 +758,16 @@ enum WMPHarness {
                                                  backingScale: backing)
         } catch WMPHostedFrameRefusal.ringDoesNotClose {
             refusal = " refused=ring-open"
-        } catch WMPHostedFrameRefusal.panelCannotBeSliced {
-            refusal = " refused=panel-unslicable"
         } catch {
             artwork = nil
         }
-        // **Which donor class lent it (W207).** `ring=` is the eight-piece ring's piece count;
-        // `panel=` is a one-piece panel nine-sliced at its own hole, and the two are different
-        // enough that a line reading `ring=0` would be a lie about what was borrowed. The slice
-        // lines are the `left=`/`right=`/`top=`/`bottom=` insets already on this line.
-        let donor = template.panelNodeID != nil ? "panel=sliced" : "ring=\(template.ringNodeIDs.count)"
-        // A panel has no donor floor to report — it is sliced, so it fits any window wider than its
-        // own borders, and those borders are the `left=`/`right=`/`caption=`/`bottom=` fields below.
-        let floor = template.panelNodeID != nil ? ""
-            : " min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
+        let donor = "ring=\(template.ringNodeIDs.count)"
+        let floor = " min=\(WMPNumber.format(template.minimumSize.width))x\(WMPNumber.format(template.minimumSize.height))"
         let head = "HOSTED-FRAME view=\(template.viewID) \(donor) "
             + "size=\(WMPNumber.format(size.width))x\(WMPNumber.format(size.height))" + floor
         guard let artwork else { return head + " artwork=none" + refusal }
         // **`WMP_HOSTED_FRAME_DUMP=<dir>` writes the borrowed frame as a PNG.** Nothing in a render
-        // dump contains it — the ring is assembled from pieces the donor draws for itself, and a
-        // nine-sliced panel (W207) is assembled by us — so the numbers on this line were the only
+        // dump contains it — the ring is assembled from pieces the donor draws for itself — so the numbers on this line were the only
         // evidence a frame was right, and they cannot see a seam landing in the wrong place.
         if let directory = ProcessInfo.processInfo.environment["WMP_HOSTED_FRAME_DUMP"],
            let destination = URL(string: "file://" + directory) {

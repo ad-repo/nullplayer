@@ -98,6 +98,8 @@ final class WMPViewPresentation {
     var loadTask: Task<Void, Never>?
     /// Host events a refresh has decided on for **this** view but not yet dispatched.
     var pendingHostEvents: [String] = []
+    /// The host tick waiting on `scriptTask` to dispatch `pendingHostEvents`.
+    var hostEventTask: Task<Void, Never>?
 
     /// Whether this window has been placed once. Placement happens on the first show and never
     /// again, so a window the user dragged somewhere is never yanked back — the same rule
@@ -216,6 +218,7 @@ final class WMPViewPresentation {
     func teardown() {
         loadTask?.cancel(); loadTask = nil
         scriptTask?.cancel(); scriptTask = nil
+        hostEventTask?.cancel(); hostEventTask = nil
         stopAllTimers()
         shadow.detach()
         mainView?.prepareForUITeardown()

@@ -66,7 +66,7 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   release inside it. A skin control in that corner keeps the press. The scan is skin-wide because a
   close is often indirect (the Skins Factory preference relay). Of 185 installed archives it fires
   on `Classic`, `Alpine7618_v09`, `Cubist`, `Stealth` and the excluded `Darkling`.
-- Borrowed rings use whole-donor rendering with subtraction; fixed panels use nine-slicing.
+- Borrowed rings use whole-donor rendering with subtraction; a skin with no ring lends nothing.
 - **A ring wears the colour the donor's own `onLoad` chose, not its markup's (W145).** `xsn_sports`
   stacks eight colours of its frame in `plView` and reveals one from `htcpStartupPl()` by writing
   `alphaBlend`, keyed on its `htcpID` preference, which its own colour cycle rewrites every few
