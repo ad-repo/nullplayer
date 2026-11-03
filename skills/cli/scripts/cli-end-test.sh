@@ -100,5 +100,12 @@ play repeat-bad 20 ':' "$BAD" -- --repeat-all
 [ "$RC" = 1 ] && pass "--repeat-all over an unloadable queue exits 1, no loop" \
   || fail "--repeat-all over bad: rc=$RC ($OUT/repeat-bad.txt)"
 
+# --- --station starts the engine on main (M59: it trapped with SIGTRAP, exit 133) -------------
+# Exit 142 means still playing at the alarm, which needs internet; the trap fires before any network.
+RC=$(perl -e 'alarm 10; exec @ARGV' "$BIN" --cli --no-art --volume 0 --source radio \
+  --station "Magic Radio" </dev/null >"$OUT/station.log" 2>&1; echo $?)
+[ "$RC" = 142 ] && pass "--station plays a station (still running at 10 s)" \
+  || fail "--station: rc=$RC ($OUT/station.log)"
+
 echo "$([ $FAILS = 0 ] && echo PASS || echo FAIL)  cli-end-test: $FAILS failed (logs in $OUT)"
 [ $FAILS = 0 ]

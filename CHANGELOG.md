@@ -15,6 +15,11 @@
   previews and RackView's ARTIST/TRACK labels show. They were the other way round, with album and
   format appended.
 
+### The CLI
+
+- **`--cli --source radio --station <name>` plays the station** instead of crashing at once with no
+  output.
+
 ## 0.34.1
 
 ### Casting and the CLI

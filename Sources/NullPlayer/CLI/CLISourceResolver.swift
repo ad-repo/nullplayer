@@ -123,13 +123,15 @@ struct CLISourceResolver {
             return .tracks(tracks)
         }
 
-        // Internet radio station — RadioManager handles playback directly
+        // Internet radio station — RadioManager handles playback directly, on main: the engine
+        // it starts asserts the main queue, and this nonisolated function runs off it.
         if let stationName = opts.station, source == "radio" {
-            let stations = RadioManager.shared.searchStations(query: stationName)
-            guard let station = stations.first else {
-                throw CLISourceError.noTracksFound("for station '\(stationName)'")
+            try await MainActor.run {
+                guard let station = RadioManager.shared.searchStations(query: stationName).first else {
+                    throw CLISourceError.noTracksFound("for station '\(stationName)'")
+                }
+                RadioManager.shared.play(station: station)
             }
-            RadioManager.shared.play(station: station)
             return .radioStation
         }
 
