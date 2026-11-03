@@ -3894,20 +3894,30 @@ class AudioEngine {
     
     func loadFiles(_ urls: [URL]) {
         NSLog("loadFiles: %d URLs", urls.count)
-        
-        // Quick validate files (checks existence and extension - fast)
-        // Full format validation happens at playback time
+        let tracks = importableTracks(urls)
+        loadTracks(tracks)
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
+    }
+
+    /// The playlist's Add ▸: `loadFiles` on an empty queue, otherwise appends behind it and leaves
+    /// the current track playing.
+    func appendFiles(_ urls: [URL]) {
+        guard !playlist.isEmpty else { return loadFiles(urls) }
+        let tracks = importableTracks(urls)
+        appendTracks(tracks)
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
+    }
+
+    /// Lightweight tracks for the URLs that pass the quick existence-and-extension check; the rest
+    /// are reported. Full format validation happens at playback time.
+    private func importableTracks(_ urls: [URL]) -> [Track] {
         let validation = AudioFileValidator.quickValidate(urls: urls, includeVideo: true)
-        
-        // Notify about invalid files
         if validation.hasInvalidFiles {
             AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
         }
-        
         let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
-        NSLog("loadFiles: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
-        loadTracks(tracks)
-        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
+        NSLog("importableTracks: %d tracks created (%d invalid)", tracks.count, validation.invalidFiles.count)
+        return tracks
     }
 
     static func shouldStopRadioForIncomingTrack(
@@ -4077,8 +4087,7 @@ class AudioEngine {
         playlistDidChange()
     }
     
-    /// The context menu's Play Folder: audio only, like its Play File panel. The playlist's own
-    /// Add Directory discovers video and calls `loadFiles` directly.
+    /// The context menu's Play Folder: audio only, like its Play File panel.
     func loadFolder(_ url: URL) {
         LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] urls in
             guard let self, !urls.isEmpty else { return }

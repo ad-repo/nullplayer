@@ -150,10 +150,11 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// `PlEdit.enqueueFile(path)` / `System.playFile(path)`. The runtime has already decided the URL
     /// is admissible; this only appends it and, for `playFile`, starts it.
     ///
-    /// `AudioEngine.appendFiles` is deliberately not the route: it raises a modal alert for anything
-    /// it rejects, and a skin's script is not a place a user asked a question from. The engine's own
-    /// full validation still runs at playback time, so a file that passed the extension check and
-    /// then turns out to be unplayable fails exactly where any other queued track would.
+    /// `AudioEngine.appendFiles` is deliberately not the route: on an empty queue it replaces and
+    /// plays, which `enqueueFile` must not, and it re-checks a URL the runtime already admitted.
+    /// The engine's own full validation still runs at playback time, so a file that passed the
+    /// extension check and then turns out to be unplayable fails exactly where any other queued
+    /// track would.
     func playlistAppend(mediaAt url: URL, play: Bool) {
         let row = engine.playlist.count
         engine.appendTracks([Track(lightweightURL: url)])

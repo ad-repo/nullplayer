@@ -45,6 +45,12 @@
   dragged before, and a click on the bar's empty space did nothing. Before Plex sign-in, or with no
   server set up, only the prompt text opens the sign-in sheet or Source menu, not the whole bar.
 
+### Playlist
+
+- **The playlist's Add URL, Add Files and Add Directory add to the end of the queue** and leave
+  the playing track playing, in Classic, Original and a `.wal` skin's playlist. They replaced the
+  whole queue and started the new file. Adding to an empty playlist still starts playback.
+
 ## 0.34.1
 
 ### Casting and the CLI
