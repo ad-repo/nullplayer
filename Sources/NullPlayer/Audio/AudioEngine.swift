@@ -6679,6 +6679,28 @@ class AudioEngine {
         reorderPlaylist { $0.reverse() }
     }
 
+    /// Shift the rows at `indices` by `offset`, keeping their order and the gaps between them, as a
+    /// playlist drag moves its selection (M69). The offset is clamped so no row leaves the queue.
+    /// Returns the rows' new indices.
+    @discardableResult
+    func moveTracks(_ indices: Set<Int>, by offset: Int) -> Set<Int> {
+        let moving = indices.filter { playlist.indices.contains($0) }
+        guard let first = moving.min(), let last = moving.max() else { return [] }
+        let shift = min(max(offset, -first), playlist.count - 1 - last)
+        guard shift != 0 else { return moving }
+        reorderPlaylist { $0 = Self.shifting(moving, by: shift, in: $0) }
+        return Set(moving.map { $0 + shift })
+    }
+
+    /// `items` with the elements at `moving` placed `shift` slots on, and the rest filling the
+    /// remaining slots in their own order. Every `moving` index plus `shift` must be in range.
+    static func shifting<T>(_ moving: Set<Int>, by shift: Int, in items: [T]) -> [T] {
+        var slots = [T?](repeating: nil, count: items.count)
+        for index in moving { slots[index + shift] = items[index] }
+        var rest = items.indices.filter { !moving.contains($0) }.map { items[$0] }.makeIterator()
+        return slots.map { $0 ?? rest.next()! }
+    }
+
     /// Reorder the queue, keeping `currentIndex` on the entry that was playing. Matched by
     /// `Track.id`, never by URL: every track of a cue sheet shares its file's URL, so a URL match put
     /// the current index on the sheet's first row after a Reverse while the same track played on.

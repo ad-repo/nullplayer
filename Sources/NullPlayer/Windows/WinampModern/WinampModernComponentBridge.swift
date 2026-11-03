@@ -141,6 +141,14 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         }
     }
 
+    func playlistShiftRows(_ rows: Set<Int>, by offset: Int) -> Set<Int> {
+        let moved = engine.moveTracks(rows, by: offset)
+        // Written after the move: the engine's callback emptied the selection inside it.
+        selectedRows = moved
+        selectedRow = moved.min() ?? -1
+        return moved
+    }
+
     func playlistClear() {
         engine.clearPlaylist()
         selectedRow = -1

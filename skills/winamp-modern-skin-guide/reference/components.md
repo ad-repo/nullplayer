@@ -192,6 +192,12 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   controller's `playlistContentDidChange()`, which calls the bridge's `playlistQueueDidChange()`:
   the selection becomes the playing row, or empty. That callback fires *inside* every engine queue
   edit, so a bridge mutator reads the selection before calling the engine and writes it after.
+- **Dragging a row moves the selection (M69).** `WinampModernMainView` holds a `playlistRowGrab`
+  (`App/PlaylistRowDrag.swift`, shared with Classic and Original); each row the pointer crosses
+  calls `playlistShiftRows(_:by:)`, which shifts the rows through `AudioEngine.moveTracks` and
+  writes the moved rows back as the selection. A plain press inside a multi-row selection keeps it,
+  and a release that moved nothing collapses it to the pressed row. The protocol default answers the
+  rows unmoved, so a host with no reordering of its own leaves the queue alone.
 - **The selection bar follows playback.** On every track change the controller's `updateTrackInfo`
   calls `playlistFollowCurrentTrack()` and then `revealPlaylistRow` on every container view (the
   playlist holder usually lives in an auxiliary `pledit` window, not the player), matching what the

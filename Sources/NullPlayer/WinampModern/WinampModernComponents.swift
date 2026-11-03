@@ -284,6 +284,9 @@ protocol WinampModernComponentHost: AnyObject {
     /// `PlEdit.moveTo(from, to)` — the playlist context menu's Move selected to top / to bottom /
     /// after current. Both are absolute row numbers in the queue as it stands before the move.
     func playlistMove(row: Int, to destination: Int)
+    /// A drag in the playlist (M69): shift `rows` by `offset`, keeping their order, and return
+    /// where they landed, which becomes the selection.
+    func playlistShiftRows(_ rows: Set<Int>, by offset: Int) -> Set<Int>
     /// `PlEdit.clear()` — empty the queue.
     func playlistClear()
     /// `PlEdit.enqueueFile(path)` and `System.playFile(path)` — the **only** route by which a path
@@ -371,6 +374,7 @@ extension WinampModernComponentHost {
     /// A host with no reordering of its own leaves the queue alone rather than approximating the
     /// move with a remove and an insert, which would lose the track.
     func playlistMove(row: Int, to destination: Int) {}
+    func playlistShiftRows(_ rows: Set<Int>, by offset: Int) -> Set<Int> { rows }
     func playlistClear() { playlistRemoveRows(Set(0..<playlistSnapshot().rows.count)) }
     /// A host with no queue of its own drops the request rather than inventing one. The skin's
     /// handler carries on either way — neither MAKI method answers a value.

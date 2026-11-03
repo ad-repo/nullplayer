@@ -25,7 +25,10 @@ class ModernPlaylistView: NSView {
     
     /// The anchor index for shift-selection
     private var selectionAnchor: Int?
-    
+
+    /// A press on a row, which dragging turns into moving the selection.
+    private var rowDrag: PlaylistRowDrag?
+
     /// Scroll offset (in pixels)
     private var scrollOffset: CGFloat = 0
 
@@ -837,7 +840,11 @@ class ModernPlaylistView: NSView {
 
         // Track list
         if let trackIndex = hitTestTrackList(at: point) {
-            if !isEmbedded && WindowManager.shared.effectiveHideTitleBars(for: self.window) {
+            // With no title bar a row is also the window's handle: a plain press on a selected row
+            // drags the selection (M69), any other press can still drag the window to undock it.
+            let pressesSelectedRow = selectedIndices.contains(trackIndex) && event.clickCount == 1
+                && event.modifierFlags.isDisjoint(with: [.shift, .command])
+            if !isEmbedded && !pressesSelectedRow && WindowManager.shared.effectiveHideTitleBars(for: self.window) {
                 // Defer the click so the user can drag to undock; commit on mouseUp if no drag
                 pendingTrackClick = (trackIndex, event)
                 hasDraggedWindow = false
@@ -890,19 +897,41 @@ class ModernPlaylistView: NSView {
             }
             selectionAnchor = index
         } else {
-            selectedIndices = [index]
+            // A press inside a multi-row selection keeps it for a drag; the release collapses it
+            // if nothing moved.
+            if event.clickCount == 2 || !PlaylistRowDrag.keepsSelection(pressing: index, in: selectedIndices) {
+                selectedIndices = [index]
+            }
             selectionAnchor = index
+            rowDrag = PlaylistRowDrag(row: index, selection: selectedIndices)
         }
-        
+
         // Double-click plays track
         if event.clickCount == 2 {
             WindowManager.shared.audioEngine.playTrack(at: index)
         }
-        
+
         needsDisplay = true
     }
-    
+
+    /// The row the pointer is level with, clamped to the list, so a drag past either end keeps going.
+    private func clampedTrackRow(at point: NSPoint) -> Int {
+        let relativeY = calculateListArea().maxY - point.y + scrollOffset
+        let row = Int((relativeY / itemHeight).rounded(.down))
+        return min(max(row, 0), WindowManager.shared.audioEngine.playlist.count - 1)
+    }
+
     override func mouseDragged(with event: NSEvent) {
+        if var drag = rowDrag {
+            let row = clampedTrackRow(at: convert(event.locationInWindow, from: nil))
+            selectedIndices = drag.drag(to: row, selection: selectedIndices,
+                                        move: WindowManager.shared.audioEngine.moveTracks)
+            selectionAnchor = drag.row
+            rowDrag = drag
+            needsDisplay = true
+            return
+        }
+
         if isDraggingWindow, let window = window {
             hasDraggedWindow = true
             let currentPoint = event.locationInWindow
@@ -920,7 +949,6 @@ class ModernPlaylistView: NSView {
     
     override func mouseUp(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
-        
         if isDraggingWindow {
             isDraggingWindow = false
             if let window = window {
@@ -934,6 +962,13 @@ class ModernPlaylistView: NSView {
         }
         pendingTrackClick = nil
         hasDraggedWindow = false
+        // After the deferred click, which arms a row drag: with hidden title bars a row press drags
+        // the window instead, so that one must not outlive this release.
+        if let drag = rowDrag, !drag.moved, let row = drag.collapsesTo {
+            selectedIndices = [row]
+            needsDisplay = true
+        }
+        rowDrag = nil
 
         if let pressed = pressedButton {
             switch pressed {

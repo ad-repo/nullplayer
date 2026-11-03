@@ -130,6 +130,26 @@ final class AudioEngineShuffleTests: XCTestCase {
         XCTAssertEqual(engine.playlist[engine.currentIndex].id, playing)
     }
 
+    /// A playlist drag (M69) shifts a selection with gaps in it as one block, clamped at the ends,
+    /// and the playing entry is followed wherever it lands, inside the selection or out of it.
+    func testMoveTracksShiftsTheSelectionAndFollowsTheCurrentEntry() {
+        XCTAssertEqual(AudioEngine.shifting([1, 3], by: 1, in: Array(0..<6)), [0, 2, 1, 4, 3, 5])
+        XCTAssertEqual(AudioEngine.shifting([4, 5], by: -4, in: Array(0..<6)), [4, 5, 0, 1, 2, 3])
+
+        let engine = AudioEngine()
+        engine.setPlaylistTracks(makePlaceholderTracks(count: 6))
+        let ids = engine.playlist.map(\.id)
+        engine.debugStartShuffleCycleForTesting(at: 2)
+
+        XCTAssertEqual(engine.moveTracks([1, 3], by: 10), [3, 5], "clamped at the end")
+        XCTAssertEqual(engine.playlist.map(\.id), [0, 2, 4, 1, 5, 3].map { ids[$0] })
+        XCTAssertEqual(engine.playlist[engine.currentIndex].id, ids[2])
+
+        XCTAssertEqual(engine.moveTracks([1], by: -1), [0], "the playing row itself")
+        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertEqual(engine.moveTracks([0], by: -1), [0], "already at the top")
+    }
+
     /// Next onto a restored placeholder makes it current, so `play()` resolves it. Skipped, the
     /// outgoing track stayed current and Next resumed it while the highlight moved on (#583).
     func testNextMakesAPlaceholderCurrent() {

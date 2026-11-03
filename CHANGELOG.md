@@ -27,6 +27,10 @@
   which neither playlist draws any more.
 - **Save Playlist keeps a stream's full URL** in the `.m3u`. It wrote the URL's path, which did not
   play when loaded back.
+- **Drag tracks to reorder the playlist** in Classic, Original and a `.wal` skin's playlist. Dragging
+  a row moves the selection with it, several rows at once keeping their order, and the playing track
+  keeps playing wherever it lands. In a docked Original playlist, which has no title bar, drag a row
+  that is already selected; dragging any other row still moves the window.
 
 ### Windows Media Player skins
 
