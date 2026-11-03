@@ -93,7 +93,9 @@ The fade is stateless: `refreshEndFade(at:)` sets `OutputFades.endFade` from
 `OutputFades.endFadeCurve(remaining:over:)` — unity until the last Fade Duration seconds, then the
 crossfade's equal-power `cos` curve down to 0 at the end. The clock tick (0.1 s, `startTimeUpdates`)
 calls it, and so does `seek(to:)`, because the tick does not run while paused and a paused seek
-would otherwise resume on the old position's gain. The `currentTrack` setter calls
+would otherwise resume on the old position's gain. Starting the clock calls it too: a restart of
+the same track (repeat one, Play after Stop) would otherwise play its first 0.1 s on the end's
+near-silent gain. The `currentTrack` setter calls
 `OutputFades.trackDidChange()` on a different track, so the next one never starts on the last
 tick's gain. It is an output-stage gain, stacked with the pause/resume fade (*Fade on
 Pause/Resume*, below).
@@ -156,7 +158,8 @@ do not dip: `mainMixerNode.outputVolume` for local playback (inside `applyNormal
 - **The local clock is manual,** so the fade's tail is added to the saved position; otherwise each
   faded pause would put the clock 0.3 s further behind the audio.
 - **A resume replaces the ramp,** so a pause still fading never lands, and `play()` ramps up from
-  wherever the gain is (`fadeInResume`, shared by the local and streaming branches). A seek, stop or
+  wherever the gain is (`fadeInResume`, shared by the local and streaming branches). Only a resume
+  from `.paused` starts from silence; a start from `.stopped` plays at full level. A seek, stop or
   track change bumps `playbackGeneration`, and the deferred pause is dropped; a change to a
   different track also resets the gain, so the new track does not dip with the old pause.
 - `pauseLocalOnly()` without `fadeOut` (casting takeover) pauses at once.

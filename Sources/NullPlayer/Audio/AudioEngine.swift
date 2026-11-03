@@ -573,7 +573,7 @@ class AudioEngine {
         streamingPlayer?.fadeGain = outputFades.gain
     }
 
-    /// Fade Out Only's gain at `position`. The clock tick refreshes it, and so does a seek, since
+    /// Fade Out Only's gain at `position`. Starting the clock and its tick refresh it, and so does a seek, since
     /// the tick does not run while paused.
     private func refreshEndFade(at position: TimeInterval) {
         let trackDuration = duration
@@ -582,9 +582,10 @@ class AudioEngine {
     }
 
     /// Resume the players with `resumePlayers`, fading in from silence; a pause still fading out
-    /// is taken over instead, so it never lands.
+    /// is taken over instead, so it never lands. Only a resume from pause fades in: a start from
+    /// stopped plays at full level.
     private func fadeInResume(_ resumePlayers: () -> Void) {
-        if state != .playing, pauseFadeEnabled, outputFades.transport.gain == 1 { outputFades.transport.set(0) }
+        if state == .paused, pauseFadeEnabled, outputFades.transport.gain == 1 { outputFades.transport.set(0) }
         resumePlayers()
         outputFades.transport.ramp(to: 1)
     }
@@ -3474,7 +3475,10 @@ class AudioEngine {
     private func startTimeUpdates() {
         // Invalidate any existing timer before creating a new one to prevent duplicate timers
         stopTimeUpdates()
-        
+        // A restart of the same track (repeat one, Play after Stop) keeps the old end fade, which
+        // can be near silence; set it now rather than at the first tick 0.1 s in.
+        refreshEndFade(at: currentTime)
+
         let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             
