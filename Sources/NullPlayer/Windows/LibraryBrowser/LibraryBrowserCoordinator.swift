@@ -36,6 +36,8 @@ final class LibraryBrowserCoordinator: NSObject {
         var source = NSRect.zero
         var library = NSRect.zero
         var add = NSRect.zero
+        /// The centred prompt of a server source with nothing configured.
+        var prompt = NSRect.zero
         var viewModes: [(mode: LibraryViewMode, rect: NSRect)] = []
         /// One per `LibraryBrowseMode.tabs` slot.
         var tabs: [NSRect] = []
@@ -154,11 +156,11 @@ final class LibraryBrowserCoordinator: NSObject {
 
     // MARK: - Clicks
 
-    /// A click on the server bar, a tab, the Sort button or the search bar. Returns false when
-    /// `point` is on none of them.
+    /// A click on a server-bar control, a tab, the Sort button or the search bar. Returns false when
+    /// `point` is on none of them, including the server bar's empty space, which drags the window.
     func mouseDown(at point: NSPoint, event: NSEvent) -> Bool {
         if rects.serverBar.contains(point) {
-            clickServerBar(at: point, event: event)
+            return clickServerBar(at: point, event: event)
         } else if rects.sort.contains(point) {
             popDown(actions.sortMenu(), from: event)
         } else if let index = rects.tabs.firstIndex(where: { $0.contains(point) }),
@@ -173,12 +175,16 @@ final class LibraryBrowserCoordinator: NSObject {
         return true
     }
 
-    private func clickServerBar(at point: NSPoint, event: NSEvent) {
+    private func clickServerBar(at point: NSPoint, event: NSEvent) -> Bool {
         if let hit = rects.viewModes.first(where: { $0.rect.contains(point) }) {
             list.lens.mode = hit.mode
             host.redraw(.all)
-        } else if model.needsPlexLink {
-            actions.host.presentLinkSheet()
+        } else if rects.prompt.contains(point) {
+            if model.needsPlexLink {
+                actions.host.presentLinkSheet()
+            } else {
+                popDown(actions.sourceMenu(), from: event)
+            }
         } else if rects.refresh.contains(point) {
             model.refreshCurrentSource()
         } else if rects.add.contains(point), let menu = actions.addMenu() {
@@ -187,7 +193,10 @@ final class LibraryBrowserCoordinator: NSObject {
             NSMenu.popUpContextMenu(menu, with: event, for: view)
         } else if rects.source.contains(point) {
             popDown(actions.sourceMenu(), from: event)
+        } else {
+            return false
         }
+        return true
     }
 
     /// A server-bar menu, dropped down from the click.
@@ -218,6 +227,7 @@ final class LibraryBrowserCoordinator: NSObject {
         rects.source = .zero
         rects.library = .zero
         rects.add = .zero
+        rects.prompt = .zero
         rects.viewModes = []
         serverName.cycleWidth = 0
         libraryName.cycleWidth = 0

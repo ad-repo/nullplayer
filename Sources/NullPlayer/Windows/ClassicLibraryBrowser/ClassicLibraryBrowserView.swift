@@ -930,8 +930,11 @@ class ClassicLibraryBrowserView: NSView {
         let content = model.sourceBarContent
         if case .unconfigured(let prompt) = content {
             let promptWidth = ClassicLibraryTab.textWidth(prompt, scale: textScale, style: winampModernStyle)
-            drawScaledSkinText(prompt, at: NSPoint(x: barRect.midX - promptWidth / 2, y: textY), scale: textScale, renderer: renderer, in: context)
-            coordinator.rects.source = barRect
+            let promptX = barRect.midX - promptWidth / 2
+            drawScaledSkinText(prompt, at: NSPoint(x: promptX, y: textY), scale: textScale, renderer: renderer, in: context)
+            coordinator.rects.source = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX - barRect.minX, height: barRect.height)
+            coordinator.rects.prompt = NSRect(x: promptX, y: barRect.minY, width: promptWidth, height: barRect.height)
             return
         }
 
@@ -1360,11 +1363,14 @@ class ClassicLibraryBrowserView: NSView {
 
     // MARK: - Hit Testing
     
-    /// Check if point hits title bar (for dragging)
+    /// Check if point hits title bar, or the server bar's empty space (the coordinator has already
+    /// claimed its controls), for dragging
     private func hitTestTitleBar(at skinPoint: NSPoint) -> Bool {
         // Embedded: the skin owns the window frame, so there is no title bar of ours to grab and no
         // close button to press. Claiming those regions would eat clicks meant for the list.
+        // The embedded drag below picks up the server bar's empty space.
         if isEmbeddedInSkin { return false }
+        if coordinator.rects.serverBar.contains(skinPoint) { return true }
         if hidesClassicTitleBar {
             // Invisible drag zone at the top of the visible window
             return skinPoint.y >= Layout.titleBarHeight && skinPoint.y < Layout.titleBarHeight + 6
