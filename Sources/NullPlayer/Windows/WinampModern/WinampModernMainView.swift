@@ -1858,19 +1858,15 @@ final class WinampModernMainView: NSView {
                     needsDisplay = true
                     return
                 }
-                if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object),
-                   let componentHost {
+                if let row = renderer.playlistRow(at: point, in: holder.frame, holder: holder.object) {
                     if event.clickCount >= 2 {
-                        componentHost.playlistPlay(row: row)
-                    } else {
-                        // A press inside a multi-row selection keeps it for a drag; the release
+                        componentHost?.playlistPlay(row: row)
+                    } else if let componentHost {
+                        // A press inside a multi-row selection keeps it for a drag, and the release
                         // collapses it if nothing moved.
-                        let selection = componentHost.playlistSnapshot().selectedRows
-                        if !PlaylistRowDrag.keepsSelection(pressing: row, in: selection) {
-                            componentHost.playlistSelect(row: row)
-                        }
-                        playlistRowGrab = (holder.object, PlaylistRowDrag(
-                            row: row, selection: componentHost.playlistSnapshot().selectedRows))
+                        let drag = PlaylistRowDrag(pressing: row, in: componentHost.playlistSnapshot().selectedRows)
+                        componentHost.playlistSetSelection(drag.selection)
+                        playlistRowGrab = (holder.object, drag)
                     }
                     // Clicking a row is what gives this window the keyboard, and with it Delete.
                     playlistHasFocus = true
@@ -2116,12 +2112,11 @@ final class WinampModernMainView: NSView {
             return
         }
         if var grab = playlistRowGrab, let frame = renderer.frame(of: grab.holder), let componentHost {
-            // Level with the list, so a drag past either end keeps moving the selection that way.
+            // Level with the list, so a drag past either end keeps moving the selection that way;
+            // `moveTracks` clamps a row past the last track.
             let level = CGPoint(x: frame.midX, y: min(max(point.y, frame.minY), frame.maxY - 1))
-            let snapshot = componentHost.playlistSnapshot()
-            let row = min(renderer.playlistRow(at: level, in: frame, holder: grab.holder) ?? 0,
-                          snapshot.rows.count - 1)
-            _ = grab.drag.drag(to: row, selection: snapshot.selectedRows, move: componentHost.playlistShiftRows)
+            guard let row = renderer.playlistRow(at: level, in: frame, holder: grab.holder) else { return }
+            grab.drag.drag(to: row, move: componentHost.playlistShiftRows)
             playlistRowGrab = grab
             needsDisplay = true
             return
@@ -2166,11 +2161,9 @@ final class WinampModernMainView: NSView {
         if pressedEQHolder != nil { pressedEQHolder = nil; needsDisplay = true; return }
         if playlistScrollbarGrab != nil { playlistScrollbarGrab = nil; return }
         if let grab = playlistRowGrab {
+            componentHost?.playlistSetSelection(grab.drag.releasedSelection)
             playlistRowGrab = nil
-            if !grab.drag.moved, let row = grab.drag.collapsesTo {
-                componentHost?.playlistSelect(row: row)
-                needsDisplay = true
-            }
+            needsDisplay = true
         }
         let releasedOver = pressTarget(at: point)
         // The drag session is closed **before** any action runs. A titlebar mousetrap is both a drag

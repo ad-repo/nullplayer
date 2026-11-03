@@ -1194,12 +1194,11 @@ class PlaylistView: NSView {
             selectionAnchor = index
         } else {
             // Single selection - set new anchor. A press inside a multi-row selection keeps it
-            // for a drag; the release collapses it if nothing moved.
-            if event.clickCount == 2 || !PlaylistRowDrag.keepsSelection(pressing: index, in: selectedIndices) {
-                selectedIndices = [index]
-            }
+            // for a drag, and the release collapses it if nothing moved.
+            let drag = PlaylistRowDrag(pressing: index, in: selectedIndices)
+            selectedIndices = drag.selection
             selectionAnchor = index
-            rowDrag = PlaylistRowDrag(row: index, selection: selectedIndices)
+            rowDrag = drag
         }
 
         // Double-click plays track
@@ -1210,24 +1209,21 @@ class PlaylistView: NSView {
         needsDisplay = true
     }
 
-    /// The row the pointer is level with, clamped to the list, so a drag past either end keeps going.
-    private func clampedTrackRow(at skinPoint: NSPoint) -> Int {
-        let relativeY = skinPoint.y - Layout.titleBarHeight + scrollOffset
-        let row = Int((relativeY / itemHeight).rounded(.down))
-        return min(max(row, 0), WindowManager.shared.audioEngine.playlist.count - 1)
+    /// The row the pointer is level with, past either end of the list too: `moveTracks` clamps.
+    private func trackRow(levelWith skinPoint: NSPoint) -> Int {
+        Int(((skinPoint.y - Layout.titleBarHeight + scrollOffset) / itemHeight).rounded(.down))
     }
 
     override func mouseDragged(with event: NSEvent) {
         if var drag = rowDrag {
-            let row = clampedTrackRow(at: convertToSkinCoordinates(convert(event.locationInWindow, from: nil)))
-            selectedIndices = drag.drag(to: row, selection: selectedIndices,
-                                        move: WindowManager.shared.audioEngine.moveTracks)
+            let point = convertToSkinCoordinates(convert(event.locationInWindow, from: nil))
+            drag.drag(to: trackRow(levelWith: point), move: WindowManager.shared.audioEngine.moveTracks)
+            selectedIndices = drag.selection
             selectionAnchor = drag.row
             rowDrag = drag
             needsDisplay = true
             return
         }
-
 
         // Handle scrollbar dragging
         if isDraggingScrollbar {
@@ -1271,11 +1267,9 @@ class PlaylistView: NSView {
         let skinPoint = convertToSkinCoordinates(point)
 
         if let drag = rowDrag {
+            selectedIndices = drag.releasedSelection
             rowDrag = nil
-            if !drag.moved, let row = drag.collapsesTo {
-                selectedIndices = [row]
-                needsDisplay = true
-            }
+            needsDisplay = true
         }
 
         // End window dragging

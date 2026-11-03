@@ -133,8 +133,8 @@ final class AudioEngineShuffleTests: XCTestCase {
     /// A playlist drag (M69) shifts a selection with gaps in it as one block, clamped at the ends,
     /// and the playing entry is followed wherever it lands, inside the selection or out of it.
     func testMoveTracksShiftsTheSelectionAndFollowsTheCurrentEntry() {
-        XCTAssertEqual(AudioEngine.shifting([1, 3], by: 1, in: Array(0..<6)), [0, 2, 1, 4, 3, 5])
-        XCTAssertEqual(AudioEngine.shifting([4, 5], by: -4, in: Array(0..<6)), [4, 5, 0, 1, 2, 3])
+        XCTAssertEqual(AudioEngine.shiftedOrder(count: 6, moving: [1, 3], by: 1), [0, 2, 1, 4, 3, 5])
+        XCTAssertEqual(AudioEngine.shiftedOrder(count: 6, moving: [4, 5], by: -4), [4, 5, 0, 1, 2, 3])
 
         let engine = AudioEngine()
         engine.setPlaylistTracks(makePlaceholderTracks(count: 6))
@@ -148,6 +148,53 @@ final class AudioEngineShuffleTests: XCTestCase {
         XCTAssertEqual(engine.moveTracks([1], by: -1), [0], "the playing row itself")
         XCTAssertEqual(engine.currentIndex, 0)
         XCTAssertEqual(engine.moveTracks([0], by: -1), [0], "already at the top")
+    }
+
+    /// A drag crosses many rows, one `moveTracks` each; the upcoming shuffle order must follow the
+    /// tracks through every step, not be drawn again at each one.
+    func testMoveTracksCarriesTheShuffleOrderThroughTheMove() {
+        let engine = AudioEngine()
+        engine.setPlaylistTracks(makePlaceholderTracks(count: 6))
+        engine.shuffleEnabled = true
+        engine.debugStartShuffleCycleForTesting(at: 2)
+        let upcomingIDs = { engine.upcomingIndices.map { engine.playlist[$0].id } }
+        let before = upcomingIDs()
+
+        engine.moveTracks([0, 4], by: 1)
+        engine.moveTracks([1, 5], by: -1)
+        engine.moveTracks([2], by: 3)
+
+        XCTAssertEqual(upcomingIDs(), before)
+        XCTAssertEqual(engine.debugPeekNextShuffleIndexForPlayback().map { engine.playlist[$0].id }, before.first)
+    }
+
+    /// The press, drag and release a playlist view runs, over a stand-in for `moveTracks`.
+    func testPlaylistRowDragMovesAndCollapsesTheSelection() {
+        var rows = Array(0..<6)
+        let move = { (selection: Set<Int>, offset: Int) -> Set<Int> in
+            let order = AudioEngine.shiftedOrder(count: rows.count, moving: selection,
+                                                 by: min(max(offset, -selection.min()!), rows.count - 1 - selection.max()!))
+            let landed = Set(order.indices.filter { selection.contains(order[$0]) })
+            rows = order.map { rows[$0] }
+            return landed
+        }
+
+        var single = PlaylistRowDrag(pressing: 4, in: [1, 2])
+        XCTAssertEqual(single.selection, [4], "a press outside the selection selects the row alone")
+        XCTAssertEqual(single.releasedSelection, [4])
+
+        var kept = PlaylistRowDrag(pressing: 2, in: [1, 2])
+        XCTAssertEqual(kept.selection, [1, 2], "a press inside it keeps it for the drag")
+        XCTAssertEqual(kept.releasedSelection, [2], "and a release that moved nothing collapses it")
+
+        kept.drag(to: 9, move: move)
+        XCTAssertEqual(kept.selection, [4, 5], "clamped at the end")
+        XCTAssertEqual(kept.row, 5, "the held row follows the clamp")
+        XCTAssertEqual(kept.releasedSelection, [4, 5])
+        XCTAssertEqual(rows, [0, 3, 4, 5, 1, 2])
+
+        single.drag(to: 4, move: move)
+        XCTAssertEqual(single.selection, [4], "no move onto its own row")
     }
 
     /// Next onto a restored placeholder makes it current, so `play()` resolves it. Skipped, the

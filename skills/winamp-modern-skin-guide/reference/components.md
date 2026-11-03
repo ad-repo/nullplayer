@@ -194,7 +194,7 @@ CornerAmp ships playlist + EQ, Winamp Modern ships playlist + library. The engin
   edit, so a bridge mutator reads the selection before calling the engine and writes it after.
 - **Dragging a row moves the selection (M69).** `WinampModernMainView` holds a `playlistRowGrab`
   (`App/PlaylistRowDrag.swift`, shared with Classic and Original); each row the pointer crosses
-  calls `playlistShiftRows(_:by:)`, which shifts the rows through `AudioEngine.moveTracks` and
+  calls `playlistShiftRows(_:by:)`, which shifts the rows through `AudioEngine.moveTracks` (which carries the current index and shuffle order through the move) and
   writes the moved rows back as the selection. A plain press inside a multi-row selection keeps it,
   and a release that moved nothing collapses it to the pressed row. The protocol default answers the
   rows unmoved, so a host with no reordering of its own leaves the queue alone.

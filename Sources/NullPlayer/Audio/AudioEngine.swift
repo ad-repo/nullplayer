@@ -6681,23 +6681,40 @@ class AudioEngine {
 
     /// Shift the rows at `indices` by `offset`, keeping their order and the gaps between them, as a
     /// playlist drag moves its selection (M69). The offset is clamped so no row leaves the queue.
-    /// Returns the rows' new indices.
+    /// Returns the rows' new indices. The current index and the shuffle order are carried through
+    /// the move rather than rebuilt, so a drag that crosses many rows leaves the upcoming shuffle
+    /// order as it was.
     @discardableResult
     func moveTracks(_ indices: Set<Int>, by offset: Int) -> Set<Int> {
         let moving = indices.filter { playlist.indices.contains($0) }
         guard let first = moving.min(), let last = moving.max() else { return [] }
         let shift = min(max(offset, -first), playlist.count - 1 - last)
         guard shift != 0 else { return moving }
-        reorderPlaylist { $0 = Self.shifting(moving, by: shift, in: $0) }
+        let order = Self.shiftedOrder(count: playlist.count, moving: moving, by: shift)
+        var newIndex = order
+        for (new, old) in order.enumerated() { newIndex[old] = new }
+        let remap = { (index: Int) in newIndex.indices.contains(index) ? newIndex[index] : index }
+
+        playlist = order.map { playlist[$0] }
+        currentIndex = remap(currentIndex)
+        if isValidShuffleOrder(shufflePlaybackOrder, count: playlist.count) {
+            shufflePlaybackOrder = shufflePlaybackOrder.map(remap)
+            pendingRepeatShuffleOrder = pendingRepeatShuffleOrder.map { $0.map(remap) }
+            clearCrossfadeDeclineLatch()
+        } else {
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
+        }
+        playlistDidChange()
         return Set(moving.map { $0 + shift })
     }
 
-    /// `items` with the elements at `moving` placed `shift` slots on, and the rest filling the
-    /// remaining slots in their own order. Every `moving` index plus `shift` must be in range.
-    static func shifting<T>(_ moving: Set<Int>, by shift: Int, in items: [T]) -> [T] {
-        var slots = [T?](repeating: nil, count: items.count)
-        for index in moving { slots[index + shift] = items[index] }
-        var rest = items.indices.filter { !moving.contains($0) }.map { items[$0] }.makeIterator()
+    /// The playlist order after the rows at `moving` move `shift` slots on: `order[new]` is the
+    /// row's old index. The other rows fill the remaining slots in their own order, and there are
+    /// exactly as many of them as empty slots, so the iterator never runs dry.
+    static func shiftedOrder(count: Int, moving: Set<Int>, by shift: Int) -> [Int] {
+        var slots = [Int?](repeating: nil, count: count)
+        for index in moving { slots[index + shift] = index }
+        var rest = (0..<count).filter { !moving.contains($0) }.makeIterator()
         return slots.map { $0 ?? rest.next()! }
     }
 
