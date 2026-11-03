@@ -952,8 +952,11 @@ class ModernLibraryBrowserView: NSView {
 
         case .unconfigured(let prompt):
             let promptWidth = prompt.size(withAttributes: prefixAttrs).width
-            drawText(prompt, at: NSPoint(x: barRect.midX - promptWidth / 2, y: textY), withAttributes: prefixAttrs, context: context)
-            coordinator.rects.source = barRect
+            let promptX = barRect.midX - promptWidth / 2
+            drawText(prompt, at: NSPoint(x: promptX, y: textY), withAttributes: prefixAttrs, context: context)
+            coordinator.rects.source = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX - barRect.minX, height: barRect.height)
+            coordinator.rects.prompt = NSRect(x: promptX, y: barRect.minY, width: promptWidth, height: barRect.height)
         }
     }
     

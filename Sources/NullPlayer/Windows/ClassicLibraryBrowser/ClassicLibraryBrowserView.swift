@@ -930,8 +930,11 @@ class ClassicLibraryBrowserView: NSView {
         let content = model.sourceBarContent
         if case .unconfigured(let prompt) = content {
             let promptWidth = ClassicLibraryTab.textWidth(prompt, scale: textScale, style: winampModernStyle)
-            drawScaledSkinText(prompt, at: NSPoint(x: barRect.midX - promptWidth / 2, y: textY), scale: textScale, renderer: renderer, in: context)
-            coordinator.rects.source = barRect
+            let promptX = barRect.midX - promptWidth / 2
+            drawScaledSkinText(prompt, at: NSPoint(x: promptX, y: textY), scale: textScale, renderer: renderer, in: context)
+            coordinator.rects.source = NSRect(x: barRect.minX, y: barRect.minY,
+                                      width: sourceNameStartX - barRect.minX, height: barRect.height)
+            coordinator.rects.prompt = NSRect(x: promptX, y: barRect.minY, width: promptWidth, height: barRect.height)
             return
         }
 

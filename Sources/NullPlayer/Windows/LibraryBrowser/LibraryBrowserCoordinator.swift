@@ -36,6 +36,8 @@ final class LibraryBrowserCoordinator: NSObject {
         var source = NSRect.zero
         var library = NSRect.zero
         var add = NSRect.zero
+        /// The centred prompt of a server source with nothing configured.
+        var prompt = NSRect.zero
         var viewModes: [(mode: LibraryViewMode, rect: NSRect)] = []
         /// One per `LibraryBrowseMode.tabs` slot.
         var tabs: [NSRect] = []
@@ -177,8 +179,12 @@ final class LibraryBrowserCoordinator: NSObject {
         if let hit = rects.viewModes.first(where: { $0.rect.contains(point) }) {
             list.lens.mode = hit.mode
             host.redraw(.all)
-        } else if model.needsPlexLink {
-            actions.host.presentLinkSheet()
+        } else if rects.prompt.contains(point) {
+            if model.needsPlexLink {
+                actions.host.presentLinkSheet()
+            } else {
+                popDown(actions.sourceMenu(), from: event)
+            }
         } else if rects.refresh.contains(point) {
             model.refreshCurrentSource()
         } else if rects.add.contains(point), let menu = actions.addMenu() {
@@ -221,6 +227,7 @@ final class LibraryBrowserCoordinator: NSObject {
         rects.source = .zero
         rects.library = .zero
         rects.add = .zero
+        rects.prompt = .zero
         rects.viewModes = []
         serverName.cycleWidth = 0
         libraryName.cycleWidth = 0

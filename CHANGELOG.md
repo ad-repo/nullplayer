@@ -42,7 +42,8 @@
 
 - **The empty space in the Library Browser's Source bar drags the window**, in every skin family,
   such as the gap between the library name and the List / Flow / Tiles buttons. Only the title bar
-  dragged before, and a click on the bar's empty space did nothing.
+  dragged before, and a click on the bar's empty space did nothing. Before Plex sign-in, or with no
+  server set up, only the prompt text opens the sign-in sheet or Source menu, not the whole bar.
 
 ## 0.34.1
 

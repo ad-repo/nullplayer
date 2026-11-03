@@ -1051,11 +1051,12 @@ non-drawing half both views share. It takes the model's `onChange` and passes ea
 `LibraryBrowserList` and the view (`Host.redraw`, `updateHistory`, `visibilityChanged`); follows
 minimize, occlusion, the docked-group highlight (`isHighlighted`), the library scan and row
 thumbnail loads; routes clicks on the server bar's buttons, the tabs, Sort and the search bar
-(`mouseDown`, before `list.mouseDown`) and file drops — a click on the server bar's empty space
-returns false, and both views' `hitTestTitleBar` take it as a window drag (embedded Classic: the
-embedded drag); steps the loading, row and scan spinners
-(`spinnerStep`, which the painter draws at); and tears the model, actions and list down. Each view draws the
-controls and records where in `coordinator.rects`. **Each band resets its own rects as it draws**
+(`mouseDown`, before `list.mouseDown`) and file drops; steps the loading, row and scan spinners
+(`spinnerStep`, which the painter draws at); and tears the model, actions and list down. Each view
+draws the controls and records where in `coordinator.rects`. A click on the server bar that hits
+none of its controls returns false, and both views' `hitTestTitleBar` take it as a window drag (an
+embedded Classic browser: its embedded drag). An unconfigured server source's prompt is a control
+of its own (`rects.prompt`): before Plex sign-in it opens the link sheet, otherwise the Source menu. **Each band resets its own rects as it draws**
 (`beginServerBar`, the tab bar's `rects.tabs.removeAll`), never the whole set at the top of `draw`:
 both views have a fast path that redraws the server bar alone on every marquee tick, and a full
 reset there wipes the tab and Sort rects. What the list area shows comes from
