@@ -397,6 +397,8 @@ class AudioEngine {
         get { currentTrackStorage }
         set {
             currentTrackStorage = newValue
+            // The next track starts at full volume, not on the last tick's end-fade gain.
+            endFadeGain = 1
             delegate?.audioEngineDidChangeTrack(currentTrack)
             eqProfileController.trackDidChange(currentTrack)
             // Reset BPM detector for new track
@@ -536,6 +538,48 @@ class AudioEngine {
         }
     }
     
+    /// Fade out only: instead of overlapping, the track fades out over its last
+    /// `sweetFadeDuration` seconds and the next one starts after it, at full volume from 0:00,
+    /// so an intro that opens on a kick keeps it. Off is the two-sided crossfade.
+    var sweetFadeOutOnly: Bool = false {
+        didSet {
+            UserDefaults.standard.set(sweetFadeOutOnly, forKey: "sweetFadeOutOnly")
+            notifyPlaybackOptionsChanged()
+        }
+    }
+
+    /// Fade Out Only's gain on the output stage, recomputed each clock tick from the time left
+    /// (`endFadeGain(remaining:over:)`), so a seek, pause or repeat needs no state of its own.
+    private var endFadeGain: Float = 1 {
+        didSet { if endFadeGain != oldValue { applyOutputFades() } }
+    }
+
+    /// The end-of-track fade at `remaining` seconds left: unity until the last `duration`
+    /// seconds, then the crossfade's own equal-power cos curve down to silence at the end.
+    static func endFadeGain(remaining: TimeInterval, over duration: TimeInterval) -> Float {
+        guard duration > 0, remaining < duration else { return 1 }
+        let progress = 1 - max(0, remaining) / duration
+        return Float(cos(progress * .pi / 2))
+    }
+
+    /// Fade on Pause/Resume: pause and resume ramp over `TransportFade.duration` instead of cutting.
+    var pauseFadeEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(pauseFadeEnabled, forKey: "pauseFadeEnabled")
+            notifyPlaybackOptionsChanged()
+        }
+    }
+
+    /// The pause/resume fade, on the output stage: `mainMixerNode` for local playback (through
+    /// `applyNormalizationGain`), the streaming player's `fadeGain` for streams.
+    private lazy var transportFade = TransportFade { [weak self] _ in self?.applyOutputFades() }
+
+    /// Apply the pause/resume fade and Fade Out Only's end fade, which stack.
+    private func applyOutputFades() {
+        applyNormalizationGain()
+        streamingPlayer?.fadeGain = transportFade.gain * endFadeGain
+    }
+
     /// Whether a crossfade is currently in progress
     private var isCrossfading: Bool = false
     
@@ -1398,6 +1442,8 @@ class AudioEngine {
         // Load sweet fade duration with default of 5.0 seconds
         let savedDuration = UserDefaults.standard.double(forKey: "sweetFadeDuration")
         sweetFadeDuration = savedDuration > 0 ? savedDuration : 5.0
+        sweetFadeOutOnly = UserDefaults.standard.bool(forKey: "sweetFadeOutOnly")
+        pauseFadeEnabled = UserDefaults.standard.object(forKey: "pauseFadeEnabled") as? Bool ?? true
         tuningController.loadFromDefaults()
     }
 
@@ -2516,11 +2562,14 @@ class AudioEngine {
                 }
             }
             
+            if state != .playing, pauseFadeEnabled, transportFade.gain == 1 { transportFade.set(0) }
             streamingPlayer?.resume()
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false
             state = .playing
             startTimeUpdates()
+            // Fades a resume in, and takes over a pause still fading out, which then never lands.
+            transportFade.ramp(to: 1)
             
             // Report resume to Plex
             if currentTrack != nil {
@@ -2572,11 +2621,14 @@ class AudioEngine {
                     lastReportedTime = _currentTime
                 }
 
+                if state != .playing, pauseFadeEnabled, transportFade.gain == 1 { transportFade.set(0) }
                 activeNode.play()
                 playbackStartDate = Date()  // Start tracking time
                 suspendedLocalPlaybackClockForSleep = false
                 state = .playing
                 startTimeUpdates()
+                // Fades a resume in, and takes over a pause still fading out, which then never lands.
+                transportFade.ramp(to: 1)
                 
                 // Report resume to Plex (local files won't have plexRatingKey so this is a no-op)
                 if currentTrack != nil {
@@ -2624,32 +2676,55 @@ class AudioEngine {
             }
             return
         }
-        
-        pauseLocalOnly()
+
+        pauseLocalOnly(fadeOut: true)
     }
     
-    /// Pause local playback only (used internally when casting takes over)
-    func pauseLocalOnly() {
+    /// Pause local playback only (used internally when casting takes over).
+    ///
+    /// `fadeOut` (a user pause) fades the output first and pauses the players when the fade ends;
+    /// `state` and the clock change at once either way, since callers read them straight after.
+    func pauseLocalOnly(fadeOut: Bool = false) {
+        // Only the primary player is paused below, so a fade in flight would keep the incoming
+        // track playing, and its timer would complete the fade while paused.
+        cancelCrossfade()
         audioGraphRecovery.clearPendingIntent()
         if localTrackPreparation.update({ $0.intent = .paused }) {
             state = .paused
             return
         }
-        // Save current position before pausing
-        let pausePosition = currentTime
+        let fadesOut = fadeOut && pauseFadeEnabled && state == .playing
+        // Save current position before pausing. A local file plays on through the fade, and its
+        // clock is manual, so the tail is added or every faded pause would put it further behind.
+        let fadeTail = fadesOut && !isStreamingPlayback ? TransportFade.duration * TimeInterval(transportFade.gain) : 0
+        let pausePosition = currentTime + fadeTail
         _currentTime = pausePosition
         lastReportedTime = pausePosition
         playbackStartDate = nil
         suspendedLocalPlaybackClockForSleep = false
-        
-        if isStreamingPlayback {
-            streamingPlayer?.pause()
+
+        let pausePlayers = { [self] in
+            if isStreamingPlayback {
+                streamingPlayer?.pause()
+            } else {
+                let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
+                activeNode.pause()
+                // Remove spectrum tap when paused to save CPU (FFT is expensive)
+                // Tap will be reinstalled when playback resumes
+                mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
+            }
+        }
+        if fadesOut {
+            // A resume replaces the ramp, so this never runs; a seek, stop or track change bumps
+            // the generation and has already set the players up itself.
+            let generation = playbackGeneration
+            transportFade.ramp(to: 0) { [weak self] in
+                guard let self else { return }
+                if self.state == .paused, self.playbackGeneration == generation { pausePlayers() }
+                self.transportFade.set(1)
+            }
         } else {
-            let activeNode = crossfadePlayerIsActive ? crossfadePlayerNode : playerNode
-            activeNode.pause()
-            // Remove spectrum tap when paused to save CPU (FFT is expensive)
-            // Tap will be reinstalled when playback resumes
-            mixerNode.removeTap(onBus: 0)  // Changed from playerNode - tap is now on mixerNode
+            pausePlayers()
         }
         state = .paused
         stopTimeUpdates()
@@ -3091,13 +3166,7 @@ class AudioEngine {
 
             let wasPlaying = state == .playing
 
-            // Ensure crossfade player is stopped and reset to playerNode as primary
-            // (after a completed crossfade, crossfadePlayerNode may be the active player)
-            if crossfadePlayerIsActive {
-                crossfadePlayerNode.stop()
-                crossfadePlayerNode.volume = 0
-                crossfadePlayerIsActive = false
-            }
+            makePlayerNodePrimary()
 
             _currentTime = seekTime
             lastReportedTime = seekTime  // Keep in sync
@@ -3465,8 +3534,13 @@ class AudioEngine {
             // Check for cue track boundary crossing (gapless within a single backing file)
             self.advanceCueTrackIfBoundaryCrossed()
 
+            // Fade Out Only fades this track's end; the normal end-of-track advance plays the next.
+            let fadesOutOnly = self.sweetFadeEnabled && self.sweetFadeOutOnly && !self.isCastingActive && trackDuration > 0
+            self.endFadeGain = fadesOutOnly
+                ? Self.endFadeGain(remaining: trackDuration - current, over: self.sweetFadeDuration) : 1
+
             // Check if we should start crossfade (Sweet Fades)
-            if self.sweetFadeEnabled && !self.isCrossfading && !self.isCastingActive && self.state == .playing {
+            if self.sweetFadeEnabled && !self.sweetFadeOutOnly && !self.isCrossfading && !self.isCastingActive && self.state == .playing {
                 let timeRemaining = trackDuration - current
                 if timeRemaining > 0 && timeRemaining <= self.sweetFadeDuration {
                     self.startCrossfade()
@@ -4723,11 +4797,7 @@ class AudioEngine {
 
         // Cue neighbours reuse the reader and its backing owner/normalization.
         if !isStreamingPlayback, let openFile = audioFile, currentTrack?.url == track.url {
-            if crossfadePlayerIsActive {
-                crossfadePlayerNode.stop()
-                crossfadePlayerNode.volume = 0
-                crossfadePlayerIsActive = false
-            }
+            makePlayerNodePrimary()
             clearGaplessSuccessor()
             finishLocalTrackLoad(request, result: .success(openFile), reuseExistingFile: true)
             return
@@ -5638,12 +5708,9 @@ class AudioEngine {
         incomingPlayer.play()
         self.crossfadeIncomingStartDate = Date()
 
-        // Store the file for later
-        if self.crossfadePlayerIsActive {
-            self.audioFile = nextFile
-        } else {
-            self.crossfadeAudioFile = nextFile
-        }
+        // `audioFile` stays the outgoing track's until `completeCrossfade`, so a cancel
+        // (seek, pause-resume) keeps playing the file the clock and `currentTrack` describe.
+        self.crossfadeAudioFile = nextFile
 
         // Start volume ramp
         self.startCrossfadeVolumeRamp(
@@ -5684,7 +5751,7 @@ class AudioEngine {
         // Start next track at volume 0
         crossfadeStreamingPlayer?.volume = 0
         crossfadeStreamingPlayer?.play(url: nextTrack.url)
-        
+
         // Start volume ramp - multiply crossfade values by master volume
         // (unlike local playback where mainMixerNode handles master volume,
         // streaming players need volume incorporated into the crossfade)
@@ -5724,7 +5791,7 @@ class AudioEngine {
             
             let elapsed = Date().timeIntervalSince(startTime)
             let progress = min(1.0, elapsed / fadeDuration)
-            
+
             // Normalized equal-power crossfade to prevent volume peaks
             // Standard equal-power: cos(angle) + sin(angle) peaks at 1.414 at midpoint
             // We normalize so the sum is always 1.0, preventing clipping while
@@ -5735,10 +5802,10 @@ class AudioEngine {
             let sum = rawOut + rawIn  // Ranges from 1.0 to ~1.414 back to 1.0
             let outVol = rawOut / sum  // Normalized: sum always = 1.0
             let inVol = rawIn / sum
-            
+
             outgoingVolume(outVol)
             incomingVolume(inVol)
-            
+
             if progress >= 1.0 {
                 timer.invalidate()
                 self.crossfadeTimer = nil
@@ -6013,10 +6080,23 @@ class AudioEngine {
         localCrossfadePreparation.reset()  // cancel any in-flight local preparation
         crossfadeTargetIndex = -1
         crossfadeIncomingStartDate = nil
+        crossfadeAudioFile = nil
         clearCrossfadeDeclineLatch()
-        // Reset to playerNode as primary (crossfade was incomplete, outgoing player continues)
-        crossfadePlayerIsActive = false
+        // `crossfadePlayerIsActive` is left alone: the outgoing player keeps playing and stays
+        // primary. After an odd number of completed fades that is `crossfadePlayerNode`, and
+        // resetting the flag here made a following seek reschedule the silenced `playerNode`.
         NSLog("Sweet Fades: Crossfade cancelled")
+    }
+
+    /// Hand local playback back to `playerNode`, which seek and the cue-neighbour reload always
+    /// schedule on. After an odd number of completed fades `crossfadePlayerNode` is primary and
+    /// `playerNode` was left at volume 0 by `completeCrossfade`, so the volume is restored here too.
+    private func makePlayerNodePrimary() {
+        guard crossfadePlayerIsActive else { return }
+        crossfadePlayerNode.stop()
+        crossfadePlayerNode.volume = 0
+        crossfadePlayerIsActive = false
+        playerNode.volume = 1.0
     }
 
     /// Reset all crossfade internals and restore direct local playback defaults.
@@ -6187,7 +6267,7 @@ class AudioEngine {
     private func applyNormalizationGain() {
         // Apply combined volume + normalization to mainMixerNode
         // This is AFTER the visualization tap, so spectrum is volume-independent
-        let finalVolume = max(0, min(1, volume * normalizationGain))
+        let finalVolume = max(0, min(1, volume * normalizationGain * transportFade.gain * endFadeGain))
         engine.mainMixerNode.outputVolume = finalVolume
         
         // Note: playerNode stays at unity (1.0) for volume-independent visualization

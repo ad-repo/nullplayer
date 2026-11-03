@@ -57,6 +57,20 @@
   window: a `.vtt`, `.ttml` or `.srt` beside the video, named like it (`film.srt`, or language-tagged
   `film.en.srt`). Subtitles inside the video file are not sent yet.
 
+### Playback
+
+- **Sweet Fades has Fade Out Only** (Playback ▸ Sweet Fades ▸ Fade Out Only): instead of a
+  crossfade, the track fades out over its last Fade Duration seconds and the next one starts at full
+  volume from 0:00, so a song that opens on a big kick keeps it.
+- **Sweet Fades' options are one submenu, always shown**: Enabled, Fade Duration and Fade Out Only,
+  greyed out while Sweet Fades is off. Fade Duration used to appear only once it was on.
+- **Fade on Pause/Resume** (Playback menu, on by default): pause and resume fade over a moment
+  instead of cutting the sound off.
+- **Seeking after a crossfade no longer goes silent.** With Sweet Fades on, a seek after every second
+  crossfade left the sound off while the clock kept running, until another track was picked.
+- **Pausing during a crossfade pauses both tracks.** The incoming track kept playing and finished
+  its fade while the player showed paused.
+
 ## 0.34.1
 
 ### Casting and the CLI

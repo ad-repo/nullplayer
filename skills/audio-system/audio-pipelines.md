@@ -38,7 +38,7 @@ The gapless setting is saved to UserDefaults and restored on app launch.
 
 ## Sweet Fades (Crossfade)
 
-When enabled via **Playback Options → Sweet Fades (Crossfade)**, tracks smoothly blend into each other with overlapping playback and volume fading.
+When enabled via **Playback ▸ Sweet Fades (Crossfade) ▸ Enabled**, tracks smoothly blend into each other with overlapping playback and volume fading. The submenu is always shown; Fade Duration and Fade Out Only grey out while Enabled is off.
 
 ### How It Works
 
@@ -70,13 +70,34 @@ The crossfade must carefully manage `playbackGeneration` and delegate callbacks 
 - **Local files:** `startLocalCrossfade()` increments `playbackGeneration` to invalidate the outgoing `playerNode`'s `.dataPlayedBack` handler (registered in `loadLocalTrack`). The incoming player's `scheduleFile` uses `.dataPlayedBack` with the new generation, so track-end detection works correctly after crossfade completes.
 - **Streaming:** `streamingPlayerDidFinishPlaying()` and `streamingPlayerDidChangeState()` check `isCrossfading` to ignore stale callbacks from the outgoing player. `completeStreamingCrossfade()` nils the outgoing player's delegate before stopping it to prevent synchronous callbacks.
 - **Safety net:** `trackDidFinish()` has a `guard !isCrossfading` at the top to catch any stray completion callbacks.
-- **Player state:** `crossfadePlayerIsActive` tracks which `AVAudioPlayerNode` is primary. It is toggled in `completeCrossfade()` and reset to `false` in `loadLocalTrack()`, `seek()`, `stopLocalOnly()`, and `cancelCrossfade()` to prevent desync with functions that always operate on `playerNode`.
-- **Cancel:** `cancelCrossfade()` increments `playbackGeneration` to immediately invalidate both outgoing and incoming completion handlers.
+- **Player state:** `crossfadePlayerIsActive` tracks which `AVAudioPlayerNode` is primary. It is toggled in `completeCrossfade()`, which also leaves the outgoing node at volume 0. `seek()` and the cue-neighbour reload in `loadLocalTrack()` always schedule on `playerNode`, so they hand playback back through `makePlayerNodePrimary()`, which stops `crossfadePlayerNode` **and restores `playerNode` to unity**. Without the volume restore, every seek after an odd number of completed fades played silently with the clock running (M72).
+- **Files:** the incoming file goes in `crossfadeAudioFile` for the whole fade; `audioFile` stays the outgoing track's until `completeCrossfade()` swaps it, so a cancel keeps playing the file `currentTrack` and the clock describe.
+- **Cancel:** `cancelCrossfade()` increments `playbackGeneration` to immediately invalidate both outgoing and incoming completion handlers. It stops the incoming node and leaves `crossfadePlayerIsActive` alone: the outgoing node keeps playing and stays primary.
+- **Pause:** `pauseLocalOnly()` cancels a fade in flight. It pauses only the primary player, so without the cancel the incoming track kept playing and its timer completed the fade while paused.
 
 ### Fade Duration
 
-Configurable via **Playback Options → Fade Duration** when Sweet Fades is enabled:
+Configurable via **Playback ▸ Sweet Fades ▸ Fade Duration** when Sweet Fades is enabled:
 - 1s, 2s, 3s, **5s (default)**, 7s, 10s
+
+### Fade Out Only
+
+**Sweet Fades ▸ Fade Out Only** (`sweetFadeOutOnly`, UserDefaults) replaces the overlap with a plain
+fade-out (M70): the track fades over its last Fade Duration seconds, and the normal end-of-track
+advance starts the next one at full volume from 0:00. No second player runs and `startCrossfade()`
+is never called. Asked for because a two-sided crossfade fades the next track's intro in, so a song
+that opens on a kick loses it; an overlap with the next track at full volume was tried first and
+sounded jarring against the still-fading track.
+
+The fade is stateless: each clock tick (0.1 s, `startTimeUpdates`) sets `endFadeGain` from
+`endFadeGain(remaining:over:)` — unity until the last Fade Duration seconds, then the crossfade's
+equal-power `cos` curve down to 0 at the end. So a seek out of the window, pause, and repeat need no
+state of their own. The `currentTrack` setter resets it to 1, so the next track never starts on the
+last tick's gain. It is an output-stage gain, stacked with the pause/resume fade (*Fade on
+Pause/Resume*, below).
+
+Measured 2026-11-03 on a Plex stream at 2 s: the gain left unity at 1.92 s remaining and the player
+reported the track finished 1.90 s of wall clock later; the next track started 7 ms after that.
 
 ### Constraints
 
@@ -100,7 +121,7 @@ The crossfade is cancelled if the user:
 - Selects a different track
 - Stops playback
 
-When cancelled, the outgoing track's volume is restored, the incoming track is stopped, `crossfadePlayerIsActive` is reset to `false`, and `playbackGeneration` is incremented.
+When cancelled, the outgoing track's volume is restored, the incoming track is stopped, `crossfadePlayerIsActive` is left as it was (the outgoing node stays primary), and `playbackGeneration` is incremented. Pausing also cancels a fade (see *Completion Handler Lifecycle*).
 
 ### Interaction with Gapless Playback
 
@@ -110,7 +131,29 @@ Sweet Fades takes precedence over gapless playback:
 
 ### Settings Persistence
 
-Both `sweetFadeEnabled` and `sweetFadeDuration` are saved to UserDefaults and restored on app launch.
+`sweetFadeEnabled`, `sweetFadeDuration`, `sweetFadeOutOnly` and `pauseFadeEnabled` are saved to UserDefaults and restored on app launch.
+
+## Fade on Pause/Resume
+
+**Playback ▸ Fade on Pause/Resume** (`pauseFadeEnabled`, UserDefaults, on by default) ramps a user
+pause and its resume over `TransportFade.duration` (0.3 s; 80 ms only removed the click and was not
+heard as a fade) instead of cutting mid-waveform (M71). `TransportFade` (`Audio/TransportFade.swift`)
+owns the ramp; the engine applies its gain on the output stage, after the visualization taps, so the
+meters do not dip: `mainMixerNode.outputVolume` for local playback (inside `applyNormalizationGain`)
+and `StreamingAudioPlayer.fadeGain` (the stream's unity `balanceNode`) for streams.
+`applyOutputFades()` writes both and multiplies in Fade Out Only's `endFadeGain`.
+
+- **`state` changes at once.** `pause()` calls `pauseLocalOnly(fadeOut: true)`, which saves the
+  position and sets `.paused` immediately — about twenty callers (Now Playing, the CLI, sleep) read
+  it straight after — and pauses the player nodes only when the ramp ends.
+- **The local clock is manual,** so the fade's tail is added to the saved position; otherwise each
+  faded pause would put the clock 0.3 s further behind the audio.
+- **A resume replaces the ramp,** so a pause still fading never lands, and `play()` ramps up from
+  wherever the gain is. A seek, stop or track change bumps `playbackGeneration`, and the deferred
+  pause is dropped.
+- `pauseLocalOnly()` without `fadeOut` (casting takeover) pauses at once.
+- Next, Previous and Stop do not fade: that would hold the command back, which complicates rapid
+  clicks and casting.
 
 ## Volume Normalization
 
