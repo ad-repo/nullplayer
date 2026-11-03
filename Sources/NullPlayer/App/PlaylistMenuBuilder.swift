@@ -31,7 +31,6 @@ import AppKit
     func addFiles(_ sender: Any?)
     func addDirectory(_ sender: Any?)
     func addURL(_ sender: Any?)
-    func newPlaylist(_ sender: Any?)
     func loadPlaylist(_ sender: Any?)
     func savePlaylist(_ sender: Any?)
 }
@@ -125,7 +124,7 @@ enum PlaylistMenuBuilder {
         ]))
         if fileCommands {
             menu.addItem(submenu("Playlist", [
-                item("New Playlist", #selector(PlaylistFileCommands.newPlaylist(_:)), enabled: true),
+                item("New Playlist", #selector(PlaylistMenuTarget.removeAll(_:)), enabled: true),
                 item("Save Playlist...", #selector(PlaylistFileCommands.savePlaylist(_:)), enabled: true),
                 item("Load Playlist...", #selector(PlaylistFileCommands.loadPlaylist(_:)), enabled: true)
             ]))
@@ -172,6 +171,21 @@ enum PlaylistMenuBuilder {
         return true
     }
 
+    /// Pick a folder, find its audio and video off the main thread, and hand them to
+    /// `AudioEngine.loadFiles`, which replaces the queue (M65). `onLoad` runs on main once loaded.
+    static func promptAddDirectory(onLoad: @escaping () -> Void) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { mediaURLs in
+            guard !mediaURLs.isEmpty else { return }
+            WindowManager.shared.audioEngine.loadFiles(mediaURLs)
+            onLoad()
+        }
+    }
+
     /// Pick an `.m3u`/`.m3u8` and replace the queue with it. True when the queue was replaced.
     static func promptLoadPlaylist() -> Bool {
         let panel = NSOpenPanel()
@@ -186,22 +200,14 @@ enum PlaylistMenuBuilder {
         return true
     }
 
-    /// Save the queue as an extended M3U. A stream or server track keeps its full URL, which
-    /// `Playlist.load` reads back; its path alone would not play.
+    /// Save the queue as an extended M3U (`Playlist.m3u(for:)`).
     static func promptSaveQueue() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
         panel.nameFieldStringValue = "playlist.m3u"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? m3u(for: WindowManager.shared.audioEngine.playlist).write(to: url, atomically: true, encoding: .utf8)
-    }
-
-    static func m3u(for tracks: [Track]) -> String {
-        let entries = tracks.flatMap { track in
-            ["#EXTINF:\(Int(track.duration ?? 0)),\(track.displayTitle)",
-             track.url.isFileURL ? track.url.path : track.url.absoluteString]
-        }
-        return (["#EXTM3U"] + entries + [""]).joined(separator: "\n")
+        try? Playlist.m3u(for: WindowManager.shared.audioEngine.playlist)
+            .write(to: url, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Queue edits both views make

@@ -1079,17 +1079,7 @@ class ModernPlaylistView: NSView {
     }
     
     @objc func addDirectory(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] audioURLs in
-                guard !audioURLs.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(audioURLs)
-                self?.needsDisplay = true
-            }
-        }
+        PlaylistMenuBuilder.promptAddDirectory { [weak self] in self?.needsDisplay = true }
     }
     
     @objc func addFiles(_ sender: Any?) {
@@ -1183,10 +1173,6 @@ class ModernPlaylistView: NSView {
     @objc func showFileInfo(_ sender: Any?) {
         guard let index = selectedIndices.first else { return }
         PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
-    }
-    
-    @objc func newPlaylist(_ sender: Any?) {
-        removeAll(sender)
     }
     
     @objc func savePlaylist(_ sender: Any?) {

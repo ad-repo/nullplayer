@@ -103,21 +103,14 @@ extension Playlist {
         return Playlist(name: name, trackURLs: trackURLs)
     }
     
-    /// Export playlist to M3U format
-    func toM3U() -> String {
-        var lines = ["#EXTM3U"]
-        
-        for url in trackURLs {
-            lines.append(url.path)
+    /// An extended M3U of `tracks`. A stream or server track keeps its full URL, which
+    /// `fromM3U` reads back; its path alone would not play.
+    static func m3u(for tracks: [Track]) -> String {
+        let entries = tracks.flatMap { track in
+            ["#EXTINF:\(Int(track.duration ?? 0)),\(track.displayTitle)",
+             track.url.isFileURL ? track.url.path : track.url.absoluteString]
         }
-        
-        return lines.joined(separator: "\n")
-    }
-    
-    /// Save playlist to M3U file
-    func saveAsM3U(to url: URL) throws {
-        let content = toM3U()
-        try content.write(to: url, atomically: true, encoding: .utf8)
+        return (["#EXTM3U"] + entries + [""]).joined(separator: "\n")
     }
 }
 

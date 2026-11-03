@@ -37,12 +37,11 @@ final class PlaylistFileCommandsTests: XCTestCase {
     }
 
     /// A stream keeps its whole URL, which `Playlist.load` reads back; its path alone would not play.
-    @MainActor
     func testTheSavedM3UKeepsAStreamsURLAndAFilesPath() {
         let file = Track(url: URL(fileURLWithPath: "/Music/a b.mp3"), title: "Song", duration: 61.7)
         let stream = Track(url: URL(string: "https://ice1.somafm.com/groovesalad-128-mp3")!,
                            title: "Groove Salad", duration: nil)
-        XCTAssertEqual(PlaylistMenuBuilder.m3u(for: [file, stream]), """
+        XCTAssertEqual(Playlist.m3u(for: [file, stream]), """
             #EXTM3U
             #EXTINF:61,Song
             /Music/a b.mp3

@@ -1037,8 +1037,6 @@ class PlaylistView: NSView {
         }
     }
 
-
-
     // MARK: - Public Methods
 
     func reloadData() {
@@ -1099,7 +1097,6 @@ class PlaylistView: NSView {
                                                    width: 20)
         return closeRect.contains(skinPoint)
     }
-
 
     /// Check if point hits the scrollbar (disabled - no scrollbar widget)
     private func hitTestScrollbar(at skinPoint: NSPoint) -> Bool {
@@ -1269,7 +1266,6 @@ class PlaylistView: NSView {
         }
     }
 
-
     override func scrollWheel(with event: NSEvent) {
         let tracks = WindowManager.shared.audioEngine.playlist
         let effectiveSize = effectiveWindowSize
@@ -1296,18 +1292,7 @@ class PlaylistView: NSView {
     }
 
     @objc func addDirectory(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-
-        if panel.runModal() == .OK, let url = panel.url {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { [weak self] mediaURLs in
-                guard !mediaURLs.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(mediaURLs)
-                self?.needsDisplay = true
-            }
-        }
+        PlaylistMenuBuilder.promptAddDirectory { [weak self] in self?.needsDisplay = true }
     }
 
     @objc func addFiles(_ sender: Any?) {
@@ -1409,11 +1394,6 @@ class PlaylistView: NSView {
         // Show info for selected track
         guard let index = selectedIndices.first else { return }
         PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
-    }
-
-
-    @objc func newPlaylist(_ sender: Any?) {
-        removeAll(sender)
     }
 
     @objc func savePlaylist(_ sender: Any?) {
