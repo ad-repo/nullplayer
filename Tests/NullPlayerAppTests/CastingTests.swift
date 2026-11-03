@@ -755,6 +755,36 @@ final class CastingTests: XCTestCase {
         XCTAssertFalse(CastManager.isSonosCompatible(track))
     }
 
+    func testSRTBecomesWebVTT() {
+        let srt = "\u{FEFF}1\r\n00:00:00,500 --> 00:00:04,500\r\nOne, two\r\n\r\n2\r\n00:01:05,000 --> 00:01:09,250\r\nThree\r\n"
+        XCTAssertEqual(
+            CastSubtitles.webVTT(fromSRT: srt),
+            "WEBVTT\n\n1\n00:00:00.500 --> 00:00:04.500\nOne, two\n\n2\n00:01:05.000 --> 00:01:09.250\nThree\n"
+        )
+    }
+
+    func testSidecarPrefersExactNameThenFormat() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let video = dir.appendingPathComponent("film.mkv")
+        func touch(_ name: String) { FileManager.default.createFile(atPath: dir.appendingPathComponent(name).path, contents: Data()) }
+        func pick() -> String? { CastSubtitles.sidecar(for: video)?.lastPathComponent }
+
+        XCTAssertNil(pick())
+        // Another film's: a multi-word suffix, and a tag that is another video's name
+        touch("other.srt"); touch("film.Director.Cut.srt"); touch("film.2.mkv"); touch("film.2.srt")
+        XCTAssertNil(pick())
+        touch("film.en.srt")
+        XCTAssertEqual(pick(), "film.en.srt")
+        touch("film.en.vtt")
+        XCTAssertEqual(pick(), "film.en.vtt")
+        touch("film.srt")
+        XCTAssertEqual(pick(), "film.srt", "an exact name beats a tagged one of a better format")
+        touch("film.VTT")
+        XCTAssertEqual(pick(), "film.VTT")
+    }
+
     private func makePlexMedia(audioCodec: String? = nil, container: String? = nil) -> PlexMedia {
         PlexMedia(
             id: 1,

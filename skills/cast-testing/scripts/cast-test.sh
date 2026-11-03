@@ -1,5 +1,6 @@
 #!/bin/bash
-# Live CLI casting checks against a real Chromecast and DLNA TV on the LAN: the #645–#647 fixes.
+# Live CLI casting checks against a real Chromecast and DLNA TV on the LAN: the #645–#647 fixes
+# and sidecar subtitles (M58).
 # One PASS/FAIL line per check; exits 0 only if every check passed. Usage:
 #
 #   skills/cast-testing/scripts/cast-test.sh [--chromecast <name>] [--dlna <name>] [--sonos <room>]
@@ -7,7 +8,8 @@
 # Defaults to the first Chromecast and the first DLNA TV discovered. Sonos runs only when a room is
 # named: it plays a 5 s tone in that room. Uses the already-built debug
 # binary (build it first: `swift build --build-system native`); never builds, never kills the app.
-# Puts video on both TVs: a corrupt file the Chromecast rejects, a 10 s clip on each.
+# Puts video on both TVs: a corrupt file the Chromecast rejects, a 10 s clip on each, and the clip
+# twice more on the Chromecast with SRT and VTT subtitles.
 set -uo pipefail
 cd "$(dirname "$0")/../../.."
 
@@ -43,7 +45,8 @@ fi
 mkdir -p "$OUT"
 VIDEO=$(scripts/testdata.sh path video-short)
 AUDIO=$(scripts/testdata.sh path audio-short)
-[ -f "$VIDEO" ] && [ -f "$AUDIO" ] || { echo "FAIL  preflight: scripts/testdata.sh ensure"; exit 1; }
+[ -f "$VIDEO" ] && [ -f "$AUDIO" ] && scripts/testdata.sh path video-srt >/dev/null 2>&1 \
+  && scripts/testdata.sh path video-vtt >/dev/null 2>&1 || { echo "FAIL  preflight: scripts/testdata.sh ensure"; exit 1; }
 python3 -c "open('$OUT/corrupt.mp4','wb').write(b'NullPlayer cast-test corrupt media\n'*6000)"
 printf 'not video\n' >"$OUT/sample.mpg"
 
@@ -94,9 +97,24 @@ if [ "$CC_ID" != "-" ]; then
     fi
   done
 
-  run "$OUT/cc-play" 60 'sleep 55' --file "$VIDEO" --cast "$CC_NAME"
+  run "$OUT/cc-play" 60 'sleep 55' --file "$VIDEO" --cast "$CC_NAME" --verbose
   [ "$RC" = 0 ] && pass "Chromecast plays the 10 s clip and exits 0 at its end" \
     || fail "Chromecast good cast: rc=$RC, $OUT/cc-play.txt"
+  grep -q 'LOAD carries text track' "$OUT/cc-play.txt" \
+    && fail "a video with no sidecar sent a text track: $OUT/cc-play.txt" \
+    || pass "a video with no sidecar casts with no text track"
+
+  # --- M58: a sidecar .srt (converted) or .vtt rides the LOAD, and the receiver fetches it ------
+  # The receiver fetches text tracks with CORS; whether it draws them only the TV shows.
+  for fmt in srt vtt; do
+    run "$OUT/cc-$fmt" 60 'sleep 55' --file "$(scripts/testdata.sh path video-$fmt)" --cast "$CC_NAME" --verbose
+    if [ "$RC" = 0 ] && grep -q 'LOAD carries text track' "$OUT/cc-$fmt.txt" \
+       && grep -qE 'allowing cross-origin GET /media/[^ ]*\.vtt' "$OUT/cc-$fmt.txt"; then
+      pass "sidecar .$fmt: sent as a text track and fetched by the receiver with CORS"
+    else
+      fail "sidecar .$fmt: rc=$RC, $OUT/cc-$fmt.txt"
+    fi
+  done
 fi
 
 if [ "$DLNA_NAME" != "-" ]; then

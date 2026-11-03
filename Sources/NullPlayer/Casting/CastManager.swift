@@ -1872,6 +1872,7 @@ class CastManager {
             ?? (detected.mediaType == .video && !isServerItem ? detected.contentType : "video/mp4")
 
         let castURL: URL
+        var textTrackURL: URL?
         if url.isFileURL {
             if !LocalMediaServer.shared.isRunning {
                 try await LocalMediaServer.shared.start()
@@ -1881,6 +1882,10 @@ class CastManager {
                 throw CastError.localServerError("Could not register file with local media server")
             }
             castURL = serverURL
+            // Only a Chromecast LOAD takes a text track; DLNA has no standard subtitle path
+            if device.type == .chromecast, let subtitles = CastSubtitles.castableSidecar(for: url) {
+                textTrackURL = LocalMediaServer.shared.registerFile(subtitles)
+            }
         } else if url.scheme == "http" || url.scheme == "https" {
             if track.plexRatingKey == nil,
                Self.isAudioContentType(effectiveContentType),
@@ -1909,7 +1914,8 @@ class CastManager {
             artworkURL: castArtworkURL(for: track, size: 600),
             duration: duration ?? track.duration,
             contentType: effectiveContentType,
-            mediaType: .video
+            mediaType: .video,
+            textTrackURL: textTrackURL
         )
 
         NSLog("CastManager: Casting video URL '%@' to %@", track.displayTitle, device.name)

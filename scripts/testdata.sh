@@ -34,6 +34,8 @@ audio-gapless-2	gapless/02-gapless.flac	second of the gapless pair
 audio-tagged	audio-tagged.mp3	60 s tone with title/artist/album/track/year and embedded cover art
 audio-untagged	audio-untagged.mp3	the same audio with no tags and no art — fallback rendering
 video-short	video-short.mp4	10 s H.264 + AAC, 640x360 — video window and cast targets
+video-srt	subs/video-srt.mp4	video-short with a sidecar video-srt.srt (CRLF, comma timestamps) — cast subtitles
+video-vtt	subs/video-vtt.mp4	video-short with a sidecar video-vtt.vtt — cast subtitles
 playlist-m3u	playlist.m3u8	extended M3U over the audio rows, absolute paths
 cue-flac	cue/album.flac	7 min FLAC with a 3-index album.cue beside it
 cue-sheet	cue/album.cue	the cue sheet for the row above
@@ -192,6 +194,23 @@ gen_ensure() {
        -f lavfi -i "sine=frequency=440:duration=10" \
        -c:v libx264 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest "$DIR/video-short.mp4"
     echo "made video-short.mp4"
+  fi
+
+  # Cast subtitles: each copy has its sidecar beside it under the same name, and every cue
+  # names its own format, so the TV shows which path delivered it.
+  mkdir -p "$DIR/subs"
+  for fmt in srt vtt; do
+    [ -s "$DIR/subs/video-$fmt.mp4" ] || cp "$DIR/video-short.mp4" "$DIR/subs/video-$fmt.mp4"
+  done
+  if [ ! -s "$DIR/subs/video-srt.srt" ]; then
+    printf '1\r\n00:00:00,500 --> 00:00:04,500\r\nNullPlayer SRT cue one\r\n\r\n2\r\n00:00:05,000 --> 00:00:09,500\r\nNullPlayer SRT cue two\r\n' \
+      > "$DIR/subs/video-srt.srt"
+    echo "made subs/video-srt.srt"
+  fi
+  if [ ! -s "$DIR/subs/video-vtt.vtt" ]; then
+    printf 'WEBVTT\n\n00:00:00.500 --> 00:00:04.500\nNullPlayer VTT cue one\n\n00:00:05.000 --> 00:00:09.500\nNullPlayer VTT cue two\n' \
+      > "$DIR/subs/video-vtt.vtt"
+    echo "made subs/video-vtt.vtt"
   fi
 
   # A 7-minute FLAC cut into three indexed tracks by album.cue.

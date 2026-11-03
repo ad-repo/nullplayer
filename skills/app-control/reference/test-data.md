@@ -34,6 +34,7 @@ missing or empty files individually, including members of the gapless and librar
 | `audio-tagged` | 60 s tone, title/artist/album/track/year + embedded cover | B, C, D, E — every skin readout, album-art visualizer, browser columns | Seek (too short) |
 | `audio-untagged` | the same audio, no tags, no art | B, E — fallback title rendering, missing-art placeholder | Anything asserting metadata |
 | `video-short` | 10 s H.264 + AAC, 640x360 | B, C, E — a library scan, then the browser's MOVIES tab opens the video window | **`NULLPLAYER_PLAY`** — see below. Seek; audio-only paths |
+| `video-srt` / `video-vtt` | `video-short` copied into `subs/` beside a sidecar `.srt` (CRLF, comma timestamps) or `.vtt` whose cues name their format | A — `--cli --file <path> --cast <Chromecast>` shows the sidecar's subtitles on the TV (`cast-testing`); B, E as `video-short` | As `video-short` |
 | `playlist-m3u` | extended M3U over the audio rows, absolute paths | B, D — a library scan imports it; the Playlist window's Load is **Route D** | **`NULLPLAYER_PLAY`**, and **Route C** — see below |
 | `cue-flac` + `cue-sheet` | 7 min FLAC with a 3-index `album.cue` | B, C, E — `cue-sheets` playback and splitting | — |
 | `library-dir` | 3 tagged tracks, 2 artists, 2 albums | B, E — `local-library` scan, browser grouping and sort | A scale test; it is three files |

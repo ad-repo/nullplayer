@@ -51,6 +51,12 @@
   the playing track playing, in Classic, Original and a `.wal` skin's playlist. They replaced the
   whole queue and started the new file. Adding to an empty playlist still starts playback.
 
+### Casting
+
+- **A local video cast to a Chromecast shows its subtitles** (#648), from the CLI and the player
+  window: a `.vtt`, `.ttml` or `.srt` beside the video, named like it (`film.srt`, or language-tagged
+  `film.en.srt`). Subtitles inside the video file are not sent yet.
+
 ## 0.34.1
 
 ### Casting and the CLI

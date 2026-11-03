@@ -292,7 +292,10 @@ class LocalMediaServer {
             guard let self = self else {
                 return HTTPResponse(statusCode: .internalServerError)
             }
-            return Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request)
+            return CastSubtitles.allowingCrossOrigin(
+                Self.answeringDLNAFeatureRequest(await self.handleMediaRequest(request), for: request),
+                for: request
+            )
         }
         
         // Add route handler for stream proxy (Subsonic/remote URLs)
@@ -781,7 +784,7 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .internalServerError)
         }
         
-        let ct = self.contentType(for: url)
+        let ct = Self.contentType(for: url)
         NSLog("LocalMediaServer: HEAD /media/ - %@ (%lld bytes)", url.lastPathComponent, fileSize)
         return HTTPResponse(
             statusCode: .ok,
@@ -907,7 +910,7 @@ class LocalMediaServer {
             return HTTPResponse(statusCode: .internalServerError)
         }
         
-        let contentType = self.contentType(for: url)
+        let contentType = Self.contentType(for: url)
         
         // Handle Range requests (for seeking)
         if let rangeHeader = request.headers[HTTPHeader("Range")] {
@@ -1166,7 +1169,7 @@ class LocalMediaServer {
     }
 
     /// Detect content type from file extension
-    private func contentType(for url: URL) -> String {
+    static func contentType(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
         // Audio formats
         case "mp3":
@@ -1204,6 +1207,11 @@ class LocalMediaServer {
             return "video/x-flv"
         case "mpg", "mpeg":
             return "video/mpeg"
+        // Text tracks (CastSubtitles)
+        case "vtt":
+            return "text/vtt"
+        case "ttml":
+            return "application/ttml+xml"
         default:
             return "application/octet-stream"
         }

@@ -343,7 +343,7 @@ class CastSessionController {
     }
 
     /// Load media to play
-    func loadMedia(url: URL, contentType: String, title: String?, artist: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+    func loadMedia(url: URL, contentType: String, title: String?, artist: String?, textTrackURL: URL?, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tid = withLock({ transportId }) else {
             completion(.failure(CastError.playbackFailed("Not connected to app")))
             return
@@ -367,12 +367,26 @@ class CastSessionController {
             ]
         }
         
-        sendMessage(namespace: .media, payload: [
+        var payload: [String: Any] = [
             "type": "LOAD",
-            "media": media,
             "autoplay": true,
             "requestId": rid
-        ], to: tid)
+        ]
+        if let textTrackURL {
+            media["tracks"] = [[
+                "trackId": 1,
+                "type": "TEXT",
+                "subtype": "SUBTITLES",
+                "trackContentId": textTrackURL.absoluteString,
+                "trackContentType": LocalMediaServer.contentType(for: textTrackURL),
+                "name": "Subtitles"
+            ]]
+            payload["activeTrackIds"] = [1]
+            NSLog("CastSessionController: LOAD carries text track %@", textTrackURL.redacted)
+        }
+        payload["media"] = media
+
+        sendMessage(namespace: .media, payload: payload, to: tid)
         
         // Consider load successful after sending
         completion(.success(()))
