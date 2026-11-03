@@ -96,10 +96,11 @@ Settle the structure before writing; it is cheap now and expensive once review f
 ## Before a PR
 
 Every PR is preceded by a `thermo-nuclear-code-quality-review` of the whole branch (against
-`origin/main`, plus uncommitted changes), run by a fresh agent with no context from writing the
-change — never the authoring agent (see the skill's *Who Runs It*). The PR description lists every
-finding under **Code quality review**, each fixed or with why not. A PR without that section is not
-ready to open; `CONTRIBUTING.md` carries the same requirement for outside contributors.
+`origin/main`, plus uncommitted changes), run by a fresh agent (new subagent or session, never a
+fork), never the author agent; the user accepts or rejects each finding before any is fixed. The
+skill's *Invoking the Pre-PR Review* has the procedure and what the PR description's **Code quality
+review** section lists. A PR without that section is not ready to open; `CONTRIBUTING.md` carries
+the same requirement for outside contributors.
 
 ## Testing
 

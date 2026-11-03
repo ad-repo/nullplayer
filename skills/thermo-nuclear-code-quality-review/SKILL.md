@@ -9,18 +9,23 @@ Use this skill for an unusually strict review focused on implementation quality,
 
 Above all, this skill should push the reviewer to be **ambitious** about code structure. Do not merely identify local cleanup opportunities. Actively search for "code judo" moves: restructurings that preserve behavior while making the implementation dramatically simpler, smaller, more direct, and more elegant.
 
-## Who Runs It
+## Invoking the Pre-PR Review
 
-This section covers the pre-PR review that `CLAUDE.md` and `CONTRIBUTING.md` require; other reviews
-are unaffected. That review is never run by the agent that wrote the change, which reads it through
-the decisions it already made and talks itself out of the findings. Run it in a fresh agent with no
-context from the authoring session: in Claude Code, a new subagent (not a fork, which inherits the
-conversation) or a new session; with another tool, a new chat. Give it only the branch and any
-uncommitted changes to review, and this skill — no account of what the change does or why it was
-built that way.
+This section is for whoever starts the pre-PR review that `CLAUDE.md` and `CONTRIBUTING.md` require,
+not for the reviewer. The *author agent* is the agent that wrote the change; *the user* is the
+person opening the PR.
 
-The PR description lists every finding as it came back, each fixed or with why not; the author does
-not drop or soften one before recording it.
+The author agent never runs this review itself: it reads its own change through the decisions it
+already made and talks itself out of the findings. Run the review in a fresh agent with no context
+from writing the change: in Claude Code, a new subagent (not a fork, which inherits the
+conversation) or a new session; with another tool, a new chat. Give it only this skill and the
+scope — the whole branch against `origin/main`, plus uncommitted changes — with no account of what
+the change does or why it was built that way.
+
+The author agent does not decide what gets addressed. It hands every finding to the user exactly as
+returned, applying none of them, and the user accepts or rejects each one. Only then does the author
+agent fix the accepted findings. The PR description lists every finding with the user's decision:
+accepted and fixed, or rejected with the user's reason.
 
 ## Core Prompt
 
