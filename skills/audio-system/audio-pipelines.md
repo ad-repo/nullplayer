@@ -89,12 +89,18 @@ is never called. Asked for because a two-sided crossfade fades the next track's 
 that opens on a kick loses it; an overlap with the next track at full volume was tried first and
 sounded jarring against the still-fading track.
 
-The fade is stateless: each clock tick (0.1 s, `startTimeUpdates`) sets `endFadeGain` from
-`endFadeGain(remaining:over:)` — unity until the last Fade Duration seconds, then the crossfade's
-equal-power `cos` curve down to 0 at the end. So a seek out of the window, pause, and repeat need no
-state of their own. The `currentTrack` setter resets it to 1, so the next track never starts on the
-last tick's gain. It is an output-stage gain, stacked with the pause/resume fade (*Fade on
+The fade is stateless: `refreshEndFade(at:)` sets `OutputFades.endFade` from
+`OutputFades.endFadeCurve(remaining:over:)` — unity until the last Fade Duration seconds, then the
+crossfade's equal-power `cos` curve down to 0 at the end. The clock tick (0.1 s, `startTimeUpdates`)
+calls it, and so does `seek(to:)`, because the tick does not run while paused and a paused seek
+would otherwise resume on the old position's gain. The `currentTrack` setter calls
+`OutputFades.trackDidChange()` on a different track, so the next one never starts on the last
+tick's gain. It is an output-stage gain, stacked with the pause/resume fade (*Fade on
 Pause/Resume*, below).
+
+The engine asks `crossfadesTracks` or `fadesOutTrackEnds` for the mode, never the two settings
+inline. Gapless still asks `sweetFadeEnabled`, so it stays off in Fade Out Only too: under gapless
+the next track's audio would start before the `currentTrack` change that clears the end fade.
 
 Measured 2026-11-03 on a Plex stream at 2 s: the gain left unity at 1.92 s remaining and the player
 reported the track finished 1.90 s of wall clock later; the next track started 7 ms after that.
@@ -137,11 +143,12 @@ Sweet Fades takes precedence over gapless playback:
 
 **Playback ▸ Fade on Pause/Resume** (`pauseFadeEnabled`, UserDefaults, on by default) ramps a user
 pause and its resume over `TransportFade.duration` (0.3 s; 80 ms only removed the click and was not
-heard as a fade) instead of cutting mid-waveform (M71). `TransportFade` (`Audio/TransportFade.swift`)
-owns the ramp; the engine applies its gain on the output stage, after the visualization taps, so the
-meters do not dip: `mainMixerNode.outputVolume` for local playback (inside `applyNormalizationGain`)
-and `StreamingAudioPlayer.fadeGain` (the stream's unity `balanceNode`) for streams.
-`applyOutputFades()` writes both and multiplies in Fade Out Only's `endFadeGain`.
+heard as a fade) instead of cutting mid-waveform (M71). `TransportFade` owns the ramp, and
+`OutputFades` (both in `Audio/OutputFades.swift`) stacks it with Fade Out Only's end fade. The
+engine applies `OutputFades.gain` on the output stage, after the visualization taps, so the meters
+do not dip: `mainMixerNode.outputVolume` for local playback (inside `applyNormalizationGain`) and
+`StreamingAudioPlayer.fadeGain` (the stream's unity `balanceNode`) for streams, both written by
+`applyOutputFades()`.
 
 - **`state` changes at once.** `pause()` calls `pauseLocalOnly(fadeOut: true)`, which saves the
   position and sets `.paused` immediately — about twenty callers (Now Playing, the CLI, sleep) read
@@ -149,8 +156,9 @@ and `StreamingAudioPlayer.fadeGain` (the stream's unity `balanceNode`) for strea
 - **The local clock is manual,** so the fade's tail is added to the saved position; otherwise each
   faded pause would put the clock 0.3 s further behind the audio.
 - **A resume replaces the ramp,** so a pause still fading never lands, and `play()` ramps up from
-  wherever the gain is. A seek, stop or track change bumps `playbackGeneration`, and the deferred
-  pause is dropped.
+  wherever the gain is (`fadeInResume`, shared by the local and streaming branches). A seek, stop or
+  track change bumps `playbackGeneration`, and the deferred pause is dropped; a change to a
+  different track also resets the gain, so the new track does not dip with the old pause.
 - `pauseLocalOnly()` without `fadeOut` (casting takeover) pauses at once.
 - Next, Previous and Stop do not fade: that would hold the command back, which complicates rapid
   clicks and casting.
