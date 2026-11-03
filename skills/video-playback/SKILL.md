@@ -155,8 +155,9 @@ dragging a video does nothing. The `.wal` playlist's **Add Directory** does the 
 (`WinampModernHostActionMenus`). Discovered videos join the playlist and play through `loadTrack`.
 A drop on a Library Browser imports instead (`local-library` § *Video import*).
 
-**Add Files, Add Directory and Load Playlist** reach the playlist through `AudioEngine.loadFiles`,
-which validates with `AudioFileValidator.quickValidate(urls:includeVideo: true)`; the library passes
+**Add Files, Add Directory and Load Playlist** reach the playlist through `AudioEngine.appendFiles`
+(Add ▸: appends, or `loadFiles` on an empty queue) and `AudioEngine.loadFiles` (Load: replaces).
+Both validate with `AudioFileValidator.quickValidate(urls:includeVideo: true)`; the library passes
 `false`, since video is imported by its own path. Before, a film the panel offered was dropped as
 "Unsupported format" (M27). The `.wal` playlist reaches the panels through `PE_ADD` / `PE_LIST`.
 Neither the Classic nor the Original playlist has an ADD/REM/SEL/MISC/LIST bar any more; both
