@@ -2510,12 +2510,18 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             // already coalesced in `pendingHostEvents`, so only the waiter is replaced. Cancelling
             // the build instead starved the window whenever a rebuild outlasted the 100 ms clock:
             // `anemone`'s opened drawer takes ~127 ms in a debug build, so with a track playing every
-            // tick killed the last one's build and the drawer never opened.
-            let inFlight = presentation.scriptTask
+            // tick killed the last one's build and the drawer never opened. **It waits on whatever is
+            // in flight when it is about to dispatch**, not on what was in flight when it was
+            // scheduled: a click landing during the wait starts a transaction of its own, and
+            // dispatching over it would cancel the click.
             presentation.hostEventTask?.cancel()
             presentation.hostEventTask = Task { [weak self, weak presentation] in
-                await inFlight?.value
-                try? await Task.sleep(nanoseconds: 16_000_000)
+                var awaited: Task<Void, Never>?
+                repeat {
+                    awaited = presentation?.scriptTask
+                    await awaited?.value
+                    try? await Task.sleep(nanoseconds: 16_000_000)
+                } while !Task.isCancelled && presentation?.scriptTask != awaited
                 guard !Task.isCancelled, let self, let presentation else { return }
                 // Open, play, status, mode, buffering, then reception order — the dispatch order
                 // the host contract fixes, whichever refresh each event was decided by.

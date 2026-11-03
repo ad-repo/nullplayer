@@ -132,11 +132,6 @@ final class HostedWindowBorderLayout {
     /// Grow (or give back) every hosted window so that its interior keeps the size it asked for and
     /// the current border is added around it.
     func apply() {
-        // **Nothing is seeded before the borders settle.** A restored window's frame already wears
-        // the last session's border, so seeding it as `frame − own chrome` before the skin answers
-        // took that border for interior, and the donor's was added again on top: every relaunch grew
-        // the library and the visualizer by the whole border (858 → 1012 → 1166 under `anemone`).
-        guard WindowManager.shared.hostedSurfaceBordersAreSettled else { return }
         syncScope()
         let border = WindowManager.shared.hostedSurfaceBorderInsets
         Self.traceRun(border)
@@ -681,7 +676,13 @@ final class HostedWindowBorderLayout {
                 ? Self.defaultInterior(for: window, fallback: fallback) : nil)
             ?? Self.interiorSize(outer: window.frame.size, border: border)
         let interior = Interior(size: size, minimum: minimum)
-        interiors[key] = interior
+        // **Nothing is remembered before the borders settle.** A restored window's frame already
+        // wears the last session's border and `restored(for:)` cannot answer yet, so this reading
+        // takes that border for interior. Kept, the donor's was added again on top: every relaunch
+        // grew the library and the visualizer by the whole border (858 → 1012 → 1166). `prepare(_:)`
+        // opens windows at launch while the skin is still resolving, so the guard lives here, where
+        // it and `apply()` both read.
+        if WindowManager.shared.hostedSurfaceBordersAreSettled { interiors[key] = interior }
         return interior
     }
 

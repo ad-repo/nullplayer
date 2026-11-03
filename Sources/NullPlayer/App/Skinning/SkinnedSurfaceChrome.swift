@@ -228,9 +228,10 @@ struct SkinnedSurfaceChrome {
     /// are keyed-out shapes. So a view that fills its whole bounds first turns a shaped frame into a
     /// black box with the skin drawn inside it, which is what `anemone`'s nine-sliced panel (W207)
     /// exposed in three windows at once: cava, `flow` and PeppyMeter, each with its own
-    /// `NSColor.black.setFill(); bounds.fill()`. It was latent the whole time — every donor until
-    /// now was an eight-piece ring laid out to the window's own edges, so there were no cut-away
-    /// pixels for the slab to show through.
+    /// `NSColor.black.setFill(); bounds.fill()`. It was latent the whole time — every donor before
+    /// it was an eight-piece ring laid out to the window's own edges, so there were no cut-away
+    /// pixels for the slab to show through. Panels are no longer lent (W318); a keyed-out ring
+    /// still needs this.
     ///
     /// The rule lives here, once, so a window added later inherits it instead of rediscovering it.
     /// The library never had the defect for the same reason it has none of this family's chrome

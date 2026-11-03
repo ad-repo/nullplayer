@@ -1369,8 +1369,8 @@ class WindowManager {
     /// reference to any window (W207).**
     ///
     /// `hostedSurfaceFrameArtwork(for:)` answers "what does the frame at *this* size look like", and
-    /// that is not enough to grow a window: a 600x150 analyser cannot carry `anemone`'s 173x145 of
-    /// border, so no frame is ever rendered for it and its insets are never learned. The donor states
+    /// that is not enough to grow a window: a window that cannot yet carry the donor's border has
+    /// no frame rendered for it, so its insets are never learned that way. The donor states
     /// its four borders on its own (`WMPHostedFrameTemplate.borderInsets`), and that is what
     /// `HostedWindowBorderLayout` grows by.
     ///
