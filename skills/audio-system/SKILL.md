@@ -689,7 +689,7 @@ HTTP/HTTPS URLs with MP3, AAC, Ogg Vorbis
 ## Additional Documentation
 
 For detailed information, see:
-- [audio-pipelines.md](audio-pipelines.md) - Gapless playback, Sweet Fades, volume normalization
+- [audio-pipelines.md](audio-pipelines.md) - Gapless playback, Sweet Fades (incl. Fade Out Only), Fade on Pause/Resume, volume normalization
 - [playback-flows.md](playback-flows.md) - Plex Radio/Mix, Subsonic streaming, output device selection
 - [spectrum-algorithms.md](spectrum-algorithms.md) - Complete spectrum analysis algorithms for all three modes
 

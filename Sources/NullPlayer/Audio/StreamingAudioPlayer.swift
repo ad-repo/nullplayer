@@ -193,6 +193,13 @@ class StreamingAudioPlayer {
         }
     }
 
+    /// The engine's pause/resume fade (`TransportFade`), on the balance node so it stacks with
+    /// `volume` instead of overwriting it.
+    var fadeGain: Float {
+        get { balanceNode.outputVolume }
+        set { balanceNode.outputVolume = newValue }
+    }
+
     /// Cached volume for use inside tap callbacks (avoids mainMixerNode access from realtime thread)
     private var _cachedVolume: Float = 1.0
 

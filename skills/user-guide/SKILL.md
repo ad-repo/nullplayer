@@ -423,7 +423,14 @@ other local effects are not.
 
 ### Playback Options
 - **Gapless Playback**: Seamless track transitions (local files)
-- **Sweet Fades**: Crossfade between tracks (1-10s duration)
+- **Sweet Fades (Crossfade)** submenu, always shown; its options grey out while **Enabled** is off:
+  - **Enabled**: crossfade between tracks
+  - **Fade Duration**: 1, 2, 3, 5, 7 or 10 s
+  - **Fade Out Only**: instead of overlapping, the track fades out over its last Fade Duration
+    seconds and the next one starts after it at full volume from 0:00, so an intro that opens on a
+    kick keeps it
+- **Fade on Pause/Resume** (on by default): pause and resume fade over 0.3 s instead of cutting off.
+  The play/pause state changes at once; only the sound fades
 - **Volume Normalization**: Consistent loudness (-14dB target)
 - **Reference Tuning**: Pitch-shift playback to a different reference frequency. Presets for Off, 432 Hz, 440 Hz, and a Custom… dialog (source/target Hz, ±2400 cents). Applies to local files and HTTP streams; unavailable while casting because remote renderers have no local audio graph to insert the pitch shifter into. Persists across launches; the CLI also accepts `--tuning`, `--tuning-source`, and `--tuning-offset-cents` as session-only overrides.
 - **Playback Speed**: Tempo-preserving speed control from `0.25×` to `4.0×`, with presets plus Custom…. Applies to local files and HTTP streams; unavailable while casting. Persists across launches.

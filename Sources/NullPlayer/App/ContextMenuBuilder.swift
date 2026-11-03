@@ -1275,33 +1275,50 @@ class ContextMenuBuilder {
 
         optionsMenu.addItem(NSMenuItem.separator())
 
-        // Sweet Fades (Crossfade) toggle
-        let sweetFadeItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
-        sweetFadeItem.target = MenuActions.shared
-        sweetFadeItem.state = engine.sweetFadeEnabled ? .on : .off
-        optionsMenu.addItem(sweetFadeItem)
-        
-        // Duration submenu (only shown if Sweet Fades enabled)
-        if engine.sweetFadeEnabled {
-            let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
-            let durationMenu = NSMenu()
-            durationMenu.autoenablesItems = false
-            
-            for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
-                let item = NSMenuItem(
-                    title: "\(Int(duration))s",
-                    action: #selector(MenuActions.setSweetFadeDuration(_:)),
-                    keyEquivalent: ""
-                )
-                item.target = MenuActions.shared
-                item.representedObject = duration
-                item.state = engine.sweetFadeDuration == duration ? .on : .off
-                durationMenu.addItem(item)
-            }
-            
-            durationItem.submenu = durationMenu
-            optionsMenu.addItem(durationItem)
+        // Sweet Fades (Crossfade): one submenu, always shown; its options grey out while it is off.
+        let sweetFadesItem = NSMenuItem(title: "Sweet Fades (Crossfade)", action: nil, keyEquivalent: "")
+        let sweetFadesMenu = NSMenu()
+        sweetFadesMenu.autoenablesItems = false
+
+        let enabledItem = NSMenuItem(title: "Enabled", action: #selector(MenuActions.toggleSweetFade), keyEquivalent: "")
+        enabledItem.target = MenuActions.shared
+        enabledItem.state = engine.sweetFadeEnabled ? .on : .off
+        sweetFadesMenu.addItem(enabledItem)
+        sweetFadesMenu.addItem(NSMenuItem.separator())
+
+        let durationItem = NSMenuItem(title: "Fade Duration", action: nil, keyEquivalent: "")
+        let durationMenu = NSMenu()
+        durationMenu.autoenablesItems = false
+        for duration in [1.0, 2.0, 3.0, 5.0, 7.0, 10.0] {
+            let item = NSMenuItem(
+                title: "\(Int(duration))s",
+                action: #selector(MenuActions.setSweetFadeDuration(_:)),
+                keyEquivalent: ""
+            )
+            item.target = MenuActions.shared
+            item.representedObject = duration
+            item.state = engine.sweetFadeDuration == duration ? .on : .off
+            durationMenu.addItem(item)
         }
+        durationItem.submenu = durationMenu
+        durationItem.isEnabled = engine.sweetFadeEnabled
+        sweetFadesMenu.addItem(durationItem)
+
+        let fadeOutOnlyItem = NSMenuItem(title: "Fade Out Only", action: #selector(MenuActions.toggleSweetFadeOutOnly), keyEquivalent: "")
+        fadeOutOnlyItem.target = MenuActions.shared
+        fadeOutOnlyItem.state = engine.sweetFadeOutOnly ? .on : .off
+        fadeOutOnlyItem.toolTip = "The track fades out at its end, then the next one starts at full volume"
+        fadeOutOnlyItem.isEnabled = engine.sweetFadeEnabled
+        sweetFadesMenu.addItem(fadeOutOnlyItem)
+
+        sweetFadesItem.submenu = sweetFadesMenu
+        optionsMenu.addItem(sweetFadesItem)
+
+        let pauseFadeItem = NSMenuItem(title: "Fade on Pause/Resume", action: #selector(MenuActions.togglePauseFade), keyEquivalent: "")
+        pauseFadeItem.target = MenuActions.shared
+        pauseFadeItem.state = engine.pauseFadeEnabled ? .on : .off
+        pauseFadeItem.toolTip = "A short fade instead of a hard cut when pausing and resuming"
+        optionsMenu.addItem(pauseFadeItem)
         
         // The library window's art and Cava backdrop live in Visuals > Library Window.
         optionsMenu.addItem(NSMenuItem.separator())
@@ -4493,6 +4510,14 @@ class MenuActions: NSObject {
     @objc func setSweetFadeDuration(_ sender: NSMenuItem) {
         guard let duration = sender.representedObject as? Double else { return }
         WindowManager.shared.audioEngine.sweetFadeDuration = duration
+    }
+
+    @objc func toggleSweetFadeOutOnly() {
+        WindowManager.shared.audioEngine.sweetFadeOutOnly.toggle()
+    }
+
+    @objc func togglePauseFade() {
+        WindowManager.shared.audioEngine.pauseFadeEnabled.toggle()
     }
 
     @objc func setRadioMaxTracksPerArtist(_ sender: NSMenuItem) {
