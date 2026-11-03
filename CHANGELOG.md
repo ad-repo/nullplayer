@@ -31,6 +31,8 @@
   a row moves the selection with it, several rows at once keeping their order, and the playing track
   keeps playing wherever it lands. In a docked Original playlist, which has no title bar, drag a row
   that is already selected; dragging any other row still moves the window.
+- **Moving a track keeps the shuffle order.** With shuffle on, a drag, or a `.wal` or Windows Media
+  Player skin's own move button, used to draw a new random order for everything still to play.
 
 ### Windows Media Player skins
 

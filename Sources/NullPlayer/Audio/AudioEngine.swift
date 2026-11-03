@@ -6509,24 +6509,11 @@ class AudioEngine {
         playlistDidChange()
     }
     
+    /// A skin script's move of one row (`.wal` `PlEdit.moveTo`, `.wmz` `movePlaylistItem`). Unlike
+    /// a drag, a destination outside the queue is refused rather than clamped.
     func moveTrack(from sourceIndex: Int, to destinationIndex: Int) {
-        guard sourceIndex >= 0 && sourceIndex < playlist.count,
-              destinationIndex >= 0 && destinationIndex < playlist.count else { return }
-        
-        let track = playlist.remove(at: sourceIndex)
-        playlist.insert(track, at: destinationIndex)
-        
-        // Update current index
-        if sourceIndex == currentIndex {
-            currentIndex = destinationIndex
-        } else if sourceIndex < currentIndex && destinationIndex >= currentIndex {
-            currentIndex -= 1
-        } else if sourceIndex > currentIndex && destinationIndex <= currentIndex {
-            currentIndex += 1
-        }
-        invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
-        playlistDidChange()
+        guard playlist.indices.contains(sourceIndex), playlist.indices.contains(destinationIndex) else { return }
+        moveTracks([sourceIndex], by: destinationIndex - sourceIndex)
     }
     
     func playTrack(at index: Int) {
