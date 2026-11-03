@@ -1199,10 +1199,12 @@ class ModernLibraryBrowserView: NSView {
 
     // MARK: - Hit Testing (Bottom-Left Origin)
     
+    /// The title bar, or the server bar's empty space (the coordinator has already claimed its controls).
     private func hitTestTitleBar(at point: NSPoint) -> Bool {
         let m = ModernSkinElements.sizeMultiplier
-        return point.y > bounds.height - Layout.titleBarHeight &&
-               point.x < bounds.width - 30 * m
+        return (point.y > bounds.height - Layout.titleBarHeight &&
+                point.x < bounds.width - 30 * m) ||
+               coordinator.rects.serverBar.contains(point)
     }
     
     private func hitTestCloseButton(at point: NSPoint) -> Bool {
