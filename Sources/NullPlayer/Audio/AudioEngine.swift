@@ -5722,8 +5722,10 @@ class AudioEngine {
         self.startCrossfadeVolumeRamp(
             outgoingVolume: { v in outgoingPlayer.volume = v },
             incomingVolume: { v in incomingPlayer.volume = v },
+            // The target's row as it is now: `moveTracks` carries it through a drag mid-fade.
             completion: { [weak self] in
-                self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
+                guard let self else { return }
+                self.completeCrossfade(nextFile: nextFile, nextIndex: self.crossfadeTargetIndex)
             }
         )
     }
@@ -5771,8 +5773,10 @@ class AudioEngine {
                 guard let self, self.isCrossfading else { return }
                 self.crossfadeStreamingPlayer?.volume = masterVolume * v
             },
+            // The target's row as it is now: `moveTracks` carries it through a drag mid-fade.
             completion: { [weak self] in
-                self?.completeStreamingCrossfade(nextIndex: nextIndex)
+                guard let self else { return }
+                self.completeStreamingCrossfade(nextIndex: self.crossfadeTargetIndex)
             }
         )
     }
@@ -6684,6 +6688,10 @@ class AudioEngine {
 
         playlist = order.map { playlist[$0] }
         currentIndex = remap(currentIndex)
+        // A stream's gapless successor and a crossfade's incoming track are already playing or
+        // queued; their rows follow the tracks, so the handoff marks the track that actually plays.
+        nextScheduledTrackIndex = remap(nextScheduledTrackIndex)
+        crossfadeTargetIndex = remap(crossfadeTargetIndex)
         if isValidShuffleOrder(shufflePlaybackOrder, count: playlist.count) {
             shufflePlaybackOrder = shufflePlaybackOrder.map(remap)
             pendingRepeatShuffleOrder = pendingRepeatShuffleOrder.map { $0.map(remap) }
