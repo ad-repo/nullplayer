@@ -385,3 +385,31 @@ re-run the check fresh with `app-control` and open it as a new row only if it fa
 > - [ ] **B30 verify on LOBE:** drag the dial and the volume strip
 > - [ ] **B30 verify on Styx** (volume) and **mmd3** (knobs unchanged — its group is at the origin)
 > - [ ] **B31 verify on Lobe:** the Pledit window shows playlist content
+
+## Miscellaneous
+
+Moved from `MISC_TASKS.md`.
+
+### M66 — Move the playlist-import functions out of `AudioEngine.swift`
+
+**Moved 2026-11-03 by the user's decision, with no code change.** The row has lost its own stated
+justification. It asks for a behaviour-free move to bring `AudioEngine.swift` toward CLAUDE.md's
+~1,000-line limit, but the named functions come to about 290 lines, so the file only goes from
+7,013 lines to about 6,720. And the move is not free: the functions set `playlist`, `currentIndex`,
+`_currentTime`, `lastReportedTime` and `isStreamingPlayback`, and call about a dozen private helpers
+(`loadTrack(at:)`, `stopLocalOnly`, `cancelPendingLocalLoad`, `playlistDidChange`,
+`enrichPlaylistFormatsAsync`, `stopRadioIfLoadingNonRadioContent`, and the shuffle-state
+functions). An extension in another file reaches none of those, so the move would make them
+module-internal, including the setters that today let only `AudioEngine` change the queue.
+
+The row's one real gain, the missing-file filter repeated in `loadTracks` and `setPlaylistFiles`,
+needs no move: one private helper in place would serve both.
+
+Reviving it would take a different row: a separate queue type that owns the playlist, the current
+index and the shuffle order with its own private state. That would shrink `AudioEngine` without
+opening the queue to the rest of the module. It is a redesign, not a move, and needs its own
+decision.
+
+**The row, verbatim:**
+
+> | M66 | Move the playlist-import functions out of `AudioEngine.swift` | Raised by the M65 pre-PR review (2026-11-03). `Audio/AudioEngine.swift` is 6,927 lines, far past CLAUDE.md's ~1,000-line limit, and the import path is spread through it: `loadFiles` (3895), `appendFiles` (3904), `importableTracks` (3913), `loadTracks` (3979), `loadFolder` (4091), `appendTracks` (4171), `setPlaylistTracks` (4182), `insertTracksAfterCurrent` (4289), `setPlaylistFiles` (4496). Move them to `Audio/AudioEngine+PlaylistImport.swift` as a behaviour-free move; `loadFiles`, `setPlaylistFiles` and `loadTracks` repeat the same missing-file filter, which a move would put side by side. A shared-code refactor reaching every skin family, so it needs the user's go-ahead first (CLAUDE.md). **Done when** the functions live in their own file, `AudioEngine.swift` is smaller by that much, and `swift test` passes unchanged. Skill: `audio-system`. |

@@ -5722,8 +5722,10 @@ class AudioEngine {
         self.startCrossfadeVolumeRamp(
             outgoingVolume: { v in outgoingPlayer.volume = v },
             incomingVolume: { v in incomingPlayer.volume = v },
+            // The target's row as it is now: `moveTracks` carries it through a drag mid-fade.
             completion: { [weak self] in
-                self?.completeCrossfade(nextFile: nextFile, nextIndex: nextIndex)
+                guard let self else { return }
+                self.completeCrossfade(nextFile: nextFile, nextIndex: self.crossfadeTargetIndex)
             }
         )
     }
@@ -5771,8 +5773,10 @@ class AudioEngine {
                 guard let self, self.isCrossfading else { return }
                 self.crossfadeStreamingPlayer?.volume = masterVolume * v
             },
+            // The target's row as it is now: `moveTracks` carries it through a drag mid-fade.
             completion: { [weak self] in
-                self?.completeStreamingCrossfade(nextIndex: nextIndex)
+                guard let self else { return }
+                self.completeStreamingCrossfade(nextIndex: self.crossfadeTargetIndex)
             }
         )
     }
@@ -6509,24 +6513,11 @@ class AudioEngine {
         playlistDidChange()
     }
     
+    /// A skin script's move of one row (`.wal` `PlEdit.moveTo`, `.wmz` `movePlaylistItem`). Unlike
+    /// a drag, a destination outside the queue is refused rather than clamped.
     func moveTrack(from sourceIndex: Int, to destinationIndex: Int) {
-        guard sourceIndex >= 0 && sourceIndex < playlist.count,
-              destinationIndex >= 0 && destinationIndex < playlist.count else { return }
-        
-        let track = playlist.remove(at: sourceIndex)
-        playlist.insert(track, at: destinationIndex)
-        
-        // Update current index
-        if sourceIndex == currentIndex {
-            currentIndex = destinationIndex
-        } else if sourceIndex < currentIndex && destinationIndex >= currentIndex {
-            currentIndex -= 1
-        } else if sourceIndex > currentIndex && destinationIndex <= currentIndex {
-            currentIndex += 1
-        }
-        invalidateShufflePlaybackStateAfterPlaylistMutation()
-        
-        playlistDidChange()
+        guard playlist.indices.contains(sourceIndex), playlist.indices.contains(destinationIndex) else { return }
+        moveTracks([sourceIndex], by: destinationIndex - sourceIndex)
     }
     
     func playTrack(at index: Int) {
@@ -6677,6 +6668,49 @@ class AudioEngine {
     /// Reverse the playlist order
     func reversePlaylist() {
         reorderPlaylist { $0.reverse() }
+    }
+
+    /// Shift the rows at `indices` by `offset`, keeping their order and the gaps between them, as a
+    /// playlist drag moves its selection (M69). The offset is clamped so no row leaves the queue.
+    /// Returns the rows' new indices. The current index and the shuffle order are carried through
+    /// the move rather than rebuilt, so a drag that crosses many rows leaves the upcoming shuffle
+    /// order as it was.
+    @discardableResult
+    func moveTracks(_ indices: Set<Int>, by offset: Int) -> Set<Int> {
+        let moving = indices.filter { playlist.indices.contains($0) }
+        guard let first = moving.min(), let last = moving.max() else { return [] }
+        let shift = min(max(offset, -first), playlist.count - 1 - last)
+        guard shift != 0 else { return moving }
+        let order = Self.shiftedOrder(count: playlist.count, moving: moving, by: shift)
+        var newIndex = order
+        for (new, old) in order.enumerated() { newIndex[old] = new }
+        let remap = { (index: Int) in newIndex.indices.contains(index) ? newIndex[index] : index }
+
+        playlist = order.map { playlist[$0] }
+        currentIndex = remap(currentIndex)
+        // A stream's gapless successor and a crossfade's incoming track are already playing or
+        // queued; their rows follow the tracks, so the handoff marks the track that actually plays.
+        nextScheduledTrackIndex = remap(nextScheduledTrackIndex)
+        crossfadeTargetIndex = remap(crossfadeTargetIndex)
+        if isValidShuffleOrder(shufflePlaybackOrder, count: playlist.count) {
+            shufflePlaybackOrder = shufflePlaybackOrder.map(remap)
+            pendingRepeatShuffleOrder = pendingRepeatShuffleOrder.map { $0.map(remap) }
+            clearCrossfadeDeclineLatch()
+        } else {
+            invalidateShufflePlaybackStateAfterPlaylistMutation()
+        }
+        playlistDidChange()
+        return Set(moving.map { $0 + shift })
+    }
+
+    /// The playlist order after the rows at `moving` move `shift` slots on: `order[new]` is the
+    /// row's old index. The other rows fill the remaining slots in their own order, and there are
+    /// exactly as many of them as empty slots, so the iterator never runs dry.
+    static func shiftedOrder(count: Int, moving: Set<Int>, by shift: Int) -> [Int] {
+        var slots = [Int?](repeating: nil, count: count)
+        for index in moving { slots[index + shift] = index }
+        var rest = (0..<count).filter { !moving.contains($0) }.makeIterator()
+        return slots.map { $0 ?? rest.next()! }
     }
 
     /// Reorder the queue, keeping `currentIndex` on the entry that was playing. Matched by
