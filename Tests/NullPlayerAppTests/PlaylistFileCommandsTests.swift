@@ -50,4 +50,26 @@ final class PlaylistFileCommandsTests: XCTestCase {
 
             """)
     }
+
+    /// Add ▸ appends behind a playing queue and leaves its track playing; it replaced the queue (M65).
+    func testAddAppendsBehindThePlayingTrack() throws {
+        let song = try TestAudioFile.temporaryWAV(seconds: 10, tone: true)
+        defer { try? FileManager.default.removeItem(at: song) }
+        let stream = URL(string: "https://ice1.somafm.com/groovesalad-128-mp3")!
+
+        let engine = AudioEngine()
+        defer { engine.stop() }
+        AudioEngine.isHeadless = true
+        defer { AudioEngine.isHeadless = false }
+        engine.appendFiles([song])
+        XCTAssertEqual(engine.state, .playing, "an empty queue still loads and plays")
+        let playing = engine.currentTrack?.id
+
+        engine.appendFiles([stream])
+
+        XCTAssertEqual(engine.playlist.map(\.url), [song, stream])
+        XCTAssertEqual(engine.currentIndex, 0)
+        XCTAssertEqual(engine.currentTrack?.id, playing)
+        XCTAssertEqual(engine.state, .playing)
+    }
 }

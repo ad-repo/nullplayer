@@ -26,7 +26,7 @@ final class AudioEngineVideoRoutingTests: XCTestCase {
         XCTAssertEqual(engine.currentTime, 0)
     }
 
-    /// The playlist's Add Files, Add Directory and Load Playlist all go through `loadFiles`, which
+    /// The playlist's Add ▸ on an empty queue and Load Playlist go through `loadFiles`, which
     /// rejected a film as "Unsupported format" (M27). The library's validation still refuses one:
     /// video is imported by its own path.
     func testLoadFilesKeepsAFilmRowAndTheLibraryStillRefusesIt() throws {

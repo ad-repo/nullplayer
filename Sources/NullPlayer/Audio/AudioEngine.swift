@@ -3910,6 +3910,19 @@ class AudioEngine {
         enrichPlaylistFormatsAsync(for: tracks.map(\.id))
     }
 
+    /// The playlist's Add ▸: `loadFiles` on an empty queue, otherwise appends behind it and leaves
+    /// the current track playing.
+    func appendFiles(_ urls: [URL]) {
+        guard !playlist.isEmpty else { return loadFiles(urls) }
+        let validation = AudioFileValidator.quickValidate(urls: urls, includeVideo: true)
+        if validation.hasInvalidFiles {
+            AudioFileValidator.notifyInvalidFiles(validation.invalidFiles)
+        }
+        let tracks = validation.validURLs.compactMap { Track(lightweightURL: $0) }
+        appendTracks(tracks)
+        enrichPlaylistFormatsAsync(for: tracks.map(\.id))
+    }
+
     static func shouldStopRadioForIncomingTrack(
         isRadioActive: Bool,
         currentStationURL: URL?,
@@ -4078,7 +4091,7 @@ class AudioEngine {
     }
     
     /// The context menu's Play Folder: audio only, like its Play File panel. The playlist's own
-    /// Add Directory discovers video and calls `loadFiles` directly.
+    /// Add Directory discovers video and calls `appendFiles`.
     func loadFolder(_ url: URL) {
         LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] urls in
             guard let self, !urls.isEmpty else { return }

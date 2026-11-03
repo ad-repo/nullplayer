@@ -140,8 +140,7 @@ enum PlaylistMenuBuilder {
 
     // MARK: - Add ▸ and Playlist ▸
 
-    /// Ask for a URL and hand it to `AudioEngine.loadFiles`, which replaces the queue (M65). True
-    /// when a URL was loaded.
+    /// Ask for a URL and append it with `AudioEngine.appendFiles`. True when a URL was added.
     static func promptAddURL() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Add URL"
@@ -154,12 +153,12 @@ enum PlaylistMenuBuilder {
         guard alert.runModal() == .alertFirstButtonReturn,
               let url = URL(string: input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return false }
-        WindowManager.shared.audioEngine.loadFiles([url])
+        WindowManager.shared.audioEngine.appendFiles([url])
         return true
     }
 
-    /// Pick audio or video files and hand them to `AudioEngine.loadFiles`, which replaces the queue
-    /// (M65). True when files were picked.
+    /// Pick audio or video files and append them with `AudioEngine.appendFiles`. True when files
+    /// were picked.
     static func promptAddFiles() -> Bool {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
@@ -167,12 +166,12 @@ enum PlaylistMenuBuilder {
         panel.allowsMultipleSelection = true
         panel.allowedContentTypes = [.audio, .movie]
         guard panel.runModal() == .OK else { return false }
-        WindowManager.shared.audioEngine.loadFiles(panel.urls)
+        WindowManager.shared.audioEngine.appendFiles(panel.urls)
         return true
     }
 
     /// Pick a folder, find its audio and video off the main thread, and hand them to
-    /// `AudioEngine.loadFiles`, which replaces the queue (M65). `onLoad` runs on main once loaded.
+    /// `AudioEngine.appendFiles`. `onLoad` runs on main once added.
     static func promptAddDirectory(onLoad: @escaping () -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -181,7 +180,7 @@ enum PlaylistMenuBuilder {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { mediaURLs in
             guard !mediaURLs.isEmpty else { return }
-            WindowManager.shared.audioEngine.loadFiles(mediaURLs)
+            WindowManager.shared.audioEngine.appendFiles(mediaURLs)
             onLoad()
         }
     }
