@@ -24,6 +24,18 @@ import AppKit
     func selectForMenu(_ row: Int)
 }
 
+/// The old ADD / LIST bar's commands, for a playlist that owns them. A conformer's context menu gains
+/// Add ▸ and Playlist ▸; a skin-drawn playlist (`.wal`, `.wmz`) does not conform, so its menu is unchanged.
+@MainActor
+@objc protocol PlaylistFileCommands: PlaylistMenuTarget {
+    func addFiles(_ sender: Any?)
+    func addDirectory(_ sender: Any?)
+    func addURL(_ sender: Any?)
+    func newPlaylist(_ sender: Any?)
+    func loadPlaylist(_ sender: Any?)
+    func savePlaylist(_ sender: Any?)
+}
+
 /// **NullPlayer's playlist context menu, shared by every view that shows the play queue.** The
 /// Modern playlist built it inline; a `.wmz` skin's `<PLAYLIST>` pane needs the same rows because
 /// WMP skins authored no playlist controls of their own — WMP's menus supplied them (W272). Lifted
@@ -63,9 +75,25 @@ enum PlaylistMenuBuilder {
             item.isEnabled = enabled
             return item
         }
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let submenu = NSMenu()
+            submenu.autoenablesItems = autoenablesItems
+            items.forEach(submenu.addItem)
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            return item
+        }
+        let fileCommands = target is PlaylistFileCommands
 
         menu.addItem(item("Play", #selector(PlaylistMenuTarget.playSelected(_:)), enabled: hasSelection))
         menu.addItem(NSMenuItem.separator())
+        if fileCommands {
+            menu.addItem(submenu("Add", [
+                item("Add URL...", #selector(PlaylistFileCommands.addURL(_:)), enabled: true),
+                item("Add Directory...", #selector(PlaylistFileCommands.addDirectory(_:)), enabled: true),
+                item("Add Files...", #selector(PlaylistFileCommands.addFiles(_:)), enabled: true)
+            ]))
+        }
         menu.addItem(item("Remove Selected", #selector(PlaylistMenuTarget.removeSelected(_:)),
                           enabled: hasSelection && canEdit))
         menu.addItem(item("Clear Playlist", #selector(PlaylistMenuTarget.removeAll(_:)),
@@ -74,37 +102,34 @@ enum PlaylistMenuBuilder {
                           enabled: hasTracks && canEdit))
         menu.addItem(NSMenuItem.separator())
 
-        let selectionMenu = NSMenu()
-        selectionMenu.autoenablesItems = autoenablesItems
         let selectAllItem = item("Select All", #selector(PlaylistMenuTarget.selectAll(_:)),
                                  enabled: hasTracks, key: "a")
         selectAllItem.keyEquivalentModifierMask = .command
-        selectionMenu.addItem(selectAllItem)
-        selectionMenu.addItem(item("Select None", #selector(PlaylistMenuTarget.selectNone(_:)),
-                                   enabled: hasSelection))
-        selectionMenu.addItem(item("Invert Selection", #selector(PlaylistMenuTarget.invertSelection(_:)),
-                                   enabled: hasTracks))
-        selectionMenu.addItem(item("Crop Selection", #selector(PlaylistMenuTarget.cropSelection(_:)),
-                                   enabled: hasSelection && canEdit))
-        let selectionMenuItem = NSMenuItem(title: "Selection", action: nil, keyEquivalent: "")
-        selectionMenuItem.submenu = selectionMenu
-        menu.addItem(selectionMenuItem)
+        menu.addItem(submenu("Selection", [
+            selectAllItem,
+            item("Select None", #selector(PlaylistMenuTarget.selectNone(_:)), enabled: hasSelection),
+            item("Invert Selection", #selector(PlaylistMenuTarget.invertSelection(_:)), enabled: hasTracks),
+            item("Crop Selection", #selector(PlaylistMenuTarget.cropSelection(_:)), enabled: hasSelection && canEdit)
+        ]))
 
-        let sortMenu = NSMenu()
-        sortMenu.autoenablesItems = autoenablesItems
         let canSort = hasTracks && canEdit
-        sortMenu.addItem(item("Sort by Title", #selector(PlaylistMenuTarget.sortByTitle(_:)), enabled: canSort))
-        sortMenu.addItem(item("Sort by Artist", #selector(PlaylistMenuTarget.sortByArtist(_:)), enabled: canSort))
-        sortMenu.addItem(item("Sort by Album", #selector(PlaylistMenuTarget.sortByAlbum(_:)), enabled: canSort))
-        sortMenu.addItem(item("Sort by Filename", #selector(PlaylistMenuTarget.sortByFilename(_:)),
-                              enabled: canSort))
-        sortMenu.addItem(item("Sort by Path", #selector(PlaylistMenuTarget.sortByPath(_:)), enabled: canSort))
-        sortMenu.addItem(NSMenuItem.separator())
-        sortMenu.addItem(item("Reverse", #selector(PlaylistMenuTarget.reverse(_:)), enabled: canSort))
-        sortMenu.addItem(item("Randomize", #selector(PlaylistMenuTarget.randomize(_:)), enabled: canSort))
-        let sortMenuItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
-        sortMenuItem.submenu = sortMenu
-        menu.addItem(sortMenuItem)
+        menu.addItem(submenu("Sort", [
+            item("Sort by Title", #selector(PlaylistMenuTarget.sortByTitle(_:)), enabled: canSort),
+            item("Sort by Artist", #selector(PlaylistMenuTarget.sortByArtist(_:)), enabled: canSort),
+            item("Sort by Album", #selector(PlaylistMenuTarget.sortByAlbum(_:)), enabled: canSort),
+            item("Sort by Filename", #selector(PlaylistMenuTarget.sortByFilename(_:)), enabled: canSort),
+            item("Sort by Path", #selector(PlaylistMenuTarget.sortByPath(_:)), enabled: canSort),
+            NSMenuItem.separator(),
+            item("Reverse", #selector(PlaylistMenuTarget.reverse(_:)), enabled: canSort),
+            item("Randomize", #selector(PlaylistMenuTarget.randomize(_:)), enabled: canSort)
+        ]))
+        if fileCommands {
+            menu.addItem(submenu("Playlist", [
+                item("New Playlist", #selector(PlaylistFileCommands.newPlaylist(_:)), enabled: true),
+                item("Save Playlist...", #selector(PlaylistFileCommands.savePlaylist(_:)), enabled: true),
+                item("Load Playlist...", #selector(PlaylistFileCommands.loadPlaylist(_:)), enabled: true)
+            ]))
+        }
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)),
@@ -112,6 +137,71 @@ enum PlaylistMenuBuilder {
         if canEdit { EQProfileMenu.addAssignItem(to: menu, queueRows: state.selectedRows) }
         PlaylistRowFields.addItems(to: menu)
         return menu
+    }
+
+    // MARK: - Add ▸ and Playlist ▸
+
+    /// Ask for a URL and hand it to `AudioEngine.loadFiles`, which replaces the queue (M65). True
+    /// when a URL was loaded.
+    static func promptAddURL() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Add URL"
+        alert.informativeText = "Enter the URL of the media file:"
+        alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        input.placeholderString = "https://example.com/audio.mp3"
+        alert.accessoryView = input
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let url = URL(string: input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
+        else { return false }
+        WindowManager.shared.audioEngine.loadFiles([url])
+        return true
+    }
+
+    /// Pick audio or video files and hand them to `AudioEngine.loadFiles`, which replaces the queue
+    /// (M65). True when files were picked.
+    static func promptAddFiles() -> Bool {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.audio, .movie]
+        guard panel.runModal() == .OK else { return false }
+        WindowManager.shared.audioEngine.loadFiles(panel.urls)
+        return true
+    }
+
+    /// Pick an `.m3u`/`.m3u8` and replace the queue with it. True when the queue was replaced.
+    static func promptLoadPlaylist() -> Bool {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
+        // `Playlist.load` resolves a relative entry against the playlist's folder; a local
+        // `URL(string:)` test accepts a bare filename and returns something unplayable.
+        guard panel.runModal() == .OK, let url = panel.url,
+              let urls = Playlist.load(from: url)?.trackURLs, !urls.isEmpty else { return false }
+        let engine = WindowManager.shared.audioEngine
+        engine.clearPlaylist()
+        engine.loadFiles(urls)
+        return true
+    }
+
+    /// Save the queue as an extended M3U. A stream or server track keeps its full URL, which
+    /// `Playlist.load` reads back; its path alone would not play.
+    static func promptSaveQueue() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
+        panel.nameFieldStringValue = "playlist.m3u"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? m3u(for: WindowManager.shared.audioEngine.playlist).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    static func m3u(for tracks: [Track]) -> String {
+        let entries = tracks.flatMap { track in
+            ["#EXTINF:\(Int(track.duration ?? 0)),\(track.displayTitle)",
+             track.url.isFileURL ? track.url.path : track.url.absoluteString]
+        }
+        return (["#EXTM3U"] + entries + [""]).joined(separator: "\n")
     }
 
     // MARK: - Queue edits both views make

@@ -159,11 +159,10 @@ A drop on a Library Browser imports instead (`local-library` § *Video import*).
 which validates with `AudioFileValidator.quickValidate(urls:includeVideo: true)`; the library passes
 `false`, since video is imported by its own path. Before, a film the panel offered was dropped as
 "Unsupported format" (M27). The `.wal` playlist reaches the panels through `PE_ADD` / `PE_LIST`.
-The Classic playlist no longer draws its ADD/REM/SEL/MISC/LIST buttons, but
-`PlaylistView.hitTestBottomButton` still hit-tests them inside the 7 px bottom border (ADD at
-x 11–40, LIST at the right 22 px), so a click there opens the same menus; its mini-transport Open
-needs y ≥ 12 and is unreachable. The Original playlist's `showAddMenu` has no caller. The context
-menu's Play File / Play Folder stay audio-only (`AudioEngine.loadFolder`). Measured 2026-10-08 on
+Neither the Classic nor the Original playlist has an ADD/REM/SEL/MISC/LIST bar any more; both
+reach these panels through their right-click's Add ▸ and Playlist ▸, which `PlaylistMenuBuilder`
+adds for a `PlaylistFileCommands` view. The main context menu's Play File / Play Folder stay
+audio-only (`AudioEngine.loadFolder`). Measured 2026-10-08 on
 winampmodern566: each panel added `video-short`, which played in the video window, and a film row
 advanced to the audio row after it.
 

@@ -189,9 +189,6 @@ enum ModernSkinElements {
     /// Playlist window title bar height
     static var playlistTitleBarHeight: CGFloat { titleBarBaseHeight * scaleFactor }
     
-    /// Playlist window bottom bar height (ADD/REM/SEL/MISC/LIST buttons)
-    static var playlistBottomBarHeight: CGFloat { 20 * scaleFactor }
-    
     /// Playlist window border width
     static var playlistBorderWidth: CGFloat { auxiliaryWindowBorderWidth }
     
