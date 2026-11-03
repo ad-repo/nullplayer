@@ -598,8 +598,7 @@ class PlaylistView: NSView {
     /// The playlist frame for a `.wal` skin that declares no playlist of its own.
     ///
     /// Flat and palette-coloured, drawn at **exactly** the classic metrics so nothing about hit
-    /// testing moves: the title bar is `Layout.titleBarHeight`, the borders are 12px, and every
-    /// bottom-bar button is painted in the box `hitTestBottomButton` already owns.
+    /// testing moves: the title bar is `Layout.titleBarHeight` and the borders are 12px.
     private func drawWinampModernChrome(style: WinampModernSurfaceStyle, context: CGContext,
                                         bounds: NSRect, isActive: Bool) {
         // Titleless in WMP: the gloss frame, and the close is the corner hit area alone.
@@ -649,10 +648,9 @@ class PlaylistView: NSView {
                                        rect: NSRect(x: bounds.width - 20, y: 0, width: 20, height: 14),
                                        color: titleColor)
         }
-        // No bottom-bar buttons on purpose. `Layout.bottomBarHeight` is 7px — the classic playlist's
-        // ADD/REM/SEL row and mini transport were removed long ago (`drawBottomBarInfo` and
-        // `drawPlaybackTime` are dead code, and `hitTestBottomButton`'s boxes are written for a 38px
-        // bar that no longer exists). The bar is a border strip in both looks.
+        // No bottom-bar buttons on purpose. `Layout.bottomBarHeight` is 7px: the classic playlist's
+        // ADD/REM/SEL row and mini transport are gone, and their commands live in the context
+        // menu's Add ▸ and Playlist ▸. The bar is a border strip in both looks.
     }
 
     /// The playlist wearing the hosting skin's own window ring.
@@ -1039,129 +1037,6 @@ class PlaylistView: NSView {
         }
     }
 
-    /// Draw track count and total time info in bottom bar using skin font
-    /// Shows REMAINING tracks and countdown time
-    private func drawBottomBarInfo(in context: CGContext, drawBounds: NSRect, renderer: SkinRenderer) {
-        let engine = WindowManager.shared.audioEngine
-        let tracks = engine.playlist
-        let isVideoActive = WindowManager.shared.isVideoActivePlayback
-
-        // Don't draw if no tracks
-        guard !tracks.isEmpty else { return }
-
-        // Get current track index (0-based), -1 means no track loaded
-        let currentIndex = max(0, engine.currentIndex)
-
-        // Calculate remaining tracks (including current track)
-        let remainingTracks = max(0, tracks.count - currentIndex)
-
-        // Calculate remaining time:
-        // - Time left in current track
-        // - Plus duration of all tracks after current
-        var remainingSeconds = 0
-
-        // Add remaining time in current track
-        // Use video time if video is active, otherwise use audio engine
-        let currentTime: TimeInterval
-        let currentDuration: TimeInterval
-        let isPlaying: Bool
-
-        if isVideoActive {
-            currentTime = WindowManager.shared.videoCurrentTime
-            currentDuration = WindowManager.shared.videoDuration
-            isPlaying = WindowManager.shared.isVideoPlaying
-        } else {
-            currentTime = engine.currentTime
-            currentDuration = engine.duration
-            isPlaying = engine.state == .playing
-        }
-
-        if isPlaying || currentTime > 0 {
-            remainingSeconds += max(0, Int(currentDuration - currentTime))
-        } else if currentIndex < tracks.count {
-            // Not playing yet, add full duration of current track
-            remainingSeconds += Int(tracks[currentIndex].duration ?? 0)
-        }
-
-        // Add duration of all tracks after current
-        for i in (currentIndex + 1)..<tracks.count {
-            remainingSeconds += Int(tracks[i].duration ?? 0)
-        }
-
-        let remainingMinutes = remainingSeconds / 60
-        let remainingHours = remainingMinutes / 60
-
-        // Build the info string for skin font
-        let trackCountStr = "\(remainingTracks)/"
-        let remainingTimeStr: String
-        if remainingHours > 0 {
-            remainingTimeStr = String(format: "%d:%02d:%02d", remainingHours, remainingMinutes % 60, remainingSeconds % 60)
-        } else {
-            remainingTimeStr = String(format: "%d:%02d", remainingMinutes, remainingSeconds % 60)
-        }
-
-        // Calculate width using skin font dimensions (5px per char for text)
-        let charWidth = SkinElements.TextFont.charWidth  // 5px
-        let textWidth = CGFloat(trackCountStr.count) * charWidth + CGFloat(remainingTimeStr.count) * charWidth
-
-        // Position INSIDE the bottom bar area, centered horizontally
-        let bottomBarTop = drawBounds.height - Layout.bottomBarHeight
-        let leftEdge: CGFloat = 125
-        let rightEdge = drawBounds.width - 150
-        let centerX = leftEdge + (rightEdge - leftEdge - textWidth) / 2
-        let textX = max(leftEdge + 5, centerX)
-        let textY = bottomBarTop + 10  // Centered vertically in info area
-
-        // Draw using skin font (no coordinate flip needed for sprites)
-        var xPos = textX
-        xPos += renderer.drawSkinText(trackCountStr, at: NSPoint(x: xPos, y: textY), in: context)
-        renderer.drawSkinText(remainingTimeStr, at: NSPoint(x: xPos, y: textY), in: context)
-    }
-
-    /// Draw current playback time in the colon area of the bottom bar using skin font
-    private func drawPlaybackTime(in context: CGContext, drawBounds: NSRect, renderer: SkinRenderer) {
-        let engine = WindowManager.shared.audioEngine
-        let isVideoActive = WindowManager.shared.isVideoActivePlayback
-
-        // Get current time and playing state from video or audio engine
-        let currentTime: TimeInterval
-        let isPlaying: Bool
-
-        if isVideoActive {
-            currentTime = WindowManager.shared.videoCurrentTime
-            isPlaying = WindowManager.shared.isVideoPlaying
-        } else {
-            currentTime = engine.currentTime
-            isPlaying = engine.state == .playing
-        }
-
-        // Only draw if playing or has position
-        guard isPlaying || currentTime > 0 else { return }
-
-        let minutes = Int(currentTime) / 60
-        let seconds = Int(currentTime) % 60
-
-        // Use skin text font (5x6 pixels per character)
-        let charWidth = SkinElements.TextFont.charWidth
-        let minutesStr = String(minutes)
-        let minWidth = CGFloat(minutesStr.count) * charWidth
-
-        // Position relative to the right edge
-        // The colon in the skin is to the left of the LIST button
-        let colonX: CGFloat = drawBounds.width - 68
-        let bottomBarTop = drawBounds.height - Layout.bottomBarHeight
-        let textY = bottomBarTop + 22  // Lowered for skin font
-
-        // Draw minutes to the left of the colon
-        let minX = colonX - minWidth - 1
-        renderer.drawSkinText(minutesStr, at: NSPoint(x: minX, y: textY), in: context)
-
-        // Draw seconds to the right of the colon
-        let secX = colonX + 4
-        let secondsStr = String(format: "%02d", seconds)
-        renderer.drawSkinText(secondsStr, at: NSPoint(x: secX, y: textY), in: context)
-    }
-
     // MARK: - Public Methods
 
     func reloadData() {
@@ -1223,48 +1098,6 @@ class PlaylistView: NSView {
         return closeRect.contains(skinPoint)
     }
 
-    /// Check if point hits a bottom bar button, return which one
-    private func hitTestBottomButton(at skinPoint: NSPoint) -> SkinRenderer.PlaylistButtonType? {
-        let effectiveSize = effectiveWindowSize
-        let bottomY = effectiveSize.height - Layout.bottomBarHeight
-
-        // Check if in bottom bar area
-        guard skinPoint.y >= bottomY && skinPoint.y < effectiveSize.height else { return nil }
-
-        let relativeY = skinPoint.y - bottomY
-        let x = skinPoint.x
-
-        // Mini transport buttons - 6 buttons: prev, play, pause, stop, next, open
-        // Based on edge clicks: Previous=134, Open=181, range=47px, spacing=9.4px
-        // Buttons are in the lower portion of the bottom bar (y >= 12)
-        if relativeY >= 12 && relativeY <= 38 && x >= 125 && x < 195 {
-            // 6 buttons equally spaced from x=134 to x=181
-            // Each button ~9.4px apart, using ~8px wide hit areas centered on each
-            if x >= 130 && x < 139 { return .miniPrevious }
-            if x >= 139 && x < 148 { return .miniPlay }
-            if x >= 148 && x < 158 { return .miniPause }
-            if x >= 158 && x < 167 { return .miniStop }
-            if x >= 167 && x < 177 { return .miniNext }
-            if x >= 177 && x < 195 { return .miniOpen }
-        }
-
-        // ADD/REM/SEL buttons in the upper-left area of the bottom bar (y=0-15)
-        // These should NOT overlap with the transport buttons
-        if relativeY >= 0 && relativeY < 15 {
-            if x >= 11 && x < 40 { return .add }
-            if x >= 40 && x < 69 { return .rem }
-            if x >= 69 && x < 98 { return .sel }
-        }
-
-        // MISC/LIST buttons on the right side
-        if x >= effectiveSize.width - 50 {
-            if x >= effectiveSize.width - 44 && x < effectiveSize.width - 22 { return .misc }
-            if x >= effectiveSize.width - 22 && x < effectiveSize.width { return .list }
-        }
-
-        return nil
-    }
-
     /// Check if point hits the scrollbar (disabled - no scrollbar widget)
     private func hitTestScrollbar(at skinPoint: NSPoint) -> Bool {
         return false
@@ -1310,13 +1143,6 @@ class PlaylistView: NSView {
         // Check window control buttons
         if hitTestCloseButton(at: skinPoint) {
             pressedButton = .close
-            needsDisplay = true
-            return
-        }
-
-        // Check bottom bar buttons
-        if let bottomButton = hitTestBottomButton(at: skinPoint) {
-            pressedButton = bottomButton
             needsDisplay = true
             return
         }
@@ -1431,119 +1257,12 @@ class PlaylistView: NSView {
         isDraggingScrollbar = false
 
         // Handle button releases
-        if let pressed = pressedButton {
-            switch pressed {
-            case .close:
-                if hitTestCloseButton(at: skinPoint) {
-                    window?.close()
-                }
-            case .add:
-                if hitTestBottomButton(at: skinPoint) == .add {
-                    showAddMenu(at: point)
-                }
-            case .rem:
-                if hitTestBottomButton(at: skinPoint) == .rem {
-                    showRemoveMenu(at: point)
-                }
-            case .sel:
-                if hitTestBottomButton(at: skinPoint) == .sel {
-                    showSelectMenu(at: point)
-                }
-            case .misc:
-                if hitTestBottomButton(at: skinPoint) == .misc {
-                    showMiscMenu(at: point)
-                }
-            case .list:
-                if hitTestBottomButton(at: skinPoint) == .list {
-                    showListMenu(at: point)
-                }
-            // Mini transport controls
-            case .miniPrevious:
-                if hitTestBottomButton(at: skinPoint) == .miniPrevious {
-                    performMiniTransportAction(.miniPrevious)
-                }
-            case .miniPlay:
-                if hitTestBottomButton(at: skinPoint) == .miniPlay {
-                    performMiniTransportAction(.miniPlay)
-                }
-            case .miniPause:
-                if hitTestBottomButton(at: skinPoint) == .miniPause {
-                    performMiniTransportAction(.miniPause)
-                }
-            case .miniStop:
-                if hitTestBottomButton(at: skinPoint) == .miniStop {
-                    performMiniTransportAction(.miniStop)
-                }
-            case .miniNext:
-                if hitTestBottomButton(at: skinPoint) == .miniNext {
-                    performMiniTransportAction(.miniNext)
-                }
-            case .miniOpen:
-                if hitTestBottomButton(at: skinPoint) == .miniOpen {
-                    performMiniTransportAction(.miniOpen)
-                }
+        if pressedButton == .close {
+            if hitTestCloseButton(at: skinPoint) {
+                window?.close()
             }
-
             pressedButton = nil
             needsDisplay = true
-        }
-    }
-
-    /// Perform mini transport button action
-    private func performMiniTransportAction(_ button: SkinRenderer.PlaylistButtonType) {
-        let engine = WindowManager.shared.audioEngine
-        let isVideoActive = WindowManager.shared.isVideoActivePlayback
-
-        switch button {
-        case .miniPrevious:
-            if isVideoActive {
-                WindowManager.shared.skipVideoBackward(10)
-            } else {
-                engine.previous()
-            }
-        case .miniPlay:
-            if isVideoActive {
-                WindowManager.shared.toggleVideoPlayPause()
-            } else {
-                // Toggle play/pause for better UX
-                if engine.state == .playing {
-                    engine.pause()
-                } else {
-                    engine.play()
-                }
-            }
-        case .miniPause:
-            if isVideoActive {
-                WindowManager.shared.toggleVideoPlayPause()
-            } else {
-                engine.pause()
-            }
-        case .miniStop:
-            if isVideoActive {
-                WindowManager.shared.stopVideo()
-            } else {
-                engine.stop()
-            }
-        case .miniNext:
-            if isVideoActive {
-                WindowManager.shared.skipVideoForward(10)
-            } else {
-                engine.next()
-            }
-        case .miniOpen:
-            // Open file dialog to add files
-            let panel = NSOpenPanel()
-            panel.canChooseFiles = true
-            panel.canChooseDirectories = false
-            panel.allowsMultipleSelection = true
-            panel.allowedContentTypes = [.audio, .movie]
-
-            if panel.runModal() == .OK {
-                WindowManager.shared.audioEngine.loadFiles(panel.urls)
-                needsDisplay = true
-            }
-        default:
-            break
         }
     }
 
@@ -1566,149 +1285,18 @@ class PlaylistView: NSView {
         return event.deltaY * 3
     }
 
-    // MARK: - Button Popup Menus
-
-    /// Show ADD button popup menu
-    private func showAddMenu(at point: NSPoint) {
-        let menu = NSMenu()
-
-        menu.addItem(withTitle: "Add URL...", action: #selector(addURL(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Add Directory...", action: #selector(addDirectory(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Add Files...", action: #selector(addFiles(_:)), keyEquivalent: "")
-
-        for item in menu.items {
-            item.target = self
-        }
-
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    /// Show REM button popup menu
-    private func showRemoveMenu(at point: NSPoint) {
-        let menu = NSMenu()
-
-        menu.addItem(withTitle: "Remove All", action: #selector(removeAll(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Crop Selection", action: #selector(cropSelection(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Remove Selected", action: #selector(removeSelected(_:)), keyEquivalent: "")
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Remove Dead Files", action: #selector(removeDeadFiles(_:)), keyEquivalent: "")
-
-        for item in menu.items {
-            item.target = self
-        }
-
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    /// Show SEL button popup menu
-    private func showSelectMenu(at point: NSPoint) {
-        let menu = NSMenu()
-
-        menu.addItem(withTitle: "Invert Selection", action: #selector(invertSelection(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Select None", action: #selector(selectNone(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a")
-
-        for item in menu.items {
-            item.target = self
-        }
-
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    /// Show MISC button popup menu
-    private func showMiscMenu(at point: NSPoint) {
-        let menu = NSMenu()
-
-        let sortMenu = NSMenu()
-        sortMenu.addItem(withTitle: "Sort by Title", action: #selector(sortByTitle(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Sort by Filename", action: #selector(sortByFilename(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Sort by Path", action: #selector(sortByPath(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Randomize", action: #selector(randomize(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Reverse", action: #selector(reverse(_:)), keyEquivalent: "")
-
-        for item in sortMenu.items {
-            item.target = self
-        }
-
-        let sortItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
-        sortItem.submenu = sortMenu
-        menu.addItem(sortItem)
-
-        menu.addItem(withTitle: "File Info...", action: #selector(showFileInfo(_:)), keyEquivalent: "")
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Playlist Options...", action: #selector(showOptions(_:)), keyEquivalent: "")
-
-        for item in menu.items {
-            if item.action != nil { item.target = self }
-        }
-
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
-    /// Show LIST button popup menu
-    private func showListMenu(at point: NSPoint) {
-        let menu = NSMenu()
-
-        menu.addItem(withTitle: "New Playlist", action: #selector(newPlaylist(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Save Playlist...", action: #selector(savePlaylist(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Load Playlist...", action: #selector(loadPlaylist(_:)), keyEquivalent: "")
-
-        for item in menu.items {
-            item.target = self
-        }
-
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-
     // MARK: - Menu Actions
 
-    @objc private func addURL(_ sender: Any?) {
-        // Show URL input dialog
-        let alert = NSAlert()
-        alert.messageText = "Add URL"
-        alert.informativeText = "Enter the URL of the media file:"
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        input.placeholderString = "https://example.com/audio.mp3"
-        alert.accessoryView = input
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let urlString = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let url = URL(string: urlString) {
-                WindowManager.shared.audioEngine.loadFiles([url])
-                needsDisplay = true
-            }
-        }
+    @objc func addURL(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptAddURL() { needsDisplay = true }
     }
 
-    @objc private func addDirectory(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-
-        if panel.runModal() == .OK, let url = panel.url {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { [weak self] mediaURLs in
-                guard !mediaURLs.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(mediaURLs)
-                self?.needsDisplay = true
-            }
-        }
+    @objc func addDirectory(_ sender: Any?) {
+        PlaylistMenuBuilder.promptAddDirectory { [weak self] in self?.needsDisplay = true }
     }
 
-    @objc private func addFiles(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.audio, .movie]
-
-        if panel.runModal() == .OK {
-            WindowManager.shared.audioEngine.loadFiles(panel.urls)
-            needsDisplay = true
-        }
+    @objc func addFiles(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptAddFiles() { needsDisplay = true }
     }
 
     @objc func removeAll(_ sender: Any?) {
@@ -1808,48 +1396,12 @@ class PlaylistView: NSView {
         PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
     }
 
-    @objc private func showOptions(_ sender: Any?) {
-        // Placeholder for options dialog
+    @objc func savePlaylist(_ sender: Any?) {
+        PlaylistMenuBuilder.promptSaveQueue()
     }
 
-    @objc private func newPlaylist(_ sender: Any?) {
-        removeAll(sender)
-    }
-
-    @objc private func savePlaylist(_ sender: Any?) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
-        panel.nameFieldStringValue = "playlist.m3u"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            let tracks = WindowManager.shared.audioEngine.playlist
-            var content = "#EXTM3U\n"
-
-            for track in tracks {
-                let duration = Int(track.duration ?? 0)
-                content += "#EXTINF:\(duration),\(track.displayTitle)\n"
-                content += "\(track.url.path)\n"
-            }
-
-            try? content.write(to: url, atomically: true, encoding: .utf8)
-        }
-    }
-
-    @objc private func loadPlaylist(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
-
-        if panel.runModal() == .OK, let url = panel.url {
-            // `Playlist.resolveEntry` rather than a local `URL(string:)` test: that initialiser
-            // accepts a bare filename and returns a schemeless URL, so the relative branch here
-            // was dead code and every relative entry loaded as something unplayable.
-            let urls = Playlist.load(from: url)?.trackURLs ?? []
-            if !urls.isEmpty {
-                WindowManager.shared.audioEngine.clearPlaylist()
-                WindowManager.shared.audioEngine.loadFiles(urls)
-                needsDisplay = true
-            }
-        }
+    @objc func loadPlaylist(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptLoadPlaylist() { needsDisplay = true }
     }
 
     // MARK: - Keyboard Events
@@ -2110,4 +1662,4 @@ class PlaylistView: NSView {
     }
 }
 
-extension PlaylistView: PlaylistMenuTarget {}
+extension PlaylistView: PlaylistFileCommands {}

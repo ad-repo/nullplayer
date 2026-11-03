@@ -73,7 +73,6 @@ class ModernPlaylistView: NSView {
         let hide = isEmbedded || WindowManager.shared.effectiveHideTitleBars(for: self.window)
         return hide ? borderWidth : ModernSkinElements.playlistTitleBarHeight
     }
-    private var bottomBarHeight: CGFloat { ModernSkinElements.playlistBottomBarHeight }
     private var borderWidth: CGFloat { ModernSkinElements.playlistBorderWidth }
     private var itemHeight: CGFloat { ModernSkinElements.playlistItemHeight }
     
@@ -804,29 +803,6 @@ class ModernPlaylistView: NSView {
         return closeRect.contains(point)
     }
 
-    private func hitTestBottomBar(at point: NSPoint) -> String? {
-        guard point.y < bottomBarHeight else { return nil }
-        let scale = ModernSkinElements.scaleFactor
-        
-        // Match button layout from drawPlaylistBottomBar
-        let buttons: [(String, CGFloat, CGFloat)] = [
-            ("playlist_btn_add", 4 * scale, 30 * scale),
-            ("playlist_btn_rem", 36 * scale, 30 * scale),
-            ("playlist_btn_sel", 68 * scale, 30 * scale),
-            ("playlist_btn_misc", bounds.width - 64 * scale, 30 * scale),
-            ("playlist_btn_list", bounds.width - 32 * scale, 30 * scale),
-        ]
-        
-        for (id, x, width) in buttons {
-            let buttonRect = NSRect(x: x, y: 2 * scale, width: width, height: bottomBarHeight - 4 * scale)
-            if buttonRect.contains(point) {
-                return id
-            }
-        }
-        
-        return nil
-    }
-    
     private func hitTestTrackList(at point: NSPoint) -> Int? {
         let listRect = calculateListArea()
         guard listRect.contains(point) else { return nil }
@@ -1096,110 +1072,18 @@ class ModernPlaylistView: NSView {
         updateMarqueeLayerPosition()
     }
     
-    // MARK: - Button Popup Menus
-    
-    private func showAddMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Add URL...", action: #selector(addURL(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Add Directory...", action: #selector(addDirectory(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Add Files...", action: #selector(addFiles(_:)), keyEquivalent: "")
-        for item in menu.items { item.target = self }
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
-    private func showRemoveMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Remove All", action: #selector(removeAll(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Crop Selection", action: #selector(cropSelection(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Remove Selected", action: #selector(removeSelected(_:)), keyEquivalent: "")
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Remove Dead Files", action: #selector(removeDeadFiles(_:)), keyEquivalent: "")
-        for item in menu.items { item.target = self }
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
-    private func showSelectMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Invert Selection", action: #selector(invertSelection(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Select None", action: #selector(selectNone(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a")
-        for item in menu.items { item.target = self }
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
-    private func showMiscMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        
-        let sortMenu = NSMenu()
-        sortMenu.addItem(withTitle: "Sort by Title", action: #selector(sortByTitle(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Sort by Filename", action: #selector(sortByFilename(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Sort by Path", action: #selector(sortByPath(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Randomize", action: #selector(randomize(_:)), keyEquivalent: "")
-        sortMenu.addItem(withTitle: "Reverse", action: #selector(reverse(_:)), keyEquivalent: "")
-        for item in sortMenu.items { item.target = self }
-        
-        let sortItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
-        sortItem.submenu = sortMenu
-        menu.addItem(sortItem)
-        
-        menu.addItem(withTitle: "File Info...", action: #selector(showFileInfo(_:)), keyEquivalent: "")
-        for item in menu.items { if item.action != nil { item.target = self } }
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
-    private func showListMenu(at point: NSPoint) {
-        let menu = NSMenu()
-        menu.addItem(withTitle: "New Playlist", action: #selector(newPlaylist(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Save Playlist...", action: #selector(savePlaylist(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "Load Playlist...", action: #selector(loadPlaylist(_:)), keyEquivalent: "")
-        for item in menu.items { item.target = self }
-        menu.popUp(positioning: nil, at: point, in: self)
-    }
-    
     // MARK: - Menu Actions
     
-    @objc private func addURL(_ sender: Any?) {
-        let alert = NSAlert()
-        alert.messageText = "Add URL"
-        alert.informativeText = "Enter the URL of the media file:"
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        input.placeholderString = "https://example.com/audio.mp3"
-        alert.accessoryView = input
-        if alert.runModal() == .alertFirstButtonReturn {
-            let urlString = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let url = URL(string: urlString) {
-                WindowManager.shared.audioEngine.loadFiles([url])
-                needsDisplay = true
-            }
-        }
+    @objc func addURL(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptAddURL() { needsDisplay = true }
     }
     
-    @objc private func addDirectory(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: false) { [weak self] audioURLs in
-                guard !audioURLs.isEmpty else { return }
-                WindowManager.shared.audioEngine.loadFiles(audioURLs)
-                self?.needsDisplay = true
-            }
-        }
+    @objc func addDirectory(_ sender: Any?) {
+        PlaylistMenuBuilder.promptAddDirectory { [weak self] in self?.needsDisplay = true }
     }
     
-    @objc private func addFiles(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.audio, .movie]
-        if panel.runModal() == .OK {
-            WindowManager.shared.audioEngine.loadFiles(panel.urls)
-            needsDisplay = true
-        }
+    @objc func addFiles(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptAddFiles() { needsDisplay = true }
     }
     
     @objc func removeAll(_ sender: Any?) {
@@ -1291,40 +1175,12 @@ class ModernPlaylistView: NSView {
         PlaylistMenuBuilder.showFileInfo(forTrackAt: index)
     }
     
-    @objc private func newPlaylist(_ sender: Any?) {
-        removeAll(sender)
+    @objc func savePlaylist(_ sender: Any?) {
+        PlaylistMenuBuilder.promptSaveQueue()
     }
     
-    @objc private func savePlaylist(_ sender: Any?) {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!]
-        panel.nameFieldStringValue = "playlist.m3u"
-        if panel.runModal() == .OK, let url = panel.url {
-            let tracks = WindowManager.shared.audioEngine.playlist
-            var content = "#EXTM3U\n"
-            for track in tracks {
-                let duration = Int(track.duration ?? 0)
-                content += "#EXTINF:\(duration),\(track.displayTitle)\n"
-                content += "\(track.url.path)\n"
-            }
-            try? content.write(to: url, atomically: true, encoding: .utf8)
-        }
-    }
-    
-    @objc private func loadPlaylist(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.init(filenameExtension: "m3u")!, .init(filenameExtension: "m3u8")!]
-        if panel.runModal() == .OK, let url = panel.url {
-            // `Playlist.resolveEntry` rather than a local `URL(string:)` test: that initialiser
-            // accepts a bare filename and returns a schemeless URL, so the relative branch here
-            // was dead code and every relative entry loaded as something unplayable.
-            let urls = Playlist.load(from: url)?.trackURLs ?? []
-            if !urls.isEmpty {
-                WindowManager.shared.audioEngine.clearPlaylist()
-                WindowManager.shared.audioEngine.loadFiles(urls)
-                needsDisplay = true
-            }
-        }
+    @objc func loadPlaylist(_ sender: Any?) {
+        if PlaylistMenuBuilder.promptLoadPlaylist() { needsDisplay = true }
     }
     
     // MARK: - Drag and Drop
@@ -1451,4 +1307,4 @@ class ModernPlaylistView: NSView {
     }
 }
 
-extension ModernPlaylistView: PlaylistMenuTarget {}
+extension ModernPlaylistView: PlaylistFileCommands {}

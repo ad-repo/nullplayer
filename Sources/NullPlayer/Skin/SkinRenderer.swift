@@ -2441,12 +2441,9 @@ class SkinRenderer {
     
     // MARK: - Playlist Window
     
-    /// Playlist button types
+    /// Playlist button types; the bottom bar's are gone, so the close box is the only one left.
     enum PlaylistButtonType {
-        case add, rem, sel, misc, list
         case close
-        // Mini transport controls (existing in skin sprites)
-        case miniPrevious, miniPlay, miniPause, miniStop, miniNext, miniOpen
     }
     
     /// Draw the complete playlist window using skin sprites

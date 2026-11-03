@@ -20,6 +20,14 @@
 - **`--cli --source radio --station <name>` plays the station** instead of crashing at once with no
   output.
 
+### Playlist
+
+- **The Classic and Original playlists' right-click has Add ▸ and Playlist ▸.** Add URL, Add
+  Directory, Add Files, and New, Save and Load Playlist lived on the playlist's ADD / LIST bar,
+  which neither playlist draws any more.
+- **Save Playlist keeps a stream's full URL** in the `.m3u`. It wrote the URL's path, which did not
+  play when loaded back.
+
 ## 0.34.1
 
 ### Casting and the CLI
