@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import NullPlayerCore
-import UniformTypeIdentifiers
 
 /// The four Winamp host-action families a `.wal` skin puts on a toolbar button — `VIS_*`, `PE_*`,
 /// `VID_*` and `CB_*` (backlog B5).
@@ -522,8 +521,6 @@ extension WinampModernMainView {
 
     // MARK: - PE_* — the playlist editor's five menus
 
-    private var engine: AudioEngine { WindowManager.shared.audioEngine }
-
     /// `PE_ADD`.
     private func showPlaylistAddMenu(from object: WasabiObject?) {
         let menu = NSMenu(title: "Add")
@@ -604,11 +601,12 @@ extension WinampModernMainView {
     private func showPlaylistListMenu(from object: WasabiObject?) {
         let menu = NSMenu(title: "List")
         menu.autoenablesItems = false
-        for (title, selector) in [("New Playlist", #selector(playlistNew(_:))),
-                                  ("Load Playlist...", #selector(playlistLoad(_:))),
-                                  ("Save Playlist...", #selector(playlistSave(_:)))] {
+        for (title, selector, target) in
+            [("New Playlist", #selector(PlaylistMenuTarget.removeAll(_:)), playlistMenuTarget as AnyObject),
+             ("Load Playlist...", #selector(playlistLoad(_:)), self),
+             ("Save Playlist...", #selector(playlistSave(_:)), self)] {
             let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = self
+            item.target = target
             menu.addItem(item)
         }
         popUpMenu(menu, from: object)
@@ -622,81 +620,26 @@ extension WinampModernMainView {
         needsDisplay = true
     }
 
-    // MARK: PE_ADD
+    // MARK: PE_ADD and PE_LIST — the bodies are the Classic and Original playlists' own
 
     @objc private func playlistAddFiles(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = true
-        panel.allowedContentTypes = [.audio, .movie]
-        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
-        engine.loadFiles(panel.urls)
-        playlistDidChange()
+        if PlaylistMenuBuilder.promptAddFiles() { playlistDidChange() }
     }
 
     @objc private func playlistAddDirectory(_ sender: Any?) {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        LocalFileDiscovery.discoverMediaURLsAsync(from: [url], includeVideo: true) { [weak self] urls in
-            guard let self, !urls.isEmpty else { return }
-            self.engine.loadFiles(urls)
-            self.playlistDidChange()
-        }
+        PlaylistMenuBuilder.promptAddDirectory { [weak self] in self?.playlistDidChange() }
     }
 
     @objc private func playlistAddURL(_ sender: Any?) {
-        let alert = NSAlert()
-        alert.messageText = "Add URL"
-        alert.informativeText = "Enter the URL of the media file:"
-        alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        input.placeholderString = "https://example.com/audio.mp3"
-        alert.accessoryView = input
-        guard alert.runModal() == .alertFirstButtonReturn,
-              let url = URL(string: input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
-        else { return }
-        engine.loadFiles([url])
-        playlistDidChange()
-    }
-
-    // MARK: PE_LIST
-
-    @objc private func playlistNew(_ sender: Any?) {
-        playlistMenuTarget.removeAll(sender)
+        if PlaylistMenuBuilder.promptAddURL() { playlistDidChange() }
     }
 
     @objc private func playlistSave(_ sender: Any?) {
-        guard let type = UTType(filenameExtension: "m3u") else { return }
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [type]
-        panel.nameFieldStringValue = "playlist.m3u"
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        var content = "#EXTM3U\n"
-        for track in engine.playlist {
-            content += "#EXTINF:\(Int(track.duration ?? 0)),\(track.displayTitle)\n"
-            content += "\(track.url.isFileURL ? track.url.path : track.url.absoluteString)\n"
-        }
-        try? content.write(to: url, atomically: true, encoding: .utf8)
+        PlaylistMenuBuilder.promptSaveQueue()
     }
 
     @objc private func playlistLoad(_ sender: Any?) {
-        let types = ["m3u", "m3u8"].compactMap { UTType(filenameExtension: $0) }
-        guard !types.isEmpty else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = types
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        // A relative entry is relative to the playlist's own folder, which is how every .m3u
-        // written next to its music is spelled. Shared with every other loader so there is one
-        // answer to what an entry means; this one's guard was already right, so nothing moves.
-        let urls = Playlist.load(from: url)?.trackURLs ?? []
-        guard !urls.isEmpty else { return }
-        engine.loadFiles(urls)
-        playlistDidChange()
+        if PlaylistMenuBuilder.promptLoadPlaylist() { playlistDidChange() }
     }
 
     // MARK: - VID_* — the video window
