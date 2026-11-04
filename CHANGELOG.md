@@ -76,6 +76,9 @@
   crossfade left the sound off while the clock kept running, until another track was picked.
 - **Pausing during a crossfade pauses both tracks.** The incoming track kept playing and finished
   its fade while the player showed paused.
+- **Seeking a paused stream near its end moves the sound, not just the clock.** On a Plex, Jellyfin,
+  Emby or Subsonic stream paused in its last seconds, a seek back showed the new position but the
+  track played on from where it was paused and ended a few seconds after resume.
 
 ### Winamp Modern skins
 

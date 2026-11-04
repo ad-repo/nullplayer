@@ -176,8 +176,12 @@ class StreamingAudioPlayer {
     
     /// Current playback time in seconds
     var currentTime: TimeInterval {
-        player.progress
+        pausedSeekTime ?? player.progress
     }
+
+    /// A seek made while paused, applied on resume: AudioStreaming drops it once the download has
+    /// reached EOF (M73; `audio-system` § "A seek while paused is held until resume").
+    private var pausedSeekTime: TimeInterval?
     
     /// Total duration in seconds
     var duration: TimeInterval {
@@ -335,6 +339,7 @@ class StreamingAudioPlayer {
         hasReportedFormat = false  // Reset for new track
         _hasQueuedTrack = false     // Clear any previous queue state
         bpmDetector.reset()         // Reset BPM for new track
+        pausedSeekTime = nil
         player.play(url: url)
     }
     
@@ -346,10 +351,16 @@ class StreamingAudioPlayer {
     /// Resume playback
     func resume() {
         player.resume()
+        if let time = pausedSeekTime {
+            pausedSeekTime = nil
+            NSLog("StreamingAudioPlayer: Applying seek held while paused: %.2f", time)
+            player.seek(to: time)
+        }
     }
-    
+
     /// Stop playback
     func stop() {
+        pausedSeekTime = nil
         player.stop()
         _hasQueuedTrack = false  // Queue is cleared on stop
         clearSpectrum()
@@ -365,7 +376,11 @@ class StreamingAudioPlayer {
             NSLog("StreamingAudioPlayer: Cannot seek - player is in error state")
             return
         }
-        
+
+        if state == .paused {
+            pausedSeekTime = time
+            return
+        }
         player.seek(to: time)
     }
     
