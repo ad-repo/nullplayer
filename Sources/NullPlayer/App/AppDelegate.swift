@@ -492,7 +492,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         aboutPanel.makeKeyAndOrderFront(nil)
     }
 
-    @objc func checkForUpdates() {
+    @MainActor @objc func checkForUpdates() {
         UpdateChecker.checkNow()
     }
 
