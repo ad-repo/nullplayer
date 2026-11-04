@@ -183,6 +183,42 @@ final class WinampModernPhase62Tests: XCTestCase {
         XCTAssertEqual(WasabiFrame.position(of: divider), 158)
     }
 
+    /// B358: a stored `0` is the collapsed side, below `minwidth` on purpose. Clamped up to 158, cPro-
+    /// Bento's closed side view reopened at every launch, and the engine then reopened Media Library.
+    func testAStoredClosedSideStaysClosed() throws {
+        let loaded = try makeSkin(layout: Self.splitter)
+        WinampModernSkinState.setFramePosition(0, container: "main", frame: "split", in: loaded.configuration)
+        let renderer = try makeRenderer(loadedSkin: loaded)
+        let divider = try XCTUnwrap(renderer.persistableFrames().first?.object)
+        renderer.restorePersistedFramePositions()
+        XCTAssertEqual(WasabiFrame.position(of: divider), 0)
+    }
+
+    /// B358: a script's `setPosition` is the author's layout while the skin loads and the user's
+    /// answer once it has settled — cPro-Bento closing its side view as the Playlist tab opens.
+    func testAScriptPositionIsStoredOnlyOnceTheLoadHasSettled() throws {
+        let loaded = try makeSkin(layout: Self.splitter)
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { runtime.teardown() }
+        let divider = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "split").first)
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
+                                  instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/test.maki"),
+                                  ownerID: nil, parameter: nil)
+        func setPosition(_ value: Int32) throws {
+            _ = try runtime.invoke(method: "setposition", on: MakiObjectReference(.gui(divider.stableID)),
+                                   arguments: [.integer(value)], program: program)
+        }
+        func stored() -> Double? {
+            WinampModernSkinState.framePosition(container: "main", frame: "split", in: loaded.configuration)
+        }
+
+        try setPosition(180)
+        XCTAssertNil(stored(), "at load it is the author's opening layout")
+        runtime.loadHasSettled = true
+        try setPosition(0)
+        XCTAssertEqual(stored(), 0)
+    }
+
     /// A horizontal splitter is stored and restored on its own axis — ClassicPro's `centro.plframe`,
     /// which spells its bounds `minwidth`/`maxwidth` in either orientation.
     func testAHorizontalSplitterRoundTripsOnItsOwnAxis() throws {

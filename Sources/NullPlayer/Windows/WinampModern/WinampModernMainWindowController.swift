@@ -1219,6 +1219,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
             guard let self else { return }
             reassertPersistedFramePositions()
+            skinView?.scripts.loadHasSettled = true
             // Tell every window's script where its window ended up, once the load has settled (B110).
             //
             // A skin that draws one window's chrome in a second window only ever moves the frame from

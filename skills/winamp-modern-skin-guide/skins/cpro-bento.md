@@ -96,6 +96,23 @@ synthesized and nothing left to the classic fallback.
   `centro.plframe` horizontal), and the mini view opens and closes.
 - Transport, volume, mute, the kbps/kHz/stereo readouts, the clock, the menu bar, the drawer, the
   embedded library browser, the embedded EQ, and the colour themes.
+- **Playlist search results** (B357). `PlaylistPro.m` places the `searchresults` container at
+  `fakeSB.clientToScreenX(fakeSB.getLeft())` / `clientToScreenY(top + height)` — a screen point, so
+  the dropdown opens under the search box only now that `clientToScreen*` answers screen space. Its
+  rows are `i+1 ". " + PlEdit.getTitle(i)`, and `getTitle` answers the drawn "Artist - Title".
+- **The side view stays as the user left it** (B358). The engine closes it with
+  `setMainFrame(false)` → `mainFrame.setPosition(0)` when the Playlist tab opens and, at load, hides
+  `area_right` when `getPosition() == 0`; opening the side view again on the playlist tab switches to
+  Media Library ("don't want two playlists", `CentroSUI.m`). So the script's 0 is stored after the
+  load settles, a stored 0 is restored unclamped, and a host reveal of a tab during the session
+  restore does not reselect Playlist.
+- **File size in the file-info line** (B359): `fileinfo.m` asks
+  `System.getFileSize(strmid(getPlayItemString(), 7, len-7))`, the playing path with `file://`
+  dropped; only that file is answered.
+- **The playlist time readout** (B360) sits in the Playlist tab's status row, which the tab's
+  right-click **Show Status Bar** hides — with it off the list runs to the seek bar and the readout
+  "is missing". A queue with a stream in it ends in `+`. In the side view it is a ticker in a ~35px
+  box (`w="-159" relatw`).
 - **The script-built menus placed at a computed point** (`popAtXY`, 6 call sites, with
   `clientToScreenX/Y` behind it). Right-clicking a tab opens its `Show Status Bar` menu under the tab
   — measured with `RENDER_CLICK`, which prints the point the menu is placed at

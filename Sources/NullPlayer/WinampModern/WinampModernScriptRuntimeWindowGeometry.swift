@@ -124,14 +124,14 @@ extension WinampModernScriptRuntime {
     }
 
     /// What `getLeft()`/`getTop()` answer for this object right now, in whatever space they answer
-    /// in — the host's desktop origin for a container, the layout's own canvas origin (usually 0) for
-    /// a layout. **The only place that answer is worked out**, so the round trip
-    /// `applyContainerGeometry` recognises compares against the very integers the script was handed:
-    /// a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
+    /// in — the host's desktop origin for a container or layout (each is a window in Wasabi, and
+    /// multipass compares its layout's origin with the screen-space cursor), the declared or
+    /// resolved one when no host answers. **The only place that answer is worked out**, so the round
+    /// trip `applyContainerGeometry` recognises compares against the very integers the script was
+    /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
     func reportedOrigin(of object: WasabiObject) -> CGPoint {
         let isWindow = Self.isWindowObject(object)
-        if isWindow, object.tag.is(.container),
-           let origin = windowOrigin(of: object) {
+        if isWindow, let origin = windowOrigin(of: object) {
             return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         }
         // A window's own `x`/`y`, truncated as Wasabi reads them; anything else, or a window that

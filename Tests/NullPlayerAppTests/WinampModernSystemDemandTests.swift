@@ -69,6 +69,26 @@ final class WinampModernSystemDemandTests: XCTestCase {
         XCTAssertEqual(requests, ["MINIMIZE", "CLOSE", "restore", "activate", "windowmenu", "eq true", "eq false"])
     }
 
+    /// B359: `getFileSize` answers the playing local file's size, also for the tail ClassicPro asks
+    /// with (`strmid(getPlayItemString(), 7, …)`), and `0` for any path the host never handed out.
+    func testGetFileSizeAnswersOnlyThePlayingFile() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("b359-\(UUID()).mp3")
+        try Data(count: 4096).write(to: url)
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let host = TransportHost()
+        host.trackPath = url.path
+        let (runtime, program) = try makeRuntime(host: host)
+        func size(_ path: String) throws -> Int32 {
+            try system(runtime, program, "getFileSize", [.string(path)]).integerValue
+        }
+        XCTAssertEqual(try size(url.path), 4096)
+        XCTAssertEqual(try size(String(url.path.dropFirst(7))), 4096)
+        XCTAssertEqual(try size("/etc/hosts"), 0, "a path the host never handed out")
+        XCTAssertEqual(try size(""), 0)
+        host.trackPath = "http://radio.example/stream"
+        XCTAssertEqual(try size("dio.example/stream"), 0, "a stream has no file")
+    }
+
     /// B183: the stock notifier's "only when minimized" modes read `isMinimized`, which answered false.
     func testIsMinimizedAsksTheHost() throws {
         let (runtime, program) = try makeRuntime()

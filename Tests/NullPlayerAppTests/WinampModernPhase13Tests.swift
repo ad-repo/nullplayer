@@ -1108,6 +1108,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(snapshot([61]).infoLine, "0:00/1:01")
         XCTAssertEqual(snapshot([3600, 61], selected: 1).infoLine, "1:01/1:01:01")
         XCTAssertEqual(snapshot([205, 60, 40], selected: 0, rows: [0, 2]).infoLine, "4:05/5:05")
+        XCTAssertEqual(snapshot([61, 0]).infoLine, "0:00/1:01+", "B360: a length not read yet")
         XCTAssertEqual(snapshot([0, 0]).trackCount, 2)
         XCTAssertEqual(snapshot([10, 20]).totalDuration, 30)
     }

@@ -232,13 +232,15 @@ struct WinampModernPlaylistSnapshot: Equatable {
     ///
     /// Settled by MultiButtons_v0.02's `screenshot.png` (B291): its `PE_Info` reads `3:25/43:40+`
     /// with one row selected, and 3:25 is that row's length. Defix reads token 1 of a `/` split as
-    /// its `Time:` readout, which is the total in either form. Not evidenced, so not drawn: the
-    /// trailing `+` (probably "some lengths unknown") and what Winamp shows with nothing selected —
-    /// the sum of no rows, `0:00`, here.
+    /// its `Time:` readout, which is the total in either form. The trailing `+` marks a total that
+    /// leaves out a row whose length is unknown (B360: Bento under Winamp shows `25:xx:xx+` while
+    /// lengths are still being read). Not evidenced, so not drawn: what Winamp shows with nothing
+    /// selected — the sum of no rows, `0:00`, here.
     var infoLine: String {
         let selected = selectedRows.union(selectedIndex >= 0 ? [selectedIndex] : [])
             .reduce(0.0) { $0 + (rows.indices.contains($1) ? rows[$1].duration : 0) }
-        return "\(Self.clock(selected))/\(Self.clock(totalDuration))"
+        let partial = rows.contains { $0.duration <= 0 } ? "+" : ""
+        return "\(Self.clock(selected))/\(Self.clock(totalDuration))\(partial)"
     }
 
     private static func clock(_ duration: TimeInterval) -> String {

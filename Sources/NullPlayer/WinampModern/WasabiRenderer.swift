@@ -1663,15 +1663,17 @@ final class WasabiSceneRenderer {
             // be out of bounds today.
             let extent = WasabiFrame.isVerticalDivider(frame.object) ? frame.frame.width
                                                                      : frame.frame.height
-            let clamped = WasabiFrame.clampedPosition(stored, extent: extent, object: frame.object)
+            // `0` is the collapsed side, not a width: ClassicPro closes its side view with
+            // `setPosition(0)` below its own `minwidth`, and clamping it reopened the view (B358).
+            let clamped = stored == 0 ? 0 : WasabiFrame.clampedPosition(stored, extent: extent, object: frame.object)
             moved = WasabiFrame.setPosition(clamped, on: frame.object) || moved
         }
         return moved
     }
 
-    /// Remember where the user left a divider (B44). Only a **drag** calls this: a script moving its
-    /// own splitter is the skin's default speaking, and storing that would freeze the author's opening
-    /// layout into a preference the user never expressed.
+    /// Remember where the user left a divider (B44). A drag calls this; a script's own `setPosition`
+    /// is stored only once the load has settled (`loadHasSettled`, B358), so the
+    /// author's opening layout never becomes a preference the user did not express.
     func persistFramePosition(of object: WasabiObject) {
         guard let containerID = container.xmlID,
               let id = object.xmlID, !id.isEmpty else { return }

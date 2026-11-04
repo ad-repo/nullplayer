@@ -716,8 +716,12 @@ final class WinampModernMainView: NSView {
         scripts.hooks.focusRequested = { [weak self] object in self?.focusEdit(object) }
         scripts.hooks.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
         scripts.hooks.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
+        // Screen space, the one window origins and `clientToScreen*` answer in: top-left points on
+        // the player's display (`winampScreenOrigin`).
         scripts.hooks.mousePositionRequested = { [weak self] in
-            self?.currentMousePositionInSkinPixels() ?? .zero
+            guard let screen = self?.window?.screen ?? NSScreen.main else { return .zero }
+            let mouse = NSEvent.mouseLocation
+            return CGPoint(x: mouse.x - screen.frame.minX, y: screen.frame.maxY - mouse.y)
         }
         scripts.hooks.equalizerEnabledRequested = { [weak self] in
             self?.componentHost?.equalizerSnapshot().enabled ?? false
@@ -2771,8 +2775,8 @@ final class WinampModernMainView: NSView {
     /// `popAtMouse` is synchronous in MAKI — the script reads the answer on the next line — and
     /// `NSMenu.popUp` runs its own tracking loop, so the call blocks here exactly as the skin
     /// expects. The menu is built from the resolved tree, so submenus nest.
-    /// `point` is `popAtXY`'s: window-client space, top-left origin, unscaled — the inverse of
-    /// `skinPoint`. `nil` is `popAtMouse`.
+    /// `point` is `popAtXY`'s: screen space, top-left origin on the window's display — what
+    /// `clientToScreen*` answers (B357). `nil` is `popAtMouse`.
     /// The `<Menu>` entry whose menu is on screen right now, so hover does not steal its `down`
     /// state back while it is open.
     private var openMenuObject: WasabiObject?
@@ -2846,8 +2850,10 @@ final class WinampModernMainView: NSView {
         let menu = build(popupMenu: items, target: target)
         guard menu.numberOfItems > 0 else { return WinampModernScriptRuntime.popupDismissed }
         let location: NSPoint?
-        if let point {
-            location = NSPoint(x: point.x * skinScale, y: bounds.height - point.y * skinScale)
+        if let point, let window, let screen = window.screen ?? NSScreen.main {
+            // Screen space, top-left origin on the window's display, as `clientToScreen*` answers.
+            let global = NSPoint(x: screen.frame.minX + point.x, y: screen.frame.maxY - point.y)
+            location = convert(window.convertPoint(fromScreen: global), from: nil)
         } else {
             location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }
         }

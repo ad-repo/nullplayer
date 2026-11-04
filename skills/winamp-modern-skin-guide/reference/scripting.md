@@ -316,8 +316,8 @@ A `Map` is a bitmap the script samples rather than draws: `getValue(x, y)` retur
 a point (MMD3's `map.png` is a 44×44 grayscale sweep of the knob's angle) and `inRegion(x, y)` says
 whether the point is on the control. `new Map` and `new Timer` produce the same kind of dynamic
 object — class GUIDs are not in the archive — so an object becomes a map on its first `loadMap`.
-Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression, so the cursor
-position is reported in **skin pixels**, not screen points; UI Size never enters the script's world.
+Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression; the cursor is in
+screen space (*The screen model moves whole*, below), so only its differences are meaningful there.
 
 **The two are not the same space, and that is why the expression exists.** `getMousePos*` is the
 window's canvas; a mouse event's x/y are relative to the **receiver's parent** — the same origin
@@ -350,13 +350,18 @@ layout-level knob script reaches its knobs through a plain nested group and subt
 it, so the layout point put every press 113px off the knob's map. A **plain** group stays the space
 whoever listens; a widget's own script still hears the widget's space.
 
-**`System.getMousePos*` is the window's canvas, not the desktop — and stays so.** Winamp answers in
-screen space, but so do its `clientToScreen*`, viewport and layout `getLeft()`, and here all of those
-answer in the canvas; skins do arithmetic across them. multipass opens its drawers on
-`getMousePosX() >= layoutMainNormal.getLeft()` and friends: measured live 2026-09-28 with a
-screen-space cursor, the drawers stayed shut on hover and opened with the pointer in the screen's
-top-left corner (B123, archived). Only desktop-snap emulation wants true screen space, and those
-windows are suppressed. Moving the cursor alone is wrong; move the whole "screen" model or nothing.
+**The screen model moves whole (B357, 2026-11-03).** `System.getMousePos*`, `clientToScreen*` /
+`screenToClient*`, the viewport, `popAtXY` and a hosted container's **or layout's** `getLeft()`/
+`getTop()` all answer in screen space — top-left points on the player's display
+(`winampScreenOrigin`) — because skins do arithmetic across them. Moving one alone breaks the rest:
+B123 (archived) measured multipass's drawers inverting with only the cursor moved, and B357's first
+cut moved only `clientToScreen*`, which left Xenon's tray-close test (`getMousePosX()` against
+`d2.clientToScreenX(…)`) reading 278 against 762. A knob that subtracts a mouse event's x from
+`getMousePosX()` (mmd3) uses only cursor differences, so the origin cancels. The one script that adds
+a layout's origin to an *in-canvas* position — multipass's `newGroupAsLayout` colour-themes group,
+`resize(layoutMainNormal.getLeft() + 54, …)` — is a real window in Wasabi and an overlay here, so
+that group's `resize` takes the owner window's origin back out (`floatedGroups`). With no host (the
+harness) a layout still answers its declared or resolved origin.
 
 A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
 size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
@@ -885,7 +890,8 @@ in **reverse**, so `arguments[0]` is the first declared argument.
 **Skin-supplied paths: `enqueueFile` / `playFile`.** These two are the only methods on this seam
 that take a value the *skin* chose rather than one the host handed out, so they were a sandbox policy
 question rather than an arity one (B21). The policy grants **ingest, not enumeration**: `findFiles`
-still answers `-1` and `getFileSize` still `0`, so a script has no way to *discover* a path — only to
+still answers `-1` and `getFileSize` answers only for the playing local file (B359, ClassicPro's
+`fileinfo.m` asks with `strmid(getPlayItemString(), 7, …)`, `0` otherwise), so a script has no way to *discover* a path — only to
 hand back one it was given (`PlEdit.getFileName`, `System.getPlayItemMetaDataString("filename")`, or
 one it saved into a private string), or one the skin's author or the user typed. Both real callers
 are exactly that: T800's five memory slots save the playing item and play it back, and Big Bento's

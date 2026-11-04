@@ -41,6 +41,14 @@ extension WinampModernScriptRuntime {
             if WasabiFrame.isFrame(call.object.tag) {
                 guard WasabiFrame.setPosition(Double(call.arguments[0].integerValue),
                                               on: call.object) else { return .null }
+                if runtime.loadHasSettled, WinampModernScriptRuntime.scriptFramePositionsPersist,
+                   let id = call.object.xmlID, !id.isEmpty,
+                   let containerID = sequence(first: call.object, next: \.parent)
+                       .first(where: { $0.tag.is(.container) })?.xmlID {
+                    WinampModernSkinState.setFramePosition(WasabiFrame.position(of: call.object),
+                                                           container: containerID, frame: id,
+                                                           in: runtime.loadedSkin.configuration)
+                }
                 runtime.noteGeometryChange()
                 runtime.notifyGraphDidMutate()
                 _ = try runtime.dispatch(object: call.object, event: "onsetposition", arguments: [call.arguments[0]])

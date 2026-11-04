@@ -95,9 +95,12 @@ extension WinampModernScriptRuntime {
             .integer(Int32(clamping: Int64(runtime.playlistSnapshot.trackCount)))
         }
         // The entry's display title — the same string the skin's own playlist draws, so a script that
-        // builds a menu from it (ClassicPro's Quick Playlist) cannot disagree with the list beside it.
+        // builds a menu from it (ClassicPro's Quick Playlist, its search results) cannot disagree with
+        // the list beside it: `Artist - Title` unless Show Artist is off (B357).
         table.add("gettitle", 1, on: MakiClassGUID.playlistEditor) { runtime, call in
-            .string(runtime.playlistRow(Int(call.arguments[0].integerValue))?.title ?? "")
+            guard let row = runtime.playlistRow(Int(call.arguments[0].integerValue)) else { return .string("") }
+            return .string(PlaylistRowFields.current.text(title: row.title, artist: row.artist,
+                                                          album: row.album, isVideo: row.isVideo))
         }
         // A *string*, not a number: ClassicPro tests it against `""` before appending it in brackets,
         // and writes it straight into a text object. An unknown duration is empty, which is exactly

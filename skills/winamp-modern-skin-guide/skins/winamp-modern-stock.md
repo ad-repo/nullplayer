@@ -40,7 +40,7 @@ all three pieces in one routine — called from `onResize`, `onTextChanged` and 
 every position is derived from the centred title:
 
 ```
-titleX  = layout.clientToScreenX((layoutW − title.getAutoWidth()) / 2)   // → window-client space
+titleX  = layout.clientToScreenX((layoutW − title.getAutoWidth()) / 2)   // → screen space
 titleX  = titlebargroup.screenToClientX(titleX) − titlebargroup.getLeft() // → group-local
 title.x = titleX                       streakLeft.x  = padTitleLeft
 streakLeft.w  = titleX − padTitleLeft  streakRight.x = titleX + titleW + 1

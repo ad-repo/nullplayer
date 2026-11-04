@@ -219,9 +219,10 @@ enum WinampModernContainerTopology {
     /// They were harmless while dynamic containers were inert (B101 recorded the decision to leave
     /// them so); B110 made `newDynamicContainer` build real windows, and both promptly opened — the
     /// shadow unplaced in a screen corner and the snap preview across half the desktop, because
-    /// `System.getMousePosX` answers in the window's canvas space and reads as "at the left edge"
-    /// whenever the pointer is left of the player. The suppression is the decision, not a workaround
-    /// for that: macOS draws the window shadow itself and has no Aero-snap for the preview to promise.
+    /// `System.getMousePosX` then answered in the window's canvas space and read as "at the left
+    /// edge" whenever the pointer was left of the player (screen space since B357). The suppression is
+    /// the decision either way: macOS draws the window shadow itself and has no Aero-snap for the
+    /// preview to promise.
     ///
     /// Matched on the id's last dotted component, which is the only name Wasabi gives these — there
     /// is no component GUID for a shadow. Measured across the 69-skin corpus 2026-09-04: `aerosnap`

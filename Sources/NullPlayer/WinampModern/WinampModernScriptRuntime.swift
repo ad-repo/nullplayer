@@ -192,6 +192,20 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// `area_right.onResize` to swap the close button for the **open** one — which ships `visible="0"`.
     /// Without this, closing the playlist hid the only control that could bring it back.
     var geometryDidSettle: (() -> Void)?
+    /// Set once the load has settled (the window controller's frame re-assert). Before it the skin
+    /// is restoring itself, after it everything answers the user (B358):
+    /// - a script's `setPosition` on a `<Wasabi:Frame>` is stored like a drag — cPro-Bento closes its
+    ///   side view so when the Playlist tab opens, and reads `getPosition() == 0` at the next load to
+    ///   keep it closed. Before it, a position is the author's opening layout (B44);
+    /// - a host reveal of a ClassicPro tab already in the strip selects it. Before it, the reveal is
+    ///   the session restore, which the strip has already done for itself.
+    var loadHasSettled = false
+    /// The A/B switch for B358: `WINAMP_MODERN_FRAME_SCRIPT_PERSIST=0` stores drags only again.
+    static let scriptFramePositionsPersist =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_FRAME_SCRIPT_PERSIST"] != "0"
+    /// Groups `newGroupAsLayout` made. Wasabi gives each a window of its own, so a script places one
+    /// in screen space; here it is an overlay in its owner's canvas, and `resize` converts.
+    var floatedGroups: Set<WasabiObjectID> = []
 
     private struct ScriptEventKey: Hashable {
         let target: MakiObjectReference.Kind

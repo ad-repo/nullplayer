@@ -459,9 +459,17 @@ extension WinampModernScriptRuntime {
     static let guiStateMethods: MakiMethodTable<WasabiObject> = {
         var table = MakiMethodTable<WasabiObject>()
         table.add("resize", 4) { runtime, call in
-            let borrowed = runtime.borrowedWindowOrigin(x: Double(call.arguments[0].integerValue),
-                                                        y: Double(call.arguments[1].integerValue), writtenOn: call.object)
-            runtime.writeGeometry(Array(zip(["x", "y", "w", "h"], call.arguments.map { String($0.integerValue) })),
+            var values = call.arguments.map { Int($0.integerValue) }
+            // A floated group's point is screen space; its owner window's origin takes it back to the
+            // canvas it is drawn in. Unscaled, as multipass's own "scale syncing problem" note expects.
+            if runtime.floatedGroups.contains(call.object.stableID),
+               let origin = runtime.enclosingWindowID(of: call.object).flatMap({ runtime.containerOriginQuery?($0) }) {
+                values[0] -= Int(origin.x.rounded())
+                values[1] -= Int(origin.y.rounded())
+            }
+            let borrowed = runtime.borrowedWindowOrigin(x: Double(values[0]), y: Double(values[1]),
+                                                        writtenOn: call.object)
+            runtime.writeGeometry(Array(zip(["x", "y", "w", "h"], values.map(String.init))),
                                   on: call.object, borrowed: borrowed)
             return .null
         }
@@ -582,13 +590,10 @@ extension WinampModernScriptRuntime {
         // `resize(getLeft(), getTop(), w, h)`, read a stale 0 for a window the user had moved, and
         // threw the player into the top-left corner of the monitor (B61).
         //
-        // A `<layout>` is deliberately **not** asked, and answers its own canvas origin as before.
-        // Wasabi calls it a window, but here it is the space every object inside it is laid out in,
-        // and skins do arithmetic across that boundary: multipass positions its drawers from
-        // `layoutMainNormal.getLeft()`, and adding the desktop origin there moved every drawer and
-        // its hover region off the artwork it belongs to. The read-back-and-write-it-again idiom
-        // that made this look necessary is handled on the **write** instead — see
-        // `applyContainerGeometry`.
+        // A `<layout>` is asked the same way: it is a window in Wasabi, and its origin is compared
+        // with the screen-space cursor and `clientToScreen*` (multipass's drawer hover test). The
+        // one script that adds it to an in-canvas position, multipass's floated colour-themes group,
+        // is converted back on that group's `resize` (`floatedGroups`).
         //
         // **`getGui*` on a relative axis answers the markup, not the resolved box.** Wasabi's
         // `getGuiX/Y/W/H` are the object's own `x`/`y`/`w`/`h` parameters, with `relat*` beside

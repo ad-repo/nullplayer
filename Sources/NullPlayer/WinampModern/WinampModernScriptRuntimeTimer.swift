@@ -159,10 +159,10 @@ extension WinampModernScriptRuntime {
                   let y = Double(object.attributes["y"] ?? "") else { return }
             // **Writing back the position that was just read is not a move.** `resize(getLeft(),
             // getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and the
-            // two halves have to agree about the space they are in: `getLeft()`/`getTop()` on a
-            // layout answer its own canvas origin — 0 — so taking that 0 as a desktop coordinate
-            // parked the window in the corner of the monitor. Big Bento's side playlist does exactly
-            // this from `pledit.maki` every time the panel opens (B61).
+            // two halves have to agree about the space they are in: with no host answering, a
+            // layout's `getLeft()`/`getTop()` are its own canvas origin — 0 — and taking that 0 as a
+            // desktop coordinate parked the window in the corner of the monitor. Big Bento's side
+            // playlist does exactly this from `pledit.maki` every time the panel opens (B61).
             //
             // Only the *round trip* is recognised, not the value: a script that writes a position it
             // did not read — Big Bento's search-results popup places itself with a point it measured

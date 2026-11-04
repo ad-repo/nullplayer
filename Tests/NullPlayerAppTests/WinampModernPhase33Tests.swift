@@ -109,6 +109,22 @@ final class WinampModernPhase33Tests: XCTestCase {
         XCTAssertTrue(resizes.isEmpty, "a group's resize is graph state, not a window resize")
     }
 
+    /// B357: with a host, `layoutMainNormal.getLeft()` is the window's screen origin, so multipass's
+    /// `getLeft() + 54` arrives in screen space and the owner window's origin is taken back out.
+    func testAHostedResizeIsTakenBackOutOfTheOwnerWindowsOrigin() throws {
+        let (runtime, program) = try makeRuntime()
+        runtime.containerOriginQuery = { _ in CGPoint(x: 762, y: 293) }
+        let created = try unwrapObject(runtime.invoke(method: "newGroupAsLayout",
+                                                      on: MakiObjectReference(.system),
+                                                      arguments: [.string("floating.list")],
+                                                      program: program), in: runtime)
+        _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(created.stableID)),
+                               arguments: [.integer(762 + 54), .integer(293 + 217), .integer(164), .integer(78)],
+                               program: program)
+        XCTAssertEqual(created.attributes["x"], "54")
+        XCTAssertEqual(created.attributes["y"], "217")
+    }
+
     /// No `owner=`: the group lands on the calling script's own layout instead of nowhere.
     func testFallsBackToTheCallersLayoutWhenTheGroupdefNamesNoOwner() throws {
         let (runtime, _) = try makeRuntime()
