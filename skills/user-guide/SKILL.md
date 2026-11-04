@@ -49,6 +49,23 @@ up/down rocker, which elsewhere pages an open Playlist Editor; the drawer is the
 Equalizer menu item opens it instead of a separate window. The drawer's amp, balance and pitch knobs
 show the current preamp, balance and speed but cannot be turned. See `skills/sonique-skin-guide`.
 
+### AIMP skins
+
+**Skins > AIMP** wears AIMP skins: `.acs5` (AIMP 5), `.acs4` (AIMP 4), `.acs3` (AIMP 3) and `.acs` (AIMP 2). **Get More
+Skins...** opens the aimp.ru skin catalog; **Load Skin...** installs an `.acs5`, `.acs4`, `.acs3` or `.acs`, or
+every skin in a `.zip` (the catalog's downloads), and switches to it; **Open Skins Folder...** shows
+the installed copies; installed skins are listed in the same menu (A–Z submenus past 40). **Remove
+“name”...** deletes the installed copy. With no skin installed, a panel says how to load one.
+
+The skin's own windows open beside it as AIMP opens them: speakers, amplifiers, remotes, and a skin's
+own playlist and library windows, which the Playlist and Library menu items and keys open in place
+of NullPlayer's. Keys, knobs, sliders, the mouse wheel, the skin's scripts and its settings menus
+work as in AIMP; an AIMP action NullPlayer has no equivalent for does nothing. A skin's captions read
+in the Mac's language where the skin translates them, else in English. A skin that holds its
+playlist or library inside the player window shows it there; the keys that open it show and hide it
+in place. Not supported: AIMP's own dialogs (the DSP manager opens NullPlayer's equalizer, the
+options its menu, the colour picker nothing). See `skills/aimp-skin-guide`.
+
 ### Windows
 
 | Window | Description | Toggle |

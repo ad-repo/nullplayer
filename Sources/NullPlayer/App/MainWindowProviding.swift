@@ -166,3 +166,27 @@ protocol SkinDrawnEqualizer: MainWindowProviding {
 }
 
 extension SoniqueSkinMainWindowController: SkinDrawnEqualizer {}
+
+/// NullPlayer's playlist or library window, as a skin may draw its own of either.
+enum SkinDrawnList { case playlist, library }
+
+/// A main window whose skin may draw its own playlist or library window. Where the loaded skin
+/// does, `WindowManager` routes that window's show, toggle and visibility to it, so NullPlayer's
+/// never opens beside the skin's; where it does not, NullPlayer's opens as usual.
+protocol SkinDrawnLists: MainWindowProviding {
+    func drawsOwnWindow(_ list: SkinDrawnList) -> Bool
+    func isShowingOwnWindow(_ list: SkinDrawnList) -> Bool
+    /// `toggle` is an explicit toggle; false is a show.
+    func revealOwnWindow(_ list: SkinDrawnList, toggle: Bool)
+    /// Holds `open` until the first skin is up and returns true; false once it is. Until then
+    /// nothing says whether the skin draws the window (a launch restores the playlist before the
+    /// skin has loaded), so NullPlayer's would open and then close again.
+    func deferUntilSkinLoads(_ open: @escaping () -> Void) -> Bool
+}
+
+/// A main window whose skin opens extra top-level windows of its own (an AIMP skin's speakers,
+/// amplifier or playlist): they join the app's docking, snapping, minimize and z-order as snap
+/// targets beside the player. Asked with `as?`, as `SkinDrawnEqualizer` is.
+protocol SkinAuxiliaryWindows: MainWindowProviding {
+    var managedAuxiliaryWindows: [NSWindow] { get }
+}

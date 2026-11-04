@@ -434,6 +434,7 @@ class WindowManager {
         case is WMPMainWindowController: return .wmp
         case is AudionFaceMainWindowController: return .audion
         case is SoniqueSkinMainWindowController: return .sonique
+        case is AIMPSkinMainWindowController: return .aimp
         case is ModernMainWindowController: return .nullPlayerModern
         case is MainWindowController: return .classic
         default: return uiMode.controllerFamily
@@ -449,7 +450,7 @@ class WindowManager {
         case .nullPlayerModern: return .nullPlayerModern
         case .wmp: return .wmp
         // The shared controllers, as `.wmp`; their chrome comes from `hostedSurfaceStyle`.
-        case .audion, .sonique: return .wmp
+        case .audion, .sonique, .aimp: return .wmp
         }
     }
 
@@ -759,6 +760,9 @@ class WindowManager {
         // Not mode-dependent: Compact Mode's orphan sweep hides and restores it, as before it docked.
         add(equalizerStudioWindow, snapTarget: true, modeDependent: false)
         add(videoPlayerWindowController?.window, modeDependent: false)
+        for window in (mainWindowController as? SkinAuxiliaryWindows)?.managedAuxiliaryWindows ?? [] {
+            add(window, snapTarget: true)
+        }
 
         if uiMode.controllerFamily == .wmp,
            let controller = mainWindowController as? WMPMainWindowController {
@@ -1028,7 +1032,7 @@ class WindowManager {
             return (mainWindowController as? WinampModernMainWindowController)?.loadedSkinURL?.path
         case .wmp:
             return (mainWindowController as? WMPMainWindowController)?.loadedSkinURL?.path
-        case .audion, .sonique:
+        case .audion, .sonique, .aimp:
             return (mainWindowController as? any SingleCanvasMainWindow)?.loadedSkinURL?.path
         }
     }
@@ -1142,6 +1146,7 @@ class WindowManager {
         case .wmp: return WMPMainWindowController()
         case .audion: return AudionFaceMainWindowController()
         case .sonique: return SoniqueSkinMainWindowController()
+        case .aimp: return AIMPSkinMainWindowController()
         }
     }
     
@@ -1250,6 +1255,7 @@ class WindowManager {
         case .wmp: return wmpSurfaceStyle
         case .audion: return singleCanvasSurfaceStyle(AudionFaceMainWindowController.self)
         case .sonique: return singleCanvasSurfaceStyle(SoniqueSkinMainWindowController.self)
+        case .aimp: return singleCanvasSurfaceStyle(AIMPSkinMainWindowController.self)
         }
     }
 
@@ -1448,6 +1454,7 @@ class WindowManager {
         case .winampModern: return "wal"
         case .audion: return "audion"
         case .sonique: return "sonique"
+        case .aimp: return "aimp"
         case .wmp:
             guard let controller = mainWindowController as? WMPMainWindowController else { return nil }
             return MainActor.assumeIsolated { controller.hostedInteriorScope }
@@ -1827,6 +1834,43 @@ class WindowManager {
         return true
     }
 
+    /// A skin that draws its own playlist or library window (`SkinDrawnLists`) answers that
+    /// window's shows and toggles, so NullPlayer's never opens beside it.
+    private func routeSkinDrawnList(_ list: SkinDrawnList, toggle: Bool) -> Bool {
+        guard let controller = mainWindowController as? SkinDrawnLists, controller.drawsOwnWindow(list) else { return false }
+        controller.revealOwnWindow(list, toggle: toggle)
+        notifyMainWindowVisibilityChanged()
+        postLayoutChangeNotification()
+        return true
+    }
+
+    private func deferUntilSkinDrawnListsLoad(_ open: @escaping () -> Void) -> Bool {
+        (mainWindowController as? SkinDrawnLists)?.deferUntilSkinLoads(open) ?? false
+    }
+
+    private func skinDrawnListVisibility(_ list: SkinDrawnList) -> Bool? {
+        guard let controller = mainWindowController as? SkinDrawnLists, controller.drawsOwnWindow(list) else { return nil }
+        return controller.isShowingOwnWindow(list)
+    }
+
+    /// NullPlayer's own playlist or library window, whatever the skin draws. A `SkinDrawnLists`
+    /// family carries the user's choice between the skin's window and ours across a skin switch
+    /// with these, which the routed `isPlaylistVisible` / `togglePlaylist` cannot express.
+    func isNativeWindowVisible(_ list: SkinDrawnList) -> Bool {
+        switch list {
+        case .playlist: return playlistWindowController?.window?.isVisible == true
+        case .library: return plexBrowserWindowController?.window?.isVisible == true
+        }
+    }
+
+    func closeNativeWindow(_ list: SkinDrawnList) {
+        guard isNativeWindowVisible(list) else { return }
+        switch list {
+        case .playlist: classicTogglePlaylist()
+        case .library: classicTogglePlexBrowser()
+        }
+    }
+
     /// Whether the active `.wmz` skin owns this surface. Answers false in every other mode, so the
     /// menu asks one question rather than branching on the family.
     func wmpSkinProvides(_ surface: WMPSkinSurface) -> Bool {
@@ -2184,6 +2228,8 @@ class WindowManager {
     }
 
     func showPlaylist(at restoredFrame: NSRect? = nil) {
+        if deferUntilSkinDrawnListsLoad({ [weak self] in self?.showPlaylist(at: restoredFrame) }) { return }
+        if routeSkinDrawnList(.playlist, toggle: false) { return }
         if routeWinampModernSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
         if routeWMPSkinSurface(.playlist) { return }
         if deferWMPFallbackUntilSkinLoads({ [weak self] in self?.showPlaylist(at: restoredFrame) }) { return }
@@ -2227,6 +2273,7 @@ class WindowManager {
     }
 
     var isPlaylistVisible: Bool {
+        if let skinDrawn = skinDrawnListVisibility(.playlist) { return skinDrawn }
         if let coordinator = winampModernSurfaces, coordinator.handles(.playlist) {
             return coordinator.isSurfaceVisible(.playlist)
         }
@@ -2237,6 +2284,7 @@ class WindowManager {
     }
 
     func togglePlaylist() {
+        if routeSkinDrawnList(.playlist, toggle: true) { return }
         if routeWinampModernSurface(.playlist, toggle: true) { return }
         if routeWMPSkinSurface(.playlist) { return }
         classicTogglePlaylist()
@@ -2502,6 +2550,7 @@ class WindowManager {
                 case .wmp: "WMP_PLACE_TRACE"
                 case .audion: "AUDION_PLACE_TRACE"
                 case .sonique: "SONIQUE_PLACE_TRACE"
+                case .aimp: "AIMP_PLACE_TRACE"
                 case .winampModern, .classic, .nullPlayerModern: "WINAMP_MODERN_PLACE_TRACE"
                 }
                 if ProcessInfo.processInfo.environment[traceKey] == "1" {
@@ -2645,6 +2694,8 @@ class WindowManager {
     // MARK: - Plex Browser Window
     
     func showPlexBrowser(at restoredFrame: NSRect? = nil) {
+        if deferUntilSkinDrawnListsLoad({ [weak self] in self?.showPlexBrowser(at: restoredFrame) }) { return }
+        if routeSkinDrawnList(.library, toggle: false) { return }
         if routeWinampModernSurface(.library, toggle: false, restoredFrame: restoredFrame) { return }
         let isNewWindow = plexBrowserWindowController == nil
         if isNewWindow {
@@ -2702,6 +2753,7 @@ class WindowManager {
     }
 
     var isPlexBrowserVisible: Bool {
+        if let skinDrawn = skinDrawnListVisibility(.library) { return skinDrawn }
         if let coordinator = winampModernSurfaces, coordinator.handles(.library) {
             return coordinator.isSurfaceVisible(.library)
         }
@@ -2797,6 +2849,7 @@ class WindowManager {
     }
 
     func togglePlexBrowser() {
+        if routeSkinDrawnList(.library, toggle: true) { return }
         if routeWinampModernSurface(.library, toggle: true) { return }
         classicTogglePlexBrowser()
     }
@@ -6404,7 +6457,8 @@ class WindowManager {
         // A single canvas's window is borderless too, and has no stack to build.
         if uiMode.controllerFamily.isSingleCanvas {
             if let playerWindow = mainWindowController?.window {
-                snapHostedFamilyToDefaultPositions(playerWindow: playerWindow, skinWindows: [])
+                let skinWindows = (mainWindowController as? SkinAuxiliaryWindows)?.managedAuxiliaryWindows.filter(\.isVisible) ?? []
+                snapHostedFamilyToDefaultPositions(playerWindow: playerWindow, skinWindows: skinWindows)
             }
             return
         }
@@ -6428,6 +6482,7 @@ class WindowManager {
         case .wmp: fallbackMainSize = WMPMainWindowController.unskinnedSize
         case .audion: fallbackMainSize = AudionFaceMainWindowController.unskinnedSize
         case .sonique: fallbackMainSize = SoniqueSkinMainWindowController.placeholderSize
+        case .aimp: fallbackMainSize = AIMPSkinMainWindowController.placeholderSize
         }
         let mainSize = mainWindowController?.window?.frame.size ?? fallbackMainSize
 

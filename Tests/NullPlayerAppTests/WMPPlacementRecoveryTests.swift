@@ -36,7 +36,7 @@ final class WMPPlacementRecoveryTests: XCTestCase {
             checked.append(mode)
             let family = mode.controllerFamily
             XCTAssertEqual(windowManager.appliesPlacementRecovery,
-                           family == .winampModern || family == .wmp || family == .audion || family == .sonique,
+                           family == .winampModern || family == .wmp || family == .audion || family == .sonique || family == .aimp,
                            "\(mode.displayName) must not run the placement recovery sweeps")
         }
 

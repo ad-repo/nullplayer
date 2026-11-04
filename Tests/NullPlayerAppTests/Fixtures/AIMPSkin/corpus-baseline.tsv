@@ -1,0 +1,54 @@
+# Load outcome and script coverage per installed AIMP skin, keyed by sha256: the ratchet for
+# AIMPCorpusLoadTests. A skin recorded `ok` that later fails, or runs fewer of its scripts, is a
+# REGRESSION and fails the suite. A skin recorded `failed` that later loads is progress: the suite
+# passes and asks you to re-record. A skin absent from here is unranked and never fails the build:
+# a corpus is personal and grows.
+# Regenerate: scripts/aimp_skin_census.sh <out>, then scripts/aimp_corpus_baseline.py <out>
+#
+# sha256	outcome	codes	scripts_ran	scripts	file (the name is a comment; sha256 is the key)
+e9b9b70f6f389849eb3d4194475f0ddec0fa8cb37aeb2448aefcbe4a8a4f2232	ok		0	0	28_Kenwood_KX-800.acs3
+512fa168e3da109a176ff59ffdfb6263da5b56b708b27f36487f20eaee3c06cb	ok		0	0	31_Aiwa_AD-M700.acs3
+ee1538d81cad1403ca335c3fecb8940068e67e12cd232e82ff47312afb400166	ok		0	0	33_Denon_DR-F8.acs3
+6ac67968f055c7d064b13573c3f6e32c925618b010da5f80e27ca8810ed3440e	ok		0	0	AIMP-Cassette.acs3
+90d6b1ef350e4a08e57da71906d72138af58f9a14cf9d4a35dce1a59343478b1	ok		18	18	Akai CS-F33.acs4
+4f1c9d804652da3468b7b827f031e4b6ac10d57ebf047ccae2643b90bd529a69	ok		21	21	Akai GX-635D.acs4
+7df8fa1ed0425d6eb6257eb2fbb130d1c1eb080ef1cfe2fca18eaecc4b7de418	ok		0	0	Akai GX-77 Black.acs3
+8e8f161542ba4c6a49bfe5e6d220c78c23c7970afec30d98b7fdfc8fefccaa04	ok		19	19	Akai GX-77 Grey.acs4
+0e9921748ea3cc65efc1b718e23c8fda79851a7e559331633cc56f3748aaf194	ok		0	0	Akai GX-77.acs3
+e2c16fde5aeed8403ef311211cceaff033dad76c6d73bd5a4c75bc94a0a3b461	ok		27	27	Akai GX-F90 & Akai AM-U01 & Speakers.acs4
+a375169de726810d1b9266785de1f97cc3cc38bcd115335ded624af7bd8cb1ce	ok		0	0	Akai GX-F90.acs3
+73d77b2ae751d3aa2913d4eda07403fe0439c7ed82c379593e39ce812453a1a4	ok		30	30	Akai GX-R60 & Akai AM-U11 & Speakers.acs4
+dadc89638e92bb24fae874e13659c0e51789ba674b420c94169650632fd14238	ok		14	14	Cassette-3D.acs4
+f3862e22ab9f780ed3172ffc039952ff39d8699ac4ac71ab6651d506f3e3a858	ok		29	29	Denon_Classic_Style.acs5
+dfebe90d496f2a4ea7f8e9f9dbb8650c5ef726bec9a32792c6bf83b6d6848f3b	ok		30	30	Kenwood_KX-4520.acs5
+bed68a70986a4c22ba650d5e1eea14d1b551ca2fdccebdaec6582461d2b7e9f3	ok		9	9	Marantz_5030.acs5
+6e2e769250883c07b8187555671a555a48ebe7efa4b765e675b61bf37e9ba263	ok		10	10	Mayak-120.acs5
+1989c73c55673beab5595ec2fadfd0fbe41afcc2c577df8777c2c2d15ec796eb	ok		17	17	Mayak-232.acs5
+75eee2607cf6c8b40d63b49c201990f77227d82bf91fa0e90259113153736bf3	ok		14	14	Mayak_M-240_C-1.acs5
+403054cbcd1ec668b8e072c696e07c150f736979c83bdbdda68ef162b9da9da8	ok		10	10	Mayak_MP140C.acs5
+c6cdaa7ed488c6eb00474716cd1bacec276d3e3809d93e3709c66a86a2260252	ok		12	12	Nakamichi BX Black.acs4
+1befd333b7a9528d6a87d9f0b6d2643a82821962517b112325c3940015a93a28	ok		0	0	Nakamichi BX.acs3
+7da9663e774a03f7d276a167d46bf68d96dcc86ca6607366cf6a5028653a750e	ok		29	29	Onkyo TA-2066 & Onkyo M-504 & Speakers.acs4
+e9b71373783f6b9daa84dced2218e7c4825dc0aa4b9914aefbc56e7792b0b000	ok		26	26	Onkyo TA-2250 & Onkyo M-5030 & Speakers.acs4
+f80e48fc59abf41dba3155eea7548b4345039869f9a4cee1c95fd7120dd47fc5	ok		9	9	Pioneer_CT-F1000.acs5
+2aa456f531135aaa7accaf78d0bba49bd0be60ea9be019264cffae1e1d29f9af	ok		9	9	Revox_B-710.acs5
+1499a8a06cca9b4560397b628115816addd0bcb0ba29fdc54530ecce2676964b	ok		9	9	Sony ES-Style Black.acs4
+bf4679db1443b008e11bbecac79ac402c1865593e25b43f74bc7c67c813017d8	ok		0	0	Sony TC-FX7_Lg.acs3
+da52bfb5e6616d3cfd98d96a4076953043f4c5f441a402ea7df8916b7d11ba8e	ok		12	12	Sony TC-MR2.acs4
+8f254d6b459b189ae33fc03258cdf177d704b8d83c5d08fc4ceedf8e710bc0df	ok		26	26	Sony TC-RX80 & Sony TA-N77ES & Speakers.acs4
+9f145fe3e8ec3c89acfcde98dadb963194b34cc557181338bba24bc82374d4d2	ok		0	0	sony_es-style_silver_2.acs3
+ecf138ac0ecc0113fe7cb1356995f015064ac9bac266cca24d570d8d0e011d90	ok		8	8	Sony_Media_Tower_Reborn.acs5
+8f825ec029996eb8a431d262fe24f62155d403403cf221294edea2418c9c1cac	ok		0	0	Tascam 32 Lite.acs3
+0ccbb8b604b798f3b4f9f14952da65e3a393f55b645e8feb039345bb45cf87cb	ok		21	21	Tascam 32.acs4
+b2b64174f43bf377a18590f9568278fab108d27e938e84d64df2f5ad973a5b3e	ok		0	0	Tascam CD-RW2000.acs3
+3fa49ecf60f8ee3a4ff94bd1c0c4f977313e866fa347cde1e333417919add43b	ok		0	0	TASCAM CD-RW750 v1.2.acs3
+85ed0d30a00bafc21f752126122265d2f031d7c109ccff374af3c84a5779c5bc	ok		12	12	Tascam_Fireone.acs4
+baf9ad90809e34f677f4f24621a8e1d7d61a52d82864e1dbd8f285e39a40b33b	ok		0	0	Teac Audio System.acs3
+71a4a215e608809a53a58ef953345ddf643c4ebddc62c4607e82a2db0c20ec01	ok		0	0	Teac CD-RW890.acs3
+d25d9127e0119c7f13ef15b0ab8fb518e042eb97ce27dda66d86987075efc9bf	ok		21	21	Teac V-3RX.acs4
+685995d8f5ef40346032dedb87406ffdbce3bed91ba417349327b5dd11f54ff8	ok		29	29	Technics Audio System.acs4
+aa28e716538a554cbc38a1b86642a845f51a9d384e1a37df8e53977877a1564a	ok		14	14	Technics RS-B905.acs4
+2926ca08fe6542447176b17cd47e43aa831b100139f9f787cfa7af61e62b10da	ok		6	6	Technics SL-1200.acs4
+0bc5dc77de35796d1c240e987ddf564158952d5319842d3cf90e152586c0f447	ok		23	23	Technicss.acs5
+15245758cd9f7eb0f88595463929b37c5308f587d376f2dc5d01eb9b6681447c	ok		0	0	Vega AIO v1.01.acs3
+13d5af38c3ac0bd58941f48dd47af5de79368b1fc1862031c317791a148ce242	ok		9	9	Vega_MP-120.acs5

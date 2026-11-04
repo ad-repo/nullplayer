@@ -17,7 +17,7 @@ class ContextMenuBuilder {
     /// decision, not a default*.
     static func supportsSkinnedAuxiliaryWindows(for mode: PlayerUIMode) -> Bool {
         switch mode.controllerFamily {
-        case .classic, .nullPlayerModern, .winampModern, .wmp, .audion, .sonique: return true
+        case .classic, .nullPlayerModern, .winampModern, .wmp, .audion, .sonique, .aimp: return true
         }
     }
     
@@ -868,6 +868,9 @@ class ContextMenuBuilder {
         }
         if AppCapabilities.supports(.soniqueSkinMode) {
             uiMenu.addItem(skinFamilyItem(.sonique, menu: buildSoniqueSkinsMenu()))
+        }
+        if AppCapabilities.supports(.aimpSkinMode) {
+            uiMenu.addItem(skinFamilyItem(.aimp, menu: buildAIMPSkinsMenu()))
         }
         uiMenu.addItem(.separator())
         let nextSkin = NSMenuItem(title: "Next Skin", action: #selector(MenuActions.selectNextSkin), keyEquivalent: "]")

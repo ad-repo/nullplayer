@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### AIMP skins
+
+- **AIMP skins are a new skin family** (Skins → AIMP): AIMP 2 to 5 skins (`.acs`, `.acs3`, `.acs4`,
+  `.acs5`), installed one at a time or a catalog `.zip` at once, with **Get More Skins...** opening
+  the aimp.ru catalog.
+  - The skin's own windows — speakers, amplifiers, remotes, its playlist and library — open beside it
+    and dock, snap and minimize with NullPlayer's.
+  - Keys, knobs, sliders and the mouse wheel drive the player; the skin's FastScript scripts run its
+    animations, reels, meters and modes.
+  - Captions follow the Mac's language where the skin translates them.
+  - A skin that holds its playlist or library inside the player shows it there, and its scripts can
+    move it out to a window and back.
+  - Of the 745 skins in the aimp.ru catalog, 742 load. AIMP's own dialogs (colour picker, options)
+    are not supported.
+
 ## 0.34.2
 
 ### Playback

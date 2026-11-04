@@ -17,6 +17,9 @@ defect, not an unclassified change.
 A sixth, `sonique` (Sonique 1.x `.sgf`, `sonique-skin-guide`, backlog `tasks/SONIQUE_TASKS.md`), is
 public: the three modes drawn from the skin and driven, with real Sonique under Wine as its oracle.
 
+A seventh, `aimp` (AIMP 2–5 `.acs5`/`.acs4`/`.acs3`/`.acs`, `aimp-skin-guide`, backlog `tasks/AIMP_TASKS.md`),
+is clean-room with no oracle: AIMP is Windows-only, so its sweep diff is unclassified, like `.wal`'s.
+
 **The reference implementation is `winamp-modern-skin-guide`**: the most successful engine here, and
 the model for the engine rules, the harness, the corpus census, the demand-driven backlog and the
 skill layout. `wmp-skin-guide` is the same shape at an earlier phase. Read whichever is closer to
@@ -298,7 +301,7 @@ look — the skin that disproved it (EPS High-End, identical artwork declared `"
 139 of 535 and was right — the invariants diff held still, and ten pre-chosen unrelated skins were
 each a repair on their own evidence. Neither verdict came from the image count.
 
-**This applies only to `.wal` and `.wmz`, which have no reference to diff against.** Classic and
+**This applies only to `.wal`, `.wmz` and AIMP, which have no reference to diff against.** Classic and
 Original are finished, Audion has FaceKit and Sonique has real Sonique under Wine, so there is no
 missing behaviour in them for a change to unlock: any diff there from another family's work is a
 regression by definition — see *The rule that outranks everything*.

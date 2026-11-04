@@ -115,7 +115,7 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
     /// (`isWidthStepped`).
     private static var hasFreeMinimumWidth: Bool {
         switch WindowManager.shared.runningControllerFamily {
-        case .audion, .wmp, .sonique: return true
+        case .audion, .wmp, .sonique, .aimp: return true
         case .classic, .nullPlayerModern, .winampModern: return false
         }
     }
