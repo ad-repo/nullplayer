@@ -397,6 +397,30 @@ cast position=nil sessionPlaying=nil sonosRooms=0 localFileCastInProgress=false
 
 **Confirm it took:** the first line's `pid` is the process you meant and `at` is now.
 
+### Stream pause–seek–resume (server playback regression test)
+
+`skills/app-control/scripts/stream-pause-seek-test.py [--fades] [--no-pause] [--track <substr>]`
+plays a Plex stream in the headless CLI through a pty, pauses it `--pause-at` seconds (default 2.5)
+before the end, seeks back 20 s while paused, resumes, and times how long the track keeps playing
+against what the clock promised. Prints one line, `STREAM-PAUSE-SEEK PASS|FAIL|ABORT: …`, exit 0 / 1 / 2;
+the log (`--log`, default `/tmp/np-stream-pause-seek.log`) carries the `--verbose` NSLog lines with
+`DRIVER` marks. It never touches a running GUI. `--fades` turns Sweet Fades on and queues Lady →
+Greensky Greenlake, so the pause lands mid-crossfade. Run it after any change to
+`StreamingAudioPlayer` pause/resume/seek or the streaming branch of `AudioEngine.seek`/`play`.
+
+- **Build with `swift build -c debug --build-system native` first.** A bare `swift build` on Swift
+  6.4 writes `.build/out/Products/` and leaves the binary this runs stale; the script ABORTs when
+  that binary is older than `Sources/` rather than testing old code.
+- **ABORT is "proved nothing", not a pass.** It fires when the stream never reached EOF before the
+  pause (the defect needs the download finished — raise `--lead`), or the track changed before the
+  pause: rapid +10 s seeks on these FLAC streams intermittently raise `codecError` /
+  `streamParseBytesFailure` and auto-advance, independent of the pause path. `--seek-gap 2`
+  (default) keeps that rare; rerun on ABORT.
+- `--no-pause` is the control: the same seeks while playing, which always worked.
+
+**Confirm it took:** the log shows `Finished buffering entry` before `DRIVER PAUSE`, and
+`StreamingAudioPlayer: Applying seek held while paused` at `DRIVER RESUME`.
+
 ### Skin window-size isolation (user-level regression test)
 
 `skills/app-control/scripts/size-isolation-test.sh [<wmz A> <wmz B>]` (default `Ice anemone`) checks

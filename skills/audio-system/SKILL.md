@@ -137,6 +137,22 @@ Wrapper around [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) li
 
 **Why separate EQ?** AVAudioNode instances can only be attached to one AVAudioEngine. Since AudioStreaming uses its own internal engine, we maintain a separate EQ node that stays synchronized with the main engine's EQ.
 
+#### A seek while paused is held until resume
+
+AudioStreaming acts on a seek only inside its `processSource()`, which returns early while paused and
+which its `resume()` never re-runs; newly arriving stream data is what runs it next. Its `pause()`
+suspends the download and `resume()` restarts it, so a paused seek used to land a moment after
+resume — **unless the download had already reached EOF** (`Finished buffering entry` in the log,
+roughly the track's last 10 s, the decoded buffer). Then no data arrives, the seek is never
+processed, the clock shows the new position and the buffered audio plays on to the end (M73). A
+second `player.seek` after resume does nothing either: the dropped request is still `requested`, so
+the library skips it as a duplicate.
+
+`StreamingAudioPlayer.seek` therefore stores a seek made while paused (`pausedSeekTime`, which
+`currentTime` reports so the clock follows the drag) and `resume()` sends it to the library once
+playing; `play(url:)` and `stop()` discard it. A seek while playing in the same region always worked.
+The regression check is `skills/app-control/scripts/stream-pause-seek-test.py` (`app-control`).
+
 ### Track Switch Race Condition Guard
 
 When switching streaming tracks, avoid race conditions with an `isLoadingNewStreamingTrack` flag:
