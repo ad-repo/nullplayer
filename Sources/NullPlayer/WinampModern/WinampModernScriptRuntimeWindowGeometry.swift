@@ -58,7 +58,12 @@ extension WinampModernScriptRuntime {
     /// space, or `nil` when no host has answered (the headless harness, an id no window backs).
     func windowOrigin(of object: WasabiObject) -> CGPoint? {
         guard Self.isWindowObject(object) else { return nil }
-        return enclosingWindowID(of: object).flatMap { containerOriginQuery?($0) }
+        return enclosingWindowOrigin(of: object)
+    }
+
+    /// Where the window drawing `object` sits on the desktop, for any object in it.
+    func enclosingWindowOrigin(of object: WasabiObject) -> CGPoint? {
+        enclosingWindowID(of: object).flatMap { containerOriginQuery?($0) }
     }
 
     /// Whether a geometry write on `object` can be a round trip of its own origin: it is a window

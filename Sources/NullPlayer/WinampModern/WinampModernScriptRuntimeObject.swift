@@ -463,7 +463,7 @@ extension WinampModernScriptRuntime {
             // A floated group's point is screen space; its owner window's origin takes it back to the
             // canvas it is drawn in. Unscaled, as multipass's own "scale syncing problem" note expects.
             if runtime.floatedGroups.contains(call.object.stableID),
-               let origin = runtime.enclosingWindowID(of: call.object).flatMap({ runtime.containerOriginQuery?($0) }) {
+               let origin = runtime.enclosingWindowOrigin(of: call.object) {
                 values[0] -= Int(origin.x.rounded())
                 values[1] -= Int(origin.y.rounded())
             }

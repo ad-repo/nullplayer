@@ -2,8 +2,8 @@ import CoreGraphics
 
 /// **One window placed at another window's position** — and the one rule that recognises it.
 ///
-/// A layout answered `getLeft()`/`getTop()` in its own canvas space (0) until B357 (it still does
-/// with no host), while the `x`/`y` a script writes on a window are pushed to the desktop. B61 fixed the *self* round trip
+/// With no host answering, a layout's `getLeft()`/`getTop()` are its own canvas origin (0), while the
+/// `x`/`y` a script writes on a window are pushed to the desktop. B61 fixed the *self* round trip
 /// (`me.resize(me.getLeft(), …)`) by recognising it and not moving. This is the *cross-window* one: a
 /// script reads one window's position and writes a second window's from it. Two skins measured it:
 ///

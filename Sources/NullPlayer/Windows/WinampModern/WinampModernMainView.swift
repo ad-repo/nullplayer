@@ -716,12 +716,10 @@ final class WinampModernMainView: NSView {
         scripts.hooks.focusRequested = { [weak self] object in self?.focusEdit(object) }
         scripts.hooks.themeNamesRequested = { [weak renderer] in renderer?.themes.themeNames ?? [] }
         scripts.hooks.activeThemeRequested = { [weak renderer] in renderer?.themes.activeTheme ?? "Default" }
-        // Screen space, the one window origins and `clientToScreen*` answer in: top-left points on
-        // the player's display (`winampScreenOrigin`).
+        // On the player's display, in the space window origins and `clientToScreen*` answer in.
         scripts.hooks.mousePositionRequested = { [weak self] in
             guard let screen = self?.window?.screen ?? NSScreen.main else { return .zero }
-            let mouse = NSEvent.mouseLocation
-            return CGPoint(x: mouse.x - screen.frame.minX, y: screen.frame.maxY - mouse.y)
+            return WinampModernScreenSpace.point(fromCocoa: NSEvent.mouseLocation, on: screen)
         }
         scripts.hooks.equalizerEnabledRequested = { [weak self] in
             self?.componentHost?.equalizerSnapshot().enabled ?? false
@@ -2851,8 +2849,7 @@ final class WinampModernMainView: NSView {
         guard menu.numberOfItems > 0 else { return WinampModernScriptRuntime.popupDismissed }
         let location: NSPoint?
         if let point, let window, let screen = window.screen ?? NSScreen.main {
-            // Screen space, top-left origin on the window's display, as `clientToScreen*` answers.
-            let global = NSPoint(x: screen.frame.minX + point.x, y: screen.frame.maxY - point.y)
+            let global = WinampModernScreenSpace.cocoaPoint(point, on: screen)
             location = convert(window.convertPoint(fromScreen: global), from: nil)
         } else {
             location = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) }

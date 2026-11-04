@@ -33,7 +33,7 @@ extension WinampModernScriptRuntime {
             let parent = WasabiSceneRenderer.coordinateSpace(of: call.object) {
                 runtime.hooks.resolvedGeometryRequested?($0)?.frame
             }?.origin ?? .zero
-            let window = runtime.enclosingWindowID(of: call.object).flatMap { runtime.containerOriginQuery?($0) }
+            let window = runtime.enclosingWindowOrigin(of: call.object)
             let origin = window.map { isX ? $0.x : $0.y } ?? 0
             let scale = window == nil ? 1 : Double(runtime.hooks.uiScaleQuery?() ?? 1)
             let offset = Double(isX ? parent.x : parent.y)
