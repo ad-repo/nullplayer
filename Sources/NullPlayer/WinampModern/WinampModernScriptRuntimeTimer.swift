@@ -101,17 +101,24 @@ extension WinampModernScriptRuntime {
 
     /// A `newGroupAsLayout` group's x/y are screen space (Wasabi gives it a window); here it is an
     /// overlay in its owner's canvas, so the owner window's origin takes them back. Unscaled, as
-    /// multipass's own "scale syncing problem" note expects. Any other object's write passes through.
+    /// multipass's own "scale syncing problem" note expects. `reportedOrigin` adds the same origin
+    /// on the read, so `resize(getLeft(), getTop(), …)` is a round trip. Any other object's write,
+    /// and a value no `Int32` holds, passes through.
     private func floatedToCanvas(_ attributes: [(key: String, value: String)],
                                  of object: WasabiObject) -> [(key: String, value: String)] {
-        guard floatedGroups.contains(object.stableID), let origin = enclosingWindowOrigin(of: object) else {
-            return attributes
-        }
+        guard let origin = floatedGroupOrigin(of: object) else { return attributes }
         return attributes.map { key, value in
             guard key == "x" || key == "y", let screen = Double(value) else { return (key, value) }
-            let canvas = screen - (key == "x" ? origin.x : origin.y)
-            return (key, String(Int(canvas.rounded())))
+            let canvas = (screen - (key == "x" ? origin.x : origin.y)).rounded()
+            guard canvas.isFinite, canvas.magnitude <= Double(Int32.max) else { return (key, value) }
+            return (key, String(Int(canvas)))
         }
+    }
+
+    /// The owner window's origin for a `newGroupAsLayout` group, the offset between the screen space
+    /// a script places it in and the canvas it is drawn in; nil for any other object or unhosted.
+    func floatedGroupOrigin(of object: WasabiObject) -> CGPoint? {
+        floatedGroups.contains(object.stableID) ? enclosingWindowOrigin(of: object) : nil
     }
 
     /// Push a *container's* `x`/`y`/`w`/`h` out to its window.

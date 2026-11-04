@@ -319,8 +319,8 @@ object — class GUIDs are not in the archive — so an object becomes a map on 
 Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression; the cursor is in
 screen space (*The screen model moves whole*, below), so only its differences are meaningful there.
 
-**The two are not the same space, and that is why the expression exists.** `getMousePos*` is the
-window's canvas; a mouse event's x/y are relative to the **receiver's parent** — the same origin
+**The two are not the same space, and that is why the expression exists.** `getMousePos*` is
+screen space; a mouse event's x/y are relative to the **receiver's parent** — the same origin
 `getLeft()`/`getTop()` answer from. Every rotary control in the corpus is written that way:
 
 ```c
@@ -352,8 +352,9 @@ whoever listens; a widget's own script still hears the widget's space.
 
 **The screen model moves whole (B357, 2026-11-03).** `System.getMousePos*`, `clientToScreen*` /
 `screenToClient*`, the viewport, `popAtXY` and a hosted container's **or layout's** `getLeft()`/
-`getTop()` all answer in screen space — top-left points on the player's display
-(`winampScreenOrigin`) — because skins do arithmetic across them. Moving one alone breaks the rest:
+`getTop()` all answer in screen space — top-left points on a display (`winampScreenOrigin`): the
+cursor on the player's, a window's origin on that window's, the viewport on `NSScreen.main`'s (the
+key window's), which agree while the player is on one display — because skins do arithmetic across them. Moving one alone breaks the rest:
 B123 (archived) measured multipass's drawers inverting with only the cursor moved, and B357's first
 cut moved only `clientToScreen*`, which left Xenon's tray-close test (`getMousePosX()` against
 `d2.clientToScreenX(…)`) reading 278 against 762. A knob that subtracts a mouse event's x from

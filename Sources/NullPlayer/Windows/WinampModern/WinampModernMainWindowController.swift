@@ -1216,10 +1216,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private static let framePositionReassertDelay: TimeInterval = 1.0
 
     private func scheduleFramePositionReassert() {
+        // Settle only the load that scheduled this: after a skin switch inside the delay, the old
+        // callback would otherwise mark the new runtime settled while its own start-up still runs.
+        let scheduledRuntime = skinView?.scripts
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
             guard let self else { return }
             reassertPersistedFramePositions()
-            skinView?.scripts.loadHasSettled = true
+            if let scripts = skinView?.scripts, scripts === scheduledRuntime { scripts.loadHasSettled = true }
             // Tell every window's script where its window ended up, once the load has settled (B110).
             //
             // A skin that draws one window's chrome in a second window only ever moves the frame from

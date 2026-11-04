@@ -128,6 +128,21 @@ final class WinampModernPhase33Tests: XCTestCase {
         _ = try runtime.invoke(method: "setxmlparam", on: MakiObjectReference(.gui(created.stableID)),
                                arguments: [.string("x"), .string("\(762 + 60)")], program: program)
         XCTAssertEqual(created.attributes["x"], "60")
+
+        // Reads answer the same space, so `resize(getLeft(), getTop(), …)` leaves it where it is.
+        let reference = MakiObjectReference(.gui(created.stableID))
+        let left = try runtime.invoke(method: "getleft", on: reference, arguments: [], program: program)
+        let top = try runtime.invoke(method: "gettop", on: reference, arguments: [], program: program)
+        XCTAssertEqual(left.integerValue, 762 + 60)
+        _ = try runtime.invoke(method: "resize", on: reference,
+                               arguments: [left, top, .integer(164), .integer(78)], program: program)
+        XCTAssertEqual(created.attributes["x"], "60")
+        XCTAssertEqual(created.attributes["y"], "217")
+
+        // A value no Int32 holds is not converted (and does not trap).
+        _ = try runtime.invoke(method: "setxmlparam", on: reference,
+                               arguments: [.string("x"), .string("1e30")], program: program)
+        XCTAssertEqual(created.attributes["x"], "1e30")
     }
 
     /// No `owner=`: the group lands on the calling script's own layout instead of nowhere.
