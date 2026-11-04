@@ -237,3 +237,17 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
         WindowManager.shared.applySnappedPosition(window, to: WindowManager.shared.windowWillMove(window, to: window.frame.origin))
     }
 }
+
+/// The navigator's drawer answers every Equalizer show and toggle in every skin, so NullPlayer's EQ
+/// window never opens in this family. The playlist and the library stay NullPlayer's windows.
+extension SoniqueSkinMainWindowController: SkinSurfaceRouter {
+    func drawsSurface(_ surface: SkinSurface) -> Bool { surface == .equalizer }
+
+    func isShowingSurface(_ surface: SkinSurface) -> Bool { surface == .equalizer && isEqualizerShowing }
+
+    /// The drawer has no window of its own, so `restoredFrame` is ignored.
+    func revealSurface(_ surface: SkinSurface, toggle: Bool, restoredFrame: NSRect?) {
+        guard surface == .equalizer else { return }
+        revealEqualizer(toggle: toggle)
+    }
+}

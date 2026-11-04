@@ -194,9 +194,10 @@ window) is outside it; one that draws chrome is inside it, and there is no third
   once per controller: a later skin switch never touches the alpha, which `WMPVideoSurface` also
   owns. The same launch surfaced the **fallback playlist and equalizer** — restored open, they were
   shown before the skin had said it draws its own, and stood beside the hidden player until
-  `dismissWMPFallbackSurfacesTheSkinProvides` put them away. `showPlaylist`/`showEqualizer` now hand
-  their open to `WMPMainWindowController.deferUntilLaunchSettles` during the hold, and it is replayed
-  on release, where `routeWMPSkinSurface` routes it to the skin's copy. Checked on `pharaoh` with a
+  `dismissFallbackSurfacesTheSkinProvides` put them away. `showPlaylist`/`showEqualizer` now hand
+  their open to `WMPMainWindowController.deferUntilLaunchSettles` during the hold (through
+  `WMPSkinSurfaceRouter.deferUntilSkinLoads`; the library never waits, the format has none), and it
+  is replayed on release, where the shared route sends it to the skin's copy. Checked on `pharaoh` with a
   `screencapture` every ~0.2 s from launch: nothing on screen until skin and library appear together.
 - **A hosted window never shows a transitional state — not during a drag, not across a skin switch
   (2026-09-23).** Reported as *resizing any `.wmz`-framed window goes skin → palette chrome → skin,

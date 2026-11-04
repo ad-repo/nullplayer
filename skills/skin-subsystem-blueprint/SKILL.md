@@ -60,7 +60,7 @@ family may quietly inherit Classic's or Original's behaviour.
 - **Never add a new boolean** of the form `isRunningXUI` used at more than one call site. Add the
   case to `PlayerUIControllerFamily` and switch on it.
 - **A capability whose absence is right for every other family is asked with `as?`, not a switch.**
-  `SkinDrawnEqualizer` (Sonique's drawer is its equaliser), and `WindowManager.frameLender` (a `.wmz`
+  `WindowManager.frameLender` (a `.wmz`
   lends NullPlayer's windows frame artwork; Sonique S22 deleted eight switches for it): a family that
   never hears of it lends nothing and is always settled, which is correct. With one family behind a
   capability, cast to its controller; a protocol whose requirement is that family's own type is
@@ -140,11 +140,19 @@ exist because `.wal` paid for them:
 **And ask what the skin provides before opening a window of your own.** This is the half `.wmz`
 missed on the first pass: 171 of its 180 corpus skins declare a playlist and 164 an equaliser, so an
 unconditional NullPlayer playlist put a second, foreign-looking one over nearly every skin in the
-corpus. `routeWinampModernSurface` and `routeWMPSkinSurface` are the same idea in both families —
-the skin's own surface takes the toggle first, and NullPlayer's window is the fallback for the skins
-that declare none. Answer all three shapes: declared in the view on screen (nothing to open, and the
-menu item should say so), declared in another view (open that view the way the skin's own button
-does), declared nowhere (your window).
+corpus. The playlist, the library, the equaliser and the video window go through one route for
+every family: `SkinSurfaceRouter` (`App/Skinning/SkinSurfaceRouter.swift`), asked by
+`WindowManager.routeSkinSurface`, `skinSurfaceVisibility` and `deferUntilSkinLoads` from each
+`show*`, `toggle*` and `is*Visible`, and by the View menu. The skin's own surface takes the toggle
+first, and NullPlayer's window is the fallback for the skins that declare none. A family joins by
+adding its case to `WindowManager.skinSurfaceRouter`'s switch on the family: `.wal`'s
+`WinampModernSurfaceCoordinator`, `.wmz`'s `WMPSkinSurfaceRouter`, Sonique's controller (its drawer
+is its equaliser). A family whose skin can change under an open fallback calls
+`dismissFallbackSurfacesTheSkinProvides()` on each presentation. Answer all three shapes: declared
+in the view on screen (nothing to open: `toggleClosesSurface` false makes the menu item checked and
+inert), declared in another view (open that view the way the skin's own button does), declared
+nowhere (your window). `.wal`'s video (`toggleVideo()`) and every family's visualization still
+take their own routes.
 
 ### The skin's *own* extra windows are a second, separate decision
 

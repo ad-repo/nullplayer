@@ -727,14 +727,17 @@ class ContextMenuBuilder {
     /// another view the item still acts — it opens that view, the way the skin's own button does —
     /// and when it is part of the view already on screen the item is checked and inert, because the
     /// thing it names is right there.
-    private static func buildSkinOwnableWindowItem(_ title: String, surface: WMPSkinSurface,
+    /// A window the loaded skin may draw itself. Where the skin draws it and a toggle cannot put it
+    /// away (a `.wmz` view), the item is checked and inert while it shows; otherwise it is an
+    /// ordinary item, whose `visible` already asks the route.
+    private static func buildSkinOwnableWindowItem(_ title: String, surface: SkinSurface,
                                                    visible: Bool, action: Selector,
                                                    enabled: Bool) -> NSMenuItem {
-        let wm = WindowManager.shared
-        guard wm.wmpSkinProvides(surface) else {
+        guard let router = WindowManager.shared.skinSurfaceRouter, router.drawsSurface(surface),
+              !router.toggleClosesSurface(surface) else {
             return buildWindowItem(title, visible: visible, action: action, enabled: enabled)
         }
-        let onScreen = wm.wmpSkinShowsInActiveView(surface)
+        let onScreen = router.isShowingSurface(surface)
         return buildWindowItem(title, visible: onScreen, action: action, enabled: !onScreen)
     }
 

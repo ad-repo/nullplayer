@@ -28,7 +28,7 @@ enum WMPSkinSurface: String, CaseIterable {
 /// declare a playlist and 164 an equaliser** (164 declare both). Opening our own window beside one
 /// of those is two playlists on screen, one of them ignoring the skin the user chose — which is
 /// exactly what `.wal` avoids by routing a component toggle to the skin's own container first
-/// (`WindowManager.routeWinampModernSurface`).
+/// (`WindowManager.routeSkinSurface`, which both families answer through `SkinSurfaceRouter`).
 ///
 /// Reproduce the counts by scanning the corpus for `<PLAYLIST`, `<ITEMSPLAYLIST`,
 /// `<DROPDOWNPLAYLIST` and `<EQUALIZERSETTINGS`; the split between skins that keep the playlist in
@@ -81,7 +81,7 @@ struct WMPSkinSurfaces: Equatable, Sendable {
     /// specified in the control's **image** attribute" and there is no image, so the view is 0x0 in
     /// WMP's own arithmetic too. The skin's `#00d106` button calls `theme.openView('playview')`, the
     /// load path classifies it windowless and opens nothing, and because `WMPSkinSurfaces` reported
-    /// a playlist, `dismissWMPFallbackSurfacesTheSkinProvides` had already put ours away.
+    /// a playlist, `dismissFallbackSurfacesTheSkinProvides` had already put ours away.
     ///
     /// Measured over the 185-archive corpus: **27 views state no size, no background and hold
     /// nothing that could size them**, and 26 of those are the Skins Factory `controlView` — whose

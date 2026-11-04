@@ -284,7 +284,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Opens of NullPlayer's fallback playlist/equalizer asked for during the launch hold, replayed
     /// when it ends — by then the skin has said whether it draws that surface itself, which 171 and
     /// 164 of the 180 corpus skins do. Opened at once, the fallback stood on screen beside the
-    /// hidden player until `dismissWMPFallbackSurfacesTheSkinProvides` put it away.
+    /// hidden player until `dismissFallbackSurfacesTheSkinProvides` put it away.
     private var launchHoldDeferred: [() -> Void] = []
 
     /// Holds `open` until the launch hold ends; false when there is no hold, and the caller opens
@@ -1362,7 +1362,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         skinSurfaces = WMPSkinSurfaces(skin: skin)
         // A fallback window opened under the *previous* skin is not a fallback under this one.
-        WindowManager.shared.dismissWMPFallbackSurfacesTheSkinProvides()
+        WindowManager.shared.dismissFallbackSurfacesTheSkinProvides()
         if !presentation.isPlayer { presentation.window.orderFront(nil) }
         persistOpenViews()
     }

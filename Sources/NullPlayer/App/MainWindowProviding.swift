@@ -155,14 +155,3 @@ extension SingleCanvasMainWindow {
 
 extension AudionFaceMainWindowController: SingleCanvasMainWindow {}
 extension SoniqueSkinMainWindowController: SingleCanvasMainWindow {}
-
-/// A main window that draws the equaliser itself in every skin, so `WindowManager` routes every
-/// Equalizer show and toggle to it and NullPlayer's EQ window never opens in its family.
-protocol SkinDrawnEqualizer: MainWindowProviding {
-    var isEqualizerShowing: Bool { get }
-    /// `toggle` is an explicit toggle, which may switch the window's mode to reach the equaliser;
-    /// false is a show on the restore path, which must not.
-    func revealEqualizer(toggle: Bool)
-}
-
-extension SoniqueSkinMainWindowController: SkinDrawnEqualizer {}
