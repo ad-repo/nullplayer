@@ -30,10 +30,30 @@ PROFILE_KEYS = [
 
 BACKGROUND_DRAW_MAP = {
     0: "Black",
-    1: "Flash-ish low gray",
-    2: "Dark solid",
-    3: "Dark grid",
+    1: "Flash",
+    2: "Solid",
+    3: "Grid",
     4: "Flash grid",
+}
+
+EFFECT_MAP = {
+    0: "None",
+    1: "Mirror",
+    2: "Reflection",
+    3: "Shadow",
+    4: "Double Shadow",
+    5: "Smoke",
+    6: "Reflection Waves",
+    7: "Fade Shadow",
+}
+
+PEAK_EFFECT_MAP = {
+    0: "Normal",
+    1: "Fall",
+    2: "Rise",
+    3: "FallAndRise",
+    4: "RiseFall",
+    5: "Sparks",
 }
 
 BAR_STYLE_MAP = {
@@ -284,7 +304,7 @@ def build_markdown() -> str:
     lines.append("Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_classic/profiles/`.")
     lines.append("")
     lines.append(f"- Total profiles: **{len(profile_files)}**")
-    lines.append("- Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`")
+    lines.append("- Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`, `[VolumeColours]`, `[VolumeFunction]`")
     lines.append("- Color values in INI are R G B as drawn (the original plugin's `RGB(b, g, r)` naming is undone by its DIB byte order).")
     lines.append("")
 
@@ -293,13 +313,13 @@ def build_markdown() -> str:
     lines.append("| Key | Meaning |")
     lines.append("|---|---|")
     lines.append("| `Falloff` | Per-frame bar decay amount when levels drop (higher = faster fall). |")
-    lines.append("| `PeakChange` | Peak hold timer before peak marker decays. |")
-    lines.append("| `Bar Width`, `X-Spacing`, `Y-Spacing` | Bar geometry and spacing controls. |")
-    lines.append("| `BackgroundDraw` | Background style selector (0..4). |")
+    lines.append("| `PeakChange` | Frames a peak holds before its Peak Effect moves it; `0` = no peaks. |")
+    lines.append("| `Bar Width`, `X-Spacing`, `Y-Spacing` | Bar geometry; `Y-Spacing` (1..7) draws every Nth row. |")
+    lines.append("| `BackgroundDraw` | Background style selector (0..4); Flash, Solid and Flash grid use `[VolumeColours]`. |")
     lines.append("| `BarColourStyle` | Bar color index function selector (0..4). |")
     lines.append("| `PeakColourStyle` | Peak color index function selector (0..2). |")
-    lines.append("| `Effect` | Effect selector; current port has explicit branch for `7` (fade shadow). |")
-    lines.append("| `Peak Effect` | Parsed/persisted compatibility field; no dedicated render branch in current port. |")
+    lines.append("| `Effect` | Bar effect (0..7), ported from the original plugin. |")
+    lines.append("| `Peak Effect` | How a peak moves after its hold (0..5), ported from the original plugin. |")
     lines.append("| `ReverseLeft`, `ReverseRight` | Channel drawing direction flags. |")
     lines.append("| `Mono` | `1` uses mono combined bands; `0` uses stereo split halves. |")
     lines.append("| `Bar Level` | `0` union/max aggregation; `1` average aggregation. |")
@@ -315,6 +335,8 @@ def build_markdown() -> str:
     lines.append("- `BackgroundDraw`: " + ", ".join(f"`{k}`={v}" for k, v in BACKGROUND_DRAW_MAP.items()))
     lines.append("- `BarColourStyle`: " + ", ".join(f"`{k}`={v}" for k, v in BAR_STYLE_MAP.items()))
     lines.append("- `PeakColourStyle`: " + ", ".join(f"`{k}`={v}" for k, v in PEAK_STYLE_MAP.items()))
+    lines.append("- `Effect`: " + ", ".join(f"`{k}`={v}" for k, v in EFFECT_MAP.items()))
+    lines.append("- `Peak Effect`: " + ", ".join(f"`{k}`={v}" for k, v in PEAK_EFFECT_MAP.items()))
     lines.append("")
 
     lines.append("## Profiles")

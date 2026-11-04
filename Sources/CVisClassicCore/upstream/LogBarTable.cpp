@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <math.h>
 
 // calculate number of bins to assign, will be at least 1
@@ -20,9 +21,13 @@ void LogBarValueTable(const unsigned int nFftSize, const unsigned int nSampleRat
 	if (pnBarTable == nullptr || nBars == 0)
 		return;
 
-	if (nFftSize <= nBars) {
+	// The caller sizes the FFT so every bar gets at least two bins (CalculateFFTVariables, ported
+	// in VisClassicCore's recalcGeometry). Below that pow() would take a negative count: debug
+	// builds stop, release builds draw nothing rather than garbage.
+	assert(nFftSize >= 2 * nBars);
+	if (nFftSize < 2 * nBars) {
 		for (unsigned int i = 0; i < nBars; i++)
-			pnBarTable[i] = (i < nFftSize) ? 1 : 0;
+			pnBarTable[i] = 0;
 		return;
 	}
 

@@ -15,10 +15,11 @@
 
 #include "upstream/BarColour.h"
 #include "upstream/LevelCalc.h"
-#include "upstream/LevelFunc.h"
 #include "upstream/LogBarTable.h"
 #include "upstream/PeakColour.h"
 #include "upstream/fft.h"
+#include "VisClassicEffects.h"
+#include "VisClassicPeaks.h"
 
 thread_local int draw_height = 0;  // Used by upstream bar color helpers.
 
@@ -29,11 +30,8 @@ constexpr int kMaxBars = 576;
 constexpr int kColorCount = 256;
 constexpr int kDefaultFFTFrequencies = 512;
 
-struct RGB {
-    uint8_t r = 0;
-    uint8_t g = 0;
-    uint8_t b = 0;
-};
+using visclassic::Palette;
+using visclassic::RGB;
 
 static inline int clampInt(int v, int lo, int hi) {
     return std::max(lo, std::min(hi, v));
@@ -95,17 +93,21 @@ static inline std::string stemFromPath(const std::string &path) {
 
 struct IniProfile {
     std::map<std::string, std::string> analyzer;
-    std::array<RGB, kColorCount> barColors{};
-    std::array<RGB, kColorCount> peakColors{};
+    Palette barColors{};
+    Palette peakColors{};
+    Palette volumeColors{};
     std::array<int, kColorCount> volumeFunc{};
     bool hasBarColors = false;
     bool hasPeakColors = false;
+    bool hasVolumeColors = false;
     bool hasVolumeFunc = false;
 };
 
 class Core {
 public:
-    explicit Core(int width, int height) : width_(std::max(1, width)), height_(std::max(1, height)) {
+    // `referenceWidth` sets the band count (as `referencewidth` does later); each draw fits the bands
+    // to its own canvas.
+    explicit Core(int referenceWidth) : referenceWidth_(std::max(1, referenceWidth)) {
         setDefaultColors();
         resetLevelTables();
         setupFFT();
@@ -132,30 +134,21 @@ public:
         hasWaveform_ = true;
     }
 
-    void render(uint8_t *outRGBA, int width, int height, size_t stride) {
-        if (!outRGBA || width <= 0 || height <= 0 || stride < static_cast<size_t>(width * 4)) {
-            return;
-        }
-
-        if (width != width_ || height != height_) {
-            width_ = width;
-            height_ = height;
-            recalcGeometry();
-        }
-
-        processFrame();
-        drawFrame(outRGBA, width, height, stride);
-    }
-
     int setOption(const std::string &keyRaw, int value) {
         const std::string key = lower(trim(keyRaw));
 
         if (key == "falloff") {
-            falloffRate_ = clampInt(value, 0, 255);
+            falloffRate_ = clampInt(value, 0, 75);
             return 1;
         }
         if (key == "peakchange") {
             peakChangeRate_ = clampInt(value, 0, 255);
+            rebuildPeakTables_ = true;
+            return 1;
+        }
+        if (key == "peakfalloffmode") {
+            peakLogFalloff_ = value != 0;
+            rebuildPeakTables_ = true;
             return 1;
         }
         if (key == "bar width" || key == "bar_width") {
@@ -169,7 +162,7 @@ public:
             return 1;
         }
         if (key == "y-spacing" || key == "y_spacing") {
-            ySpacing_ = clampInt(value, 0, 32);
+            ySpacing_ = clampInt(value, 1, 7);
             return 1;
         }
         if (key == "backgrounddraw") {
@@ -182,14 +175,17 @@ public:
         }
         if (key == "peakcolourstyle") {
             peakColourStyle_ = clampInt(value, 0, 2);
+            rebuildPeakTables_ = true;
             return 1;
         }
         if (key == "effect") {
             effect_ = clampInt(value, 0, 7);
+            ghosts_.reset(bands_, bandWidth_);
             return 1;
         }
         if (key == "peak effect" || key == "peak_effect") {
             peakEffect_ = clampInt(value, 0, 5);
+            rebuildPeakTables_ = true;
             return 1;
         }
         if (key == "reverseleft") {
@@ -232,7 +228,7 @@ public:
             return 1;
         }
         if (key == "referencewidth") {
-            referenceWidth_ = std::max(0, value);
+            referenceWidth_ = std::max(1, value);
             recalcGeometry();
             return 1;
         }
@@ -249,6 +245,10 @@ public:
         }
         if (key == "peakchange") {
             *valueOut = peakChangeRate_;
+            return 1;
+        }
+        if (key == "peakfalloffmode") {
+            *valueOut = peakLogFalloff_ ? 1 : 0;
             return 1;
         }
         if (key == "bar width" || key == "bar_width") {
@@ -341,16 +341,18 @@ public:
             return clampInt(v, lo, hi);
         };
 
-        falloffRate_ = readAnalyzerInt("Falloff", falloffRate_, 0, 255);
+        falloffRate_ = readAnalyzerInt("Falloff", falloffRate_, 0, 75);
         peakChangeRate_ = readAnalyzerInt("PeakChange", peakChangeRate_, 0, 255);
         requestedBarWidth_ = readAnalyzerInt("Bar Width", requestedBarWidth_, 1, 64);
         xSpacing_ = readAnalyzerInt("X-Spacing", xSpacing_, 0, 32);
-        ySpacing_ = readAnalyzerInt("Y-Spacing", ySpacing_, 0, 32);
+        ySpacing_ = readAnalyzerInt("Y-Spacing", ySpacing_, 1, 7);
         backgroundDraw_ = readAnalyzerInt("BackgroundDraw", backgroundDraw_, 0, 4);
         barColourStyle_ = readAnalyzerInt("BarColourStyle", barColourStyle_, 0, 4);
         peakColourStyle_ = readAnalyzerInt("PeakColourStyle", peakColourStyle_, 0, 2);
         effect_ = readAnalyzerInt("Effect", effect_, 0, 7);
         peakEffect_ = readAnalyzerInt("Peak Effect", peakEffect_, 0, 5);
+        peakLogFalloff_ = readAnalyzerInt("PeakFallOffMode", peakLogFalloff_ ? 1 : 0, 0, 1) != 0;
+        rebuildPeakTables_ = true;
         reverseLeft_ = readAnalyzerInt("ReverseLeft", reverseLeft_ ? 1 : 0, 0, 1) != 0;
         reverseRight_ = readAnalyzerInt("ReverseRight", reverseRight_ ? 1 : 0, 0, 1) != 0;
         mono_ = readAnalyzerInt("Mono", mono_ ? 1 : 0, 0, 1) != 0;
@@ -370,6 +372,9 @@ public:
         }
         if (profile.hasPeakColors) {
             peakColors_ = profile.peakColors;
+        }
+        if (profile.hasVolumeColors) {
+            volumeColors_ = profile.volumeColors;
         }
         if (profile.hasVolumeFunc) {
             volumeFunc_ = profile.volumeFunc;
@@ -400,6 +405,7 @@ public:
         out << "PeakColourStyle=" << peakColourStyle_ << "\n";
         out << "Effect=" << effect_ << "\n";
         out << "Peak Effect=" << peakEffect_ << "\n";
+        out << "PeakFallOffMode=" << (peakLogFalloff_ ? 1 : 0) << "\n";
         out << "ReverseLeft=" << (reverseLeft_ ? 1 : 0) << "\n";
         out << "ReverseRight=" << (reverseRight_ ? 1 : 0) << "\n";
         out << "Mono=" << (mono_ ? 1 : 0) << "\n";
@@ -424,6 +430,13 @@ public:
                 << static_cast<int>(peakColors_[i].b) << "\n";
         }
 
+        out << "[VolumeColours]\n";
+        for (int i = 0; i < kColorCount; ++i) {
+            out << i << "=" << static_cast<int>(volumeColors_[i].r) << " "
+                << static_cast<int>(volumeColors_[i].g) << " "
+                << static_cast<int>(volumeColors_[i].b) << "\n";
+        }
+
         out << "[VolumeFunction]\n";
         for (int i = 0; i < kColorCount; ++i) {
             out << i << "=" << volumeFunc_[i] << "\n";
@@ -436,13 +449,64 @@ public:
 
     const std::string &lastError() const { return lastError_; }
 
+    void setFixedDtMs(int ms) { fixedDtMs_ = std::max(0, ms); }
+
+    void processFrameOnly() {
+        rebuildBarTableIfNeeded();
+        rebuildPeakTablesIfNeeded();
+
+        // Scale decay by elapsed time so different frame rates produce identical visuals.
+        double dtScale = 1.0;
+        auto now = Clock::now();
+        if (fixedDtMs_ > 0) {
+            dtScale = fixedDtMs_ / kRefIntervalMs;
+        } else if (hasLastFrameTime_) {
+            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
+            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
+            dtScale = dtMs / kRefIntervalMs;
+        }
+        lastFrameTime_ = now;
+        hasLastFrameTime_ = true;
+
+        // Plugin-frame steps (peaks, and the effects' ghosts) run in whole 33 ms ticks.
+        const double ticksExact = dtScale + tickAccum_;
+        const int ticks = static_cast<int>(ticksExact);
+        tickAccum_ = ticksExact - ticks;
+
+        if (!hasWaveform_) {
+            decayWhenIdle(dtScale, ticks);
+            stepGhosts(ticks);
+            return;
+        }
+
+        spectrumOf(waveLeft_, spectrumLeft_);
+        spectrumOf(waveRight_, spectrumRight_);
+
+        int volumeSum = 0;
+        if (mono_) {
+            volumeSum += runBars(0, bands_, reverseRight_, dtScale, ticks, [&](int low, int high) { return monoLevel(low, high); });
+        } else {
+            const int half = leftBands();
+            volumeSum += runBars(0, half, reverseLeft_, dtScale, ticks,
+                                 [&](int low, int high) { return stereoLevel(spectrumLeft_, low, high); });
+            volumeSum += runBars(half, bands_ - half, reverseRight_, dtScale, ticks,
+                                 [&](int low, int high) { return stereoLevel(spectrumRight_, low, high); });
+        }
+
+        volume_ = clampInt(volumeSum / bands_, 0, 255);
+        stepGhosts(ticks);
+        hasWaveform_ = false;
+    }
+
+    void drawAtSize(unsigned char *outRGBA, int w, int h, int stride) {
+        drawFrame(outRGBA, w, h, static_cast<size_t>(stride));
+    }
+
+
 private:
-    int width_ = 1;
-    int height_ = 1;
-    int drawWidth_ = 1;
     int bands_ = 1;
     int bandWidth_ = 3;
-    int referenceWidth_ = 0;  // if > 0, use for band computation instead of drawWidth_
+    int referenceWidth_ = 1;  // the width the band count is computed for
 
     int falloffRate_ = 12;
     int peakChangeRate_ = 80;
@@ -454,6 +518,7 @@ private:
     int peakColourStyle_ = 0;
     int effect_ = 0;
     int peakEffect_ = 1;
+    bool peakLogFalloff_ = false;  // PeakFallOffMode
     bool reverseLeft_ = true;
     bool reverseRight_ = false;
     bool mono_ = true;
@@ -485,20 +550,29 @@ private:
 
     std::vector<int> level_;
     std::vector<int> peakLevel_;
-    std::vector<int> peakTimer_;
+    std::vector<int> peakChange_;  // frames left in the peak's life (the plugin's `peakchange`)
+    std::vector<int> peakRef_;     // level the peak was set at (`peakreferencelevel`)
+    visclassic::PeakTables peakTables_;
+    visclassic::Rng rng_;
+    bool rebuildPeakTables_ = true;
+    visclassic::GhostState ghosts_;
+    visclassic::DrawContext drawScratch_;  // drawFrame's buffers, kept to avoid per-frame allocation
+    double tickAccum_ = 0;  // fraction of a 33 ms plugin frame not yet run
 
     // Time-based decay: scale decay by elapsed time so different frame rates produce identical visuals.
     using Clock = std::chrono::steady_clock;
     static constexpr double kRefIntervalMs = 33.333;  // 30fps baseline
     Clock::time_point lastFrameTime_{};
     bool hasLastFrameTime_ = false;
+    double fixedDtMs_ = 0;  // vc_set_fixed_dt_ms: > 0 pins the frame interval for tests
+
     std::vector<float> levelDecayAccum_;
-    std::vector<float> peakTimerAccum_;
-    std::vector<float> peakDecayAccum_;
 
     std::array<int, kColorCount> volumeFunc_{};
-    std::array<RGB, kColorCount> barColors_{};
-    std::array<RGB, kColorCount> peakColors_{};
+    Palette barColors_{};
+    Palette peakColors_{};
+    Palette volumeColors_{};
+    int volume_ = 0;  // this frame's average VolumeFunction over the bars; drives the Flash background
 
     std::string profileMessage_;
     std::string currentProfilePath_;
@@ -513,15 +587,15 @@ private:
             peakColors_[i] = RGB{static_cast<uint8_t>(clampInt(92 + (163 * i) / 255, 0, 255)),
                                  static_cast<uint8_t>((255 * i) / 255),
                                  static_cast<uint8_t>((255 * i) / 255)};
+            volumeColors_[i] = RGB{static_cast<uint8_t>(i / 1.8), static_cast<uint8_t>(i / 1.6), static_cast<uint8_t>(i / 1.45)};
         }
     }
 
     void resetLevelTables() {
+        // The plugin's DefaultSettings: a 1/x curve.
         for (int i = 0; i < kColorCount; ++i) {
-            volumeFunc_[i] = i;
+            volumeFunc_[i] = 256 - 256 / (i + 1);
         }
-        // Match upstream defaults: gentle log shape for analyzer response.
-        LogBase10Table(volumeFunc_.data());
     }
 
     void setupFFT() {
@@ -529,10 +603,8 @@ private:
     }
 
     void recalcGeometry() {
-        drawWidth_ = std::max(1, width_);
         bandWidth_ = std::max(1, requestedBarWidth_);
-        const int refW = (referenceWidth_ > 0) ? referenceWidth_ : drawWidth_;
-        int newBands = std::max(1, (refW + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
+        int newBands = std::max(1, (referenceWidth_ + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
         newBands = std::min(kMaxBars, newBands);
         if (!mono_) {
             newBands = std::max(2, (newBands / 2) * 2);
@@ -541,20 +613,46 @@ private:
             bands_ = newBands;
             level_.assign(static_cast<size_t>(bands_), 0);
             peakLevel_.assign(static_cast<size_t>(bands_), 0);
-            peakTimer_.assign(static_cast<size_t>(bands_), 0);
+            peakChange_.assign(static_cast<size_t>(bands_), 0);
+            peakRef_.assign(static_cast<size_t>(bands_), 0);
             levelDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-            peakTimerAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-            peakDecayAccum_.assign(static_cast<size_t>(bands_), 0.0f);
-            rebuildBarTable_ = true;
         }
+
+        // The plugin's CalculateFFTVariables: start at 512 bins and double until every bar of one
+        // channel gets at least two. A fixed 512 left the last bars of a 576-bar analyzer empty (#682).
+        const int barUsage = mono_ ? bands_ : (bands_ + 1) / 2;
+        int newFft = kDefaultFFTFrequencies;
+        while (barUsage > newFft / 2) {
+            newFft <<= 1;
+        }
+        if (newFft != fftFrequencies_) {
+            fftFrequencies_ = newFft;
+            fftSpectrum_.assign(static_cast<size_t>(newFft), 0.0f);
+            spectrumLeft_.assign(static_cast<size_t>(newFft), 0);
+            spectrumRight_.assign(static_cast<size_t>(newFft), 0);
+            setupFFT();
+        }
+        // Mono and stereo split the table differently even at the same band count.
+        rebuildBarTable_ = true;
+        // The plugin clears the effects' ghosts whenever its geometry or settings are recalculated.
+        ghosts_.reset(bands_, bandWidth_);
     }
 
+    int leftBands() const { return mono_ ? bands_ : bands_ / 2; }
+
+    // Mono: one table over every bar. Stereo: each channel's bars cover the whole spectrum, left
+    // at [0, half) and right at [half, bands_), as the plugin builds them.
     void rebuildBarTableIfNeeded() {
         if (!rebuildBarTable_) {
             return;
         }
         lastBarTableSampleRate_ = sampleRate_;
-        LogBarValueTable(static_cast<unsigned int>(fftFrequencies_), sampleRate_, 16000, static_cast<unsigned int>(bands_), barTable_.data());
+        const unsigned int fft = static_cast<unsigned int>(fftFrequencies_);
+        const int half = leftBands();
+        LogBarValueTable(fft, sampleRate_, 16000, static_cast<unsigned int>(half), barTable_.data());
+        if (!mono_) {
+            LogBarValueTable(fft, sampleRate_, 16000, static_cast<unsigned int>(bands_ - half), barTable_.data() + half);
+        }
         rebuildBarTable_ = false;
     }
 
@@ -572,7 +670,38 @@ private:
         return AverageLevelCalcStereo(low, high, src.data());
     }
 
-    void updatePeaks(size_t idx, int barLevel, double dtScale) {
+    // One channel's FFT, scaled to 0..255 per bin.
+    void spectrumOf(const std::array<uint8_t, kWaveCount> &wave, std::vector<uint8_t> &out) {
+        for (int i = 0; i < kWaveCount; ++i) {
+            floatWave_[i] = static_cast<float>(static_cast<int>(wave[i]) - 128);
+        }
+        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
+        for (int i = 0; i < fftFrequencies_; ++i) {
+            const unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
+            out[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
+        }
+    }
+
+    // Bars [first, first + count) read consecutive bins from `barTable_`'s entries for them, low to
+    // high frequency, and are laid out left to right or, `reverse`, right to left. Returns the bars'
+    // VolumeFunction sum.
+    template <typename LevelAt>
+    int runBars(int first, int count, bool reverse, double dtScale, int ticks, LevelAt levelAt) {
+        int volumeSum = 0;
+        int low = 0;
+        int x = reverse ? first + count - 1 : first;
+        const int dir = reverse ? -1 : 1;
+        for (int i = first; i < first + count; ++i, x += dir) {
+            const int high = std::min(low + static_cast<int>(barTable_[static_cast<size_t>(i)]), fftFrequencies_);
+            const int newLevel = levelAt(low, high);
+            low = high;
+            volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
+            updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
+        }
+        return volumeSum;
+    }
+
+    void updatePeaks(size_t idx, int barLevel, double dtScale, int ticks) {
         float scaledFalloff = static_cast<float>(falloffRate_) * static_cast<float>(dtScale)
                               + levelDecayAccum_[idx];
         int intFalloff = static_cast<int>(scaledFalloff);
@@ -584,300 +713,81 @@ private:
         } else {
             level_[idx] = std::max(0, level_[idx] - intFalloff);
         }
-
-        if (peakChangeRate_ <= 0) {
-            peakLevel_[idx] = 0;
-            peakTimer_[idx] = 0;
-            return;
-        }
-
-        if (level_[idx] >= peakLevel_[idx]) {
-            peakLevel_[idx] = level_[idx];
-            peakTimer_[idx] = peakChangeRate_;
-            peakTimerAccum_[idx] = 0.0f;
-            peakDecayAccum_[idx] = 0.0f;
-            return;
-        }
-
-        if (peakTimer_[idx] > 0) {
-            float scaledTick = static_cast<float>(dtScale) + peakTimerAccum_[idx];
-            int intTick = static_cast<int>(scaledTick);
-            peakTimerAccum_[idx] = scaledTick - static_cast<float>(intTick);
-            peakTimer_[idx] = std::max(0, peakTimer_[idx] - intTick);
-        } else {
-            float scaledDescent = static_cast<float>(dtScale) + peakDecayAccum_[idx];
-            int intDescent = static_cast<int>(scaledDescent);
-            peakDecayAccum_[idx] = scaledDescent - static_cast<float>(intDescent);
-            peakLevel_[idx] = std::max(level_[idx], peakLevel_[idx] - intDescent);
-        }
+        stepPeak(idx, ticks);
     }
 
-    void decayWhenIdle(double dtScale) {
+    void decayWhenIdle(double dtScale, int ticks) {
         for (size_t i = 0; i < level_.size(); ++i) {
             float scaledFalloff = static_cast<float>(falloffRate_) * static_cast<float>(dtScale)
                                   + levelDecayAccum_[i];
             int intFalloff = static_cast<int>(scaledFalloff);
             levelDecayAccum_[i] = scaledFalloff - static_cast<float>(intFalloff);
             level_[i] = std::max(0, level_[i] - intFalloff);
+            stepPeak(i, ticks);
+        }
+    }
 
-            if (peakTimer_[i] > 0) {
-                float scaledTick = static_cast<float>(dtScale) + peakTimerAccum_[i];
-                int intTick = static_cast<int>(scaledTick);
-                peakTimerAccum_[i] = scaledTick - static_cast<float>(intTick);
-                peakTimer_[i] = std::max(0, peakTimer_[i] - intTick);
+    // The plugin's per-frame peak step, run once per elapsed 33 ms tick. A peak restarts its life
+    // from the bar when its life runs out or the bar reaches it; otherwise it follows its table.
+    // With no tick this frame, only the bar-reached restart applies, so a peak never lags under its bar.
+    void stepPeak(size_t i, int ticks) {
+        const auto restart = [&] {
+            const int level = clampInt(level_[i], 0, 255);
+            peakChange_[i] = peakTables_.length[static_cast<size_t>(level)];
+            peakRef_[i] = peakChangeRate_ > 0 ? level : 0;
+            peakLevel_[i] = peakTables_.level[static_cast<size_t>(peakRef_[i])][static_cast<size_t>(peakChange_[i])];
+        };
+        if (ticks == 0) {
+            if (peakLevel_[i] <= level_[i]) restart();
+            return;
+        }
+        for (int t = 0; t < ticks; ++t) {
+            if (peakChange_[i]-- == 0 || peakLevel_[i] <= level_[i]) {
+                restart();
             } else {
-                float scaledDescent = static_cast<float>(dtScale) + peakDecayAccum_[i];
-                int intDescent = static_cast<int>(scaledDescent);
-                peakDecayAccum_[i] = scaledDescent - static_cast<float>(intDescent);
-                peakLevel_[i] = std::max(level_[i], peakLevel_[i] - intDescent);
+                peakLevel_[i] = peakTables_.level[static_cast<size_t>(peakRef_[i])][static_cast<size_t>(peakChange_[i])];
             }
         }
     }
 
-public:
-    void processFrameOnly() {
-        rebuildBarTableIfNeeded();
-
-        // Scale decay by elapsed time so different frame rates produce identical visuals.
-        double dtScale = 1.0;
-        auto now = Clock::now();
-        if (hasLastFrameTime_) {
-            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
-            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
-            dtScale = dtMs / kRefIntervalMs;
-        }
-        lastFrameTime_ = now;
-        hasLastFrameTime_ = true;
-
-        if (!hasWaveform_) {
-            decayWhenIdle(dtScale);
-            return;
-        }
-
-        // Left
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveLeft_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumLeft_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        // Right
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveRight_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumRight_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        if (mono_) {
-            int low = 0;
-            int x = reverseRight_ ? bands_ - 1 : 0;
-            int dir = reverseRight_ ? -1 : 1;
-            for (int i = 0; i < bands_; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = monoLevel(low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-        } else {
-            const int half = bands_ / 2;
-
-            int low = 0;
-            int x = reverseLeft_ ? half - 1 : 0;
-            int dir = reverseLeft_ ? -1 : 1;
-            for (int i = 0; i < half; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumLeft_, low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-
-            low = 0;
-            x = reverseRight_ ? bands_ - 1 : half;
-            dir = reverseRight_ ? -1 : 1;
-            for (int i = 0; i < half; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumRight_, low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-        }
-
-        hasWaveform_ = false;
-    }
-
-    void processFrame() {
-        // Upstream color helpers use a global draw_height; restore per-frame for this instance.
-        draw_height = std::max(1, height_);
-        rebuildBarTableIfNeeded();
-
-        // Scale decay by elapsed time so different frame rates produce identical visuals.
-        double dtScale = 1.0;
-        auto now = Clock::now();
-        if (hasLastFrameTime_) {
-            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
-            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
-            dtScale = dtMs / kRefIntervalMs;
-        }
-        lastFrameTime_ = now;
-        hasLastFrameTime_ = true;
-
-        if (!hasWaveform_) {
-            decayWhenIdle(dtScale);
-            return;
-        }
-
-        // Left
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveLeft_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumLeft_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        // Right
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveRight_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumRight_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        if (mono_) {
-            int low = 0;
-            int x = reverseRight_ ? bands_ - 1 : 0;
-            int dir = reverseRight_ ? -1 : 1;
-            for (int i = 0; i < bands_; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = monoLevel(low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-        } else {
-            const int half = bands_ / 2;
-
-            int low = 0;
-            int x = reverseLeft_ ? half - 1 : 0;
-            int dir = reverseLeft_ ? -1 : 1;
-            for (int i = 0; i < half; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumLeft_, low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-
-            low = 0;
-            x = reverseRight_ ? bands_ - 1 : half;
-            dir = reverseRight_ ? -1 : 1;
-            for (int i = 0; i < half; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumRight_, low, high);
-                low = high;
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale);
-            }
-        }
-
-        hasWaveform_ = false;
-    }
-
-    RGB barColorForLevel(int level, int yScaled) const {
-        unsigned char idx = 0;
-        switch (barColourStyle_) {
-        case 1:
-            idx = BarColourFire(level, yScaled);
-            break;
-        case 2:
-            idx = BarColourLines(level, yScaled);
-            break;
-        case 3:
-            idx = BarColourWinampFire(level, yScaled);
-            break;
-        case 4:
-            idx = BarColourElevator(level, yScaled);
-            break;
-        case 0:
-        default:
-            idx = BarColourClassic(level, yScaled);
-            break;
-        }
-        return barColors_[idx];
-    }
-
-    RGB peakColorForLevel(int level, int yScaled) const {
-        unsigned char idx = 0;
+    visclassic::PeakColourFn peakColourScheme() const {
         switch (peakColourStyle_) {
-        case 1:
-            idx = PeakColourLevel(level, yScaled);
-            break;
-        case 2:
-            idx = PeakColourLevelFade(level, yScaled);
-            break;
-        case 0:
-        default:
-            idx = PeakColourFade(level, yScaled);
-            break;
-        }
-        return peakColors_[idx];
-    }
-
-
-    void setPixelBounded(uint8_t *dst, int x, int y, int w, int h, size_t stride, const RGB &c) const {
-        if (x < 0 || x >= w || y < 0 || y >= h) return;
-        const size_t o = static_cast<size_t>(y) * stride + static_cast<size_t>(x) * 4;
-        dst[o + 0] = c.b;
-        dst[o + 1] = c.g;
-        dst[o + 2] = c.r;
-        dst[o + 3] = 255;
-    }
-
-    void fillBackgroundSized(uint8_t *dst, int w, int h, size_t stride) const {
-        uint8_t base = 0;
-        switch (backgroundDraw_) {
-        case 1: base = 18; break;
-        case 2: base = 10; break;
-        case 3: base = 6; break;
-        case 4: base = 8; break;
-        default: base = 0; break;
-        }
-
-        for (int y = 0; y < h; ++y) {
-            uint8_t *row = dst + static_cast<size_t>(y) * stride;
-            for (int x = 0; x < w; ++x) {
-                uint8_t v = base;
-                if ((backgroundDraw_ == 3 || backgroundDraw_ == 4) && ((x % 8 == 0) || (y % 8 == 0))) {
-                    v = static_cast<uint8_t>(std::min(255, base + 20));
-                }
-                row[x * 4 + 0] = transparentBg_ ? 0 : v;
-                row[x * 4 + 1] = transparentBg_ ? 0 : v;
-                row[x * 4 + 2] = transparentBg_ ? 0 : v;
-                row[x * 4 + 3] = transparentBg_ ? 0 : 255;
-            }
+        case 1: return PeakColourLevel;
+        case 2: return PeakColourLevelFade;
+        default: return PeakColourFade;
         }
     }
 
-    void drawFrame(uint8_t *dst, int width, int height, size_t stride) {
-        if (!dst || width <= 0 || height <= 0 || stride < static_cast<size_t>(width * 4)) {
-            return;
-        }
-        draw_height = height;
-        fillBackgroundSized(dst, width, height, stride);
+    void rebuildPeakTablesIfNeeded() {
+        if (!rebuildPeakTables_) return;
+        peakTables_ = visclassic::PeakTables{};
+        visclassic::buildPeakTables(peakTables_, peakEffect_, peakChangeRate_, peakLogFalloff_, peakColourScheme(), rng_);
+        std::fill(peakLevel_.begin(), peakLevel_.end(), 0);
+        std::fill(peakChange_.begin(), peakChange_.end(), 0);
+        std::fill(peakRef_.begin(), peakRef_.end(), 0);
+        rebuildPeakTables_ = false;
+    }
 
-        const int effectiveHeight = std::max(1, draw_height);
+    visclassic::BarColourFn barColourScheme() const {
+        switch (barColourStyle_) {
+        case 1: return BarColourFire;
+        case 2: return BarColourLines;
+        case 3: return BarColourWinampFire;
+        case 4: return BarColourElevator;
+        default: return BarColourClassic;
+        }
+    }
+
+    void stepGhosts(int ticks) {
+        for (int t = 0; t < ticks; ++t) {
+            visclassic::advanceGhosts(ghosts_, effect_, level_, bandWidth_, xSpacing_, rng_);
+        }
+    }
+
+    // Each bar's [start, end) columns at this canvas width.
+    void barColumns(int width, std::vector<int> &starts, std::vector<int> &ends) const {
+        starts.clear();
+        ends.clear();
         for (int bar = 0; bar < bands_; ++bar) {
             int xStart = 0;
             int xEnd = 0;
@@ -891,60 +801,57 @@ public:
                 if (xSpacing_ > 0 && (xEnd - xStart) > 1) {
                     xEnd -= std::min(xSpacing_, (xEnd - xStart) - 1);
                 }
-                if (xEnd <= xStart) {
-                    xEnd = xStart + 1;
-                }
             } else {
                 xStart = bar * (bandWidth_ + xSpacing_);
                 if (xStart >= width) break;
                 xEnd = std::min(width, xStart + bandWidth_);
             }
-
-            const int level = clampInt(level_[static_cast<size_t>(bar)], 0, 255);
-            const int peak = clampInt(peakLevel_[static_cast<size_t>(bar)], 0, 255);
-
-            int barPx = (level * effectiveHeight) / 255;
-            int peakY = height - 1 - ((peak * effectiveHeight) / 255);
-
-            barPx = std::max(0, std::min(height, barPx));
-            peakY = clampInt(peakY, 0, height - 1);
-
-            for (int row = 0; row < barPx; ++row) {
-                const int y = height - 1 - row;
-                int yScaled = (row * 255) / effectiveHeight;
-                RGB c = barColorForLevel(level, yScaled);
-
-                for (int x = xStart; x < xEnd; ++x) {
-                    setPixelBounded(dst, x, y, width, height, stride, c);
-                }
-
-                // Approximate fade shadow effect when profile requests it.
-                if (effect_ == 7) {
-                    RGB shadow = c;
-                    shadow.r = static_cast<uint8_t>(shadow.r / 4);
-                    shadow.g = static_cast<uint8_t>(shadow.g / 4);
-                    shadow.b = static_cast<uint8_t>(shadow.b / 4);
-                    if (fitToWidth_) {
-                        setPixelBounded(dst, xEnd, y, width, height, stride, shadow);
-                    } else {
-                        setPixelBounded(dst, xStart + bandWidth_, y, width, height, stride, shadow);
-                    }
-                }
-            }
-
-            if (peakChangeRate_ > 0) {
-                const int yScaled = ((height - 1 - peakY) * 255) / effectiveHeight;
-                RGB pc = peakColorForLevel(level, yScaled);
-                for (int x = xStart; x < xEnd; ++x) {
-                    setPixelBounded(dst, x, peakY, width, height, stride, pc);
-                }
-            }
+            starts.push_back(xStart);
+            ends.push_back(xEnd);
         }
     }
 
-public:
-    void drawAtSize(unsigned char *outRGBA, int w, int h, int stride) {
-        drawFrame(outRGBA, w, h, static_cast<size_t>(stride));
+    void drawFrame(uint8_t *dst, int width, int height, size_t stride) {
+        if (!dst || width <= 0 || height <= 0 || stride < static_cast<size_t>(width * 4)) {
+            return;
+        }
+        draw_height = height;
+
+        visclassic::DrawContext &ctx = drawScratch_;  // reused: no allocation per frame
+        ctx.dst = dst;
+        ctx.w = width;
+        ctx.h = height;
+        ctx.stride = stride;
+        ctx.ySpacing = ySpacing_;
+        ctx.barWidth = bandWidth_;
+        ctx.xSpacing = xSpacing_;
+        barColumns(width, ctx.barStart, ctx.barEnd);
+        ctx.level = level_.data();
+        ctx.peak = peakLevel_.data();
+        ctx.peakColour.resize(ctx.barStart.size());
+        for (size_t bar = 0; bar < ctx.barStart.size(); ++bar) {
+            ctx.peakColour[bar] = peakTables_.colour[static_cast<size_t>(peakRef_[bar])][static_cast<size_t>(peakChange_[bar])];
+        }
+        ctx.barScheme = barColourScheme();
+        ctx.bars = &barColors_;
+        ctx.peaks = &peakColors_;
+        ctx.volumes = &volumeColors_;
+
+        // Rows the passes below leave alone stay black, or clear when the skin shows through;
+        // a transparent canvas draws no BackgroundDraw at all.
+        for (int y = 0; y < height; ++y) {
+            uint8_t *line = dst + static_cast<size_t>(y) * stride;
+            for (int x = 0; x < width; ++x) {
+                line[x * 4 + 0] = 0;
+                line[x * 4 + 1] = 0;
+                line[x * 4 + 2] = 0;
+                line[x * 4 + 3] = transparentBg_ ? 0 : 255;
+            }
+        }
+        if (!transparentBg_) {
+            visclassic::drawBackground(ctx, backgroundDraw_, effect_, volume_);
+        }
+        visclassic::drawBars(ctx, effect_, ghosts_);
     }
 
     static bool readProfile(const std::string &path, IniProfile &out) {
@@ -979,6 +886,15 @@ public:
                 continue;
             }
 
+            if (section == "VolumeFunction") {  // integers, not colours
+                int v = 0;
+                if (parseInt(value, v)) {
+                    out.volumeFunc[static_cast<size_t>(idx)] = v;
+                    out.hasVolumeFunc = true;
+                }
+                continue;
+            }
+
             RGB c;
             if (!parseRGB(value, c)) {
                 continue;
@@ -990,30 +906,9 @@ public:
             } else if (section == "PeakColours") {
                 out.peakColors[static_cast<size_t>(idx)] = c;
                 out.hasPeakColors = true;
-            }
-        }
-
-        // Second pass: parse VolumeFunction (integer values, not RGB)
-        {
-            std::ifstream in2(path);
-            std::string section2;
-            std::string line2;
-            while (std::getline(in2, line2)) {
-                line2 = trim(line2);
-                if (line2.empty() || line2[0] == ';' || line2[0] == '#') continue;
-                if (line2.front() == '[' && line2.back() == ']') {
-                    section2 = line2.substr(1, line2.size() - 2);
-                    continue;
-                }
-                if (section2 != "VolumeFunction") continue;
-                const size_t eq = line2.find('=');
-                if (eq == std::string::npos) continue;
-                int idx2 = -1;
-                if (!parseInt(trim(line2.substr(0, eq)), idx2) || idx2 < 0 || idx2 >= kColorCount) continue;
-                int val = 0;
-                if (!parseInt(trim(line2.substr(eq + 1)), val)) continue;
-                out.volumeFunc[static_cast<size_t>(idx2)] = val;
-                out.hasVolumeFunc = true;
+            } else if (section == "VolumeColours") {
+                out.volumeColors[static_cast<size_t>(idx)] = c;
+                out.hasVolumeColors = true;
             }
         }
 
@@ -1027,14 +922,15 @@ struct VisClassicCore {
     Core impl;
     std::string lastError;
 
-    explicit VisClassicCore(int width, int height) : impl(width, height) {}
+    explicit VisClassicCore(int width) : impl(width) {}
 };
 
 extern "C" {
 
 VisClassicCore *vc_create(int width, int height) {
     try {
-        return new VisClassicCore(width, height);
+        (void)height;  // the band count comes from the width; each draw passes its own size
+        return new VisClassicCore(width);
     } catch (...) {
         return nullptr;
     }
@@ -1051,15 +947,6 @@ void vc_set_waveform_u8(VisClassicCore *core,
                         double sample_rate) {
     if (!core) return;
     core->impl.setWaveform(left, right, count, sample_rate);
-}
-
-void vc_render_rgba(VisClassicCore *core,
-                    uint8_t *out_rgba,
-                    int width,
-                    int height,
-                    size_t stride) {
-    if (!core) return;
-    core->impl.render(out_rgba, width, height, stride);
 }
 
 int vc_set_option(VisClassicCore *core, const char *key, int value) {
@@ -1104,6 +991,11 @@ int vc_draw_at_size(VisClassicCore *core, unsigned char *outRGBA, int width, int
     if (!core) return 0;
     core->impl.drawAtSize(outRGBA, width, height, stride);
     return 1;
+}
+
+void vc_set_fixed_dt_ms(VisClassicCore *core, int ms) {
+    if (!core) return;
+    core->impl.setFixedDtMs(ms);
 }
 
 }  // extern "C"
