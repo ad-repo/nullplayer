@@ -8,9 +8,10 @@
 #           or a bundled family skin:        modern:NeonWave   metal:"Brushed Steel"
 #           or an installed Audion face:     audion:AppleClassic   audion:"Black Bar"
 #           or an installed Sonique skin:    sonique:BlueEyes      (DEBUG; -soniqueSkinMode mid|small after --)
+#           or an installed AIMP skin:       aimp:"28_Kenwood_KX-800"   /abs/AIMPSkins/x.acs4
 #
 # The family (and so -uiMode) comes from the extension: .wsz/.whsz classic, .wal winampModern,
-# .wmz wmp. Nothing needs restoring afterwards: restoration is disabled with a *launch argument*
+# .wmz wmp, .acs3/.acs4/.acs5 aimp (installed only: the app imports AIMP skins from its menu). Nothing needs restoring afterwards: restoration is disabled with a *launch argument*
 # (NSArgumentDomain), never a `defaults write`, so the user's saved Save State on Quit choice is untouched.
 # NULLPLAYER_PLAY set by the caller (a file, a .cue, or a :-separated list) replaces the default
 # `music` playlist.
@@ -41,16 +42,21 @@ case "$SKIN" in
   metal:*)  FAMILY=metal;  NAME="${SKIN#metal:}" ;;
   audion:*) FAMILY=audion; NAME="${SKIN#audion:}"; FILE="$SUPPORT/AudionFaces/$NAME"
             [ -f "$FILE/index.json" ] || { echo "LAUNCH FAIL: no installed Audion face '$NAME' (no $FILE/index.json)"; exit 1; } ;;
+  aimp:*)   FAMILY=aimp; NAME="${SKIN#aimp:}"
+            FILE=$(find "$SUPPORT/AIMPSkins" -maxdepth 1 -type f -iname "$NAME.acs[345]" 2>/dev/null | head -1)
+            [ -n "$FILE" ] || { echo "LAUNCH FAIL: no installed AIMP skin '$NAME' (no $SUPPORT/AIMPSkins/$NAME.acs3|4|5)"; exit 1; } ;;
   sonique:*) FAMILY=sonique; NAME="${SKIN#sonique:}"; FILE="$SUPPORT/SoniqueSkins/$NAME.sgf"
             [ -f "$FILE" ] || { echo "LAUNCH FAIL: no installed Sonique skin '$NAME' (no $FILE)"; exit 1; } ;;
   /*)       FILE="$SKIN" ;;
   *)  # "corona" matches any family; "corona.wmz" pins one. Never guess between families.
-      case "$SKIN" in *.wsz|*.whsz|*.wal|*.wmz|*.WSZ|*.WAL|*.WMZ) PAT="$SKIN" ;; *) PAT="$SKIN.*" ;; esac
-      MATCHES=$(find "$SUPPORT/Skins" "$SUPPORT/WinampModernSkins" "$SUPPORT/WMPSkins" \
-                  -maxdepth 1 -type f -iname "$PAT" 2>/dev/null)
+      case "$SKIN" in *.wsz|*.whsz|*.wal|*.wmz|*.acs[345]|*.WSZ|*.WAL|*.WMZ|*.ACS[345]) PAT="$SKIN" ;; *) PAT="$SKIN.*" ;; esac
+      # A family folder that was never created makes find exit 1; under set -e that ended the script
+      # silently, so its matches are read regardless.
+      MATCHES=$(find "$SUPPORT/Skins" "$SUPPORT/WinampModernSkins" "$SUPPORT/WMPSkins" "$SUPPORT/AIMPSkins" \
+                  -maxdepth 1 -type f -iname "$PAT" 2>/dev/null || true)
       # Not installed: the .wal test corpus (gold+silver), which the app's skin menu does not list.
       [ -n "$MATCHES" ] || MATCHES=$(find "$SUPPORT/WinampModernCorpus/gold" "$SUPPORT/WinampModernCorpus/silver" \
-                  -maxdepth 1 -type f -iname "$PAT" 2>/dev/null)
+                  -maxdepth 1 -type f -iname "$PAT" 2>/dev/null || true)
       if [ "$(printf '%s' "$MATCHES" | grep -c .)" -gt 1 ]; then
         echo "LAUNCH FAIL: '$SKIN' is ambiguous — add the extension or pass the path:"
         printf '  %s\n' "$MATCHES"; exit 1
@@ -63,6 +69,10 @@ if [ -z "$FAMILY" ]; then
     wsz|whsz) FAMILY=classic ;;
     wal)      FAMILY=winampModern ;;
     wmz)      FAMILY=wmp ;;
+    acs3|acs4|acs5)
+      [ "$(dirname "$FILE")" = "$SUPPORT/AIMPSkins" ] \
+        || { echo "LAUNCH FAIL: AIMP skins launch installed only — import $FILE from the skin menu first"; exit 1; }
+      FAMILY=aimp ;;
     *) echo "LAUNCH FAIL: unknown skin extension: $FILE"; exit 1 ;;
   esac
   NAME=$(basename "${FILE%.*}")
@@ -92,6 +102,9 @@ case "$FAMILY" in
     defaults write $D "${FAMILY}SkinName" -string "$NAME" ;;
   audion)
     ARGS+=(-audionFacePath "$FILE") ;;
+  aimp)
+    # Selected by name like Sonique: written, so the skin menu still switches away from it.
+    defaults write $D aimpSkinName -string "$NAME" ;;
   sonique)
     # Written, not passed as a launch argument: an argument pins the selection for the whole
     # session, so picking another skin from the menu silently reloads this one.
@@ -122,6 +135,7 @@ confirmed() {
     modern)       grep -F "ModernSkinLoader: Loaded skin '" "$LOG" | grep -qF "/$NAME" ;;
     metal)        grep -qF "Loaded built-in metal skin '$NAME'" "$LOG" ;;
     audion)       grep -qF "AudionFace: loaded '$NAME'" "$LOG" ;;
+    aimp)         grep -qF "AIMPSkin: loaded '$(basename "$FILE")'" "$LOG" ;;
     sonique)      grep -qF "SoniqueSkin: loaded '$NAME.sgf'" "$LOG" ;;
   esac
 }

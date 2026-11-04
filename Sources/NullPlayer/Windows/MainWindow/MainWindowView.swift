@@ -73,7 +73,7 @@ enum MainWindowVisMode: String, CaseIterable {
         switch family {
         case .classic: return classicDefaultsKey
         case .nullPlayerModern: return originalDefaultsKey
-        case .winampModern, .wmp, .audion, .sonique: return nil
+        case .winampModern, .wmp, .audion, .sonique, .aimp: return nil
         }
     }
 }
