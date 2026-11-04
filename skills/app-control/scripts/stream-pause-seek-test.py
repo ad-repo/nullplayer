@@ -5,28 +5,31 @@ audio really moved: the track must keep playing for about as long as the seek pu
 Drives the headless CLI (`--cli --verbose`) through a pty with its own keys (Space, arrows),
 so it never touches a running GUI. Reads position from the CLI's `m:ss / m:ss` progress line.
 Prints one line, `STREAM-PAUSE-SEEK PASS|FAIL|ABORT: ...`, exit 0 / 1 / 2.
+Builds the debug binary first (scripts/lib/swiftpm.sh), so it never runs a stale one.
 
-    swift build -c debug --build-system native     # the binary this runs; see scripts/lib/swiftpm.sh
-    skills/app-control/scripts/stream-pause-seek-test.py                   # Lady, fades off
-    skills/app-control/scripts/stream-pause-seek-test.py --fades           # Lady → Greensky Greenlake crossfade
-    skills/app-control/scripts/stream-pause-seek-test.py --no-pause        # control: seek while playing
+Pick the target from `scripts/testdata.sh servers`: an album whose first track (or the
+--track match) runs well past --lead seconds. With --fades it crossfades into the next one.
 
-ABORT means the run proved nothing (stale binary, the track changed before the pause — the
+    S=skills/app-control/scripts/stream-pause-seek-test.py
+    $S --library AD-FLAC --artist "Dead Meadow" --album "Dead Meadow" --track Lady
+    $S --library AD-FLAC --artist "Dead Meadow" --album "Dead Meadow" --track la --fades
+    $S ... --no-pause                                    # control: seek while playing
+
+ABORT means the run proved nothing (build failed, the track changed before the pause — the
 FLAC rapid-seek parse error — or the stream never reached EOF before the pause). Rerun it.
 """
 import argparse, os, pty, re, select, subprocess, sys, time
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-BIN = os.path.join(REPO, ".build/arm64-apple-macosx/debug/NullPlayer")
 RIGHT, LEFT = "\x1b[C", "\x1b[D"
 PROGRESS = re.compile(r"(\d+):(\d\d) / (\d+):(\d\d)")
 
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 ap.add_argument("--source", default="plex")
-ap.add_argument("--library", default="AD-FLAC")
-ap.add_argument("--artist", default="Dead Meadow")
-ap.add_argument("--album", default="Dead Meadow")
-ap.add_argument("--track", help="--track substring filter (default: Lady; with --fades: 'la', which queues Lady + Greensky Greenlake)")
+ap.add_argument("--library", required=True)
+ap.add_argument("--artist", required=True)
+ap.add_argument("--album", required=True)
+ap.add_argument("--track", help="--track substring filter (default: the whole album, from its first track)")
 ap.add_argument("--fades", action="store_true", help="Sweet Fades on (5 s); the pause lands mid-crossfade")
 ap.add_argument("--pause-at", type=float, default=2.5, help="seconds before the end to pause (default 2.5)")
 ap.add_argument("--lead", type=float, default=100, help="seconds of natural playback before the pause; must be long enough for the download to reach EOF (default 100)")
@@ -41,15 +44,16 @@ def verdict(kind, msg, code):
     print(f"STREAM-PAUSE-SEEK {kind}: {msg}  (log {o.log})")
     sys.exit(code)
 
-# The stale-binary trap: a bare `swift build` on Swift 6.4 writes .build/out/Products/, not here.
-newest_src = max(os.path.getmtime(os.path.join(d, f))
-                 for d, _, fs in os.walk(os.path.join(REPO, "Sources")) for f in fs if f.endswith(".swift"))
-if not os.path.exists(BIN) or os.path.getmtime(BIN) < newest_src:
-    verdict("ABORT", f"{BIN} is missing or older than Sources/ — run `swift build -c debug --build-system native`", 2)
+SWIFTPM = 'source scripts/lib/swiftpm.sh && '
+build = subprocess.run(["bash", "-c", SWIFTPM + 'swift build -c debug ${SWIFTPM_ARGS[@]+"${SWIFTPM_ARGS[@]}"}'],
+                       cwd=REPO, capture_output=True, text=True)
+if build.returncode != 0:
+    verdict("ABORT", "debug build failed:\n" + (build.stdout + build.stderr)[-2000:], 2)
+BIN = os.path.join(subprocess.run(["bash", "-c", SWIFTPM + "swiftpm_bin_path debug"], cwd=REPO,
+                                  capture_output=True, text=True, check=True).stdout.strip(), "NullPlayer")
 
-track = o.track if o.track is not None else ("la" if o.fades else "Lady")
 args = [BIN, "--cli", "--verbose", "--source", o.source, "--library", o.library,
-        "--artist", o.artist, "--album", o.album] + (["--track", track] if track else []) + \
+        "--artist", o.artist, "--album", o.album] + (["--track", o.track] if o.track else []) + \
        ["-sweetFadeEnabled", "YES" if o.fades else "NO", "-sweetFadeDuration", "5"] + o.app_args
 
 master, slave = pty.openpty()

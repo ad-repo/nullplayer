@@ -179,11 +179,8 @@ class StreamingAudioPlayer {
         pausedSeekTime ?? player.progress
     }
 
-    /// A seek made while paused, applied on resume. AudioStreaming processes a seek in
-    /// `processSource()`, which returns early while paused and which its `resume()` never re-runs;
-    /// only newly arriving stream data does. Once the download has reached EOF (the track's last
-    /// seconds) none arrives, so the seek was dropped and the buffered audio played on — and
-    /// re-seeking after resume was a no-op, the dropped request still being pending (M73).
+    /// A seek made while paused, applied on resume: AudioStreaming drops it once the download has
+    /// reached EOF (M73; `audio-system` § "A seek while paused is held until resume").
     private var pausedSeekTime: TimeInterval?
     
     /// Total duration in seconds

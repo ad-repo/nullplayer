@@ -399,19 +399,20 @@ cast position=nil sessionPlaying=nil sonosRooms=0 localFileCastInProgress=false
 
 ### Stream pause–seek–resume (server playback regression test)
 
-`skills/app-control/scripts/stream-pause-seek-test.py [--fades] [--no-pause] [--track <substr>]`
-plays a Plex stream in the headless CLI through a pty, pauses it `--pause-at` seconds (default 2.5)
+`skills/app-control/scripts/stream-pause-seek-test.py --library <L> --artist <A> --album <B> [--track <substr>] [--fades] [--no-pause]`
+builds the debug binary (via `scripts/lib/swiftpm.sh`), plays a Plex stream in the headless CLI
+through a pty, pauses it `--pause-at` seconds (default 2.5)
 before the end, seeks back 20 s while paused, resumes, and times how long the track keeps playing
 against what the clock promised. Prints one line, `STREAM-PAUSE-SEEK PASS|FAIL|ABORT: …`, exit 0 / 1 / 2;
 the log (`--log`, default `/tmp/np-stream-pause-seek.log`) carries the `--verbose` NSLog lines with
-`DRIVER` marks. It never touches a running GUI. `--fades` turns Sweet Fades on and queues Lady →
-Greensky Greenlake, so the pause lands mid-crossfade. Run it after any change to
-`StreamingAudioPlayer` pause/resume/seek or the streaming branch of `AudioEngine.seek`/`play`.
+`DRIVER` marks. It never touches a running GUI. Pick the album from `scripts/testdata.sh servers`;
+the track played (the album's first, or the `--track` match) must run well past `--lead` seconds.
+`--fades` turns Sweet Fades on, so the pause lands mid-crossfade into the next track. Verified on
+`--library AD-FLAC --artist "Dead Meadow" --album "Dead Meadow" --track Lady` (`--track la` with
+`--fades`). Run it after any change to `StreamingAudioPlayer` pause/resume/seek or the streaming
+branch of `AudioEngine.seek`/`play`.
 
-- **Build with `swift build -c debug --build-system native` first.** A bare `swift build` on Swift
-  6.4 writes `.build/out/Products/` and leaves the binary this runs stale; the script ABORTs when
-  that binary is older than `Sources/` rather than testing old code.
-- **ABORT is "proved nothing", not a pass.** It fires when the stream never reached EOF before the
+- **ABORT is "proved nothing", not a pass.** It fires when the build fails, the stream never reached EOF before the
   pause (the defect needs the download finished — raise `--lead`), or the track changed before the
   pause: rapid +10 s seeks on these FLAC streams intermittently raise `codecError` /
   `streamParseBytesFailure` and auto-advance, independent of the pause path. `--seek-gap 2`
