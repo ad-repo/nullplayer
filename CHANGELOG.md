@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### App
+
+- **Check for Updates…** (nullPlayer menu, under About nullPlayer) compares this version with the
+  latest GitHub release and, when a newer one is out, offers a **Download** button that opens its
+  release page. Not shown in the Mac App Store build, which the App Store updates itself.
+
 ## 0.34.2
 
 ### Playback

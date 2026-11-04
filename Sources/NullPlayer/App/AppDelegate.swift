@@ -456,6 +456,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(showAbout),
             keyEquivalent: ""
         )
+        // The App Store forbids self-update prompts; it delivers updates itself.
+        if !BundleHelper.isAppStoreBuild {
+            appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        }
         appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(withTitle: "Quit nullPlayer", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
@@ -486,6 +490,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     @objc func showAbout() {
         aboutPanel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc func checkForUpdates() {
+        UpdateChecker.checkNow()
     }
 
     private lazy var aboutPanel = AboutPanel()
