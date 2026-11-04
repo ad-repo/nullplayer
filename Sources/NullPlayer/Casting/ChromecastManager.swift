@@ -69,15 +69,15 @@ class ChromecastManager: CastSessionControllerDelegate {
         browser = NWBrowser(for: descriptor, using: parameters)
         
         browser?.browseResultsChangedHandler = { [weak self] results, changes in
-            NSLog("ChromecastManager: Browse results changed - %d results, %d changes", results.count, changes.count)
+            castDiscoveryLog("ChromecastManager: Browse results changed - %d results, %d changes", results.count, changes.count)
             for change in changes {
                 switch change {
                 case .added(let result):
-                    NSLog("ChromecastManager: Device added: %@", String(describing: result.endpoint))
+                    castDiscoveryLog("ChromecastManager: Device added: %@", String(describing: result.endpoint))
                 case .removed(let result):
-                    NSLog("ChromecastManager: Device removed: %@", String(describing: result.endpoint))
+                    castDiscoveryLog("ChromecastManager: Device removed: %@", String(describing: result.endpoint))
                 case .changed(let old, let new, _):
-                    NSLog("ChromecastManager: Device changed: %@ -> %@", String(describing: old.endpoint), String(describing: new.endpoint))
+                    castDiscoveryLog("ChromecastManager: Device changed: %@ -> %@", String(describing: old.endpoint), String(describing: new.endpoint))
                 case .identical:
                     break
                 @unknown default:
@@ -90,7 +90,7 @@ class ChromecastManager: CastSessionControllerDelegate {
         browser?.stateUpdateHandler = { [weak self] state in
             switch state {
             case .setup:
-                NSLog("ChromecastManager: Browser setting up...")
+                castDiscoveryLog("ChromecastManager: Browser setting up...")
             case .ready:
                 castDiscoveryLog("ChromecastManager: Browser ready - actively discovering _googlecast._tcp services")
             case .failed(let error):
@@ -121,7 +121,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     private func handleBrowseResults(_ results: Set<NWBrowser.Result>) {
         for result in results {
             if case let .service(name, type, domain, _) = result.endpoint {
-                NSLog("ChromecastManager: Processing service: %@ (type: %@, domain: %@)", name, type, domain)
+                castDiscoveryLog("ChromecastManager: Processing service: %@ (type: %@, domain: %@)", name, type, domain)
                 
                 // Resolve the service to get the address
                 resolveService(result: result, name: name) { device in
@@ -158,7 +158,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     private func resolveServiceWithRetry(result: NWBrowser.Result, name: String, attempt: Int, maxAttempts: Int, completion: @escaping (CastDevice?) -> Void) {
         let endpoint = result.endpoint
         
-        NSLog("ChromecastManager: Resolving endpoint: %@ (attempt %d/%d)", String(describing: endpoint), attempt, maxAttempts)
+        castDiscoveryLog("ChromecastManager: Resolving endpoint: %@ (attempt %d/%d)", String(describing: endpoint), attempt, maxAttempts)
         
         // Try to extract info directly from the endpoint if possible
         if case let .service(serviceName, _, _, _) = endpoint {
@@ -174,14 +174,14 @@ class ChromecastManager: CastSessionControllerDelegate {
                 
                 switch state {
                 case .preparing:
-                    NSLog("ChromecastManager: Connection preparing for %@", serviceName)
+                    castDiscoveryLog("ChromecastManager: Connection preparing for %@", serviceName)
                 case .ready:
                     completed = true
-                    NSLog("ChromecastManager: Connection ready for %@", serviceName)
+                    castDiscoveryLog("ChromecastManager: Connection ready for %@", serviceName)
                     // Get the resolved address
                     if let path = connection.currentPath,
                        let remoteEndpoint = path.remoteEndpoint {
-                        NSLog("ChromecastManager: Resolved to: %@", String(describing: remoteEndpoint))
+                        castDiscoveryLog("ChromecastManager: Resolved to: %@", String(describing: remoteEndpoint))
                         let device = self?.createDevice(from: remoteEndpoint, name: name, metadata: result.metadata)
                         connection.cancel()
                         completion(device)
