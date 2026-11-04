@@ -113,7 +113,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(first.frameDivider(at: CGPoint(x: 300, y: 150)))
         first.dragFrameDivider(divider, to: CGPoint(x: 260, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider), 240)
-        first.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: first.loadedSkin.configuration)
 
         // A second renderer over the same graph is not a relaunch, so reseed the frame the way a
         // reload does before asking for it back.
@@ -144,7 +144,7 @@ final class WinampModernPhase62Tests: XCTestCase {
     func testTheLateReassertReReadsTheStoreRatherThanReplayingIt() throws {
         let renderer = try makeRenderer(layout: Self.splitter)
         let divider = try XCTUnwrap(renderer.frameDivider(at: CGPoint(x: 300, y: 150)))
-        renderer.persistFramePosition(of: divider)                       // the opening 200
+        WinampModernSkinState.persistFramePosition(of: divider, in: renderer.loadedSkin.configuration)  // the opening 200
         // Restoring what is already there leaves the divider alone. (The return value can still be
         // true on the very first pass: `setPosition` compares against the `position` *attribute*,
         // which a frame still on its `width=` seed has not got yet, so it writes one. That costs one
@@ -154,7 +154,7 @@ final class WinampModernPhase62Tests: XCTestCase {
 
         // The user drags inside the first second…
         renderer.dragFrameDivider(divider, to: CGPoint(x: 260, y: 150))
-        renderer.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: renderer.loadedSkin.configuration)
         // …and the skin's timer fires after them.
         WasabiFrame.setPosition(200, on: divider)
 
@@ -171,7 +171,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(wide.frameDivider(at: CGPoint(x: 300, y: 150)))
         wide.dragFrameDivider(divider, to: CGPoint(x: 0, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider), 276, "capped by `maxwidth=-224` at 500px")
-        wide.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: wide.loadedSkin.configuration)
 
         let narrow = try makeRenderer(loadedSkin: loaded)
         _ = narrow.resize(to: CGSize(width: 300, height: 300))
@@ -233,7 +233,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         """)
         let divider = try XCTUnwrap(renderer.frameDividers().first)
         renderer.dragFrameDivider(divider.object, to: CGPoint(x: 200, y: 120))
-        renderer.persistFramePosition(of: divider.object)
+        WinampModernSkinState.persistFramePosition(of: divider.object, in: renderer.loadedSkin.configuration)
 
         WasabiFrame.setPosition(60, on: divider.object)
         XCTAssertTrue(renderer.restorePersistedFramePositions())
@@ -324,7 +324,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(renderer.persistableFrames().first)
         renderer.dragFrameDivider(divider.object, to: CGPoint(x: 260, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider.object), 260)
-        renderer.persistFramePosition(of: divider.object)
+        WinampModernSkinState.persistFramePosition(of: divider.object, in: renderer.loadedSkin.configuration)
 
         // A reload reseeds it, and switching back to `wide` is the only thing that can restore it.
         WasabiFrame.setPosition(200, on: divider.object)

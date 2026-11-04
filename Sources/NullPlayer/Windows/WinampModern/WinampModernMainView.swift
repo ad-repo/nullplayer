@@ -2155,8 +2155,10 @@ final class WinampModernMainView: NSView {
             return
         }
         if let draggedDivider {
-            // Where the user let go is the position that outlives the session (B44).
-            renderer.persistFramePosition(of: draggedDivider)
+            // Where the user let go is the position that outlives the session (B44). A script's own
+            // `setPosition` is stored only once the load has settled (`loadHasSettled`, B358), so the
+            // author's opening layout never becomes a preference the user did not express.
+            WinampModernSkinState.persistFramePosition(of: draggedDivider, in: renderer.loadedSkin.configuration)
             self.draggedDivider = nil
             return
         }

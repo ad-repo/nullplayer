@@ -136,7 +136,7 @@ extension WinampModernScriptRuntime {
     /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
     func reportedOrigin(of object: WasabiObject) -> CGPoint {
         let isWindow = Self.isWindowObject(object)
-        if isWindow, let origin = windowOrigin(of: object) {
+        if let origin = windowOrigin(of: object) {
             return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         }
         // A window's own `x`/`y`, truncated as Wasabi reads them; anything else, or a window that

@@ -30,17 +30,18 @@ extension WinampModernScriptRuntime {
         // With no window behind the object (the harness) the origin is 0 and the scale 1.
         table.add(["clienttoscreenx", "clienttoscreeny", "screentoclientx", "screentoclienty"], 1) { runtime, call in
             let isX = call.method.hasSuffix("x")
-            let parent = WasabiSceneRenderer.coordinateSpace(of: call.object) {
+            let parentOrigin = WasabiSceneRenderer.coordinateSpace(of: call.object) {
                 runtime.hooks.resolvedGeometryRequested?($0)?.frame
             }?.origin ?? .zero
-            let window = runtime.enclosingWindowOrigin(of: call.object)
-            let origin = window.map { isX ? $0.x : $0.y } ?? 0
-            let scale = window == nil ? 1 : Double(runtime.hooks.uiScaleQuery?() ?? 1)
-            let offset = Double(isX ? parent.x : parent.y)
+            let parentOffset = Double(isX ? parentOrigin.x : parentOrigin.y)
+            // Unhosted (the harness): no window origin, and the canvas is the screen at scale 1.
+            let windowOrigin = runtime.enclosingWindowOrigin(of: call.object)
+            let windowOffset = Double(windowOrigin.map { isX ? $0.x : $0.y } ?? 0)
+            let scale = windowOrigin == nil ? 1 : Double(runtime.hooks.uiScaleQuery?() ?? 1)
             let value = Double(call.arguments[0].integerValue)
             let result = call.method.hasPrefix("client")
-                ? Double(origin) + (value + offset) * scale
-                : (value - Double(origin)) / scale - offset
+                ? windowOffset + (value + parentOffset) * scale
+                : (value - windowOffset) / scale - parentOffset
             return .integer(Int32(clamping: Int(result.rounded())))
         }
         // Window-manager notifications around a layout resize. Arities read out of the bytecode

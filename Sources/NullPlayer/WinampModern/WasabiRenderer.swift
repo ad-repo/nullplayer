@@ -1651,12 +1651,9 @@ final class WasabiSceneRenderer {
     /// nothing stored and is left entirely to the skin.
     @discardableResult
     func restorePersistedFramePositions() -> Bool {
-        guard let containerID = container.xmlID else { return false }
         var moved = false
         for frame in persistableFrames() {
-            guard let stored = WinampModernSkinState.framePosition(container: containerID,
-                                                                   frame: frame.id,
-                                                                   in: loadedSkin.configuration)
+            guard let stored = WinampModernSkinState.framePosition(of: frame.object, in: loadedSkin.configuration)
             else { continue }
             // Re-clamp against the box as it is *now*: the window may have been resized since, and a
             // frame's `maxwidth="-300"` is measured from the far edge, so yesterday's legal offset can
@@ -1669,13 +1666,6 @@ final class WasabiSceneRenderer {
             moved = WasabiFrame.setPosition(clamped, on: frame.object) || moved
         }
         return moved
-    }
-
-    /// Remember where the user left a divider (B44). A drag calls this; a script's own `setPosition`
-    /// is stored only once the load has settled (`loadHasSettled`, B358), so the
-    /// author's opening layout never becomes a preference the user did not express.
-    func persistFramePosition(of object: WasabiObject) {
-        WinampModernSkinState.persistFramePosition(of: object, in: loadedSkin.configuration)
     }
 
     // MARK: - Layout persistence (B44a)

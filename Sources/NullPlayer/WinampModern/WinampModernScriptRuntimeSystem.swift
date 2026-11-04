@@ -907,12 +907,9 @@ extension WinampModernScriptRuntime {
         table.add("getfilesize", 1) { runtime, call in
             // Answers for the playing local file only — the one path the host already hands out
             // (`getPlayItemString`) — and `0` for anything else, so a script still cannot stat a
-            // path it named (`findFiles` is a no-op for the same reason). The path itself, or with its
-            // first 7 characters gone: ClassicPro's file-info panel strips a `file://` our bare path
-            // does not carry before asking (`strmid(getPlayItemString(), 7, …)`).
-            let asked = call.arguments[0].stringValue
+            // path it named (`findFiles` is a no-op for the same reason).
             let path = runtime.host.trackPath
-            guard !asked.isEmpty, path.hasPrefix("/"), asked == path || asked == String(path.dropFirst(7)),
+            guard WinampModernScriptRuntime.namesPlayingFile(call.arguments[0].stringValue, path: path),
                   let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber
             else { return .integer(0) }
             return .integer(Int32(clamping: size.int64Value))
@@ -937,4 +934,11 @@ extension WinampModernScriptRuntime {
         }
         return table
     }()
+
+    /// Whether a script's `getFileSize` argument names the playing local file: the path itself, or
+    /// the path with its first 7 characters gone — ClassicPro's file-info panel strips a `file://`
+    /// our bare path does not carry before asking (`strmid(getPlayItemString(), 7, …)`).
+    static func namesPlayingFile(_ asked: String, path: String) -> Bool {
+        !asked.isEmpty && path.hasPrefix("/") && (asked == path || asked == String(path.dropFirst(7)))
+    }
 }

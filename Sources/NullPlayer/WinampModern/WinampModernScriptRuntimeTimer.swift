@@ -93,21 +93,25 @@ extension WinampModernScriptRuntime {
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
         let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
-        // A floated group's x/y are screen space (Wasabi gives it a window); its owner window's origin
-        // takes them back to the canvas it is drawn in. Unscaled, as multipass's own "scale syncing
-        // problem" note expects.
-        let floatedOrigin = floatedGroups.contains(object.stableID) ? enclosingWindowOrigin(of: object) : nil
-        for (key, value) in attributes {
-            if let origin = floatedOrigin, key == "x" || key == "y", let screen = Double(value) {
-                let canvas = screen - (key == "x" ? origin.x : origin.y)
-                _ = object.setAttribute(key, value: String(Int(canvas.rounded())))
-            } else {
-                _ = object.setAttribute(key, value: value)
-            }
-        }
+        for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
         notifyGraphDidMutate()
+    }
+
+    /// A `newGroupAsLayout` group's x/y are screen space (Wasabi gives it a window); here it is an
+    /// overlay in its owner's canvas, so the owner window's origin takes them back. Unscaled, as
+    /// multipass's own "scale syncing problem" note expects. Any other object's write passes through.
+    private func floatedToCanvas(_ attributes: [(key: String, value: String)],
+                                 of object: WasabiObject) -> [(key: String, value: String)] {
+        guard floatedGroups.contains(object.stableID), let origin = enclosingWindowOrigin(of: object) else {
+            return attributes
+        }
+        return attributes.map { key, value in
+            guard key == "x" || key == "y", let screen = Double(value) else { return (key, value) }
+            let canvas = screen - (key == "x" ? origin.x : origin.y)
+            return (key, String(Int(canvas.rounded())))
+        }
     }
 
     /// Push a *container's* `x`/`y`/`w`/`h` out to its window.
