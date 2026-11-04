@@ -195,7 +195,10 @@ final class WinampModernLoaderGapTests: XCTestCase {
                 return payload.subdata(in: start..<min(payload.count, start + size))
             }
         }
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url, additionalMounts: mounts)
+        // The archive's own directory doubles as the installed-skins folder, so a skin the user has
+        // installed (Big Bento, for B181's test) cannot stand in for one the test means to be absent.
+        let loaded = try WinampModernSkinLoader(engineStore: nil, installedSkinsDirectory: directory)
+            .load(from: url, additionalMounts: mounts)
         addTeardownBlock { loaded.teardown() }
         return loaded
     }

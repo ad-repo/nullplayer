@@ -57,12 +57,17 @@ final class WinampModernSkinLoader {
     let archiveLimits: WalArchiveLimits
     let xmlLimits: WalXMLLimits
     let engineStore: ClassicProEngineStore?
+    /// Where installed skins are searched for a sibling (`../<Skin>/`) after the archive's own
+    /// directory. Tests pass their own so the user's installed skins cannot answer for them.
+    let installedSkinsDirectory: URL
 
     init(archiveLimits: WalArchiveLimits = .production, xmlLimits: WalXMLLimits = .production,
-         engineStore: ClassicProEngineStore? = .shared) {
+         engineStore: ClassicProEngineStore? = .shared,
+         installedSkinsDirectory: URL = WinampModernSkinImporter.defaultDestinationDirectory()) {
         self.archiveLimits = archiveLimits
         self.xmlLimits = xmlLimits
         self.engineStore = engineStore
+        self.installedSkinsDirectory = installedSkinsDirectory
     }
 
     func load(from archiveURL: URL, additionalMounts: [WinampModernAdditionalMount] = []) throws -> WinampModernLoadedSkin {
@@ -81,8 +86,9 @@ final class WinampModernSkinLoader {
                 provider: try engineStore.provider(limits: archiveLimits)))
         }
         for mount in mounts { try vfs.mount(mount.provider, at: mount.logicalRoot) }
-        vfs.siblingMountResolver = { [archiveLimits] name in
-            try Self.installedSkin(named: name, near: archiveURL, limits: archiveLimits)
+        vfs.siblingMountResolver = { [archiveLimits, installedSkinsDirectory] name in
+            try Self.installedSkin(named: name, near: archiveURL, installedIn: installedSkinsDirectory,
+                                   limits: archiveLimits)
         }
         let entryPath = "/Skins/\(mountName)/\(archive.skinXMLPath)"
         let loaded = try WalXMLDocumentLoader(vfs: vfs, limits: xmlLimits).load(entryPath: entryPath)
@@ -137,12 +143,11 @@ final class WinampModernSkinLoader {
     ///
     /// Matching is done on the *sanitized* mount name, case-insensitively, so no string the skin
     /// supplies is ever turned into a host path.
-    private static func installedSkin(named name: String, near archiveURL: URL,
+    private static func installedSkin(named name: String, near archiveURL: URL, installedIn installed: URL,
                                       limits: WalArchiveLimits) throws -> WalResourceProvider? {
         let wanted = name.lowercased()
         var searched: Set<String> = []
-        for directory in [archiveURL.deletingLastPathComponent(),
-                          WinampModernSkinImporter.defaultDestinationDirectory()] {
+        for directory in [archiveURL.deletingLastPathComponent(), installed] {
             guard searched.insert(directory.standardizedFileURL.path).inserted else { continue }
             let contents = (try? FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil)) ?? []
