@@ -2,6 +2,70 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B360 — Bento shows no current-track or playlist total time — closed 2026-11-03
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B360 | **Bento shows no current-track time or playlist total time.** Reported by satplank on r/nullPlayer (2026-11-03), 2222-cPro__Bento, v0.34, against the same skin in Winamp on Windows (screenshot on the thread), which shows the time and the playlist total (`25:xx:xx+`, where `+` means some lengths are not read yet). The host has `PE_Info`'s `selected/total` (`WinampModernComponents.swift:241`, settled by B291), which does not draw the `+`. Not reproduced yet: find which `<text>` or script fills that readout in Bento and what it gets from us. Winamp fills the lengths lazily as rows scroll into view and shows the real total once all are read; ours sums whatever durations the rows have. **Done when** Bento shows the current track's time and the playlist total, with `+` while any row's length is unknown | 2222-cPro__Bento | ? | 1 |
+
+**Closed 2026-11-03.** The reporter's screenshot pair (Winamp above, NullPlayer below) shows the Playlist tab's whole status row — `+ − select misc`, `2:14/25:32:27+`, the page icon — missing in ours. Ours draws it (`4:02/19:28`, live 2026-11-03) and hides it with the tab's right-click **Show Status Bar** unticked, which reproduces their capture pixel for pixel; so their row was switched off, not broken. The one real difference, Winamp's trailing `+` for a queue with an unknown-length row, is now drawn.
+
+## B359 — Bento's file-size readout always shows 0.0 KB — closed 2026-11-03
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B359 | **Bento's file-size readout always shows 0.0 KB.** Reported by satplank on r/nullPlayer (2026-11-03), 2222-cPro__Bento, v0.34. Read from code: `System.getFileSize` answers `0` on purpose (`WinampModern/WinampModernScriptRuntimeSystem.swift:906`), so a script cannot probe paths it has not been given (`WinampModernScriptRuntimeFiles.swift`, the ingest-not-enumeration policy). The playing file's path is one the host already hands out (`getPlayItemMetaDataString("filename")`, `PlEdit.getFileName`), so answering its real size for those paths alone, and `0` for anything else, keeps the policy. Confirm first that Bento's readout calls `getFileSize` with that path. **Done when** Bento shows the playing local file's size, a stream shows what it does today, and a path the host never handed out still answers `0` | 2222-cPro__Bento | S | 1 |
+
+**Closed 2026-11-03.** Fixed: `System.getFileSize` answers the playing local file (ClassicPro asks with `strmid(getPlayItemString(), 7, …)`). Live: 9.2 MB.
+
+## B358 — Bento's Media Library tab reopens on every launch — closed 2026-11-03
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B358 | **Bento's Media Library tab reopens on every launch after it was closed.** Reported by satplank on r/nullPlayer (2026-11-03), 2222-cPro__Bento, v0.34: with **Save state on quit** on, closing the Media Library tab, quitting and relaunching shows it again. Not reproduced yet: close it, quit, relaunch, and find whether the skin's own saved attribute (possibly kept with `setPrivateString` or a config attribute; not checked) is not saved, not read back, or overridden by the host restoring the library window. B350 (archive) fixed opening and closing the tabs, not their persistence. **Done when** a closed tab stays closed across a relaunch, and an open one reopens | 2222-cPro__Bento | ? | 1 |
+
+**Closed 2026-11-03.** Fixed: a frame `setPosition` is stored once the load has settled (`loadHasSettled`), a stored 0 is restored unclamped, and a host tab reveal during the session restore does not reselect Playlist. Live: the reporter's steps pass with Save State on Quit on and off; `bento_tabs.sh` passes on Bento and cpro2_dark_aluminum.
+
+## B357 — Bento's search results open at the left of the screen — closed 2026-11-03
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B357 | **Bento's search results open in a separate window at the left of the screen, not in its Search tab, and list titles only.** Reported by satplank on r/nullPlayer (2026-11-03), 2222-cPro__Bento, v0.34, with a screenshot on the thread: a search from the skin's Search tab opens its results in a window parked at the left edge of the screen instead of inside the tab, and the rows show only track names, so songs with the same title look the same. Not reproduced yet: run a search from Bento's Search tab with a track library loaded, then find which component or host window takes the results and why it is not embedded in the tab's slot (B350's tab sweep, `bento_tabs.sh`, did not cover search). **Done when** Bento's search results show inside its Search tab, with artist beside title | 2222-cPro__Bento | ? | 1 |
+
+**Closed 2026-11-03.** Fixed: `clientToScreen*`/`screenToClient*` answer screen space (window origin + parent offset × UI Size), and with them the cursor, a hosted layout's `getLeft`/`getTop` and `popAtXY` — the screen model moved whole, since moving one alone broke Xenon's tray close (measured live: cursor 278 against tray 762). `PlEdit.getTitle` answers the drawn Artist - Title. multipass's `newGroupAsLayout` group takes the owner origin back out on `resize`. Live: the dropdown opens under the search box; tab menus still open under their tab; user-confirmed 2026-11-03. See `reference/scripting.md` → *The screen model moves whole*.
+
+## B354 — No 90% Modern text scale — closed 2026-11-02
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B354 | **No 90% Modern text scale.** Requested by satplank on r/nullPlayer (2026-11-01), 2222-cPro__Bento, v0.34, as a workaround for B353. Add a `p90` case to `WinampModernTextScale` (`WinampModern/WinampModernTextScale.swift`); the menu is built from `allCases` in `App/ContextMenuBuilder.swift`, so it shows up without a menu change. Done when 90% is selectable, persists per skin, and draws Bento's text at 90% of the 100% cell | — (a menu option) | S | 1 |
+
+**Closed 2026-11-02.** Fixed in 0.34.1: 90% is offered.
+
+## B353 — Bento's text clips descenders — closed 2026-11-02
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B353 | **Bento's text clips descenders (g q j y).** Reported by satplank on r/nullPlayer (2026-11-01), 2222-cPro__Bento, v0.34: the glyph overruns its `<text>` height, and neither UI size nor the Modern text-scale menu fixes it. Not reproduced yet: reproduce on Bento with a track playing, then compare our baseline/ascent placement against the box height. B290 (default `fontsize`) is nearby but separate. Done when descenders draw whole at 100% text scale, checked on a sheet capture of Bento | 2222-cPro__Bento | ? | 1 |
+
+**Closed 2026-11-02.** Fixed in 0.34.1: descenders draw whole.
+
+## B352 — Bento's time display cannot switch to remaining time — closed 2026-11-02
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B352 | **Bento's time display cannot switch to remaining time.** Reported by satplank on r/nullPlayer (2026-11-01), 2222-cPro__Bento, v0.34: clicking it leaves elapsed time. Not reproduced yet: reproduce on Bento with a track playing, then find whether the toggle is the `<text display="time">` click, a skin script, or a cPro config attribute. Done when a click flips elapsed↔remaining and the choice persists across relaunch | 2222-cPro__Bento | ? | 1 |
+
+**Closed 2026-11-02.** Fixed in 0.34.1: the clock toggles and the choice persists.
+
+## B351 — Bento's bitrate texts are empty while a track plays — closed 2026-11-02
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B351 | **Bento's bitrate texts are empty or `0` while a track plays.** Reported by satplank on r/nullPlayer (2026-11-01), 2222-cPro__Bento, v0.34. The kbps/kHz fields show nothing or `0`. Not reproduced yet: reproduce on Bento with a track playing, then find which `<text display=...>` or Maki getter feeds them and what our host returns for it. Done when they show the playing track's bitrate and sample rate | 2222-cPro__Bento; corpus count of the display attr (`xml-attr`) not taken | ? | 1 |
+
+**Closed 2026-11-02.** Fixed in 0.34.1; confirmed by the reporter's steps on that build.
+
 ## B330 — Official_Foo_Fighter_Skin's main window draws only its lower half — closed 2026-10-30 (class H)
 
 | Id | Item | Reach | Effort | Tier |

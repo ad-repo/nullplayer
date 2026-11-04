@@ -113,7 +113,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(first.frameDivider(at: CGPoint(x: 300, y: 150)))
         first.dragFrameDivider(divider, to: CGPoint(x: 260, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider), 240)
-        first.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: first.loadedSkin.configuration)
 
         // A second renderer over the same graph is not a relaunch, so reseed the frame the way a
         // reload does before asking for it back.
@@ -144,7 +144,7 @@ final class WinampModernPhase62Tests: XCTestCase {
     func testTheLateReassertReReadsTheStoreRatherThanReplayingIt() throws {
         let renderer = try makeRenderer(layout: Self.splitter)
         let divider = try XCTUnwrap(renderer.frameDivider(at: CGPoint(x: 300, y: 150)))
-        renderer.persistFramePosition(of: divider)                       // the opening 200
+        WinampModernSkinState.persistFramePosition(of: divider, in: renderer.loadedSkin.configuration)  // the opening 200
         // Restoring what is already there leaves the divider alone. (The return value can still be
         // true on the very first pass: `setPosition` compares against the `position` *attribute*,
         // which a frame still on its `width=` seed has not got yet, so it writes one. That costs one
@@ -154,7 +154,7 @@ final class WinampModernPhase62Tests: XCTestCase {
 
         // The user drags inside the first second…
         renderer.dragFrameDivider(divider, to: CGPoint(x: 260, y: 150))
-        renderer.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: renderer.loadedSkin.configuration)
         // …and the skin's timer fires after them.
         WasabiFrame.setPosition(200, on: divider)
 
@@ -171,7 +171,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(wide.frameDivider(at: CGPoint(x: 300, y: 150)))
         wide.dragFrameDivider(divider, to: CGPoint(x: 0, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider), 276, "capped by `maxwidth=-224` at 500px")
-        wide.persistFramePosition(of: divider)
+        WinampModernSkinState.persistFramePosition(of: divider, in: wide.loadedSkin.configuration)
 
         let narrow = try makeRenderer(loadedSkin: loaded)
         _ = narrow.resize(to: CGSize(width: 300, height: 300))
@@ -181,6 +181,42 @@ final class WinampModernPhase62Tests: XCTestCase {
         // with the minimum winning. The assertion here is that the *stored* offset is re-clamped at
         // all; which bound it lands on is the frame's own existing arithmetic.
         XCTAssertEqual(WasabiFrame.position(of: divider), 158)
+    }
+
+    /// B358: a stored `0` is the collapsed side, below `minwidth` on purpose. Clamped up to 158, cPro-
+    /// Bento's closed side view reopened at every launch, and the engine then reopened Media Library.
+    func testAStoredClosedSideStaysClosed() throws {
+        let loaded = try makeSkin(layout: Self.splitter)
+        WinampModernSkinState.setFramePosition(0, container: "main", frame: "split", in: loaded.configuration)
+        let renderer = try makeRenderer(loadedSkin: loaded)
+        let divider = try XCTUnwrap(renderer.persistableFrames().first?.object)
+        renderer.restorePersistedFramePositions()
+        XCTAssertEqual(WasabiFrame.position(of: divider), 0)
+    }
+
+    /// B358: a script's `setPosition` is the author's layout while the skin loads and the user's
+    /// answer once it has settled — cPro-Bento closing its side view as the Playlist tab opens.
+    func testAScriptPositionIsStoredOnlyOnceTheLoadHasSettled() throws {
+        let loaded = try makeSkin(layout: Self.splitter)
+        let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { runtime.teardown() }
+        let divider = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: "split").first)
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
+                                  instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/test.maki"),
+                                  ownerID: nil, parameter: nil)
+        func setPosition(_ value: Int32) throws {
+            _ = try runtime.invoke(method: "setposition", on: MakiObjectReference(.gui(divider.stableID)),
+                                   arguments: [.integer(value)], program: program)
+        }
+        func stored() -> Double? {
+            WinampModernSkinState.framePosition(container: "main", frame: "split", in: loaded.configuration)
+        }
+
+        try setPosition(180)
+        XCTAssertNil(stored(), "at load it is the author's opening layout")
+        runtime.loadHasSettled = true
+        try setPosition(0)
+        XCTAssertEqual(stored(), 0)
     }
 
     /// A horizontal splitter is stored and restored on its own axis — ClassicPro's `centro.plframe`,
@@ -197,7 +233,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         """)
         let divider = try XCTUnwrap(renderer.frameDividers().first)
         renderer.dragFrameDivider(divider.object, to: CGPoint(x: 200, y: 120))
-        renderer.persistFramePosition(of: divider.object)
+        WinampModernSkinState.persistFramePosition(of: divider.object, in: renderer.loadedSkin.configuration)
 
         WasabiFrame.setPosition(60, on: divider.object)
         XCTAssertTrue(renderer.restorePersistedFramePositions())
@@ -288,7 +324,7 @@ final class WinampModernPhase62Tests: XCTestCase {
         let divider = try XCTUnwrap(renderer.persistableFrames().first)
         renderer.dragFrameDivider(divider.object, to: CGPoint(x: 260, y: 150))
         XCTAssertEqual(WasabiFrame.position(of: divider.object), 260)
-        renderer.persistFramePosition(of: divider.object)
+        WinampModernSkinState.persistFramePosition(of: divider.object, in: renderer.loadedSkin.configuration)
 
         // A reload reseeds it, and switching back to `wide` is the only thing that can restore it.
         WasabiFrame.setPosition(200, on: divider.object)

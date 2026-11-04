@@ -102,7 +102,8 @@ final class WinampModernPhase42Tests: XCTestCase {
 
         XCTAssertEqual(call(runtime, "getnumtracks").integerValue, 3)
         XCTAssertEqual(call(runtime, "getcurrentindex").integerValue, 1)
-        XCTAssertEqual(call(runtime, "gettitle", .integer(2)).stringValue, "Track 3")
+        // The drawn row, artist included (B357: ClassicPro's search results list it).
+        XCTAssertEqual(call(runtime, "gettitle", .integer(2)).stringValue, "Artist 3 - Track 3")
         XCTAssertEqual(call(runtime, "getfilename", .integer(0)).stringValue, "/queue/track1.mp3")
     }
 

@@ -128,7 +128,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Show a script-built popup menu and answer the command the user picked, or `popupDismissed`.
     /// The runtime resolves the submenu tree before calling, so the presenter only builds UI.
     ///
-    /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **window-client space** — the space
+    /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **screen space** — the space
     /// `clientToScreenX/Y` answer in, which is what every measured caller computes the point with.
     var popupPresenter: (([WinampModernPopupMenuItem], CGPoint?) -> Int32)?
     /// Items left out of every script-built popup, by title: a skin's own item the host has taken
@@ -192,6 +192,17 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// `area_right.onResize` to swap the close button for the **open** one — which ships `visible="0"`.
     /// Without this, closing the playlist hid the only control that could bring it back.
     var geometryDidSettle: (() -> Void)?
+    /// Set once the load has settled (the window controller's frame re-assert). Before it the skin
+    /// is restoring itself, after it everything answers the user (B358):
+    /// - a script's `setPosition` on a `<Wasabi:Frame>` is stored like a drag — cPro-Bento closes its
+    ///   side view so when the Playlist tab opens, and reads `getPosition() == 0` at the next load to
+    ///   keep it closed. Before it, a position is the author's opening layout (B44);
+    /// - a host reveal of a ClassicPro tab already in the strip selects it. Before it, the reveal is
+    ///   the session restore, which the strip has already done for itself.
+    var loadHasSettled = false
+    /// Groups `newGroupAsLayout` made. Wasabi gives each a window of its own, so a script places one
+    /// in screen space; here it is an overlay in its owner's canvas, and `writeGeometry` converts.
+    var floatedGroups: Set<WasabiObjectID> = []
 
     private struct ScriptEventKey: Hashable {
         let target: MakiObjectReference.Kind

@@ -75,12 +75,10 @@ struct WinampModernScriptHooks {
     var themeNamesRequested: (() -> [String])?
     var activeThemeRequested: (() -> String)?
     var themeSwitchRequested: ((String) -> Bool)?
-    /// Cursor position in the *skin's own pixel space* (the window's canvas), in skin pixels.
-    ///
-    /// **Not** the space a mouse event's x/y are in — those are relative to the receiver's parent
-    /// (see `WinampModernMainView.dispatch`). A rotary-knob script combines the two in one
-    /// expression precisely because they differ: mmd3's `getMousePosX() - x + knob.getLeft()` is the
-    /// parent's origin plus the knob's own offset, i.e. the knob in cursor space.
+    /// Cursor position in screen space — top-left points on the player's display, the space window
+    /// origins, `clientToScreen*` and the viewport answer in, so skins can compare across them
+    /// (Xenon's tray-close test, Symplicipod's knob). **Not** the space a mouse event's x/y are in;
+    /// knob scripts such as mmd3 use only cursor differences, which no origin moves.
     var mousePositionRequested: (() -> CGPoint)?
     /// `setFocus()` on an object: the view gives the keyboard to the `<edit>` it resolves to.
     var focusRequested: ((WasabiObject) -> Void)?

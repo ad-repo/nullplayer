@@ -2,8 +2,8 @@ import CoreGraphics
 
 /// **One window placed at another window's position** — and the one rule that recognises it.
 ///
-/// A layout answers `getLeft()`/`getTop()` in its own canvas space (0), while the `x`/`y` a script
-/// writes on a window are pushed to the desktop. B61 fixed the *self* round trip
+/// With no host answering, a layout's `getLeft()`/`getTop()` are its own canvas origin (0), while the
+/// `x`/`y` a script writes on a window are pushed to the desktop. B61 fixed the *self* round trip
 /// (`me.resize(me.getLeft(), …)`) by recognising it and not moving. This is the *cross-window* one: a
 /// script reads one window's position and writes a second window's from it. Two skins measured it:
 ///
@@ -45,7 +45,7 @@ struct WinampModernBorrowedOrigin {
     private var unspentX = false
     private var unspentY = false
     /// Window objects whose origin a script has read since their last move: the only ones a write of
-    /// that same origin can be a round trip on (B61). A layout reports (0, 0), so without this every
+    /// that same origin can be a round trip on (B61). An unhosted layout reports (0, 0), so without this every
     /// script that parks its window at the desktop's corner — Nitrous Audio's monitor mode writes
     /// `x=0`/`y=0` on its layout and never asks where it is — was taken as one.
     private var readSinceMove: Set<WasabiObjectID> = []

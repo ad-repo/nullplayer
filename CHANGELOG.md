@@ -77,6 +77,18 @@
 - **Pausing during a crossfade pauses both tracks.** The incoming track kept playing and finished
   its fade while the player showed paused.
 
+### Winamp Modern skins
+
+- **cPro-Bento's playlist search shows its results under the search box**, listed as Artist - Title.
+  They opened in the corner of the screen.
+- **cPro-Bento's side view stays closed after you open the Playlist tab**, across relaunches; with
+  Video and the side view open, a relaunch no longer switches you back to Playlist.
+- **cPro-Bento's file-info line shows the playing file's size** instead of 0 bytes.
+- **The playlist time readout ends in `+`** when the queue holds a track of unknown length, such as a
+  radio stream.
+- **Skins that measure the mouse against the screen work as written**: Xenon's slide-out trays stay
+  open under the pointer, and Symplicipod's volume knob, seek bar and ticker follow it.
+
 ## 0.34.1
 
 ### Casting and the CLI

@@ -654,6 +654,15 @@ final class WinampModernPhase24Tests: XCTestCase {
         XCTAssertEqual(try call("screentoclientx", on: child, 35), 5, "and it round-trips")
         XCTAssertEqual(try call("clienttoscreenx", on: holder, 30), 30,
                        "an object straight off the layout converts to itself")
+
+        // B357: with a window behind it, "screen" is the space the window's own `getLeft()` and `x`
+        // writes use — its origin plus the client offset at UI Size. ClassicPro writes this straight
+        // into its search-results window's `x`/`y`.
+        runtime.containerOriginQuery = { _ in CGPoint(x: 1000, y: 200) }
+        runtime.hooks.uiScaleQuery = { 2 }
+        XCTAssertEqual(try call("clienttoscreenx", on: child, 5), 1070)
+        XCTAssertEqual(try call("clienttoscreeny", on: child, 5), 290)
+        XCTAssertEqual(try call("screentoclientx", on: child, 1070), 5, "and it still round-trips")
     }
 
     /// `popAtXY` is the other half of those conversions: ClassicPro's tab strip and its drawer build a

@@ -800,9 +800,9 @@ extension WinampModernScriptRuntime {
         // (`owner="main,normal"` + `nodock="1"`): Winamp gives it a borderless layout of its own,
         // owned by that layout. We make it an **overlay child of the owner layout** instead, and the
         // coordinate maths says that is the right answer rather than a compromise — multipass
-        // positions the result with `resize(layoutMainNormal.getLeft() + 54, …getTop() + 217, …)`,
-        // and `getLeft()`/`getTop()` on a root layout answer 0 here (window-local; see the
-        // `clientToScreenX` note), so it lands at (54, 217) — exactly where the author's own
+        // positions the result with `resize(layoutMainNormal.getLeft() + 54, …getTop() + 217, …)`
+        // — screen space, which `writeGeometry` takes back out of the owner window's origin
+        // (`floatedGroups`), so it lands at (54, 217) — exactly where the author's own
         // commented-out `<group … x="9" y="62"/>` inside drawer.bottom (45,155) → colorthemes (0,0)
         // would have put it.
         //
@@ -818,6 +818,7 @@ extension WinampModernScriptRuntime {
                 return .null
             }
             runtime.pendingRuntimeGroups.append(floated)
+            runtime.floatedGroups.insert(floated.stableID)
             runtime.notifyGraphDidMutate()
             return runtime.objectValue(floated)
         }
@@ -904,10 +905,14 @@ extension WinampModernScriptRuntime {
             return .null
         }
         table.add("getfilesize", 1) { runtime, call in
-            // Bounded no-op, for the same reason `findFiles` is one: a script that can stat any path
-            // it names has a filesystem-probe capability, which this runtime does not grant. The
-            // file-info readout shows 0 bytes rather than the script that draws it aborting.
-            return .integer(0)
+            // Answers for the playing local file only — the one path the host already hands out
+            // (`getPlayItemString`) — and `0` for anything else, so a script still cannot stat a
+            // path it named (`findFiles` is a no-op for the same reason).
+            let path = runtime.host.trackPath
+            guard WinampModernScriptRuntime.namesPlayingFile(call.arguments[0].stringValue, path: path),
+                  let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber
+            else { return .integer(0) }
+            return .integer(Int32(clamping: size.int64Value))
         }
         table.add("getlanguageid", 0) { runtime, call in .string("en") }
         // `WinampConfig.getGroup(guid)` → a `WinampConfigGroup`. Arities follow `winampconfig.mi`,
@@ -929,4 +934,11 @@ extension WinampModernScriptRuntime {
         }
         return table
     }()
+
+    /// Whether a script's `getFileSize` argument names the playing local file: the path itself, or
+    /// the path with its first 7 characters gone — ClassicPro's file-info panel strips a `file://`
+    /// our bare path does not carry before asking (`strmid(getPlayItemString(), 7, …)`).
+    static func namesPlayingFile(_ asked: String, path: String) -> Bool {
+        !asked.isEmpty && path.hasPrefix("/") && (asked == path || asked == String(path.dropFirst(7)))
+    }
 }

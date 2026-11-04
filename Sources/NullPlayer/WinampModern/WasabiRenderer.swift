@@ -1651,33 +1651,21 @@ final class WasabiSceneRenderer {
     /// nothing stored and is left entirely to the skin.
     @discardableResult
     func restorePersistedFramePositions() -> Bool {
-        guard let containerID = container.xmlID else { return false }
         var moved = false
         for frame in persistableFrames() {
-            guard let stored = WinampModernSkinState.framePosition(container: containerID,
-                                                                   frame: frame.id,
-                                                                   in: loadedSkin.configuration)
+            guard let stored = WinampModernSkinState.framePosition(of: frame.object, in: loadedSkin.configuration)
             else { continue }
             // Re-clamp against the box as it is *now*: the window may have been resized since, and a
             // frame's `maxwidth="-300"` is measured from the far edge, so yesterday's legal offset can
             // be out of bounds today.
             let extent = WasabiFrame.isVerticalDivider(frame.object) ? frame.frame.width
                                                                      : frame.frame.height
-            let clamped = WasabiFrame.clampedPosition(stored, extent: extent, object: frame.object)
+            // `0` is the collapsed side, not a width: ClassicPro closes its side view with
+            // `setPosition(0)` below its own `minwidth`, and clamping it reopened the view (B358).
+            let clamped = stored == 0 ? 0 : WasabiFrame.clampedPosition(stored, extent: extent, object: frame.object)
             moved = WasabiFrame.setPosition(clamped, on: frame.object) || moved
         }
         return moved
-    }
-
-    /// Remember where the user left a divider (B44). Only a **drag** calls this: a script moving its
-    /// own splitter is the skin's default speaking, and storing that would freeze the author's opening
-    /// layout into a preference the user never expressed.
-    func persistFramePosition(of object: WasabiObject) {
-        guard let containerID = container.xmlID,
-              let id = object.xmlID, !id.isEmpty else { return }
-        WinampModernSkinState.setFramePosition(WasabiFrame.position(of: object),
-                                               container: containerID, frame: id,
-                                               in: loadedSkin.configuration)
     }
 
     // MARK: - Layout persistence (B44a)

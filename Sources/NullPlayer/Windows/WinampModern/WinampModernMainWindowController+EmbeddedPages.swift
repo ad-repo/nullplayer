@@ -9,7 +9,10 @@ extension WinampModernMainWindowController {
         window?.makeKeyAndOrderFront(nil)
         defer { skinView?.needsDisplay = true }
         if let strip = classicProTabs, let tab = strip.tab(for: kind) {
-            strip.open(tab)
+            // During the load a reveal is the session restore, and the strip has restored its own
+            // tabs: selecting Playlist then closed the side view and the engine reopened a Media
+            // Library tab the user had closed (B358).
+            if scripts.loadHasSettled || !tab.isInStrip { strip.open(tab) }
             return true
         }
         return revealEmbeddedSurface(kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)

@@ -316,8 +316,8 @@ A `Map` is a bitmap the script samples rather than draws: `getValue(x, y)` retur
 a point (MMD3's `map.png` is a 44×44 grayscale sweep of the knob's angle) and `inRegion(x, y)` says
 whether the point is on the control. `new Map` and `new Timer` produce the same kind of dynamic
 object — class GUIDs are not in the archive — so an object becomes a map on its first `loadMap`.
-Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression, so the cursor
-position is reported in **skin pixels**, not screen points; UI Size never enters the script's world.
+Knob scripts mix `getMousePosX()` with the x/y of a mouse event in one expression; the cursor is in
+screen space (*The screen model moves whole*, below), so only its differences are meaningful there.
 
 **The two are not the same space, and that is why the expression exists.** `getMousePos*` is the
 window's canvas; a mouse event's x/y are relative to the **receiver's parent** — the same origin
@@ -350,13 +350,18 @@ layout-level knob script reaches its knobs through a plain nested group and subt
 it, so the layout point put every press 113px off the knob's map. A **plain** group stays the space
 whoever listens; a widget's own script still hears the widget's space.
 
-**`System.getMousePos*` is the window's canvas, not the desktop — and stays so.** Winamp answers in
-screen space, but so do its `clientToScreen*`, viewport and layout `getLeft()`, and here all of those
-answer in the canvas; skins do arithmetic across them. multipass opens its drawers on
-`getMousePosX() >= layoutMainNormal.getLeft()` and friends: measured live 2026-09-28 with a
-screen-space cursor, the drawers stayed shut on hover and opened with the pointer in the screen's
-top-left corner (B123, archived). Only desktop-snap emulation wants true screen space, and those
-windows are suppressed. Moving the cursor alone is wrong; move the whole "screen" model or nothing.
+**The screen model moves whole (B357, 2026-11-03).** `System.getMousePos*`, `clientToScreen*` /
+`screenToClient*`, the viewport, `popAtXY` and a hosted container's **or layout's** `getLeft()`/
+`getTop()` all answer in screen space — top-left points on the player's display
+(`winampScreenOrigin`) — because skins do arithmetic across them. Moving one alone breaks the rest:
+B123 (archived) measured multipass's drawers inverting with only the cursor moved, and B357's first
+cut moved only `clientToScreen*`, which left Xenon's tray-close test (`getMousePosX()` against
+`d2.clientToScreenX(…)`) reading 278 against 762. A knob that subtracts a mouse event's x from
+`getMousePosX()` (mmd3) uses only cursor differences, so the origin cancels. The one script that adds
+a layout's origin to an *in-canvas* position — multipass's `newGroupAsLayout` colour-themes group,
+`resize(layoutMainNormal.getLeft() + 54, …)` — is a real window in Wasabi and an overlay here, so
+a geometry write on that group (`resize` or `setXmlParam`) takes the owner window's origin back out (`floatedGroups`). With no host (the
+harness) a layout still answers its declared or resolved origin.
 
 A `Map` is also a general **image-inspection** object, not only a knob lookup: `getWidth`/`getHeight`
 size things from artwork, and `getARGBValue(x, y, channel)` reads whole pixels — ClassicPro derives
@@ -885,7 +890,8 @@ in **reverse**, so `arguments[0]` is the first declared argument.
 **Skin-supplied paths: `enqueueFile` / `playFile`.** These two are the only methods on this seam
 that take a value the *skin* chose rather than one the host handed out, so they were a sandbox policy
 question rather than an arity one (B21). The policy grants **ingest, not enumeration**: `findFiles`
-still answers `-1` and `getFileSize` still `0`, so a script has no way to *discover* a path — only to
+still answers `-1` and `getFileSize` answers only for the playing local file (B359, ClassicPro's
+`fileinfo.m` asks with `strmid(getPlayItemString(), 7, …)`, `0` otherwise), so a script has no way to *discover* a path — only to
 hand back one it was given (`PlEdit.getFileName`, `System.getPlayItemMetaDataString("filename")`, or
 one it saved into a private string), or one the skin's author or the user typed. Both real callers
 are exactly that: T800's five memory slots save the playing item and play it back, and Big Bento's
@@ -995,7 +1001,7 @@ Drive it with `WINAMP_MODERN_RENDER_KEY` (harness) or `WINAMP_MODERN_DEBUG_KEY` 
 
 `resize(getLeft(), getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and
 the two halves of it have to agree about the space they are in. They did not: `getLeft()`/`getTop()`
-on a **layout** answer its own canvas origin — 0 — while the `x`/`y` a `resize()` writes are pushed
+on a **layout** answered its own canvas origin — 0, as they still do with no host — while the `x`/`y` a `resize()` writes are pushed
 out to the desktop as absolute screen coordinates. A skin handing back what it just read therefore
 parked its window in the top-left corner of the monitor. Big Bento Modern does exactly this from
 `pledit.maki` every time the side playlist opens (B61).
@@ -1008,17 +1014,16 @@ Big Bento's search-results popup landing under its search box (BB31). `reportedO
 `getLeft()`/`getTop()` answer, so the check compares against the very integers the script was handed:
 a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
 
-**Do not "fix" this by making a layout report its desktop position instead.** It is the obvious move
-and it is wrong: a layout is the space every object inside it is laid out in, and skins do arithmetic
-across that boundary. multipass positions its side drawers from `layoutMainNormal.getLeft()`, and
-adding the window's desktop origin there moved every drawer *and its hover region* off the artwork it
-belongs to — drawers that could not be opened and fired from inches away. `newgroupaslayout` depends
-on the same 0 (see its note in `WinampModernScriptRuntime`). A `<container>` is different: it has no
-layout space of its own, so it does report the host's desktop origin, via `containerOriginQuery` →
-`WinampModernMainWindowController.winampScreenOrigin` — the exact inverse of the point
-`containerMoveRequested` accepts. The graph's `x`/`y` are only the fallback there, because they hold
-the last position a *script* wrote and go stale the moment the user drags the window, `place`, the
-tiler or state restoration moves it.
+**A hosted layout reports its desktop position, like a container** (B357), via
+`containerOriginQuery` → `WinampModernMainWindowController.winampScreenOrigin` — the exact inverse of
+the point `containerMoveRequested` accepts. It is a window in Wasabi, and it moved together with the
+cursor, `clientToScreen*` and `popAtXY` (*The screen model moves whole*): moved alone it pushed
+multipass's drawers *and their hover regions* off the artwork, because multipass compares that origin
+with `getMousePosX()`. The one script that adds a layout's origin to an *in-canvas* position,
+multipass's `newGroupAsLayout` group, is converted back in `writeGeometry` (`floatedGroups`). With no
+host (the harness) a layout still answers its declared or resolved origin, usually 0. The graph's
+`x`/`y` are only that fallback, because they hold the last position a *script* wrote and go stale the
+moment the user drags the window, `place`, the tiler or state restoration moves it.
 
 **The other half of the same asymmetry is the *cross-window* round trip** (B69). A skin can draw one
 window's chrome in a *second* window and keep the two laid over each other:
@@ -1027,7 +1032,7 @@ window's chrome in a *second* window and keep the two laid over each other:
 chrome.resize(content.getLeft(), content.getTop(), content.getWidth(), content.getHeight())
 ```
 
-Both receivers are layouts, so both read 0, and the write above was suppressed as "unmoved" — the
+Both receivers are layouts, which then read 0, and the write above was suppressed as "unmoved" — the
 frame stayed wherever the tiler had parked it while the content window sat somewhere else on screen.
 Recognised on the write, the same way. `WinampModernBorrowedOrigin` (its own file; the runtime keeps
 only `scriptReadsOrigin`, `borrowedWindowOrigin` and the glue record) remembers the origin the last
@@ -1040,13 +1045,15 @@ names both axes at once; `setXmlParam("x", …)` and `setXmlParam("y", …)` nam
 its visualization window over the player's art box the second way, with an offset:
 
 ```
-vis.setXmlParam("x", player.getLeft() + 52)   // the layout reads 0, so this is "player + 52"
+vis.setXmlParam("x", player.getLeft() + 52)   // "player + 52"
 ```
 
-Matched only within a pixel (the B110 jiggle), that was a plain move to desktop 52 and the window
-floated loose. So a write matches when it is within a pixel of the read **or** the read was a layout's
-canvas origin (0) — arithmetic on a layout's 0 can only mean "relative to that window". A container
-reads its real desktop origin, so for a container read only the ±1 case matches. Each axis of a read
+With no host the layout reads 0, and matched only within a pixel (the B110 jiggle) that was a plain
+move to desktop 52 and the window floated loose. So a write matches when it is within a pixel of the
+read **or** the read was a layout's canvas origin (0) — arithmetic on a layout's 0 can only mean
+"relative to that window". Since B357 a hosted layout reads its desktop origin, so `player + 52` is
+already a desktop point: it does not match and lands as a plain (clamped) move to the same place. A
+container reads its real desktop origin, so for a container read only the ±1 case matches. Each axis of a read
 is **spent by the write that uses it**, and the read is **forgotten when the outermost event unwinds**
 (`dispatch`'s `isOutermost` block), so a stale read can never pin a later write that only happens to
 name the same coordinates. A pinned move also marks an auxiliary window placed

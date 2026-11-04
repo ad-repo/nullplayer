@@ -21,19 +21,28 @@ extension WinampModernScriptRuntime {
         // the parent chain, which is what put ClassicPro's tab menu at the window's left edge instead
         // of under its tab.
         //
-        // "Screen" is this window's client space: a `.wal` window is borderless and positioned by us,
-        // so the window origin is a constant that cancels in the round trip every caller makes, and
-        // the popup presenter places `popAtXY` in the same window the point came from. Winamp Modern's
-        // titlebar centres its title with `layout.clientToScreenX((w − titleW) / 2)`, converts back
-        // through the titlebar group and subtracts that group's own `getLeft()`; both objects hang off
-        // the layout, so the round trip returns the input and the correction lands.
+        // "Screen" is the space a window's own `getLeft()`/`getTop()` and its `x`/`y` writes use
+        // (`containerOriginQuery`): the window's origin plus the client offset at UI Size. ClassicPro
+        // drops its playlist search results under the search box by writing
+        // `clientToScreenX(box.getLeft())` into the results window's `x`; answered in window-client
+        // space, the window opened at the box's offset from the screen's corner (B357). `popAtXY`
+        // takes the same space, and round trips (Winamp Modern's titlebar centring) cancel as before.
+        // With no window behind the object (the harness) the origin is 0 and the scale 1.
         table.add(["clienttoscreenx", "clienttoscreeny", "screentoclientx", "screentoclienty"], 1) { runtime, call in
-            let origin = WasabiSceneRenderer.coordinateSpace(of: call.object) {
+            let isX = call.method.hasSuffix("x")
+            let parentOrigin = WasabiSceneRenderer.coordinateSpace(of: call.object) {
                 runtime.hooks.resolvedGeometryRequested?($0)?.frame
             }?.origin ?? .zero
-            let offset = call.method.hasSuffix("x") ? origin.x : origin.y
-            let signed = call.method.hasPrefix("client") ? offset : -offset
-            return .integer(Int32(clamping: Int(Double(call.arguments[0].integerValue) + Double(signed))))
+            let parentOffset = Double(isX ? parentOrigin.x : parentOrigin.y)
+            // Unhosted (the harness): no window origin, and the canvas is the screen at scale 1.
+            let windowOrigin = runtime.enclosingWindowOrigin(of: call.object)
+            let windowOffset = Double(windowOrigin.map { isX ? $0.x : $0.y } ?? 0)
+            let scale = windowOrigin == nil ? 1 : Double(runtime.hooks.uiScaleQuery?() ?? 1)
+            let value = Double(call.arguments[0].integerValue)
+            let result = call.method.hasPrefix("client")
+                ? windowOffset + (value + parentOffset) * scale
+                : (value - windowOffset) / scale - parentOffset
+            return .integer(Int32(clamping: Int(result.rounded())))
         }
         // Window-manager notifications around a layout resize. Arities read out of the bytecode
         // rather than guessed (`WINAMP_MODERN_RENDER_DISASM`): each is called on the layout, and

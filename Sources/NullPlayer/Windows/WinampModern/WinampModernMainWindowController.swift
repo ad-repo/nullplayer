@@ -1180,8 +1180,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// position it just read would walk the window down the screen.
     private static func winampScreenOrigin(of window: NSWindow) -> CGPoint {
         guard let screen = window.screen ?? NSScreen.main else { return .zero }
-        return CGPoint(x: window.frame.minX - screen.frame.minX,
-                       y: screen.frame.maxY - window.frame.maxY)
+        return WinampModernScreenSpace.point(fromCocoa: NSPoint(x: window.frame.minX, y: window.frame.maxY),
+                                             on: screen)
     }
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {
@@ -1219,6 +1219,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.framePositionReassertDelay) { [weak self] in
             guard let self else { return }
             reassertPersistedFramePositions()
+            skinView?.scripts.loadHasSettled = true
             // Tell every window's script where its window ended up, once the load has settled (B110).
             //
             // A skin that draws one window's chrome in a second window only ever moves the frame from
@@ -1936,8 +1937,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
         guard let target, let screen = target.screen ?? NSScreen.main else { return }
         let size = target.frame.size
-        var origin = NSPoint(x: screen.frame.minX + point.x,
-                             y: screen.frame.maxY - point.y - size.height)
+        let topLeft = WinampModernScreenSpace.cocoaPoint(point, on: screen)
+        var origin = NSPoint(x: topLeft.x, y: topLeft.y - size.height)
         // A *placement* is kept on screen; a **pin** is not. Itemskin draws each component window's
         // frame as a second window laid exactly over it, and the clamp is what pulled the two apart:
         // the tiler had already put the library window's right edge past the visible frame, so the

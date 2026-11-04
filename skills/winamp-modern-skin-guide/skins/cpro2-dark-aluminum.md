@@ -213,10 +213,10 @@ Visualization, Web Reader, Now Playing.
   directions. That is the whole difference between the two attempts, and the check is one line —
   `CLICK changed group#two.info.seeker.hover.layer … alpha=0 -> alpha=255`.
 - **The snap preview fires with the pointer nowhere near a screen edge.** `layout.m` tests
-  `System.getMousePosX() < 1` — the *screen's* left edge in Winamp — and ours answers in the window's
-  canvas space, so it is true whenever the pointer is left of the player. The preview window is
-  suppressed (`isHostProvidedDesktopEffect`); the cursor stays window-space on purpose — see
-  `reference/scripting.md` → *`System.getMousePos*` is the window's canvas, not the desktop*.
+  `System.getMousePosX() < 1` — the *screen's* left edge in Winamp. Ours answered in the window's
+  canvas until B357 moved the screen model whole, so it fired whenever the pointer was left of the
+  player. The preview window stays suppressed (`isHostProvidedDesktopEffect`): macOS has no Aero-snap
+  for it to promise — see `reference/scripting.md` → *The screen model moves whole*.
 
 - **Nothing lays out until `System.onShowLayout` fires.** This was never dispatched anywhere in the
   codebase, and the failure is silent and total: `two.screen` keeps its declared `y=0`, so the title

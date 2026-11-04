@@ -58,7 +58,12 @@ extension WinampModernScriptRuntime {
     /// space, or `nil` when no host has answered (the headless harness, an id no window backs).
     func windowOrigin(of object: WasabiObject) -> CGPoint? {
         guard Self.isWindowObject(object) else { return nil }
-        return enclosingWindowID(of: object).flatMap { containerOriginQuery?($0) }
+        return enclosingWindowOrigin(of: object)
+    }
+
+    /// Where the window drawing `object` sits on the desktop, for any object in it.
+    func enclosingWindowOrigin(of object: WasabiObject) -> CGPoint? {
+        enclosingWindowID(of: object).flatMap { containerOriginQuery?($0) }
     }
 
     /// Whether a geometry write on `object` can be a round trip of its own origin: it is a window
@@ -124,14 +129,14 @@ extension WinampModernScriptRuntime {
     }
 
     /// What `getLeft()`/`getTop()` answer for this object right now, in whatever space they answer
-    /// in — the host's desktop origin for a container, the layout's own canvas origin (usually 0) for
-    /// a layout. **The only place that answer is worked out**, so the round trip
-    /// `applyContainerGeometry` recognises compares against the very integers the script was handed:
-    /// a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
+    /// in — the host's desktop origin for a container or layout (each is a window in Wasabi, and
+    /// multipass compares its layout's origin with the screen-space cursor), the declared or
+    /// resolved one when no host answers. **The only place that answer is worked out**, so the round
+    /// trip `applyContainerGeometry` recognises compares against the very integers the script was
+    /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
     func reportedOrigin(of object: WasabiObject) -> CGPoint {
         let isWindow = Self.isWindowObject(object)
-        if isWindow, object.tag.is(.container),
-           let origin = windowOrigin(of: object) {
+        if let origin = windowOrigin(of: object) {
             return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
         }
         // A window's own `x`/`y`, truncated as Wasabi reads them; anything else, or a window that

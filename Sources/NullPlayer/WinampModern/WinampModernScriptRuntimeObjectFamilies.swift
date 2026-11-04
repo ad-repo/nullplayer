@@ -41,6 +41,9 @@ extension WinampModernScriptRuntime {
             if WasabiFrame.isFrame(call.object.tag) {
                 guard WasabiFrame.setPosition(Double(call.arguments[0].integerValue),
                                               on: call.object) else { return .null }
+                if runtime.loadHasSettled {
+                    WinampModernSkinState.persistFramePosition(of: call.object, in: runtime.loadedSkin.configuration)
+                }
                 runtime.noteGeometryChange()
                 runtime.notifyGraphDidMutate()
                 _ = try runtime.dispatch(object: call.object, event: "onsetposition", arguments: [call.arguments[0]])

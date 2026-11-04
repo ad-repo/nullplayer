@@ -23,8 +23,8 @@ import XCTest
 /// the move, and every frame stayed wherever the tiler had parked it.
 ///
 /// B61 fixed the **self** round trip (`me.resize(me.getLeft(), …)`). This is the **cross-window** one,
-/// and it is fixed the same way — on the write, never on the read. Making a layout report its desktop
-/// position is the obvious move and is wrong; multipass lays its side drawers out against that 0.
+/// and it is fixed the same way — on the write. Since B357 a hosted layout reports its desktop
+/// position too (the screen model moved whole), and the same pin still recognises the pair.
 ///
 /// Two smaller things had to come with it:
 ///
@@ -35,17 +35,16 @@ import XCTest
 ///   one of the pair a script moves — 82px short of it, and the pair came apart at the screen edge.
 final class WinampModernPhase82Tests: XCTestCase {
 
-    // MARK: - The read is unchanged
+    // MARK: - The read
 
-    /// The half that must **not** move. A layout is the space every object inside it is laid out in,
-    /// and skins do arithmetic across that boundary — multipass positions its side drawers from
-    /// `layoutMainNormal.getLeft()`, and adding the window's desktop origin there moved every drawer
-    /// and its hover region off the artwork it belongs to.
-    func testALayoutStillAnswersItsOwnCanvasOriginAndNotTheDesktops() throws {
+    /// B357: a layout is a window in Wasabi and answers where the host put it, in the screen space
+    /// the cursor and `clientToScreen*` answer in — multipass compares its layout's origin with
+    /// `getMousePosX()` to open its drawers.
+    func testALayoutAnswersTheHostsDesktopOrigin() throws {
         let (runtime, program) = try makeRuntime()
         runtime.containerOriginQuery = { _ in CGPoint(x: 1309, y: 318) }
         let layout = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
-        XCTAssertEqual(try readOrigin(runtime, program, of: layout), CGPoint(x: 0, y: 0))
+        XCTAssertEqual(try readOrigin(runtime, program, of: layout), CGPoint(x: 1309, y: 318))
     }
 
     /// Its counterpart, for the record: a `<container>` has no layout space of its own, so it does
@@ -59,8 +58,8 @@ final class WinampModernPhase82Tests: XCTestCase {
 
     // MARK: - The cross-window round trip
 
-    /// The defect, at its smallest. The chrome layout reads the content layout's position — 0, its
-    /// canvas origin — and hands it straight back to its own `resize()`. The window it is asking for
+    /// The defect, at its smallest. The chrome layout reads the content layout's position and hands
+    /// it straight back to its own `resize()`. The window it is asking for
     /// is the *content window's*, so that is the point the host is given.
     func testAWindowResizedToAnothersReadPositionLandsOnThatWindow() throws {
         let (runtime, program) = try makeRuntime()
@@ -74,7 +73,7 @@ final class WinampModernPhase82Tests: XCTestCase {
         let content = try XCTUnwrap(object(runtime, type: "layout", id: "contentNormal"))
         let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
         let read = try readOrigin(runtime, program, of: content)
-        XCTAssertEqual(read, CGPoint(x: 0, y: 0), "the read itself is unchanged")
+        XCTAssertEqual(read, CGPoint(x: 1309, y: 318), "the content window's desktop origin")
         try resize(runtime, program, chrome, to: CGRect(origin: read, size: CGSize(width: 330, height: 137)))
 
         XCTAssertEqual(moves.count, 1)
@@ -166,16 +165,16 @@ final class WinampModernPhase82Tests: XCTestCase {
 
         let content = try XCTUnwrap(object(runtime, type: "layout", id: "contentNormal"))
         let chrome = try XCTUnwrap(object(runtime, type: "layout", id: "normal"))
-        _ = try readOrigin(runtime, program, of: content)
-        try resize(runtime, program, chrome, to: CGRect(x: 0, y: 0, width: 330, height: 137))
-        try resize(runtime, program, chrome, to: CGRect(x: 0, y: 0, width: 400, height: 200))
+        let read = try readOrigin(runtime, program, of: content)
+        try resize(runtime, program, chrome, to: CGRect(origin: read, size: CGSize(width: 330, height: 137)))
+        try resize(runtime, program, chrome, to: CGRect(origin: read, size: CGSize(width: 400, height: 200)))
 
         XCTAssertEqual(moves.first?.1, CGPoint(x: 1309, y: 318))
         XCTAssertTrue(moves.first?.2 ?? false, "the first write is pinned to the read")
         // The second has no fresh read behind it — of the content or of itself — so it is a plain,
         // clamped move to what it names rather than a pin or a suppressed round trip.
         XCTAssertEqual(moves.count, 2)
-        XCTAssertEqual(moves.last?.1, CGPoint(x: 0, y: 0))
+        XCTAssertEqual(moves.last?.1, CGPoint(x: 1309, y: 318))
         XCTAssertFalse(moves.last?.2 ?? true, "the second write has no fresh read behind it")
     }
 

@@ -93,10 +93,25 @@ extension WinampModernScriptRuntime {
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
         let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
-        for (key, value) in attributes { _ = object.setAttribute(key, value: value) }
+        for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
         notifyGraphDidMutate()
+    }
+
+    /// A `newGroupAsLayout` group's x/y are screen space (Wasabi gives it a window); here it is an
+    /// overlay in its owner's canvas, so the owner window's origin takes them back. Unscaled, as
+    /// multipass's own "scale syncing problem" note expects. Any other object's write passes through.
+    private func floatedToCanvas(_ attributes: [(key: String, value: String)],
+                                 of object: WasabiObject) -> [(key: String, value: String)] {
+        guard floatedGroups.contains(object.stableID), let origin = enclosingWindowOrigin(of: object) else {
+            return attributes
+        }
+        return attributes.map { key, value in
+            guard key == "x" || key == "y", let screen = Double(value) else { return (key, value) }
+            let canvas = screen - (key == "x" ? origin.x : origin.y)
+            return (key, String(Int(canvas.rounded())))
+        }
     }
 
     /// Push a *container's* `x`/`y`/`w`/`h` out to its window.
@@ -159,10 +174,10 @@ extension WinampModernScriptRuntime {
                   let y = Double(object.attributes["y"] ?? "") else { return }
             // **Writing back the position that was just read is not a move.** `resize(getLeft(),
             // getTop(), w, h)` is how a skin resizes a window while leaving it where it is, and the
-            // two halves have to agree about the space they are in: `getLeft()`/`getTop()` on a
-            // layout answer its own canvas origin — 0 — so taking that 0 as a desktop coordinate
-            // parked the window in the corner of the monitor. Big Bento's side playlist does exactly
-            // this from `pledit.maki` every time the panel opens (B61).
+            // two halves have to agree about the space they are in: with no host answering, a
+            // layout's `getLeft()`/`getTop()` are its own canvas origin — 0 — and taking that 0 as a
+            // desktop coordinate parked the window in the corner of the monitor. Big Bento's side
+            // playlist does exactly this from `pledit.maki` every time the panel opens (B61).
             //
             // Only the *round trip* is recognised, not the value: a script that writes a position it
             // did not read — Big Bento's search-results popup places itself with a point it measured

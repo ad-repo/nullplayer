@@ -82,6 +82,28 @@ enum WinampModernSkinState {
                                  key: frameKey(container: container, frame: frame))
     }
 
+    /// The stored divider offset of `frame`, keyed by the container that declares it — the reader
+    /// paired with `persistFramePosition`, so the two cannot disagree about the key.
+    static func framePosition(of frame: WasabiObject, in configuration: WinampModernConfiguration) -> Double? {
+        frameKeyParts(of: frame).flatMap {
+            framePosition(container: $0.container, frame: $0.frame, in: configuration)
+        }
+    }
+
+    /// Store a frame's current divider offset under the container that declares it — the one writer
+    /// for a drag and for a script's settled `setPosition` (B44, B358).
+    static func persistFramePosition(of frame: WasabiObject, in configuration: WinampModernConfiguration) {
+        guard let parts = frameKeyParts(of: frame) else { return }
+        setFramePosition(WasabiFrame.position(of: frame), container: parts.container, frame: parts.frame,
+                         in: configuration)
+    }
+
+    private static func frameKeyParts(of frame: WasabiObject) -> (container: String, frame: String)? {
+        guard let id = frame.xmlID, !id.isEmpty,
+              let container = WinampModernScriptRuntime.enclosingContainer(of: frame)?.xmlID else { return nil }
+        return (container, id)
+    }
+
     /// The container is part of the key because a skin may carry the same frame id in two of its
     /// windows — and because a frame is only ever addressed from the container that declares it.
     static func frameKey(container: String, frame: String) -> String { "\(container)/\(frame)" }

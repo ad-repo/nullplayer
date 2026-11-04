@@ -85,8 +85,8 @@ extension WinampModernScriptRuntime {
         table.add("popatxy", 2) { runtime, call in
             // ClassicPro positions its tab-strip and "goto" menus with
             // `popAtXY(clientToScreenX(b.getLeft()), clientToScreenY(b.getTop() + 26))` — the point is
-            // whatever those conversions answer, so the two have to agree. They do: both are
-            // window-client space, and the presenter places the menu in that window.
+            // whatever those conversions answer, so the two have to agree. They do: both are screen
+            // space, and the presenter converts the point back into its own window.
             let point = CGPoint(x: Int(call.arguments[0].integerValue), y: Int(call.arguments[1].integerValue))
             return .integer(runtime.presentPopup(runtime.popupItems(of: call.id, depth: 0), at: point))
         }

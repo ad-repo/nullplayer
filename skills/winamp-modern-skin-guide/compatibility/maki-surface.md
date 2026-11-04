@@ -30,7 +30,7 @@ By area:
 - **`PopupMenu`**: `addCommand(title, id, checked, disabled)`, `addSeparator`, `addSubMenu(child,
   title)`, `checkCommand`, `popAtMouse`, `popAtXY(x, y)` — shown as a real `NSMenu` through
   `popupPresenter`, which the main view installs. `popAtMouse` pops at the mouse; `popAtXY` at the
-  given point, in the window-client space `clientToScreenX/Y` answer in (Phase 24). Both block and
+  given point, in the screen space `clientToScreenX/Y` answer in (Phase 24; screen since B357). Both block and
   answer the picked id (0 = cancelled)
 - **Events dispatched to scripts** — see the table below
 - **Timers**: bounded scheduling (see limits); `setDelay` re-arms a running timer and `getDelay`
@@ -102,8 +102,8 @@ By area:
 - **Object validity**: `isInvalid()` is true for a null receiver *and* for an object whose declared
   bitmap never resolved. ClassicPro probes for optional artwork by declaring a hidden layer over it
   and asking that layer whether it is invalid
-- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **skin pixels**, on the window's canvas — *not*
-  the space a mouse event's x/y use, which is the receiver's parent; see
+- **Cursor + EQ**: `getMousePosX`/`getMousePosY` (in **screen space**, top-left points on the player's
+  display, since B357 — *not* the space a mouse event's x/y use, which is the receiver's parent; see
   [reference/scripting.md](../reference/scripting.md) §*Rotary controls*), `getEQ`, `getEqBand`/`setEqBand` and `getEqPreamp`/`setEqPreamp` (MAKI's −127…127 scale ↔ the
   engine's ±12 dB), `atan`. Both setters **announce the change** (`onEqBandChanged` /
   `onEqPreampChanged`, Phase 41) exactly as `setVolume` does
@@ -129,8 +129,8 @@ By area:
   owned by the layout its `owner="<container>,<layout>"` attribute names. Ours is an **overlay child of
   that owner layout**, appended last, keeping a `group` type — and the coordinates say that is the
   right answer rather than a compromise: multipass positions the result with
-  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)`, our root layout answers 0 for both
-  (window-local), and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
+  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)` — screen space, from which
+  `writeGeometry` takes the owner window's origin back out (`floatedGroups`, B357) — and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
   inside drawer.bottom (45, 155) would have put it — confirmed by `RENDER_CLICK_WATCH`. It must **not**
   be typed `layout`: `resize` on a layout is a *window* resize. No `owner=` falls back to the calling
   script's own layout; a caller with no layout above it (a `skin.xml`-level script) answers null.
@@ -241,9 +241,14 @@ By area:
   `b.clientToScreenX(b.getLeft())` — receiver and coordinate the same object — which only makes sense
   under that reading: taking it as the receiver's *own* box double-counts, and taking it as pure
   identity loses the parent chain (that is what put ClassicPro's tab menu at the window's left edge
-  instead of under its tab). "Screen" is the window's client space: a `.wal` window is borderless and
-  positioned by us, so the window origin is a constant that cancels in the round trip every caller
-  makes, and `popAtXY` places its menu in the same window the point came from. The stock skin's
+  instead of under its tab). **"Screen" is the screen (B357, 2026-11-03):** the enclosing window's
+  top-left origin on its display plus the parent offset × UI Size (the harness answers origin 0,
+  scale 1). Bento's search results are a separate container placed at
+  `fakeSB.clientToScreenX/Y(…)`, so a window-client answer put them at the display's corner. The
+  round trip still cancels, and the cursor, a layout's and a container's `getLeft()` and the
+  viewport all answer in the same space, so skins that compare across them (Xenon's tray close,
+  Symplicipod's knob, multipass's drawers) read right — see
+  [reference/scripting.md](../reference/scripting.md) → *The screen model moves whole*. The stock skin's
   titlebar exercises the other shape — `layout.clientToScreenX(…)` out, titlebar **group**
   `screenToClientX(…)` back, then `− group.getLeft()` — and both objects hang off the layout, so it
   returns the input and the correction lands. Phase 24
@@ -254,9 +259,9 @@ By area:
   its script opens the tray at `d2.onMouseMove(x)` for `x` 250..330 and keeps it open while the pointer
   is within `d2.clientToScreenX(d2.getGuiX())+250..370`: every number reads right only with the layout
   as the space (tray out at window x 250..300) and wrong with the group's `x=100` added.
-- **`popAtXY(x, y)`** — a script-built menu at a computed point, in the same coordinates the
-  conversions above answer in. ClassicPro's tab-strip right-click menu and its drawer's "goto" menu.
-  Phase 24
+- **`popAtXY(x, y)`** — a script-built menu at a computed point, in the screen space the
+  conversions above answer in; the presenter converts it to its window. ClassicPro's tab-strip
+  right-click menu and its drawer's "goto" menu. Phase 24
 - **`System.getExtension(path)`** — the extension of a filename, without the dot, from the last path
   component (Windows separators included). Defix reads it off the playing item for its format readout.
   Phase 25

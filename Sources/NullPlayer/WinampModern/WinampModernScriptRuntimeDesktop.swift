@@ -159,8 +159,8 @@ extension WinampModernScriptRuntime {
         table.add("getcurappheight", 0) { runtime, call in
             .integer(WinampModernScriptRuntime.appFrameDimension(runtime.playerWindowFrame?.height))
         }
-        // Screen-space cursor position, in the same skin-pixel units as the x/y a mouse event
-        // hands the script — the knob scripts mix the two in one expression.
+        // Screen-space cursor position, the space `clientToScreen*`, the viewport and a window's
+        // `getLeft()` answer in (see `mousePositionRequested`).
         table.add("getmouseposx", 0) { runtime, call in
             .integer(Int32(clamping: Int((runtime.hooks.mousePositionRequested?().x ?? 0).rounded())))
         }
