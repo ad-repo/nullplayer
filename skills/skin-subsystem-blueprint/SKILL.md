@@ -154,6 +154,13 @@ inert), declared in another view (open that view the way the skin's own button d
 nowhere (your window). `.wal`'s video (`toggleVideo()`) and every family's visualization still
 take their own routes.
 
+**A skin that draws the library draws a frame around NullPlayer's browser, never a second browser.**
+Host `EmbeddedLibraryBrowserSurface` (`Windows/ClassicLibraryBrowser/`) in the skin's list area: it
+is the real `ClassicLibraryBrowserView` in its embedded mode, so servers, tabs, search and history
+work as in the classic window. Give it the skin's colours with `applyStyle`, its scale with
+`applyContentScale`, unmount it when the holder goes and tear it down once with the skin. `.wal`'s
+`WinampModernLibrarySurfaceView` subclasses it.
+
 ### The skin's *own* extra windows are a second, separate decision
 
 Not to be confused with the policy above, which is about **NullPlayer's** windows. This one is about

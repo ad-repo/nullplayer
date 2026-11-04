@@ -1622,7 +1622,7 @@ mounted nothing and every tab's content area stayed black (2026-11-10).
 **Hosted surfaces must clip to their holder frame** (`layer.masksToBounds = true`). Without this,
 NSView's default non-clipping layer lets the browser's tab headers ("+ADD", "History", etc.) bleed
 through the titlebar on skins like cPro-Bento. The clip is applied once at construction in
-`WinampModernLibrarySurfaceView`.
+`EmbeddedLibraryBrowserSurface`, which `WinampModernLibrarySurfaceView` subclasses.
 
 **Unmounting is not teardown, and confusing the two is a bug the user sees.** The component bridge
 owns **one surface of each kind per skin** and re-serves that same instance whenever a holder for it
