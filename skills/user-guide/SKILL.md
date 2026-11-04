@@ -90,6 +90,11 @@ Global controls are also available from the macOS top menu bar:
 - `Libraries`
 - `Output`
 
+`nullPlayer > Check for Updates…` asks GitHub for the latest release; if it is newer than the running
+version, **Download** saves its `NullPlayer.dmg` to Downloads (progress in the activity panel) and
+opens it, ready to drag into Applications (Homebrew users can `brew upgrade nullplayer` instead).
+Nothing installs itself, and the item is absent from the Mac App Store build.
+
 `Output > Sonos` supports persistent-open room checkbox selection (same behavior as the context menu Sonos submenu).
 
 `Output > Streaming > Rip URL…` opens the Stream Ripper (paste a URL → FLAC/MP3/MP4); see Output Devices & Casting below.
