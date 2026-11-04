@@ -105,7 +105,9 @@ struct IniProfile {
 
 class Core {
 public:
-    explicit Core(int width, int height) : width_(std::max(1, width)), height_(std::max(1, height)) {
+    // `referenceWidth` sets the band count (as `referencewidth` does later); each draw fits the bands
+    // to its own canvas.
+    explicit Core(int referenceWidth) : referenceWidth_(std::max(1, referenceWidth)) {
         setDefaultColors();
         resetLevelTables();
         setupFFT();
@@ -226,7 +228,7 @@ public:
             return 1;
         }
         if (key == "referencewidth") {
-            referenceWidth_ = std::max(0, value);
+            referenceWidth_ = std::max(1, value);
             recalcGeometry();
             return 1;
         }
@@ -447,13 +449,64 @@ public:
 
     const std::string &lastError() const { return lastError_; }
 
+    void setFixedDtMs(int ms) { fixedDtMs_ = std::max(0, ms); }
+
+    void processFrameOnly() {
+        rebuildBarTableIfNeeded();
+        rebuildPeakTablesIfNeeded();
+
+        // Scale decay by elapsed time so different frame rates produce identical visuals.
+        double dtScale = 1.0;
+        auto now = Clock::now();
+        if (fixedDtMs_ > 0) {
+            dtScale = fixedDtMs_ / kRefIntervalMs;
+        } else if (hasLastFrameTime_) {
+            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
+            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
+            dtScale = dtMs / kRefIntervalMs;
+        }
+        lastFrameTime_ = now;
+        hasLastFrameTime_ = true;
+
+        // Plugin-frame steps (peaks, and the effects' ghosts) run in whole 33 ms ticks.
+        const double ticksExact = dtScale + tickAccum_;
+        const int ticks = static_cast<int>(ticksExact);
+        tickAccum_ = ticksExact - ticks;
+
+        if (!hasWaveform_) {
+            decayWhenIdle(dtScale, ticks);
+            stepGhosts(ticks);
+            return;
+        }
+
+        spectrumOf(waveLeft_, spectrumLeft_);
+        spectrumOf(waveRight_, spectrumRight_);
+
+        int volumeSum = 0;
+        if (mono_) {
+            volumeSum += runBars(0, bands_, reverseRight_, dtScale, ticks, [&](int low, int high) { return monoLevel(low, high); });
+        } else {
+            const int half = leftBands();
+            volumeSum += runBars(0, half, reverseLeft_, dtScale, ticks,
+                                 [&](int low, int high) { return stereoLevel(spectrumLeft_, low, high); });
+            volumeSum += runBars(half, bands_ - half, reverseRight_, dtScale, ticks,
+                                 [&](int low, int high) { return stereoLevel(spectrumRight_, low, high); });
+        }
+
+        volume_ = clampInt(volumeSum / bands_, 0, 255);
+        stepGhosts(ticks);
+        hasWaveform_ = false;
+    }
+
+    void drawAtSize(unsigned char *outRGBA, int w, int h, int stride) {
+        drawFrame(outRGBA, w, h, static_cast<size_t>(stride));
+    }
+
+
 private:
-    int width_ = 1;
-    int height_ = 1;
-    int drawWidth_ = 1;
     int bands_ = 1;
     int bandWidth_ = 3;
-    int referenceWidth_ = 0;  // if > 0, use for band computation instead of drawWidth_
+    int referenceWidth_ = 1;  // the width the band count is computed for
 
     int falloffRate_ = 12;
     int peakChangeRate_ = 80;
@@ -503,6 +556,7 @@ private:
     visclassic::Rng rng_;
     bool rebuildPeakTables_ = true;
     visclassic::GhostState ghosts_;
+    visclassic::DrawContext drawScratch_;  // drawFrame's buffers, kept to avoid per-frame allocation
     double tickAccum_ = 0;  // fraction of a 33 ms plugin frame not yet run
 
     // Time-based decay: scale decay by elapsed time so different frame rates produce identical visuals.
@@ -512,10 +566,6 @@ private:
     bool hasLastFrameTime_ = false;
     double fixedDtMs_ = 0;  // vc_set_fixed_dt_ms: > 0 pins the frame interval for tests
 
-public:
-    void setFixedDtMs(int ms) { fixedDtMs_ = std::max(0, ms); }
-
-private:
     std::vector<float> levelDecayAccum_;
 
     std::array<int, kColorCount> volumeFunc_{};
@@ -553,10 +603,8 @@ private:
     }
 
     void recalcGeometry() {
-        drawWidth_ = std::max(1, width_);
         bandWidth_ = std::max(1, requestedBarWidth_);
-        const int refW = (referenceWidth_ > 0) ? referenceWidth_ : drawWidth_;
-        int newBands = std::max(1, (refW + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
+        int newBands = std::max(1, (referenceWidth_ + xSpacing_) / std::max(1, bandWidth_ + xSpacing_));
         newBands = std::min(kMaxBars, newBands);
         if (!mono_) {
             newBands = std::max(2, (newBands / 2) * 2);
@@ -620,6 +668,37 @@ private:
             return UnionLevelCalcStereo(low, high, src.data());
         }
         return AverageLevelCalcStereo(low, high, src.data());
+    }
+
+    // One channel's FFT, scaled to 0..255 per bin.
+    void spectrumOf(const std::array<uint8_t, kWaveCount> &wave, std::vector<uint8_t> &out) {
+        for (int i = 0; i < kWaveCount; ++i) {
+            floatWave_[i] = static_cast<float>(static_cast<int>(wave[i]) - 128);
+        }
+        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
+        for (int i = 0; i < fftFrequencies_; ++i) {
+            const unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
+            out[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
+        }
+    }
+
+    // Bars [first, first + count) read consecutive bins from `barTable_`'s entries for them, low to
+    // high frequency, and are laid out left to right or, `reverse`, right to left. Returns the bars'
+    // VolumeFunction sum.
+    template <typename LevelAt>
+    int runBars(int first, int count, bool reverse, double dtScale, int ticks, LevelAt levelAt) {
+        int volumeSum = 0;
+        int low = 0;
+        int x = reverse ? first + count - 1 : first;
+        const int dir = reverse ? -1 : 1;
+        for (int i = first; i < first + count; ++i, x += dir) {
+            const int high = std::min(low + static_cast<int>(barTable_[static_cast<size_t>(i)]), fftFrequencies_);
+            const int newLevel = levelAt(low, high);
+            low = high;
+            volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
+            updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
+        }
+        return volumeSum;
     }
 
     void updatePeaks(size_t idx, int barLevel, double dtScale, int ticks) {
@@ -689,101 +768,6 @@ private:
         rebuildPeakTables_ = false;
     }
 
-public:
-    void processFrameOnly() {
-        rebuildBarTableIfNeeded();
-        rebuildPeakTablesIfNeeded();
-
-        // Scale decay by elapsed time so different frame rates produce identical visuals.
-        double dtScale = 1.0;
-        auto now = Clock::now();
-        if (fixedDtMs_ > 0) {
-            dtScale = fixedDtMs_ / kRefIntervalMs;
-        } else if (hasLastFrameTime_) {
-            double dtMs = std::chrono::duration<double, std::milli>(now - lastFrameTime_).count();
-            dtMs = std::min(dtMs, 200.0);  // clamp after window-hidden gaps
-            dtScale = dtMs / kRefIntervalMs;
-        }
-        lastFrameTime_ = now;
-        hasLastFrameTime_ = true;
-
-        // Plugin-frame steps (peaks, and the effects' ghosts) run in whole 33 ms ticks.
-        const double ticksExact = dtScale + tickAccum_;
-        const int ticks = static_cast<int>(ticksExact);
-        tickAccum_ = ticksExact - ticks;
-
-        if (!hasWaveform_) {
-            decayWhenIdle(dtScale, ticks);
-            stepGhosts(ticks);
-            return;
-        }
-
-        // Left
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveLeft_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumLeft_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        // Right
-        for (int i = 0; i < kWaveCount; ++i) {
-            floatWave_[i] = static_cast<float>(static_cast<int>(waveRight_[i]) - 128);
-        }
-        fft_.time_to_frequency_domain(floatWave_.data(), fftSpectrum_.data());
-        for (int i = 0; i < fftFrequencies_; ++i) {
-            unsigned int h = static_cast<unsigned int>(fftSpectrum_[static_cast<size_t>(i)] / fftScale_);
-            spectrumRight_[static_cast<size_t>(i)] = static_cast<uint8_t>((h > 255) ? 255 : h);
-        }
-
-        int volumeSum = 0;
-        if (mono_) {
-            int low = 0;
-            int x = reverseRight_ ? bands_ - 1 : 0;
-            int dir = reverseRight_ ? -1 : 1;
-            for (int i = 0; i < bands_; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = monoLevel(low, high);
-                low = high;
-                volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
-            }
-        } else {
-            const int half = leftBands();
-
-            int low = 0;
-            int x = reverseLeft_ ? half - 1 : 0;
-            int dir = reverseLeft_ ? -1 : 1;
-            for (int i = 0; i < half; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumLeft_, low, high);
-                low = high;
-                volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
-            }
-
-            low = 0;
-            x = reverseRight_ ? bands_ - 1 : half;
-            dir = reverseRight_ ? -1 : 1;
-            for (int i = half; i < bands_; ++i, x += dir) {
-                int high = low + static_cast<int>(barTable_[static_cast<size_t>(i)]);
-                high = std::min(high, fftFrequencies_);
-                int newLevel = stereoLevel(spectrumRight_, low, high);
-                low = high;
-                volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
-                updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
-            }
-        }
-
-        volume_ = clampInt(volumeSum / bands_, 0, 255);
-        stepGhosts(ticks);
-        hasWaveform_ = false;
-    }
-
     visclassic::BarColourFn barColourScheme() const {
         switch (barColourStyle_) {
         case 1: return BarColourFire;
@@ -833,7 +817,7 @@ public:
         }
         draw_height = height;
 
-        visclassic::DrawContext ctx;
+        visclassic::DrawContext &ctx = drawScratch_;  // reused: no allocation per frame
         ctx.dst = dst;
         ctx.w = width;
         ctx.h = height;
@@ -870,11 +854,6 @@ public:
         visclassic::drawBars(ctx, effect_, ghosts_);
     }
 
-public:
-    void drawAtSize(unsigned char *outRGBA, int w, int h, int stride) {
-        drawFrame(outRGBA, w, h, static_cast<size_t>(stride));
-    }
-
     static bool readProfile(const std::string &path, IniProfile &out) {
         std::ifstream in(path);
         if (!in) {
@@ -907,6 +886,15 @@ public:
                 continue;
             }
 
+            if (section == "VolumeFunction") {  // integers, not colours
+                int v = 0;
+                if (parseInt(value, v)) {
+                    out.volumeFunc[static_cast<size_t>(idx)] = v;
+                    out.hasVolumeFunc = true;
+                }
+                continue;
+            }
+
             RGB c;
             if (!parseRGB(value, c)) {
                 continue;
@@ -924,30 +912,6 @@ public:
             }
         }
 
-        // Second pass: parse VolumeFunction (integer values, not RGB)
-        {
-            std::ifstream in2(path);
-            std::string section2;
-            std::string line2;
-            while (std::getline(in2, line2)) {
-                line2 = trim(line2);
-                if (line2.empty() || line2[0] == ';' || line2[0] == '#') continue;
-                if (line2.front() == '[' && line2.back() == ']') {
-                    section2 = line2.substr(1, line2.size() - 2);
-                    continue;
-                }
-                if (section2 != "VolumeFunction") continue;
-                const size_t eq = line2.find('=');
-                if (eq == std::string::npos) continue;
-                int idx2 = -1;
-                if (!parseInt(trim(line2.substr(0, eq)), idx2) || idx2 < 0 || idx2 >= kColorCount) continue;
-                int val = 0;
-                if (!parseInt(trim(line2.substr(eq + 1)), val)) continue;
-                out.volumeFunc[static_cast<size_t>(idx2)] = val;
-                out.hasVolumeFunc = true;
-            }
-        }
-
         return true;
     }
 };
@@ -958,14 +922,15 @@ struct VisClassicCore {
     Core impl;
     std::string lastError;
 
-    explicit VisClassicCore(int width, int height) : impl(width, height) {}
+    explicit VisClassicCore(int width) : impl(width) {}
 };
 
 extern "C" {
 
 VisClassicCore *vc_create(int width, int height) {
     try {
-        return new VisClassicCore(width, height);
+        (void)height;  // the band count comes from the width; each draw passes its own size
+        return new VisClassicCore(width);
     } catch (...) {
         return nullptr;
     }

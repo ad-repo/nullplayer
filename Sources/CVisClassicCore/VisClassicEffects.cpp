@@ -256,11 +256,8 @@ void drawGrid(const DrawContext &ctx, int effect, ColourAt colourAt, ReflectedAt
     case kEffectMirror:
         gridMirror(ctx, colourAt);
         break;
-    case kEffectReflectionWaves:
-        if (ctx.xSpacing) break;  // the plugin draws these on black
-        gridReflection(ctx, colourAt, reflectedAt);
-        break;
     case kEffectReflection:
+    case kEffectReflectionWaves:
         gridReflection(ctx, colourAt, reflectedAt);
         break;
     default:
@@ -345,6 +342,9 @@ void drawBackground(const DrawContext &ctx, int mode, int effect, int volume) {
     case kBackgroundGrid:
     case kBackgroundFlashGrid: {
         // Grid: the bar colours at a third (4.5th reflected); Flash Grid: the volume colours (/1.45 reflected).
+        // The plugin pairs Reflection Waves with these grids only when the bars touch; with gaps
+        // between them it draws Waves on black.
+        if (effect == kEffectReflectionWaves && ctx.xSpacing) break;
         const bool grid = mode == kBackgroundGrid;
         const Palette &p = grid ? bars : volumes;
         const double dim = grid ? 3.0 : 1.0, reflectedDim = grid ? 4.5 : 1.45;

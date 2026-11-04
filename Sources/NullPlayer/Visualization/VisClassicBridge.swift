@@ -100,8 +100,8 @@ final class VisClassicBridge {
         }
     }
 
-    /// Process and draw atomically — prevents another view from calling processUpdate
-    /// between this view's processUpdate and drawAtSize on the shared bridge.
+    /// Process and draw atomically, so no other caller can touch the shared core between this
+    /// view's processing and its draw.
     func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double,
                         width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
         guard let core else { return }

@@ -10,6 +10,8 @@ extern "C" {
 
 typedef struct VisClassicCore VisClassicCore;
 
+/// `width` is the reference width the band count is computed for (see the "referencewidth" option);
+/// `height` is unused, since each draw passes its own size.
 VisClassicCore *vc_create(int width, int height);
 void vc_destroy(VisClassicCore *core);
 
