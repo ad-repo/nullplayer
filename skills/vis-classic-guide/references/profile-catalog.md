@@ -3,7 +3,7 @@
 Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_classic/profiles/`.
 
 - Total profiles: **32**
-- Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`
+- Source format: `[Classic Analyzer]`, `[BarColours]`, `[PeakColours]`, `[VolumeColours]`, `[VolumeFunction]`
 - Color values in INI are R G B as drawn (the original plugin's `RGB(b, g, r)` naming is undone by its DIB byte order).
 
 ## Option Legend
@@ -11,13 +11,13 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | Key | Meaning |
 |---|---|
 | `Falloff` | Per-frame bar decay amount when levels drop (higher = faster fall). |
-| `PeakChange` | Peak hold timer before peak marker decays. |
-| `Bar Width`, `X-Spacing`, `Y-Spacing` | Bar geometry and spacing controls. |
-| `BackgroundDraw` | Background style selector (0..4). |
+| `PeakChange` | Frames a peak holds before its Peak Effect moves it; `0` = no peaks. |
+| `Bar Width`, `X-Spacing`, `Y-Spacing` | Bar geometry; `Y-Spacing` (1..7) draws every Nth row. |
+| `BackgroundDraw` | Background style selector (0..4); Flash, Solid and Flash grid use `[VolumeColours]`. |
 | `BarColourStyle` | Bar color index function selector (0..4). |
 | `PeakColourStyle` | Peak color index function selector (0..2). |
-| `Effect` | Effect selector; current port has explicit branch for `7` (fade shadow). |
-| `Peak Effect` | Parsed/persisted compatibility field; no dedicated render branch in current port. |
+| `Effect` | Bar effect (0..7), ported from the original plugin. |
+| `Peak Effect` | How a peak moves after its hold (0..5), ported from the original plugin. |
 | `ReverseLeft`, `ReverseRight` | Channel drawing direction flags. |
 | `Mono` | `1` uses mono combined bands; `0` uses stereo split halves. |
 | `Bar Level` | `0` union/max aggregation; `1` average aggregation. |
@@ -29,9 +29,11 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 
 ## Enum Values
 
-- `BackgroundDraw`: `0`=Black, `1`=Flash-ish low gray, `2`=Dark solid, `3`=Dark grid, `4`=Flash grid
+- `BackgroundDraw`: `0`=Black, `1`=Flash, `2`=Solid, `3`=Grid, `4`=Flash grid
 - `BarColourStyle`: `0`=BarColourClassic, `1`=BarColourFire, `2`=BarColourLines, `3`=BarColourWinampFire, `4`=BarColourElevator
 - `PeakColourStyle`: `0`=PeakColourFade, `1`=PeakColourLevel, `2`=PeakColourLevelFade
+- `Effect`: `0`=None, `1`=Mirror, `2`=Reflection, `3`=Shadow, `4`=Double Shadow, `5`=Smoke, `6`=Reflection Waves, `7`=Fade Shadow
+- `Peak Effect`: `0`=Normal, `1`=Fall, `2`=Rise, `3`=FallAndRise, `4`=RiseFall, `5`=Sparks
 
 ## Profiles
 
@@ -205,7 +207,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 0 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 0 (PeakColourFade) |
 | `Effect` | 0 |
@@ -227,7 +229,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Stereo split channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=0`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=0` (`PeakColourFade`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=0` (`PeakColourFade`).
 
 ### Palette Snapshot
 
@@ -257,7 +259,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 0 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 1 (BarColourFire) |
 | `PeakColourStyle` | 0 (PeakColourFade) |
 | `Effect` | 0 |
@@ -279,7 +281,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Stereo split channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=0`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
 
 ### Palette Snapshot
 
@@ -413,7 +415,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 2 |
-| `BackgroundDraw` | 3 (Dark grid) |
+| `BackgroundDraw` | 3 (Grid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -435,7 +437,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=2`.
-- Style maps: `BackgroundDraw=3` (`Dark grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=3` (`Grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -673,7 +675,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 1 (BarColourFire) |
 | `PeakColourStyle` | 0 (PeakColourFade) |
 | `Effect` | 0 |
@@ -695,7 +697,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=180` -> high sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Union/max bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
 
 ### Palette Snapshot
 
@@ -725,7 +727,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 2 |
-| `BackgroundDraw` | 3 (Dark grid) |
+| `BackgroundDraw` | 3 (Grid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 2 (PeakColourLevelFade) |
 | `Effect` | 0 |
@@ -747,7 +749,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=2`.
-- Style maps: `BackgroundDraw=3` (`Dark grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=2` (`PeakColourLevelFade`).
+- Style maps: `BackgroundDraw=3` (`Grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=2` (`PeakColourLevelFade`).
 
 ### Palette Snapshot
 
@@ -829,7 +831,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -851,7 +853,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -881,7 +883,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 1 |
 | `X-Spacing` | 0 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 1 (Flash-ish low gray) |
+| `BackgroundDraw` | 1 (Flash) |
 | `BarColourStyle` | 2 (BarColourLines) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 7 |
@@ -903,7 +905,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=250` -> lower sensitivity (lower values are more reactive).
 - Channel layout: `Stereo split channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=1`, `X-Spacing=0`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=1` (`Flash-ish low gray`), `BarColourStyle=2` (`BarColourLines`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=1` (`Flash`), `BarColourStyle=2` (`BarColourLines`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -933,7 +935,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 5 |
 | `X-Spacing` | 3 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 3 (BarColourWinampFire) |
 | `PeakColourStyle` | 0 (PeakColourFade) |
 | `Effect` | 0 |
@@ -955,7 +957,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=180` -> high sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Union/max bins`.
 - Geometry: `Bar Width=5`, `X-Spacing=3`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=3` (`BarColourWinampFire`), `PeakColourStyle=0` (`PeakColourFade`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=3` (`BarColourWinampFire`), `PeakColourStyle=0` (`PeakColourFade`).
 
 ### Palette Snapshot
 
@@ -985,7 +987,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1007,7 +1009,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1037,7 +1039,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1059,7 +1061,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1089,7 +1091,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1111,7 +1113,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1141,7 +1143,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1163,7 +1165,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1193,7 +1195,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1215,7 +1217,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1245,7 +1247,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1267,7 +1269,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1297,7 +1299,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 1 (PeakColourLevel) |
 | `Effect` | 0 |
@@ -1319,7 +1321,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=1` (`PeakColourLevel`).
 
 ### Palette Snapshot
 
@@ -1401,7 +1403,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 0 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 2 (Dark solid) |
+| `BackgroundDraw` | 2 (Solid) |
 | `BarColourStyle` | 1 (BarColourFire) |
 | `PeakColourStyle` | 0 (PeakColourFade) |
 | `Effect` | 0 |
@@ -1423,7 +1425,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Stereo split channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=0`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=2` (`Dark solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
+- Style maps: `BackgroundDraw=2` (`Solid`), `BarColourStyle=1` (`BarColourFire`), `PeakColourStyle=0` (`PeakColourFade`).
 
 ### Palette Snapshot
 
@@ -1453,7 +1455,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 2 |
 | `X-Spacing` | 0 |
 | `Y-Spacing` | 1 |
-| `BackgroundDraw` | 3 (Dark grid) |
+| `BackgroundDraw` | 3 (Grid) |
 | `BarColourStyle` | 4 (BarColourElevator) |
 | `PeakColourStyle` | 2 (PeakColourLevelFade) |
 | `Effect` | 5 |
@@ -1475,7 +1477,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Stereo split channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=2`, `X-Spacing=0`, `Y-Spacing=1`.
-- Style maps: `BackgroundDraw=3` (`Dark grid`), `BarColourStyle=4` (`BarColourElevator`), `PeakColourStyle=2` (`PeakColourLevelFade`).
+- Style maps: `BackgroundDraw=3` (`Grid`), `BarColourStyle=4` (`BarColourElevator`), `PeakColourStyle=2` (`PeakColourLevelFade`).
 
 ### Palette Snapshot
 
@@ -1557,7 +1559,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 | `Bar Width` | 3 |
 | `X-Spacing` | 1 |
 | `Y-Spacing` | 2 |
-| `BackgroundDraw` | 3 (Dark grid) |
+| `BackgroundDraw` | 3 (Grid) |
 | `BarColourStyle` | 0 (BarColourClassic) |
 | `PeakColourStyle` | 2 (PeakColourLevelFade) |
 | `Effect` | 0 |
@@ -1579,7 +1581,7 @@ Generated from bundled profile INI files in `Sources/NullPlayer/Resources/vis_cl
 - Sensitivity: `FFTScale=200` -> balanced sensitivity (lower values are more reactive).
 - Channel layout: `Mono combined channels`; level aggregation uses `Average bins`.
 - Geometry: `Bar Width=3`, `X-Spacing=1`, `Y-Spacing=2`.
-- Style maps: `BackgroundDraw=3` (`Dark grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=2` (`PeakColourLevelFade`).
+- Style maps: `BackgroundDraw=3` (`Grid`), `BarColourStyle=0` (`BarColourClassic`), `PeakColourStyle=2` (`PeakColourLevelFade`).
 
 ### Palette Snapshot
 

@@ -8,6 +8,19 @@
   latest GitHub release and, when a newer one is out, offers a **Download** button that saves its
   DMG to Downloads and opens it. Not shown in the Mac App Store build, which the App Store updates itself.
 
+### Visualizations
+
+- **vis_classic's highs reach the right edge** (#682). On a wide analyzer the last bars were always
+  empty and the rest mapped frequency in a straight line, so treble looked dead. The analyzer now
+  sizes its FFT to the bar count and spreads bars logarithmically, as the original plugin does, and
+  in stereo each half covers the whole spectrum instead of only the lower part.
+- **vis_classic draws its profiles' effects, peaks and backgrounds as the original plugin did.**
+  Mirror, Reflection, Shadow, Double Shadow, Smoke, Reflection Waves and Fade Shadow; peaks that
+  snap back, fall, rise, rise-then-fall or spark, with their colour fading as they age; the Flash,
+  Solid, Grid and Flash Grid backgrounds in each profile's own colours; and Y-Spacing's gaps between
+  rows. Before, every profile drew plain bars with peaks that slid down, a dark-grey background, and
+  Fade Shadow as a one-pixel edge.
+
 ## 0.34.2
 
 ### Playback

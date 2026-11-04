@@ -19,12 +19,6 @@ void vc_set_waveform_u8(VisClassicCore *core,
                         size_t count,
                         double sample_rate);
 
-void vc_render_rgba(VisClassicCore *core,
-                    uint8_t *out_rgba,
-                    int width,
-                    int height,
-                    size_t stride);
-
 int vc_set_option(VisClassicCore *core, const char *key, int value);
 int vc_get_option(VisClassicCore *core, const char *key, int *value_out);
 
@@ -35,6 +29,9 @@ const char *vc_get_last_error(VisClassicCore *core);
 
 void vc_process_frame_only(VisClassicCore *core);
 int  vc_draw_at_size(VisClassicCore *core, unsigned char *outRGBA, int width, int height, int stride);
+
+/// Test-only: pins the frame interval to `ms` so a run is repeatable; 0 restores the wall clock.
+void vc_set_fixed_dt_ms(VisClassicCore *core, int ms);
 
 #ifdef __cplusplus
 }

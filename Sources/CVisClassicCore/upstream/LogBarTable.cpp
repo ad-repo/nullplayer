@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <math.h>
 
 // calculate number of bins to assign, will be at least 1
@@ -20,11 +21,9 @@ void LogBarValueTable(const unsigned int nFftSize, const unsigned int nSampleRat
 	if (pnBarTable == nullptr || nBars == 0)
 		return;
 
-	if (nFftSize <= nBars) {
-		for (unsigned int i = 0; i < nBars; i++)
-			pnBarTable[i] = (i < nFftSize) ? 1 : 0;
-		return;
-	}
+	// The caller sizes the FFT so every bar gets at least two bins (CalculateFFTVariables);
+	// below that, pow() below is taken of a negative count.
+	assert(nFftSize >= 2 * nBars);
 
 	// pre-assign each bar to draw with at least 1 element from the spec data
 	for(unsigned int i = 0; i < nBars; i++)

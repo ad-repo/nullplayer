@@ -47,8 +47,8 @@ When `qualityMode == .visClassicExact`, render loop behavior differs from GPU sp
 
 `renderVisClassicExact(drawable:)` pipeline:
 1. Lazily create `VisClassicBridge` (scoped by embedded/main-window vs spectrum-window).
-2. Send latest waveform to C core via `bridge.updateWaveform(...)`.
-3. Ask C core to CPU-render BGRA frame bytes via `bridge.renderFrame(...)`.
+2. `bridge.processAndDraw(...)`: send the latest waveform, advance one frame, and CPU-render BGRA
+   bytes, under one lock. A `.wal` skin with several vis boxes draws the rest with `drawAtSize`.
 4. Upload bytes to shared `MTLTexture` (`replace(region:...)`).
 5. Blit texture to drawable via Metal blit encoder.
 
@@ -172,7 +172,9 @@ Spectrum window (`SpectrumView`, `ModernSpectrumView`):
 From `VisClassicCore.h`:
 - `vc_create`, `vc_destroy`
 - `vc_set_waveform_u8`
-- `vc_render_rgba`
+- `vc_process_frame_only` (advances all per-frame state), `vc_draw_at_size` (pure: draws that state
+  into one box; a `.wal` skin calls it once per vis box)
+- `vc_set_fixed_dt_ms` (test-only: pins the frame interval; `0` = wall clock)
 - `vc_set_option`, `vc_get_option`
 - `vc_load_profile_ini`, `vc_save_profile_ini`
 - `vc_get_last_error`
@@ -180,37 +182,46 @@ From `VisClassicCore.h`:
 ## 5.2 Per-frame processing
 
 1. Convert incoming uint8 waveform to signed float centered at 0.
-2. FFT using upstream `FFT` implementation.
+2. FFT using upstream `FFT` implementation. Its size is the plugin's `CalculateFFTVariables`: 512
+   bins, doubled until `FFT >= 2 * bars per channel` (576 mono bars → 2048). A fixed 512 starved the
+   last bars of a wide analyzer and made the mapping linear (#682).
 3. Scale FFT bins by `FFTScale` (divide; lower scale => more sensitive).
-4. Build logarithmic bar-bin allocation using `LogBarValueTable`.
-5. Compute bar levels per band with `Bar Level` aggregation mode.
-6. Apply falloff and peak timer logic.
-7. Draw bars + peaks to BGRA buffer with profile color maps and styles.
+4. Build logarithmic bar-bin allocation using `LogBarValueTable`: one table in mono; in stereo one
+   per channel, each covering the whole spectrum. The last bar takes everything above 16 kHz, and
+   the lowest bars one bin each.
+5. Compute bar levels per band with `Bar Level` aggregation mode, and the frame's volume
+   (`VolumeFunction` averaged over the bars).
+6. Apply falloff (scaled by elapsed time), then the plugin-frame steps — peaks (§5.3 `Peak Effect`)
+   and the Effect's ghosts — once per elapsed 33 ms tick.
+7. `vc_draw_at_size`: background, then the Effect's bars and ghosts, then peaks, into a BGRA buffer.
 
 ## 5.3 Analyzer options and exact meanings
 
 All loaded from `[Classic Analyzer]` INI section:
 
-- `Falloff` (`0..255`)
+- `Falloff` (`0..75`, the plugin's range)
   - per-frame decay amount for dropping bars
   - higher = faster fall
 
 - `PeakChange` (`0..255`)
-  - peak hold timer length before peak drops by 1 pixel/unit per frame
-  - `<= 0` disables peaks
+  - how many frames a peak holds before its Peak Effect moves it
+  - `0` disables peaks
 
 - `Bar Width` (`1..64`)
 - `X-Spacing` (`0..32`)
-- `Y-Spacing` (`0..32`)
-  - width/spacing parameters for non-fit geometry and visual bar segmentation
+- `Y-Spacing` (`1..7`, the plugin's range; a stored `0` loads as `1`)
+  - `Bar Width` / `X-Spacing`: width/spacing parameters for non-fit geometry
+  - `Y-Spacing`: only every Nth row is drawn, counted from the bottom (`1` = no gaps); peaks snap
+    down to that grid
 
-- `BackgroundDraw` (`0..4`)
-  - background fill style in current port:
+- `BackgroundDraw` (`0..4`), ported from the plugin (`VisClassicEffects.cpp`); none is drawn when
+  the transparent background is on (§4.3)
   - `0`: black
-  - `1`: low gray (flash-ish)
-  - `2`: dark solid
-  - `3`: dark grid
-  - `4`: flash grid
+  - `1`: Flash — the whole box in `VolumeColours[volume]`, `volume` being the frame's average of
+    `VolumeFunction[level]` over the bars
+  - `2`: Solid — `VolumeColours[0]`
+  - `3`: Grid — each Y-spaced row, in the bar columns only, in `BarColours[row height] / 3`
+  - `4`: Flash Grid — the same grid in `VolumeColours[row height]` (static, not volume-driven)
 
 - `BarColourStyle` (`0..4`)
   - maps to upstream index selector functions:
@@ -225,14 +236,33 @@ All loaded from `[Classic Analyzer]` INI section:
   - `1`: `PeakColourLevel`
   - `2`: `PeakColourLevelFade`
 
-- `Effect` (`0..7`)
-  - currently implemented effect behavior in this port:
-  - `7` adds a one-pixel dark shadow at right edge of each bar
-  - other values are parsed/persisted but not currently rendered as distinct effects
+- `Effect` (`0..7`), ported from the plugin's `Render*Bars*` (`VisClassicEffects.cpp`). Ghost
+  colours blend the bar colour with the background colour `VolumeColours[0]`:
+  - `0` None
+  - `1` Mirror: bars grow up and down from the middle
+  - `2` Reflection: bars stand on a line one third up; a half-height copy at /1.75 brightness hangs below
+  - `3` Shadow: a ghost of the bar's high-water mark, dropping 1 level a frame, in (bar + bg) / 2
+  - `4` Double Shadow: two ghosts, dropping 2 and 1 levels a frame
+  - `5` Smoke: a ghost per column (`Bar Width` columns per bar, as equal slices of the drawn bar so
+    every box size matches) drifting right one column a frame, decaying by a random 0–3
+  - `6` Reflection Waves: Reflection whose reflected rows wobble sideways; louder music, bigger waves
+  - `7` Fade Shadow: the ghost holds 24 frames, fading toward the background every 4, then re-takes the bar
+  - Grid and Flash Grid follow the Mirror and Reflection layouts (Reflection Waves draws them only
+    with `X-Spacing=0`, as the plugin does)
+  - ghosts advance in `vc_process_frame_only`, one step per 33 ms tick, and reset whenever the
+    geometry or the Effect changes; drawing only reads them, so several boxes share one core
 
-- `Peak Effect` (`0..5`)
-  - parsed and persisted for profile compatibility
-  - currently no distinct rendering branch in this port
+- `Peak Effect` (`0..5`), ported from the plugin (`VisClassicPeaks.cpp`). A peak's whole life is a
+  table built from the effect and `PeakChange`: set at a bar's level, it counts down through
+  `level[ref][t]`, drawn in `PeakColours[colour[ref][t]]` so its colour fades over its life. It
+  restarts from the bar when its life ends or the bar reaches it. Moving peaks travel 5 levels a frame.
+  - `0` Normal: hold, then snap back to the bar
+  - `1` Fall: hold, then fall (`PeakFallOffMode=1`: slow then fast, log-shaped)
+  - `2` Rise: hold, then rise to the top
+  - `3` FallAndRise: odd levels fall, even levels rise
+  - `4` RiseFall: drift up ~25 levels while holding, then fall
+  - `5` Sparks: hold a random time, then shoot up at a random speed (seeded generator)
+  - peak steps, like every plugin-frame step, run in whole 33 ms ticks of elapsed time
 
 - `ReverseLeft` / `ReverseRight` (`0|1`)
   - channel draw direction flags
@@ -266,6 +296,8 @@ All loaded from `[Classic Analyzer]` INI section:
 Color sections:
 - `[BarColours]` indices `0..255` with `R G B` values
 - `[PeakColours]` indices `0..255` with `R G B` values
+- `[VolumeColours]` indices `0..255` with `R G B` values (backgrounds `1`, `2`, `4`)
+- `[VolumeFunction]` indices `0..255`, integers; default `256 - 256 / (i + 1)` (the plugin's 1/x)
 
 **Channel order is `R G B` as drawn.** The original plugin (`WACUP/vis_classic`, `File.cpp`) reads the
 three numbers into variables named `r g b` and stores `RGB(b, g, r)` into a COLORREF — but that
@@ -277,8 +309,6 @@ authored by eye against the swap and were rewritten so they still draw as author
 
 ## 5.4 Known compatibility notes in this port
 
-- `Effect` and `Peak Effect` are not fully feature-complete vs historical plugin behavior; only `Effect == 7` has a dedicated render branch.
-- `volumeFunc_` table is initialized with a log curve (`LogBase10Table`) for upstream parity but is not directly used in the current draw path.
 - Profile parsing is tolerant: unknown keys are ignored, out-of-range values are clamped.
 
 ## 6. Why Profiles Produce Different "Response Curves"

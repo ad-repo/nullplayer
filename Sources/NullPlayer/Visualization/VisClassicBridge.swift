@@ -3,7 +3,7 @@ import CVisClassicCore
 
 final class VisClassicBridge {
     // Serializes all calls into the C++ core, which is not thread-safe.
-    // The CVDisplayLink thread calls renderFrame() concurrently with main-thread
+    // The CVDisplayLink thread calls processAndDraw() concurrently with main-thread
     // profile/option mutations — without this lock, setupFFT() (which calls
     // fft_.CleanUp() and sets bitrevtable=0) races with time_to_frequency_domain
     // reading bitrevtable, producing a null-dereference crash.
@@ -88,20 +88,6 @@ final class VisClassicBridge {
         return coreLock.withLock { vc_set_option(core, "referencewidth", Int32(width)) == 1 }
     }
 
-    /// Process waveform + run FFT — call once per audio chunk, not per render frame.
-    func processUpdate(leftData: [UInt8], rightData: [UInt8], sampleRate: Double) {
-        guard let core else { return }
-        coreLock.withLock {
-            leftData.withUnsafeBufferPointer { lp in
-                rightData.withUnsafeBufferPointer { rp in
-                    vc_set_waveform_u8(core, lp.baseAddress, rp.baseAddress,
-                                       leftData.count, sampleRate)
-                }
-            }
-            vc_process_frame_only(core)
-        }
-    }
-
     /// Render current state at given canvas size — call per display frame, no FFT.
     func drawAtSize(width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
         guard let core else { return }
@@ -131,53 +117,6 @@ final class VisClassicBridge {
             vc_process_frame_only(core)
             buffer.withUnsafeMutableBufferPointer { bp in
                 _ = vc_draw_at_size(core, bp.baseAddress, Int32(width), Int32(height), Int32(stride))
-            }
-        }
-    }
-
-    func updateWaveform(left: [UInt8], right: [UInt8], sampleRate: Double) {
-        guard let core else { return }
-        guard !left.isEmpty, !right.isEmpty else { return }
-
-        coreLock.withLock {
-            left.withUnsafeBufferPointer { l in
-                right.withUnsafeBufferPointer { r in
-                    vc_set_waveform_u8(
-                        core,
-                        l.baseAddress,
-                        r.baseAddress,
-                        min(l.count, r.count),
-                        sampleRate
-                    )
-                }
-            }
-        }
-    }
-
-    func renderFrame(width: Int, height: Int) -> Data {
-        guard let core, width > 0, height > 0 else { return Data() }
-        var data = Data(count: width * height * 4)
-        coreLock.withLock {
-            data.withUnsafeMutableBytes { raw in
-                guard let base = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else { return }
-                vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
-            }
-        }
-        return data
-    }
-
-    @discardableResult
-    func renderFrame(width: Int, height: Int, into buffer: inout [UInt8]) -> Bool {
-        guard let core, width > 0, height > 0 else { return false }
-        let expectedCount = width * height * 4
-        if buffer.count != expectedCount {
-            buffer = Array(repeating: 0, count: expectedCount)
-        }
-        return coreLock.withLock {
-            buffer.withUnsafeMutableBufferPointer { ptr in
-                guard let base = ptr.baseAddress else { return false }
-                vc_render_rgba(core, base, Int32(width), Int32(height), width * 4)
-                return true
             }
         }
     }
