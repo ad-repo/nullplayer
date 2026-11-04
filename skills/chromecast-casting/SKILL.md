@@ -360,9 +360,11 @@ NULLPLAYER_UPNP_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/upnp.log
 ### `NULLPLAYER_CAST_DISCOVERY_LOG` — the discovery refresh cycle
 
 The periodic refresh (`Refreshing devices...`, the +10s/+15s boosts, `Refresh complete`, idle
-stop, and the Chromecast browser's start/ready/cancel/stop lines) logs every few seconds for the
-life of the app, so it is silent unless this is set; `castDiscoveryLog` in `CastManager.swift`
-(an `EnvGatedLog`) is the gate. Turn it on when devices fail to appear or disappear between refreshes.
+stop), the Chromecast browser's start/ready/cancel/stop lines, and every per-attempt browse and
+resolve line in `ChromecastManager` log every few seconds for the life of the app, so they are
+silent unless this is set; `castDiscoveryLog` in `CastManager.swift` (an `EnvGatedLog`) is the gate.
+Outcomes always log: `Added device`, `Updated device`, the final `Failed to resolve service`, and
+the browser's `failed`/`waiting` states. Turn it on when devices fail to appear or disappear between refreshes.
 
 ```bash
 NULLPLAYER_CAST_DISCOVERY_LOG=1 ./scripts/kill_build_run.sh --debug --log /tmp/discovery.log
