@@ -113,6 +113,7 @@ For UI or playback work, in addition to `swift test`, manually exercise local an
   mirrored or quoted, on GitHub or anywhere else — and never download it. Skin support is clean-room:
   the evidence is the skin's own files, its screenshots, and observed behaviour. If a search turns
   up such source, do not open it; if any was fetched, delete it and say so.
+  AVS (grandchild/vis_avs, BSD-3) is a vendored visualizer, not skin code, and is exempt.
 - `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `original-skin-guide`.
 - A fix for one skin family (Classic, Original, `.wal`, `.wmz`, Audion, Sonique) must not
   unintentionally change another. This binds shared code too — a change in `App/` that every
