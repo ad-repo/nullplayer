@@ -1675,11 +1675,7 @@ final class WasabiSceneRenderer {
     /// is stored only once the load has settled (`loadHasSettled`, B358), so the
     /// author's opening layout never becomes a preference the user did not express.
     func persistFramePosition(of object: WasabiObject) {
-        guard let containerID = container.xmlID,
-              let id = object.xmlID, !id.isEmpty else { return }
-        WinampModernSkinState.setFramePosition(WasabiFrame.position(of: object),
-                                               container: containerID, frame: id,
-                                               in: loadedSkin.configuration)
+        WinampModernSkinState.persistFramePosition(of: object, in: loadedSkin.configuration)
     }
 
     // MARK: - Layout persistence (B44a)

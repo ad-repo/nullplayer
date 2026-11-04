@@ -93,7 +93,18 @@ extension WinampModernScriptRuntime {
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
         let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
-        for (key, value) in attributes { _ = object.setAttribute(key, value: value) }
+        // A floated group's x/y are screen space (Wasabi gives it a window); its owner window's origin
+        // takes them back to the canvas it is drawn in. Unscaled, as multipass's own "scale syncing
+        // problem" note expects.
+        let floatedOrigin = floatedGroups.contains(object.stableID) ? enclosingWindowOrigin(of: object) : nil
+        for (key, value) in attributes {
+            if let origin = floatedOrigin, key == "x" || key == "y", let screen = Double(value) {
+                let canvas = screen - (key == "x" ? origin.x : origin.y)
+                _ = object.setAttribute(key, value: String(Int(canvas.rounded())))
+            } else {
+                _ = object.setAttribute(key, value: value)
+            }
+        }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
         notifyGraphDidMutate()

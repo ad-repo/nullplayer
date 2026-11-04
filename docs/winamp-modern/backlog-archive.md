@@ -24,7 +24,7 @@ Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entri
 |---|---|---:|:---:|---|
 | B358 | **Bento's Media Library tab reopens on every launch after it was closed.** Reported by satplank on r/nullPlayer (2026-11-03), 2222-cPro__Bento, v0.34: with **Save state on quit** on, closing the Media Library tab, quitting and relaunching shows it again. Not reproduced yet: close it, quit, relaunch, and find whether the skin's own saved attribute (possibly kept with `setPrivateString` or a config attribute; not checked) is not saved, not read back, or overridden by the host restoring the library window. B350 (archive) fixed opening and closing the tabs, not their persistence. **Done when** a closed tab stays closed across a relaunch, and an open one reopens | 2222-cPro__Bento | ? | 1 |
 
-**Closed 2026-11-03.** Fixed: a frame `setPosition` is stored once the load has settled (`loadHasSettled`), a stored 0 is restored unclamped, and a host tab reveal during the session restore does not reselect Playlist. A/B: `WINAMP_MODERN_FRAME_SCRIPT_PERSIST=0`. Live: the reporter's steps pass with Save State on Quit on and off; `bento_tabs.sh` passes on Bento and cpro2_dark_aluminum.
+**Closed 2026-11-03.** Fixed: a frame `setPosition` is stored once the load has settled (`loadHasSettled`), a stored 0 is restored unclamped, and a host tab reveal during the session restore does not reselect Playlist. Live: the reporter's steps pass with Save State on Quit on and off; `bento_tabs.sh` passes on Bento and cpro2_dark_aluminum.
 
 ## B357 — Bento's search results open at the left of the screen — closed 2026-11-03
 

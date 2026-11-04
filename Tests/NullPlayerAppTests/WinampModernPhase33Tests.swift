@@ -123,6 +123,11 @@ final class WinampModernPhase33Tests: XCTestCase {
                                program: program)
         XCTAssertEqual(created.attributes["x"], "54")
         XCTAssertEqual(created.attributes["y"], "217")
+
+        // The same write one attribute at a time takes the same conversion.
+        _ = try runtime.invoke(method: "setxmlparam", on: MakiObjectReference(.gui(created.stableID)),
+                               arguments: [.string("x"), .string("\(762 + 60)")], program: program)
+        XCTAssertEqual(created.attributes["x"], "60")
     }
 
     /// No `owner=`: the group lands on the calling script's own layout instead of nowhere.

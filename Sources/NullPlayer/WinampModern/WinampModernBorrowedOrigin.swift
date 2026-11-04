@@ -45,7 +45,7 @@ struct WinampModernBorrowedOrigin {
     private var unspentX = false
     private var unspentY = false
     /// Window objects whose origin a script has read since their last move: the only ones a write of
-    /// that same origin can be a round trip on (B61). A layout reports (0, 0), so without this every
+    /// that same origin can be a round trip on (B61). An unhosted layout reports (0, 0), so without this every
     /// script that parks its window at the desktop's corner — Nitrous Audio's monitor mode writes
     /// `x=0`/`y=0` on its layout and never asks where it is — was taken as one.
     private var readSinceMove: Set<WasabiObjectID> = []

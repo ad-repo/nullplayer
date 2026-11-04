@@ -801,7 +801,7 @@ extension WinampModernScriptRuntime {
         // owned by that layout. We make it an **overlay child of the owner layout** instead, and the
         // coordinate maths says that is the right answer rather than a compromise — multipass
         // positions the result with `resize(layoutMainNormal.getLeft() + 54, …getTop() + 217, …)`
-        // — screen space, which `resize` takes back out of the owner window's origin
+        // — screen space, which `writeGeometry` takes back out of the owner window's origin
         // (`floatedGroups`), so it lands at (54, 217) — exactly where the author's own
         // commented-out `<group … x="9" y="62"/>` inside drawer.bottom (45,155) → colorthemes (0,0)
         // would have put it.
@@ -907,12 +907,12 @@ extension WinampModernScriptRuntime {
         table.add("getfilesize", 1) { runtime, call in
             // Answers for the playing local file only — the one path the host already hands out
             // (`getPlayItemString`) — and `0` for anything else, so a script still cannot stat a
-            // path it named (`findFiles` is a no-op for the same reason). A trailing match counts:
-            // ClassicPro's file-info panel trims the first 7 characters off the play item string
-            // before asking (`strmid(getPlayItemString(), 7, …)`), and the rest still names it.
+            // path it named (`findFiles` is a no-op for the same reason). The path itself, or with its
+            // first 7 characters gone: ClassicPro's file-info panel strips a `file://` our bare path
+            // does not carry before asking (`strmid(getPlayItemString(), 7, …)`).
             let asked = call.arguments[0].stringValue
             let path = runtime.host.trackPath
-            guard !asked.isEmpty, path.hasPrefix("/"), path.hasSuffix(asked),
+            guard !asked.isEmpty, path.hasPrefix("/"), asked == path || asked == String(path.dropFirst(7)),
                   let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? NSNumber
             else { return .integer(0) }
             return .integer(Int32(clamping: size.int64Value))

@@ -45,8 +45,8 @@ The rule is narrow on purpose. **Before the load settles only a drag is stored**
 `persistFramePosition(of:)` is called from mouse-up, and a script's `setPosition` is stored only once
 `loadHasSettled` is set (B358): ClassicPro closes its side view with `setPosition(0)` when the
 Playlist tab opens and reads `getPosition() == 0` at the next load to keep it closed, so that move is
-the user's choice. A stored 0 is restored unclamped. `WINAMP_MODERN_FRAME_SCRIPT_PERSIST=0` is the A/B
-switch. During load a script moving its own splitter is the *author's* layout speaking:
+the user's choice. A stored 0 is restored unclamped. Both go through `WinampModernSkinState.persistFramePosition`.
+During load a script moving its own splitter is the *author's* layout speaking:
 Bento's `setPosition(434)` with `from="left"` genuinely ships "narrow player, wide playlist" and pins
 the left pane at 434 however large the window grows, and there is no clamping bug on our side to fix.
 Storing that would freeze the opening layout into a preference the user never expressed, and

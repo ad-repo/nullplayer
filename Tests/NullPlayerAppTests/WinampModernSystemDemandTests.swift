@@ -84,6 +84,7 @@ final class WinampModernSystemDemandTests: XCTestCase {
         XCTAssertEqual(try size(url.path), 4096)
         XCTAssertEqual(try size(String(url.path.dropFirst(7))), 4096)
         XCTAssertEqual(try size("/etc/hosts"), 0, "a path the host never handed out")
+        XCTAssertEqual(try size(url.lastPathComponent), 0, "a bare tail is not the path")
         XCTAssertEqual(try size(""), 0)
         host.trackPath = "http://radio.example/stream"
         XCTAssertEqual(try size("dio.example/stream"), 0, "a stream has no file")

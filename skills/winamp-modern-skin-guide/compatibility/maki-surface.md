@@ -129,8 +129,8 @@ By area:
   owned by the layout its `owner="<container>,<layout>"` attribute names. Ours is an **overlay child of
   that owner layout**, appended last, keeping a `group` type — and the coordinates say that is the
   right answer rather than a compromise: multipass positions the result with
-  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)`, our root layout answers 0 for both
-  (window-local), and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
+  `resize(layout.getLeft() + 54, layout.getTop() + 217, 164, 78)` — screen space, from which
+  `writeGeometry` takes the owner window's origin back out (`floatedGroups`, B357) — and (54, 217) is exactly where the author's own commented-out `<group x="9" y="62"/>`
   inside drawer.bottom (45, 155) would have put it — confirmed by `RENDER_CLICK_WATCH`. It must **not**
   be typed `layout`: `resize` on a layout is a *window* resize. No `owner=` falls back to the calling
   script's own layout; a caller with no layout above it (a `skin.xml`-level script) answers null.

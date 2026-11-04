@@ -128,7 +128,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// Show a script-built popup menu and answer the command the user picked, or `popupDismissed`.
     /// The runtime resolves the submenu tree before calling, so the presenter only builds UI.
     ///
-    /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **window-client space** — the space
+    /// A `nil` point is `popAtMouse`. A point is `popAtXY`, in **screen space** — the space
     /// `clientToScreenX/Y` answer in, which is what every measured caller computes the point with.
     var popupPresenter: (([WinampModernPopupMenuItem], CGPoint?) -> Int32)?
     /// Items left out of every script-built popup, by title: a skin's own item the host has taken
@@ -200,11 +200,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// - a host reveal of a ClassicPro tab already in the strip selects it. Before it, the reveal is
     ///   the session restore, which the strip has already done for itself.
     var loadHasSettled = false
-    /// The A/B switch for B358: `WINAMP_MODERN_FRAME_SCRIPT_PERSIST=0` stores drags only again.
-    static let scriptFramePositionsPersist =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_FRAME_SCRIPT_PERSIST"] != "0"
     /// Groups `newGroupAsLayout` made. Wasabi gives each a window of its own, so a script places one
-    /// in screen space; here it is an overlay in its owner's canvas, and `resize` converts.
+    /// in screen space; here it is an overlay in its owner's canvas, and `writeGeometry` converts.
     var floatedGroups: Set<WasabiObjectID> = []
 
     private struct ScriptEventKey: Hashable {

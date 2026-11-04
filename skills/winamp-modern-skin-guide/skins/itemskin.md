@@ -87,11 +87,12 @@ with an `xuitag` and a `scripts/standardframe*.maki`. Each of those scripts:
 - **Two windows per component is not a defect.** A probe that counts windows, or that expects a
   component window to have chrome of its own, reads this skin wrong. `PLEdit/normal` having 6 scene
   nodes is correct; its 40-node frame is a different container.
-- **`getLeft()`/`getTop()` here are cross-window reads.** Both receivers are layouts, so both answer 0
-  (their canvas origin), and the write is a desktop coordinate. That mismatch is what left every frame
-  parked where the tiler put it while its content sat elsewhere — the whole of B69. The fix is on the
-  write; see [`reference/scripting.md`](../reference/scripting.md) → *Writing back the position a
-  window just read*. **Do not** make a layout report its desktop position instead.
+- **`getLeft()`/`getTop()` here are cross-window reads.** Both receivers are layouts. Before B357 they
+  answered 0 (their canvas origin) while the write is a desktop coordinate, and that mismatch left
+  every frame parked where the tiler put it while its content sat elsewhere — the whole of B69. A
+  hosted layout now reads its desktop origin, and the write is still recognised as a pin onto the
+  content window; see [`reference/scripting.md`](../reference/scripting.md) → *Writing back the
+  position a window just read*.
 - **The frame window is also the only half with resize handles, and it sizes its contents from
   `onResize`.** The 10 ms timer runs the other way, so an `onResize` that arrives late loses to it
   every time (B160); see [`reference/components.md`](../reference/components.md) → *Resize, and why
