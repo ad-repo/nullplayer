@@ -117,7 +117,7 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   any skin whose panels are `openView` rather than `currentViewID`. Only **the player's own
   presentation** writes the key — a simpler statement of the same rule the `openedViewStack.isEmpty`
   test was making, and one that stops being a special case once the panel has a window of its own.
-  The panels themselves are persisted separately (`WMPViewFrameStore.openViews`, plus a per-view
-  origin) and restored *before* the load transaction's host commands, so a dispatcher skin that
+  The panels themselves are persisted separately (`SkinWindowStore.openWindows` under
+  `SkinWindowStore.Keys.wmp`, plus a per-view origin) and restored *before* the load transaction's host commands, so a dispatcher skin that
   re-opens its own panels from `theme.loadPreference` raises the restored window rather than opening
   a second one.

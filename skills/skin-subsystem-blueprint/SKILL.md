@@ -201,7 +201,9 @@ canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recip
 - **Place once, on first show, and never again** — a window the user moved must never be yanked back
   — with `rescuedOrigin` as the never-`nil` fallback. The failure mode is an *invisible* window, not
   a wrong-looking one, so give the family a placement trace flag on day one
-  (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`).
+  (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`). Persist the origin the user left and which
+  windows were open, per skin, in `SkinWindowStore` (`App/Skinning/`) under your family's own
+  `SkinWindowStore.Keys`; `.wmz` keeps its there (`.wmp`).
 - **Join docking through your own gated branch of `managedWindowRecords`**, as a snap target and
   **not** a centre-stack member: a skin-authored canvas has no column to join.
 - **Per-window state has to actually be per window.** Whatever the controller holds that is really

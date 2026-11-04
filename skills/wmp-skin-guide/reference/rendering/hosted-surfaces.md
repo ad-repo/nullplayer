@@ -173,7 +173,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
 - **The effects slot's settings belong to the skin, not to the session (W157).** A `.wmz`'s
   `<EFFECTS>` rect is part of its look — Cerulean's 103x75 frame and a full-width panel want
   different effects — so `WMPVisualizationSettingsStore` files them against the installed skin name
-  (length-prefixed key, as `WMPViewFrameStore` does) and `WMPMainWindowController` restores them at
+  (`SkinWindowStore.skinKey`'s length-prefixed key) and `WMPMainWindowController` restores them at
   the top of `reloadSelectedSkin()`, before the scene and therefore before the surface is built.
   **What is in scope is what WMP owns**: the effect and preset, plus the keys already namespaced to
   the slot — `cava.wmpEffects.*` and `visClassic*.wmpEffects`, both asked of the subsystem that
