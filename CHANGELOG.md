@@ -50,8 +50,9 @@
   `film.en.srt`). Subtitles inside the video file are not sent yet.
 - **`--cli --source radio --station <name>` plays the station** instead of crashing at once with no
   output.
-- **Chromecast discovery no longer floods the log** with browse and resolve lines on every refresh;
-  set `NULLPLAYER_CAST_DISCOVERY_LOG` to see them.
+- **Chromecast discovery no longer floods the log** with a browse, resolve and retry line per
+  device on every refresh; found devices and final failures still log. Set
+  `NULLPLAYER_CAST_DISCOVERY_LOG` to see the rest.
 
 ### Winamp Modern skins
 

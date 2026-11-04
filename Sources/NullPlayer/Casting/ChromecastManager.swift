@@ -69,7 +69,7 @@ class ChromecastManager: CastSessionControllerDelegate {
         browser = NWBrowser(for: descriptor, using: parameters)
         
         browser?.browseResultsChangedHandler = { [weak self] results, changes in
-            castDiscoveryLog("ChromecastManager: Browse results changed - %d results, %d changes", results.count, changes.count)
+            castDiscoveryLog("ChromecastManager: Browse results changed - %ld results, %ld changes", results.count, changes.count)
             for change in changes {
                 switch change {
                 case .added(let result):
@@ -158,7 +158,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     private func resolveServiceWithRetry(result: NWBrowser.Result, name: String, attempt: Int, maxAttempts: Int, completion: @escaping (CastDevice?) -> Void) {
         let endpoint = result.endpoint
         
-        castDiscoveryLog("ChromecastManager: Resolving endpoint: %@ (attempt %d/%d)", String(describing: endpoint), attempt, maxAttempts)
+        castDiscoveryLog("ChromecastManager: Resolving endpoint: %@ (attempt %ld/%ld)", String(describing: endpoint), attempt, maxAttempts)
         
         // Try to extract info directly from the endpoint if possible
         if case let .service(serviceName, _, _, _) = endpoint {
@@ -186,7 +186,7 @@ class ChromecastManager: CastSessionControllerDelegate {
                         connection.cancel()
                         completion(device)
                     } else {
-                        NSLog("ChromecastManager: No remote endpoint found for %@", serviceName)
+                        castDiscoveryLog("ChromecastManager: No remote endpoint found for %@", serviceName)
                         connection.cancel()
                         // Retry if we have attempts left
                         if attempt < maxAttempts {
@@ -197,7 +197,7 @@ class ChromecastManager: CastSessionControllerDelegate {
                     }
                 case .failed(let error):
                     completed = true
-                    NSLog("ChromecastManager: Connection failed for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
+                    castDiscoveryLog("ChromecastManager: Connection failed for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
                     connection.cancel()
                     // Retry if we have attempts left
                     if attempt < maxAttempts {
@@ -211,7 +211,7 @@ class ChromecastManager: CastSessionControllerDelegate {
                         completion(nil)
                     }
                 case .waiting(let error):
-                    NSLog("ChromecastManager: Connection waiting for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
+                    castDiscoveryLog("ChromecastManager: Connection waiting for %@: %@", serviceName, error.localizedDescription.redactingSensitiveURLQueryItems)
                 default:
                     break
                 }
@@ -224,7 +224,7 @@ class ChromecastManager: CastSessionControllerDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
                 guard !completed else { return }
                 completed = true
-                NSLog("ChromecastManager: Connection timeout for %@ (attempt %d)", serviceName, attempt)
+                castDiscoveryLog("ChromecastManager: Connection timeout for %@ (attempt %ld)", serviceName, attempt)
                 connection.cancel()
                 // Retry if we have attempts left
                 if attempt < maxAttempts {
@@ -242,7 +242,7 @@ class ChromecastManager: CastSessionControllerDelegate {
     private func retryResolution(result: NWBrowser.Result, name: String, attempt: Int, maxAttempts: Int, completion: @escaping (CastDevice?) -> Void) {
         // Exponential backoff: 1s, 2s, 4s
         let delay = TimeInterval(1 << (attempt - 1))
-        NSLog("ChromecastManager: Scheduling retry for %@ in %.0fs", name, delay)
+        castDiscoveryLog("ChromecastManager: Scheduling retry for %@ in %.0fs", name, delay)
         
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard self?.isDiscovering == true else {
