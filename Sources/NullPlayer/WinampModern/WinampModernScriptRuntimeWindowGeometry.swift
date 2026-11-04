@@ -144,8 +144,11 @@ extension WinampModernScriptRuntime {
         let x = isWindow ? Double(object.attributes["x"] ?? "") : nil
         let y = isWindow ? Double(object.attributes["y"] ?? "") : nil
         let frame = x == nil || y == nil ? resolvedFrame(of: object) : nil
-        return CGPoint(x: x.map { Double(Int($0)) } ?? Double(dimension(frame?.minX, declared: object.geometry.x)),
-                       y: y.map { Double(Int($0)) } ?? Double(dimension(frame?.minY, declared: object.geometry.y)))
+        // A floated group is a window in Wasabi: its canvas position plus the owner's origin, the
+        // space `floatedToCanvas` takes a write back out of.
+        let floated = floatedGroupOrigin(of: object) ?? .zero
+        return CGPoint(x: (x.map { Double(Int($0)) } ?? Double(dimension(frame?.minX, declared: object.geometry.x))) + floated.x.rounded(),
+                       y: (y.map { Double(Int($0)) } ?? Double(dimension(frame?.minY, declared: object.geometry.y))) + floated.y.rounded())
     }
 
     func noteGeometryChange() {

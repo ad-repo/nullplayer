@@ -107,11 +107,12 @@ synthesized and nothing left to the classic fallback.
   load settles, a stored 0 is restored unclamped, and a host reveal of a tab during the session
   restore does not reselect Playlist.
 - **File size in the file-info line** (B359): `fileinfo.m` asks
-  `System.getFileSize(strmid(getPlayItemString(), 7, len-7))`, the playing path with `file://`
-  dropped; only that file is answered.
+  `System.getFileSize(strmid(getPlayItemString(), 7, len-7))`, written for a `file://` our bare host
+  path does not carry, so it arrives with 7 real characters cut off; the runtime answers that trimmed
+  path or the exact one (`namesPlayingFile`), and only for the playing file.
 - **The playlist time readout** (B360) sits in the Playlist tab's status row, which the tab's
   right-click **Show Status Bar** hides — with it off the list runs to the seek bar and the readout
-  "is missing". A queue with a stream in it ends in `+`. In the side view it is a ticker in a ~35px
+  "is missing". The total ends in `+` when any row's length is unknown (a stream, or a file not yet read). In the side view it is a ticker in a ~35px
   box (`w="-159" relatw`).
 - **The script-built menus placed at a computed point** (`popAtXY`, 6 call sites, with
   `clientToScreenX/Y` behind it). Right-clicking a tab opens its `Show Status Bar` menu under the tab
