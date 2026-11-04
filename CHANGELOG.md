@@ -2,67 +2,6 @@
 
 ## Unreleased
 
-### Visualization
-
-- **MilkDrop uses libprojectM 4.1.8** (was 4.1.7): an out-of-bounds read in custom waveforms and a
-  shader-parser hang are fixed, presets that failed to compile on operator precedence or
-  parenthesised declarations may now load, and shader transpiling is much faster. The crash-preset
-  blacklist stays.
-
-### Audion faces
-
-- **A face's top line shows the artist and its second line the track title** (#662), as Panic's face
-  previews and RackView's ARTIST/TRACK labels show. They were the other way round, with album and
-  format appended.
-
-### The CLI
-
-- **`--cli --source radio --station <name>` plays the station** instead of crashing at once with no
-  output.
-
-### Playlist
-
-- **The Classic and Original playlists' right-click has Add ▸ and Playlist ▸.** Add URL, Add
-  Directory, Add Files, and New, Save and Load Playlist lived on the playlist's ADD / LIST bar,
-  which neither playlist draws any more.
-- **Save Playlist keeps a stream's full URL** in the `.m3u`. It wrote the URL's path, which did not
-  play when loaded back.
-- **Drag tracks to reorder the playlist** in Classic, Original and a `.wal` skin's playlist. Dragging
-  a row moves the selection with it, several rows at once keeping their order, and the playing track
-  keeps playing wherever it lands. In a docked Original playlist, which has no title bar, drag a row
-  that is already selected; dragging any other row still moves the window.
-- **Moving a track keeps the shuffle order.** With shuffle on, a drag, or a `.wal` or Windows Media
-  Player skin's own move button, used to draw a new random order for everything still to play.
-
-### Windows Media Player skins
-
-- **A skin with no ring frame lends NullPlayer's windows nothing**, and they wear the fallback
-  glass. A drawer nine-sliced into a frame carried the drawer's own close box and edges into our
-  windows; on `anemone` it left a square outline and shadow behind the skin and an Equalizer Studio
-  that could not be closed.
-- **A skin's drawers open while a track is playing.** On `anemone` the playlist and EQ trays did
-  nothing when pressed during playback.
-- **Hosted windows no longer grow on every relaunch** under a skin that lends a frame.
-
-### Library Browser
-
-- **The empty space in the Library Browser's Source bar drags the window**, in every skin family,
-  such as the gap between the library name and the List / Flow / Tiles buttons. Only the title bar
-  dragged before, and a click on the bar's empty space did nothing. Before Plex sign-in, or with no
-  server set up, only the prompt text opens the sign-in sheet or Source menu, not the whole bar.
-
-### Playlist
-
-- **The playlist's Add URL, Add Files and Add Directory add to the end of the queue** and leave
-  the playing track playing, in Classic, Original and a `.wal` skin's playlist. They replaced the
-  whole queue and started the new file. Adding to an empty playlist still starts playback.
-
-### Casting
-
-- **A local video cast to a Chromecast shows its subtitles** (#648), from the CLI and the player
-  window: a `.vtt`, `.ttml` or `.srt` beside the video, named like it (`film.srt`, or language-tagged
-  `film.en.srt`). Subtitles inside the video file are not sent yet.
-
 ### Playback
 
 - **Sweet Fades has Fade Out Only** (Playback ▸ Sweet Fades ▸ Fade Out Only): instead of a
@@ -80,6 +19,38 @@
   Emby or Subsonic stream paused in its last seconds, a seek back showed the new position but the
   track played on from where it was paused and ended a few seconds after resume.
 
+### Playlist
+
+- **The Classic and Original playlists' right-click has Add ▸ and Playlist ▸.** Add URL, Add
+  Directory, Add Files, and New, Save and Load Playlist lived on the playlist's ADD / LIST bar,
+  which neither playlist draws any more.
+- **The playlist's Add URL, Add Files and Add Directory add to the end of the queue** and leave
+  the playing track playing, in Classic, Original and a `.wal` skin's playlist. They replaced the
+  whole queue and started the new file. Adding to an empty playlist still starts playback.
+- **Save Playlist keeps a stream's full URL** in the `.m3u`. It wrote the URL's path, which did not
+  play when loaded back.
+- **Drag tracks to reorder the playlist** in Classic, Original and a `.wal` skin's playlist. Dragging
+  a row moves the selection with it, several rows at once keeping their order, and the playing track
+  keeps playing wherever it lands. In a docked Original playlist, which has no title bar, drag a row
+  that is already selected; dragging any other row still moves the window.
+- **Moving a track keeps the shuffle order.** With shuffle on, a drag, or a `.wal` or Windows Media
+  Player skin's own move button, used to draw a new random order for everything still to play.
+
+### Library Browser
+
+- **The empty space in the Library Browser's Source bar drags the window**, in every skin family,
+  such as the gap between the library name and the List / Flow / Tiles buttons. Only the title bar
+  dragged before, and a click on the bar's empty space did nothing. Before Plex sign-in, or with no
+  server set up, only the prompt text opens the sign-in sheet or Source menu, not the whole bar.
+
+### Casting and the CLI
+
+- **A local video cast to a Chromecast shows its subtitles** (#648), from the CLI and the player
+  window: a `.vtt`, `.ttml` or `.srt` beside the video, named like it (`film.srt`, or language-tagged
+  `film.en.srt`). Subtitles inside the video file are not sent yet.
+- **`--cli --source radio --station <name>` plays the station** instead of crashing at once with no
+  output.
+
 ### Winamp Modern skins
 
 - **cPro-Bento's playlist search shows its results under the search box**, listed as Artist - Title.
@@ -91,6 +62,29 @@
   radio stream.
 - **Skins that measure the mouse against the screen work as written**: Xenon's slide-out trays stay
   open under the pointer, and Symplicipod's volume knob, seek bar and ticker follow it.
+
+### Windows Media Player skins
+
+- **A skin with no ring frame lends NullPlayer's windows nothing**, and they wear the fallback
+  glass. A drawer nine-sliced into a frame carried the drawer's own close box and edges into our
+  windows; on `anemone` it left a square outline and shadow behind the skin and an Equalizer Studio
+  that could not be closed.
+- **A skin's drawers open while a track is playing.** On `anemone` the playlist and EQ trays did
+  nothing when pressed during playback.
+- **Hosted windows no longer grow on every relaunch** under a skin that lends a frame.
+
+### Audion faces
+
+- **A face's top line shows the artist and its second line the track title** (#662), as Panic's face
+  previews and RackView's ARTIST/TRACK labels show. They were the other way round, with album and
+  format appended.
+
+### Visualization
+
+- **MilkDrop uses libprojectM 4.1.8** (was 4.1.7): an out-of-bounds read in custom waveforms and a
+  shader-parser hang are fixed, presets that failed to compile on operator precedence or
+  parenthesised declarations may now load, and shader transpiling is much faster. The crash-preset
+  blacklist stays.
 
 ## 0.34.1
 
