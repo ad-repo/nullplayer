@@ -35,6 +35,11 @@ if [ "$(pgrep -x NullPlayer | wc -l | tr -d ' ')" -gt 1 ]; then
   echo "FAIL  more than one NullPlayer is running; set NULLPLAYER_PID to the debug build you launched"; exit 1
 fi
 export NULLPLAYER_PID="$PID"
+# A log another launch wrote never gains this app's render marker, so every .wal would sit out the
+# 30 s marker wait. Use the log only if this pid writes to it.
+if [ -r "$LOG" ] && ! grep -q "NullPlayer\[$PID:" "$LOG"; then
+  echo "note  $LOG is not written by pid $PID: skins are confirmed by the family settle alone"; LOG=/nonexistent
+fi
 
 SETTLE_TSV="$(pwd)/../settle.tsv"
 RAW="$OUT/raw"; mkdir -p "$OUT" "$RAW"
@@ -49,7 +54,7 @@ main_title() { case "$1" in
   modern) echo "NullPlayer — Winamp Modern";; wmp) echo "NullPlayer — Windows Media Player";;
   audion) echo "NullPlayer — Audion Faces";; sonique) echo "NullPlayer — Sonique";; *) echo "NullPlayer";; esac; }
 # Time for animations after the skin is confirmed loaded.
-family_settle() { case "$1" in modern) echo 15;; wmp) echo 15;; sonique) echo 0;; *) echo 0.5;; esac; }
+family_settle() { case "$1" in modern) echo 13;; wmp) echo 15;; sonique) echo 0;; *) echo 0.5;; esac; }
 settle_for() { # $1 system $2 item
   local o; o=$(awk -F'\t' -v k="$2" '$1==k{print $2; exit}' "$SETTLE_TSV" 2>/dev/null)
   if [ -n "$o" ]; then echo "$o"; elif [ -n "$SETTLE" ]; then echo "$SETTLE"; else family_settle "$1"; fi; }

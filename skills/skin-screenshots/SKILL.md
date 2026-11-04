@@ -30,6 +30,18 @@ cd skills/skin-screenshots/scripts
 
 `capture.sh` with no `--list` enumerates for you. Both write to `~/Documents/shots` by default.
 
+**One `.wal` intake batch** (its ledger, `docs/winamp-modern/intakes/intake-<n>.tsv`): filter the
+enumeration by the ledger's `file` column instead of shooting the whole menu.
+
+```bash
+./enumerate_skins.sh | awk -F'\t' 'NR==FNR{if(FNR>1){sub(/\.wal$/,"",$1);n[$1]=1};next} $2=="Modern" && ($3 in n)' \
+  ../../../docs/winamp-modern/intakes/intake-5.tsv - > /tmp/intake.tsv
+./capture.sh --list /tmp/intake.tsv --frame 800
+```
+
+A skin that opens extra windows by design (`Winamp_Media_Tower_v11`'s stack windows) comes back
+`EXTRA-WINDOWS`; re-run it with `--only <name> --allow-extra .`.
+
 ## The operator has to set the app up first
 
 **Launch NullPlayer from a real terminal, never from the agent's shell.** A binary started with
@@ -137,8 +149,10 @@ id of every row. "Loaded" is the Skins menu naming the skin as checked, plus the
 `capture.sh` reads `skinWindowShadows` before every shot, records it in the manifest, and **stops the run**
 with `shadows-off` rather than shoot without a shadow. (`closeaux` used to click Window Shadows off
 because it is a checked item in the Windows menu; it now closes window toggles only.)
-Settle after that is per family (0.5 s; Sonique 0 — it does not animate; WMP 15 s; Winamp Modern 15 s), `--settle` overrides it and
+Settle after that is per family (0.5 s; Sonique 0 — it does not animate; WMP 15 s; Winamp Modern 13 s), `--settle` overrides it and
 `settle.tsv` (skin, seconds) overrides both for long-intro skins.
+The log is used only when it holds a line from the running pid. A log another launch wrote never
+gains the marker, and every `.wal` sat out the 30 s marker wait on top of the settle (2026-11-04).
 
 **Skins with an accessory window.** A few skins leave a second window on screen by design (2026-10-11:
 `wmp_Jewel` → `remoteView`, `wmp_livin_it_skate` → `displayView`, `modern_Shield_Amp` → a 20x20
