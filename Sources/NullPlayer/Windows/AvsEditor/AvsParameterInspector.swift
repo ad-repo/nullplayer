@@ -21,7 +21,7 @@ final class AvsParameterInspector: NSView {
     private let stack = NSStackView()
     private var component: AVS_Component_Handle = 0
     /// Controls keep their writer here, keyed by the control, so actions stay one selector each.
-    private var writers: [ObjectIdentifier: (NSControl) -> Void] = [:]
+    private var writers: [ObjectIdentifier: () -> Void] = [:]
     private var codeWriters: [ObjectIdentifier: (String) -> Void] = [:]
 
     init(core: AvsCore) {
@@ -99,8 +99,8 @@ final class AvsParameterInspector: NSView {
             let value = call(path) { avs_parameter_get_bool($0, component, parameter, $1, $2) }
             let box = NSButton(checkboxWithTitle: name, target: self, action: #selector(controlChanged(_:)))
             box.state = value ? .on : .off
-            register(box) { [unowned self] control in
-                _ = call(path) { avs_parameter_set_bool($0, component, parameter, (control as! NSButton).state == .on, $1, $2) }
+            register(box) { [unowned self] box in
+                _ = call(path) { avs_parameter_set_bool($0, component, parameter, box.state == .on, $1, $2) }
             }
             container.addArrangedSubview(box)
 
@@ -136,8 +136,8 @@ final class AvsParameterInspector: NSView {
                 slider?.doubleValue = stored
                 field.stringValue = isInt ? String(Int64(stored)) : String(format: "%.4g", stored)
             }
-            register(field) { write(($0 as! NSTextField).doubleValue) }
-            if let slider { register(slider) { write(($0 as! NSSlider).doubleValue) } }
+            register(field) { write($0.doubleValue) }
+            if let slider { register(slider) { write($0.doubleValue) } }
             container.addArrangedSubview(NSStackView(views: views))
 
         case AVS_PARAM_COLOR:
@@ -148,9 +148,9 @@ final class AvsParameterInspector: NSView {
             well.target = self
             well.action = #selector(controlChanged(_:))
             well.widthAnchor.constraint(equalToConstant: 44).isActive = true
-            register(well) { [unowned self] control in
+            register(well) { [unowned self] well in
                 // Colours are the framebuffer's 0x00RRGGBB.
-                guard let c = (control as! NSColorWell).color.usingColorSpace(.sRGB) else { return }
+                guard let c = well.color.usingColorSpace(.sRGB) else { return }
                 let value = UInt64((c.redComponent * 255).rounded()) << 16
                     | UInt64((c.greenComponent * 255).rounded()) << 8 | UInt64((c.blueComponent * 255).rounded())
                 _ = call(path) { avs_parameter_set_color($0, component, parameter, value, $1, $2) }
@@ -174,15 +174,15 @@ final class AvsParameterInspector: NSView {
             if info.type == AVS_PARAM_SELECT {
                 let index = Int(call(path) { avs_parameter_get_int($0, component, parameter, $1, $2) })
                 if options.indices.contains(index) { popup.selectItem(at: index) } else { popup.select(nil) }
-                register(popup) { [unowned self] control in
-                    _ = call(path) { avs_parameter_set_int($0, component, parameter, Int64((control as! NSPopUpButton).indexOfSelectedItem), $1, $2) }
+                register(popup) { [unowned self] popup in
+                    _ = call(path) { avs_parameter_set_int($0, component, parameter, Int64(popup.indexOfSelectedItem), $1, $2) }
                 }
             } else {
                 let current = call(path) { avs_parameter_get_string($0, component, parameter, $1, $2) }.map { String(cString: $0) } ?? ""
                 if !options.contains(current), !current.isEmpty { popup.addItem(withTitle: current) }
                 popup.selectItem(withTitle: current)
-                register(popup) { [unowned self] control in
-                    guard let title = (control as! NSPopUpButton).titleOfSelectedItem else { return }
+                register(popup) { [unowned self] popup in
+                    guard let title = popup.titleOfSelectedItem else { return }
                     _ = call(path) { avs_parameter_set_string($0, component, parameter, title, $1, $2) }
                 }
             }
@@ -250,12 +250,13 @@ final class AvsParameterInspector: NSView {
         }
     }
 
-    private func register(_ control: NSControl, _ write: @escaping (NSControl) -> Void) {
-        writers[ObjectIdentifier(control)] = write
+    /// The writer gets the control back with its own type, so no call site casts.
+    private func register<Control: NSControl>(_ control: Control, _ write: @escaping (Control) -> Void) {
+        writers[ObjectIdentifier(control)] = { [weak control] in control.map(write) }
     }
 
     @objc private func controlChanged(_ sender: NSControl) {
-        writers[ObjectIdentifier(sender)]?(sender)
+        writers[ObjectIdentifier(sender)]?()
     }
 
     // MARK: - Code

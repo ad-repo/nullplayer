@@ -101,8 +101,8 @@ struct AvsBeatDetector {
 }
 
 /// The newest stereo buffer from the audio tap, waiting for the next render. `store` runs on
-/// the real-time tap thread, so it is a lock, one store and an unlock; an unrendered buffer is
-/// simply replaced.
+/// the tap thread (`installTap`, not real-time) and holds the lock for one store; an unrendered
+/// buffer is simply replaced.
 final class AvsAudioSlot {
     struct Buffer {
         var left: [Float]
