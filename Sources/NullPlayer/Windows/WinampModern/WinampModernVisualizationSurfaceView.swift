@@ -148,17 +148,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// so it is the only engine the flag reaches.
     private func stepPreset(by delta: Int, hardCut: Bool) {
         guard !isTornDown, delta != 0 else { return }
-        switch engineView.currentEngineType {
-        case .geiss:
-            delta > 0 ? engineView.nextGeissEffect() : engineView.previousGeissEffect()
-        case .tripex:
-            delta > 0 ? engineView.nextTripexEffect() : engineView.previousTripexEffect()
-        case .avs:
-            (engineView.currentEngine as? AvsEngine)?.step(by: delta > 0 ? 1 : -1)
-        case .projectM:
-            delta > 0 ? engineView.nextPreset(hardCut: hardCut)
-                      : engineView.previousPreset(hardCut: hardCut)
-        }
+        engineView.stepEnginePreset(by: delta, hardCut: hardCut)
     }
 
     /// The **same** menu NullPlayer's own visualization window has

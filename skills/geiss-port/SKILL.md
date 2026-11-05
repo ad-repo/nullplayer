@@ -128,7 +128,7 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 
 - ProjectM-specific submenus (Presets, Preset Cycle, Beat Sensitivity, ratings overlay, preset-change notifications) are wrapped behind `currentEngineType == .projectM`.
 - When Geiss is active, `addGeissEffectsMenuItems(to:)` adds Next / Previous / Random Effect plus an Effects submenu listing modes 1–25 with the active mode checkmarked.
-- Keyboard handlers for `→` / `←` / `r` route to `nextGeissEffect` / `previousGeissEffect` / `randomGeissEffect` when Geiss is active, or the ProjectM equivalents otherwise.
+- Keyboard handlers for `→` / `←` / `r`, and the `.wal`/`.wmz`/Sonique preset steps, go through `VisualizationGLView+Presets.swift`, which routes to `nextGeissEffect` / `previousGeissEffect` / `randomGeissEffect` / `selectGeissEffect` when Geiss is active.
 
 ## Diagnostic accessor
 

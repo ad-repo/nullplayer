@@ -9,6 +9,13 @@ NullPlayer has several visualization stacks. Each has its own skill; this file i
 
 The standalone waveform window is **not** a Metal visualization mode. It reuses audio waveform notifications and the cache service. Do not treat it as part of this stack.
 
+## Engine presets: one seam
+
+`VisualizationGLView+Presets.swift` is the only place that knows each engine's preset calls (count,
+name, select, step, random). Every host (the Visualizations window's keys, the `.wal` slot, the
+`.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine adds its
+cases there. Each engine's context-menu section stays its own (`VisualizationContextMenu`).
+
 ## Persistence and Reset Policy
 
 Visualization choices are durable `UserDefaults` preferences, not AppState session fields. AppState only remembers quit-session state such as window visibility/layout and playlist/audio state.

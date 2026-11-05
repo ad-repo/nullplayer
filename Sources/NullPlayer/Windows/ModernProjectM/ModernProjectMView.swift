@@ -621,45 +621,15 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
             return true
             
         case 124: // Right arrow - next preset/effect
-            if visualizationGLView?.currentEngineType == .geiss {
-                visualizationGLView?.nextGeissEffect()
-            } else if visualizationGLView?.currentEngineType == .tripex {
-                visualizationGLView?.nextTripexEffect()
-            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
-                avs.step(by: 1)
-            } else if hasShift {
-                visualizationGLView?.nextPreset(hardCut: true)
-            } else {
-                visualizationGLView?.nextPreset(hardCut: false)
-            }
+            visualizationGLView?.stepEnginePreset(by: 1, hardCut: hasShift)
             return true
 
         case 123: // Left arrow - previous preset/effect
-            if visualizationGLView?.currentEngineType == .geiss {
-                visualizationGLView?.previousGeissEffect()
-            } else if visualizationGLView?.currentEngineType == .tripex {
-                visualizationGLView?.previousTripexEffect()
-            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
-                avs.step(by: -1)
-            } else if hasShift {
-                visualizationGLView?.previousPreset(hardCut: true)
-            } else {
-                visualizationGLView?.previousPreset(hardCut: false)
-            }
+            visualizationGLView?.stepEnginePreset(by: -1, hardCut: hasShift)
             return true
 
         case 15: // R key - random preset/effect
-            if visualizationGLView?.currentEngineType == .geiss {
-                visualizationGLView?.randomGeissEffect()
-            } else if visualizationGLView?.currentEngineType == .tripex {
-                visualizationGLView?.randomTripexEffect()
-            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
-                avs.selectRandomPreset()
-            } else if hasShift {
-                visualizationGLView?.randomPreset(hardCut: true)
-            } else {
-                visualizationGLView?.randomPreset(hardCut: false)
-            }
+            visualizationGLView?.randomEnginePreset(hardCut: hasShift)
             return true
             
         case 8: // C key - toggle cycle mode
