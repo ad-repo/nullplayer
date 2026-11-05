@@ -60,7 +60,7 @@ The batch's lowest stage decides the next session's work. `wal_intake_status.sh`
 |---|---|---|
 | — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
 | `admitted` | **The batch pass** (below); reorder the ledger rows by its rank, since `next:` takes the first unfinished row | all → `headless` |
-| `headless` | **A group of skins at once** (below, § *Running it*): a live pass over about four skins, then one fix pass over every row they filed, then one live re-check of the skins a fix touched. Skins whose note says `headless clean` go through the same live passes; each still gets the visual review | a group → `live` |
+| `headless` | **Scan, then one fix pass** (below, § *The live round*): the orchestrator scans every `headless` skin of the batch at once with the two one-call tools and files rows, fixing nothing; then **one** worker fixes every open row of the batch, with one set of sweeps; then one live re-check of only the skins a fix touched | clean → `live` at the scan; the rest → `live` at the fix pass |
 | `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
 | `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
 | `promoted` | **Close** once the PR is merged: delete the run store (`rm -rf WinampModernCorpus/runs`), then admit batch n+1 | — |
@@ -91,6 +91,35 @@ order, until bronze is empty (plan §8 *Decisions*).
 
 ¹ Intake #1 went skin by skin, live first, over three passes; most of what it found was visible in
 a headless dump (`corpus-runner-plan.md` § *Done: the B169 intake*).
+
+## The live round
+
+Intake #6 ran it the old way first: workers clicked through four skins at a time by hand, about 200
+tool calls each, and fix passes split by row group, each paying for its own sweeps. Two fix passes
+took 61 and ~45 minutes, and the live passes burned most of the batch's tokens. This is the replacement,
+and it holds the same quality bar: every skin is still captured live with a track playing, every
+window is still judged, and every control is still clicked.
+
+1. **Scan, no worker.** The orchestrator runs, over every `headless` skin of the batch at once:
+   - `skills/app-control/scripts/window-census.sh <skin>… --shots --out <dir>`, in chunks that fit a
+     10-minute call (about 35 s a skin), then `scripts/review_sheet.py` per skin in one loop, with
+     `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. It opens every sheet itself.
+   - `scripts/wal_live_smoke.sh <skin>… --out <dir>`, which clicks and drags every main-window
+     control in the running app and writes one row per control (volume, play, position, track, EQ,
+     layout, windows, main on screen). It reads the table, not the app. What the smoke cannot see
+     (right-click menus, controls in other windows, drags on non-slider layers) goes to the
+     user's round.
+   It files every defect as a row and fixes nothing. A skin with no defect moves to `live` in the
+   same commit, with its visual note.
+2. **One fix pass for the whole batch.** One worker, every open row, never split into groups: a
+   split pays for every sweep twice. Brief it tightly (rows, the tools, the rules) rather than splitting
+   it to keep its context small. Its sweeps are `scripts/wal_fix_check.sh <base> <out>`, run once
+   after all the fixes: it picks only the sweeps the diff can reach (a render-only change skips the
+   27 minutes of interaction and motion; a window-layer change has no headless sweep at all) and
+   serves the baseline from the run store. The batch's first fix pass captures that baseline once,
+   in a worktree; every later pass in the batch reuses it.
+3. **Re-check only what a fix touched**, with the same tools on only those skins: the census for
+   a window or drawing fix, the smoke for a control fix.
 
 ## The visual review
 
@@ -160,7 +189,7 @@ naturally stops:
 |---|---|
 | no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless`, a group | **Live pass**: Phase 7 and the visual review over about four skins in one launch (switch skins from the menu). It files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
+| `headless` | **The scan** is the orchestrator's own, no worker (§ *The live round*). **The fix pass**: one worker over every open row of the batch, sweeps by `wal_fix_check.sh`. The rest of this cell is how a defect is judged and re-checked. A live pass files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
 | `accepted` | Promote · the code-quality review · the PR |
 
 **The loop:**
@@ -180,9 +209,12 @@ naturally stops:
      dump or probe run, and `scripts/wal_skin_src.sh` for its source and reference images. Each
      extra call re-sends the whole context.
    - A live phase (7 and the visual review) runs with a track playing and drives the skin's own
-     controls (`skin-triage` Phase 7 step 2). The census does not replace that. Never run
+     controls (`skin-triage` Phase 7 step 2), through `wal_live_smoke.sh` and the census, not
+     click by click: one hand-driven click is one tool call that re-sends the whole context. Never run
      `window-interaction-matrix.sh` on an intake skin: its close search blind-clicks the corner
      of every window.
+   - A fix pass runs its sweeps through `scripts/wal_fix_check.sh <base> <out>`, once, after all
+     its fixes; it runs only the sweeps the diff can reach.
    - Interaction and motion sweeps have no noise file, and a full corpus run costs about 10
      minutes. Never take a `--fresh` run of either for a phase. Compare against the stored
      capture, and rerun only the skins that differ, on both revs (`--corpus` on a folder of just

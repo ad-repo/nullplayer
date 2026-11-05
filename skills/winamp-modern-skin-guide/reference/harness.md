@@ -696,6 +696,21 @@ maxdelta than its noise. The interaction and motion sweeps have no `compare` and
 
 **Lifetime: one batch.** The run store is deleted when a batch closes (`skills/skin-intake`): the next admission changes the gold+silver set, so every stored key is dead, and the first `--fresh` compare of the new batch rebuilds the noise file.
 
+#### Which sweeps a fix needs: `wal_fix_check.sh`
+
+```sh
+scripts/wal_fix_check.sh <base-rev> <outdir> [--dry-run]
+```
+
+This picks the sweeps from the diff (base against the working tree), then runs each one once, base
+served from the store and after with `--allow-dirty`. It runs **render** (~25 s) for any engine
+change, and adds **interaction and motion** (~27 min together) only when the diff touches script
+runtime, MAKI, the object graph, loading, click/host/EQ actions, key accelerators or code outside
+the engine. A change only in `Windows/WinampModern/` gets **none**, because no headless sweep loads
+the window layer; check it live with `window-census.sh --shots` and `wal_live_smoke.sh`. A base
+never captured stops it. Capture one per batch in a worktree and reuse it. Outputs are
+`render/compare.txt` and `interaction|motion/diff.txt`, classified by `skin-triage` Phase 8.
+
 #### Impact-selected and sharded sweeps
 
 ```sh
