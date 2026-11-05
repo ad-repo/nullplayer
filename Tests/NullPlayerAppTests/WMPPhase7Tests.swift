@@ -33,7 +33,11 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.current.id, "geiss")
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "tripex")
-        // Eight entries, so one more step is back to the start.
+        selection.step(by: 1)
+        XCTAssertEqual(selection.current.id, "avs")
+        XCTAssertEqual(selection.current.engine, .avs)
+        XCTAssertTrue(selection.current.isOffscreenEngine)
+        // Nine entries, so one more step is back to the start.
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "spikes")
         _ = selection.select("spikes")

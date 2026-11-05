@@ -1,0 +1,11 @@
+--- a/WDL-EEL2/eel2/ns-eel.h	2025-01-15 09:15:41.162653860 +0100
++++ b/WDL-EEL2/eel2/ns-eel.h	2025-01-15 08:49:54.878881775 +0100
+@@ -199,7 +199,7 @@
+ // this mode is faster and uses less ram than eel2.l anyway, so leave it on
+ #define NSEEL_SUPER_MINIMAL_LEXER 
+ 
+- // #define NSEEL_EEL1_COMPAT_MODE // supports old behaviors (continue after failed compile), old functions _bnot etc. disables string support (strings were used as comments in eel1 etc)
++#define NSEEL_EEL1_COMPAT_MODE // supports old behaviors (continue after failed compile), old functions _bnot etc. disables string support (strings were used as comments in eel1 etc)
+ 
+ #define NSEEL_MAX_VARIABLE_NAMELEN 128  // define this to override the max variable length
+ #define NSEEL_MAX_EELFUNC_PARAMETERS 40

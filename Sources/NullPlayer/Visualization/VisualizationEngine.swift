@@ -99,6 +99,9 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Tripex engine (ben-marsh/tripex, ported to OpenGL on macOS)
     case tripex = "Tripex"
 
+    /// Advanced Visualization Studio (vendored libavs; the `avs-port` skill)
+    case avs = "AVS"
+
     /// Human-readable display name
     var displayName: String {
         switch self {

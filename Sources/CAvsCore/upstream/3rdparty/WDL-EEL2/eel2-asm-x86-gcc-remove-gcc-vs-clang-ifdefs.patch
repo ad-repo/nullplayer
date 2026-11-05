@@ -1,0 +1,150 @@
+Modern GCC may have fixed the issues addressed in these ifdefs. At least the assembler
+warns that the instructions are translated, e.g.:
+    asm-nseel-x86-gcc.c:96: Warning: translating to `fstp %st'
+
+Using the Clang versions on GCC as well removes the warnings.
+
+--- a/WDL-EEL2/eel2/asm-nseel-x86-gcc.c
++++ b/WDL-EEL2/eel2/asm-nseel-x86-gcc.c
+@@ -93,11 +93,7 @@ void nseel_asm_dbg_getstackptr(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+     "ffree %st(0)\n"
+-#else
+-    "fstpl %st(0)\n"
+-#endif
+     "movl %esp, (%esi)\n"
+     "fildl (%esi)\n"
+ 
+@@ -274,11 +270,7 @@ void nseel_asm_add(void)
+ {
+   __asm__(
+           FUNCTION_MARKER
+-#ifdef __clang__
+           "faddp %st(1)\n"
+-#else
+-          "fadd\n"
+-#endif
+           FUNCTION_MARKER
+           );
+ }
+@@ -321,19 +313,7 @@ void nseel_asm_sub(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+     "fsubrp %st(0), %st(1)\n"
+-#else
+-  #ifdef __GNUC__
+-    #ifdef __INTEL_COMPILER
+-      "fsub\n"
+-    #else
+-      "fsubr\n" // gnuc has fsub/fsubr backwards, ack
+-    #endif
+-  #else
+-    "fsub\n"
+-  #endif
+-#endif
+      FUNCTION_MARKER
+   );
+ }
+@@ -375,11 +355,7 @@ void nseel_asm_mul(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+           "fmulp %st(0), %st(1)\n"
+-#else
+-          "fmul\n"
+-#endif
+      FUNCTION_MARKER
+   );
+ }
+@@ -421,19 +397,7 @@ void nseel_asm_div(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+     "fdivrp %st(1)\n"
+-#else
+-  #ifdef __GNUC__
+-    #ifdef __INTEL_COMPILER
+-      "fdiv\n" 
+-    #else
+-      "fdivr\n" // gcc inline asm seems to have fdiv/fdivr backwards
+-    #endif
+-  #else
+-    "fdiv\n"
+-  #endif
+-#endif
+     FUNCTION_MARKER
+   );
+ }
+@@ -443,19 +407,7 @@ void nseel_asm_div_op(void)
+   __asm__(
+       FUNCTION_MARKER
+     "fld" EEL_F_SUFFIX " (%edi)\n"
+-#ifdef __clang__
+     "fdivp %st(1)\n"
+-#else
+-  #ifndef __GNUC__
+-    "fdivr\n"
+-  #else
+-    #ifdef __INTEL_COMPILER
+-      "fdivp %st(1)\n"
+-    #else
+-      "fdiv\n"
+-    #endif
+-  #endif
+-#endif
+     "movl %edi, %eax\n"
+     "fstp" EEL_F_SUFFIX " (%edi)\n"
+ 
+@@ -478,19 +430,7 @@ void nseel_asm_div_op_fast(void)
+   __asm__(
+       FUNCTION_MARKER
+     "fld" EEL_F_SUFFIX " (%edi)\n"
+-#ifdef __clang__
+     "fdivp %st(1)\n"
+-#else
+-  #ifndef __GNUC__
+-    "fdivr\n"
+-  #else 
+-    #ifdef __INTEL_COMPILER
+-      "fdivp %st(1)\n"
+-    #else
+-      "fdiv\n"
+-    #endif
+-  #endif
+-#endif
+     "movl %edi, %eax\n"
+     "fstp" EEL_F_SUFFIX " (%edi)\n"
+ 
+@@ -799,12 +739,7 @@ void nseel_asm_equal(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+     "fsubp %st(1)\n"
+-#else
+-    "fsub\n"
+-#endif
+-
+     "fabs\n"
+     "fcomp" EEL_F_SUFFIX " -8(%ebx)\n" //[g_closefact]
+     "fstsw %ax\n"
+@@ -851,12 +786,7 @@ void nseel_asm_notequal(void)
+ {
+   __asm__(
+       FUNCTION_MARKER
+-#ifdef __clang__
+     "fsubp %st(1)\n"
+-#else
+-    "fsub\n"
+-#endif
+-
+     "fabs\n"
+     "fcomp" EEL_F_SUFFIX " -8(%ebx)\n" //[g_closefact]
+     "fstsw %ax\n"

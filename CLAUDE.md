@@ -33,7 +33,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `visualizations`: visualizer router; `main-window-visualization`: inline vis; `spectrum-analyzer-window`: analyzer; `audio-analysis-window`: analysis panes
 - `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: Art window
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
-- `geiss-port`, `tripex-port`, `vis-classic-guide`: visualization ports and compatibility
+- `geiss-port`, `tripex-port`, `avs-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn
 - `testing`: UI test workflows; `non-retina-fixes`: 1x display fixes; `local-library`: SQLite and scanning; `cli`: headless mode; `nullplayer-release`: cutting a release
@@ -113,6 +113,7 @@ For UI or playback work, in addition to `swift test`, manually exercise local an
   mirrored or quoted, on GitHub or anywhere else — and never download it. Skin support is clean-room:
   the evidence is the skin's own files, its screenshots, and observed behaviour. If a search turns
   up such source, do not open it; if any was fetched, delete it and say so.
+  AVS (grandchild/vis_avs, BSD-3) is a vendored visualizer, not skin code, and is exempt.
 - `ModernSkin/` and `Windows/Modern*/` must never import from `Skin/` or `Windows/MainWindow/`; see `original-skin-guide`.
 - A fix for one skin family (Classic, Original, `.wal`, `.wmz`, Audion, Sonique) must not
   unintentionally change another. This binds shared code too — a change in `App/` that every

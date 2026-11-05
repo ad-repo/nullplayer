@@ -14,6 +14,14 @@
   empty and the rest mapped frequency in a straight line, so treble looked dead. The analyzer now
   sizes its FFT to the bar count and spreads bars logarithmically, as the original plugin does, and
   in stereo each half covers the whole spectrum instead of only the lower part.
+- **AVS, Winamp's Advanced Visualization Studio, is a visualization engine** (Visualization Engine
+  ▸ AVS), beside ProjectM, Geiss and Tripex, and in a `.wal` skin's AVS slot and a `.wmz` skin's
+  effects menu. It plays `.avs` presets, scripted effects included: 35 come bundled, and **Choose
+  AVS Preset Folder…** adds your own. Right-click for the preset list and auto-cycle; → / ← / R
+  step through presets.
+- **AVS presets can be edited** (right-click ▸ Edit Preset…): the effect tree, with add, duplicate,
+  delete, drag to reorder and an on/off box per effect, and every setting of the selected effect,
+  scripted code included. Changes show as you make them; save as a Winamp `.avs` or export JSON.
 - **vis_classic draws its profiles' effects, peaks and backgrounds as the original plugin did.**
   Mirror, Reflection, Shadow, Double Shadow, Smoke, Reflection Waves and Fade Shadow; peaks that
   snap back, fall, rise, rise-then-fall or spark, with their colour fading as they age; the Flash,

@@ -1,6 +1,6 @@
 ---
 name: visualizations
-description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, vis_classic, Metal mode internals).
+description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, vis_classic, Metal mode internals).
 ---
 
 # NullPlayer Visualization Systems — Index
@@ -8,6 +8,13 @@ description: Index of NullPlayer's visualization systems. Use this to discover w
 NullPlayer has several visualization stacks. Each has its own skill; this file is a router. Open the relevant sub-skill for details.
 
 The standalone waveform window is **not** a Metal visualization mode. It reuses audio waveform notifications and the cache service. Do not treat it as part of this stack.
+
+## Engine presets: one seam
+
+`VisualizationGLView+Presets.swift` is the only place that knows each engine's preset calls (count,
+name, select, step, random). Every host (the Visualizations window's keys, the `.wal` slot, the
+`.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine adds its
+cases there. Each engine's context-menu section stays its own (`VisualizationContextMenu`).
 
 ## Persistence and Reset Policy
 
@@ -32,6 +39,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [projectm-milkdrop](../projectm-milkdrop/SKILL.md) | ProjectM/MilkDrop preset engine in the visualization window |
 | [geiss-port](../geiss-port/SKILL.md) | Geiss engine — port architecture, ABI, configuration |
 | [tripex-port](../tripex-port/SKILL.md) | Tripex (ben-marsh/tripex) port — D3D9→OpenGL, C ABI |
+| [avs-port](../avs-port/SKILL.md) | AVS (grandchild/vis_avs libavs) — CAvsCore, EEL2 JIT, stereo feed, presets, every host |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
 | [metal-gotchas](../metal-gotchas/SKILL.md) | Metal command-encoder pitfalls, render-to-texture y-flip, spectrum jitter |
 
@@ -51,6 +59,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **ProjectM** — immersive full-screen, classic Winamp nostalgia
 - **Geiss** — classic Geiss look, low-level palette effects
 - **Tripex** — Winamp-era 3D, no preset files needed
+- **AVS** — Winamp's Advanced Visualization Studio presets (`.avs`), scripted effects included
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
 - **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window

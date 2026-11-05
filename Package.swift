@@ -11,6 +11,26 @@ import PackageDescription
 let frameworksPath = Context.packageDirectory + "/Frameworks"
 let vlcKitSearchPath: SwiftSetting = .unsafeFlags(["-F", frameworksPath])
 
+// CAvsCore build settings, shared by its C and C++ translation units. Upstream ships plain-C
+// fallbacks for its inline asm (NO_MMX) but not for its SSE intrinsics, so the SSE paths
+// stay on (SIMD_MODE_X86_SSE): native on x86_64, through sse2neon on arm64 via the shim
+// headers in upstream_port/simd, which must be searched before the compiler's own.
+let avsHeaderSearchPaths = ["upstream_port/simd", "upstream"]
+let avsDefines = [
+    "SIMD_MODE_X86_SSE",
+    "NO_MMX",
+    "_USE_MATH_DEFINES",
+    "NO_FFMPEG",
+    "WFMO",  // pevents' WaitForMultipleEvents, used by the platform signals
+    "FORCE_CPP_FILESYSTEM_API",  // upstream's std::filesystem path for non-Linux POSIX
+]
+// libavs's C++ class names `FFT` and `Effect` are also defined by CVisClassicCore and
+// CTripexCore; all three link into one binary, so AVS's are renamed for its TUs only.
+let avsRenames = [("FFT", "AvsFFT"), ("Effect", "AvsEffect")]
+// -O2 in debug too: libavs is a software renderer, and at -O0 a 524x550 frame took 55 ms
+// (13 fps) against 1 ms optimised.
+let avsFlags = ["-O2", "-fno-strict-aliasing", "-fwrapv", "-w"]
+
 let package = Package(
     name: "NullPlayer",
     defaultLocalization: "en",
@@ -109,6 +129,46 @@ let package = Package(
                 .unsafeFlags(["-fno-strict-aliasing", "-fwrapv"])
             ]
         ),
+        // Advanced Visualization Studio: libavs from grandchild/vis_avs (BSD-3) with EEL2
+        // (zlib), vendored without its Win32 frontend or FFmpeg video; see skills/avs-port.
+        .target(
+            name: "CAvsCore",
+            dependencies: [],
+            path: "Sources/CAvsCore",
+            exclude: [
+                // EEL2's per-arch code generators are #included by nseel-cfunc.c, not compiled.
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-aarch64-gcc.c",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-aarch64-msvc.asm",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-arm-gcc.c",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-arm64ec.asm",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-ppc-gcc.c",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-x64-sse.asm",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-x86-gcc.c",
+                "upstream/3rdparty/WDL-EEL2/eel2/asm-nseel-x86-msvc.c",
+                // #included by nseel-yylex.c.
+                "upstream/3rdparty/WDL-EEL2/eel2/y.tab.c",
+                // Standalone EEL tools, not part of upstream's library build.
+                "upstream/3rdparty/WDL-EEL2/eel2/eel_pp.cpp",
+                "upstream/3rdparty/WDL-EEL2/eel2/loose_eel.cpp",
+                "upstream/3rdparty/WDL-EEL2/eel2-add-pre-post-compile-hooks.patch",
+                "upstream/3rdparty/WDL-EEL2/eel2-asm-x86-gcc-remove-gcc-vs-clang-ifdefs.patch",
+                "upstream/3rdparty/WDL-EEL2/eel2-enable-eel1-compat-mode.patch",
+                "upstream/3rdparty/pevents.cpp-wait-for-multiple-events-return-signal.patch",
+                "upstream/3rdparty/WDL-EEL2/LICENSE.txt",
+                "upstream/3rdparty/LICENSE.json.txt",
+                "upstream/3rdparty/LICENSE.pevents.txt",
+                "upstream/3rdparty/LICENSE.stb_image.txt",
+                "upstream/LICENSE.TXT",
+                "upstream_port/simd/SSE2NEON_LICENSE",
+            ],
+            publicHeadersPath: "include",
+            cSettings: avsHeaderSearchPaths.map { .headerSearchPath($0) }
+                + avsDefines.map { .define($0) }
+                + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)],
+            cxxSettings: avsHeaderSearchPaths.map { .headerSearchPath($0) }
+                + avsDefines.map { .define($0) }
+                + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -147,6 +207,7 @@ let package = Package(
                 "CVisClassicCore",
                 "CGeissCore",
                 "CTripexCore",
+                "CAvsCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "AudioStreaming",

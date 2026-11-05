@@ -56,6 +56,7 @@ final class SkinEffectSelection {
             case .projectM: return .projectM
             case .geiss: return .geiss
             case .tripex: return .tripex
+            case .avs: return .avs
             case .bars, .spikes, .ambience, .cava, .visClassic: return nil
             }
         }
@@ -67,15 +68,15 @@ final class SkinEffectSelection {
     }
 
     enum NativeStyle: String {
-        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex
+        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex, avs
     }
 
     /// Posted, with the selection as its object, when the selected effect or preset changes, so
     /// every surface on that selection follows one choice.
     static let didChange = Notification.Name("SkinEffectSelectionDidChange")
 
-    /// **Eight effects, all rendering the same way in the rect** (W140). The first five are drawn
-    /// by the surface itself; ProjectM, Geiss and Tripex render offscreen and are presented as an
+    /// **Nine effects, all rendering the same way in the rect** (W140). The first five are drawn
+    /// by the surface itself; ProjectM, Geiss, Tripex and AVS render offscreen and are presented as an
     /// image. Spikes stays first because it is what a skin that selects nothing shows.
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
@@ -85,7 +86,8 @@ final class SkinEffectSelection {
         Effect(id: "vis_classic", title: "vis_classic", style: .visClassic),
         Effect(id: "projectm", title: "projectM", style: .projectM),
         Effect(id: "geiss", title: "Geiss", style: .geiss),
-        Effect(id: "tripex", title: "Tripex", style: .tripex)
+        Effect(id: "tripex", title: "Tripex", style: .tripex),
+        Effect(id: "avs", title: "AVS", style: .avs)
     ]
 
     private(set) var index: Int

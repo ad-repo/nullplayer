@@ -206,8 +206,8 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // `select`, and rebuilding the engine for it would reinitialize ProjectM on every press of
         // the left/right keys. The running engine takes the new number instead, and `applyPreset`
         // reports back the title it landed on.
-        if previous.id == effect.id, isActive, let engineView, let engine = effect.engine {
-            applyPreset(to: engineView, engine: engine)
+        if previous.id == effect.id, isActive, let engineView, effect.engine != nil {
+            applyPreset(to: engineView)
             needsDisplay = true
             return
         }
@@ -227,7 +227,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-            case .projectM, .geiss, .tripex:
+            case .projectM, .geiss, .tripex, .avs:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
@@ -243,7 +243,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func startOffscreenEngine() {
         guard let engine = effect.engine, let view = makeEngineView() else { return }
         view.switchEngine(to: engine, persistPreference: false)
-        applyPreset(to: view, engine: engine)
+        applyPreset(to: view)
         applyPresetCycleMode()
         engineFrameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
                                                 repeats: true) { [weak self] _ in
@@ -252,7 +252,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     }
 
     private func pullOffscreenFrame() {
-        guard !isTornDown, isActive, let engineView, let engine = effect.engine else { return }
+        guard !isTornDown, isActive, let engineView, effect.engine != nil else { return }
         let scale = window?.backingScaleFactor ?? 2
         let width = max(1, Int((bounds.width * scale).rounded()))
         let height = max(1, Int((bounds.height * scale).rounded()))
@@ -260,7 +260,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // frame is the rect in *points* and the readback asks for the same rect in pixels — set it
         // in pixels and the engine would be created at twice the surface it renders into.
         engineView.frame = NSRect(origin: .zero, size: bounds.size)
-        applyPreset(to: engineView, engine: engine)
+        applyPreset(to: engineView)
         guard let image = engineView.renderOffscreenImage(pixelWidth: width, pixelHeight: height) else { return }
         engineImage = image
         needsDisplay = true
@@ -304,27 +304,14 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     /// preset list, Geiss's and Tripex's effect list — so the selection's number is applied modulo
     /// what the running engine has, and the title it landed on is reported back. A skin reading
     /// `currentPresetTitle` (42 archives) then sees the preset that is actually on screen.
-    private func applyPreset(to view: VisualizationGLView, engine: VisualizationType) {
+    private func applyPreset(to view: VisualizationGLView) {
         let wanted = selection.preset
         guard wanted != appliedPreset else { return }
         appliedPreset = wanted
-        switch engine {
-        case .projectM:
-            guard view.presetCount > 0 else { return }
-            let index = wanted % view.presetCount
-            view.selectPreset(at: index)
-            selection.presetTitle = view.presetName(at: index)
-        case .geiss:
-            guard view.geissEffectCount > 0 else { return }
-            let index = wanted % view.geissEffectCount
-            view.selectGeissEffect(at: index)
-            selection.presetTitle = view.geissEffectName(at: index)
-        case .tripex:
-            guard view.tripexEffectCount > 0 else { return }
-            let index = wanted % view.tripexEffectCount
-            view.selectTripexEffect(at: index)
-            selection.presetTitle = view.tripexEffectName(at: index)
-        }
+        let count = view.enginePresetCount
+        guard count > 0 else { return }
+        view.selectEnginePreset(at: wanted % count)
+        selection.presetTitle = view.enginePresetName(at: wanted % count)
     }
 
     // MARK: - Drawing
@@ -336,7 +323,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard isActive else { return }
         switch effect.style {
         case .bars, .spikes, .ambience: if levels.isEmpty { return }
-        case .cava, .visClassic, .projectM, .geiss, .tripex: break
+        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs: break
         }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
@@ -382,7 +369,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
-        case .projectM, .geiss, .tripex: drawOffscreenEngine()
+        case .projectM, .geiss, .tripex, .avs: drawOffscreenEngine()
         }
     }
 
@@ -590,7 +577,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func stepWithinEffect(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
         switch effect.style {
-        case .projectM, .geiss, .tripex:
+        case .projectM, .geiss, .tripex, .avs:
             guard let count = presetCount(), count > 0 else { return false }
             let current = selection.preset % count
             selection.setPreset(((current + delta) % count + count) % count)
@@ -614,12 +601,8 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     /// How many entries the running engine's own list has, for the wrap above.
     private func presetCount() -> Int? {
-        guard let engineView, let engine = effect.engine else { return nil }
-        switch engine {
-        case .projectM: return engineView.presetCount
-        case .geiss: return engineView.geissEffectCount
-        case .tripex: return engineView.tripexEffectCount
-        }
+        guard let engineView, effect.engine != nil else { return nil }
+        return engineView.enginePresetCount
     }
 
     // MARK: - The visualization's own menu
@@ -649,7 +632,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
-        case .projectM, .geiss, .tripex:
+        case .projectM, .geiss, .tripex, .avs:
             // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
             // view already conforms to — the same presets, cycling and sensitivity items the
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's

@@ -72,7 +72,8 @@ assemble_app "$APP_BUNDLE"
 # a `notarytool store-credentials` profile) for a Gatekeeper-clean, notarized release
 if [[ -n "${DEVELOPER_ID:-}" ]]; then
     log_info "Code signing app bundle as $DEVELOPER_ID (hardened runtime)..."
-    sign_app_bundle "$APP_BUNDLE" --options runtime --timestamp --sign "$DEVELOPER_ID"
+    sign_app_bundle "$APP_BUNDLE" --options runtime --timestamp --sign "$DEVELOPER_ID" \
+        -- --entitlements "$REPO_ROOT/scripts/DeveloperID.entitlements"
 else
     log_info "Code signing app bundle (ad-hoc)..."
     sign_app_bundle "$APP_BUNDLE" --sign -
