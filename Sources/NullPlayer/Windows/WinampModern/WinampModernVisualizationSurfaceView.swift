@@ -140,7 +140,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     }
 
     /// `VIS_NEXT` / `VIS_PREV`. Each engine's own idea of "the next one": ProjectM steps its preset
-    /// list, Geiss and Tripex their effects — which is what the same buttons do in NullPlayer's own
+    /// list, Geiss and Tripex their effects, AVS its presets — which is what the same buttons do in NullPlayer's own
     /// visualization window.
     func stepPreset(by delta: Int) { stepPreset(by: delta, hardCut: false) }
 
@@ -153,6 +153,8 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
             delta > 0 ? engineView.nextGeissEffect() : engineView.previousGeissEffect()
         case .tripex:
             delta > 0 ? engineView.nextTripexEffect() : engineView.previousTripexEffect()
+        case .avs:
+            (engineView.currentEngine as? AvsEngine)?.step(by: delta > 0 ? 1 : -1)
         case .projectM:
             delta > 0 ? engineView.nextPreset(hardCut: hardCut)
                       : engineView.previousPreset(hardCut: hardCut)

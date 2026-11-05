@@ -27,7 +27,9 @@ let avsDefines = [
 // libavs's C++ class names `FFT` and `Effect` are also defined by CVisClassicCore and
 // CTripexCore; all three link into one binary, so AVS's are renamed for its TUs only.
 let avsRenames = [("FFT", "AvsFFT"), ("Effect", "AvsEffect")]
-let avsFlags = ["-fno-strict-aliasing", "-fwrapv", "-w"]
+// -O2 in debug too: libavs is a software renderer, and at -O0 a 524x550 frame took 55 ms
+// (13 fps) against 1 ms optimised.
+let avsFlags = ["-O2", "-fno-strict-aliasing", "-fwrapv", "-w"]
 
 let package = Package(
     name: "NullPlayer",

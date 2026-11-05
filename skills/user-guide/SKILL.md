@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss and Tripex (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex and AVS (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -502,7 +502,7 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Met visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
@@ -515,6 +515,14 @@ If a preset actually crashes the app while it's on screen — at any point, whet
 
 ### Geiss
 Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — selected from the same right-click **Visualization Engine** submenu. Right-click for runtime controls: effect navigation, Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. All settings persist across launches.
+
+### AVS
+Winamp's Advanced Visualization Studio, from the right-click **Visualization Engine** submenu (also
+in a `.wal` skin's AVS slot and a `.wmz` skin's effects menu). 35 bundled presets; **Choose AVS
+Preset Folder…** adds a folder of your own `.avs` presets (searched with its subfolders), and **Use
+Bundled AVS Presets Only** drops it again. Right-click for the preset list, Next/Previous/Random,
+and Hold Preset / Auto-Cycle / Auto-Random with a Cycle Interval. The preset, folder and cycle
+setting persist across launches and are cleared by Reset All Visualization Preferences.
 
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
@@ -633,6 +641,13 @@ Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — sele
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
 - Hold, auto-cycle, auto-random, intensity, audio info, help overlay, and effect selection are right-click context-menu only.
+
+### AVS
+- **→ / ←**: Next / Previous preset
+- **R**: Random preset
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- The preset list, cycling and the preset folder are right-click context-menu only.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

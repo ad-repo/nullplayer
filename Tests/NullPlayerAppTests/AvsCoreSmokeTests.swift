@@ -33,6 +33,11 @@ final class AvsCoreSmokeTests: XCTestCase {
         XCTAssertEqual(Self.presets.count, 35)
     }
 
+    /// The engine finds them through the built bundle, not the source tree.
+    func testEngineListsBundledPresets() {
+        XCTAssertEqual(AvsPresets.all().filter { $0.path.hasPrefix(AvsPresets.bundledFolder?.path ?? "/nonexistent") }.count, 35)
+    }
+
     func testEveryPresetLoadsAndLegacyRoundTripIsIdempotent() throws {
         for url in Self.presets {
             let core = try XCTUnwrap(AvsCore())

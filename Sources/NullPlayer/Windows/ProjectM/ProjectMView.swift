@@ -633,6 +633,8 @@ class ProjectMView: NSView, VisualizationMenuTarget {
                 visualizationGLView?.nextGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.nextTripexEffect()
+            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
+                avs.step(by: 1)
             } else if hasShift {
                 // Hard cut (instant switch)
                 visualizationGLView?.nextPreset(hardCut: true)
@@ -646,6 +648,8 @@ class ProjectMView: NSView, VisualizationMenuTarget {
                 visualizationGLView?.previousGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.previousTripexEffect()
+            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
+                avs.step(by: -1)
             } else if hasShift {
                 visualizationGLView?.previousPreset(hardCut: true)
             } else {
@@ -658,6 +662,8 @@ class ProjectMView: NSView, VisualizationMenuTarget {
                 visualizationGLView?.randomGeissEffect()
             } else if visualizationGLView?.currentEngineType == .tripex {
                 visualizationGLView?.randomTripexEffect()
+            } else if let avs = visualizationGLView?.currentEngine as? AvsEngine {
+                avs.selectRandomPreset()
             } else if hasShift {
                 visualizationGLView?.randomPreset(hardCut: true)
             } else {

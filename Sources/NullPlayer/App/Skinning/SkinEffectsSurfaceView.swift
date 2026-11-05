@@ -227,7 +227,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-            case .projectM, .geiss, .tripex:
+            case .projectM, .geiss, .tripex, .avs:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
@@ -324,6 +324,10 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
             let index = wanted % view.tripexEffectCount
             view.selectTripexEffect(at: index)
             selection.presetTitle = view.tripexEffectName(at: index)
+        case .avs:
+            guard let avs = view.currentEngine as? AvsEngine, !avs.presets.isEmpty else { return }
+            avs.selectPreset(at: wanted % avs.presets.count)
+            selection.presetTitle = avs.currentPresetName ?? ""
         }
     }
 
@@ -336,7 +340,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard isActive else { return }
         switch effect.style {
         case .bars, .spikes, .ambience: if levels.isEmpty { return }
-        case .cava, .visClassic, .projectM, .geiss, .tripex: break
+        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs: break
         }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
@@ -382,7 +386,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
-        case .projectM, .geiss, .tripex: drawOffscreenEngine()
+        case .projectM, .geiss, .tripex, .avs: drawOffscreenEngine()
         }
     }
 
@@ -590,7 +594,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func stepWithinEffect(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
         switch effect.style {
-        case .projectM, .geiss, .tripex:
+        case .projectM, .geiss, .tripex, .avs:
             guard let count = presetCount(), count > 0 else { return false }
             let current = selection.preset % count
             selection.setPreset(((current + delta) % count + count) % count)
@@ -619,6 +623,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .projectM: return engineView.presetCount
         case .geiss: return engineView.geissEffectCount
         case .tripex: return engineView.tripexEffectCount
+        case .avs: return (engineView.currentEngine as? AvsEngine)?.presets.count
         }
     }
 
@@ -649,7 +654,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
-        case .projectM, .geiss, .tripex:
+        case .projectM, .geiss, .tripex, .avs:
             // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
             // view already conforms to — the same presets, cycling and sensitivity items the
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's

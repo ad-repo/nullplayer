@@ -420,6 +420,10 @@ class VisualizationGLView: NSOpenGLView {
                 NSLog("VisualizationGLView: Tripex engine not available")
                 return nil
             }
+
+        case .avs:
+            let avs = AvsEngine(width: width, height: height)
+            return avs.isAvailable ? avs : nil
         }
     }
 
