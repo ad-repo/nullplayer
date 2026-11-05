@@ -340,20 +340,6 @@ enum SpectrumNormalizationMode: String, CaseIterable {
     }
 }
 
-// MARK: - Analyzer Parameters (for Metal shader)
-
-/// Parameters for the Classic/Enhanced/Ultra analyzer shaders (must match Metal
-/// `AnalyzerParams` exactly). Total size: 32 bytes.
-struct AnalyzerParams {
-    var viewportSize: SIMD2<Float>  // offset 0
-    var pointCount: Int32           // offset 8
-    var barCount: Int32             // offset 12 - Classic bar count
-    var time: Float                 // offset 16
-    var brightnessBoost: Float      // offset 20
-    var pixelScale: Float           // offset 24
-    var padding: Float = 0          // offset 28
-}
-
 // MARK: - Spectrum Analyzer View
 
 private let spectrumAnalyzerEKGSharedClockStart = CACurrentMediaTime()
@@ -699,17 +685,12 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var displaySpectrum: [Float] = []   // After decay smoothing (shader modes)
     nonisolated(unsafe) private var renderBarCount: Int = 19        // Bar count for rendering
     nonisolated(unsafe) private var renderDecayFactor: Float = 0.25 // Decay factor for rendering
-    nonisolated(unsafe) private var renderColorPalette: [SIMD4<Float>] = [] // Colors for rendering
+    nonisolated(unsafe) private var renderColorPalette: [SIMD4<Float>] =
+        (0..<skinPaletteSize).map(defaultPaletteEntry)  // see `setRenderPalette`
     nonisolated(unsafe) private var renderBarWidth: CGFloat = 3.0   // Bar width for rendering
     nonisolated(unsafe) private var renderQualityMode: SpectrumQualityMode = .classic // Quality mode for rendering
     
-    // Classic/Enhanced/Ultra share one smoothed analyzer curve; the shaders
-    // sample it with Catmull-Rom, so its resolution is independent of bar count.
-    private static let analyzerPointCount = 128
-    nonisolated(unsafe) private var analyzerLevels = [Float](repeating: 0, count: analyzerPointCount)
-    nonisolated(unsafe) private var analyzerPeaks = [Float](repeating: 0, count: analyzerPointCount)
-    nonisolated(unsafe) private var analyzerPeakHold = [Float](repeating: 0, count: analyzerPointCount)  // seconds left
-    nonisolated(unsafe) private var peakVelocities = [Float](repeating: 0, count: analyzerPointCount)
+    nonisolated(unsafe) private var analyzerCurve = AnalyzerCurve()  // Classic/Enhanced/Ultra
     nonisolated(unsafe) private var animationTime: Float = 0  // For subtle animations
     
     // Cosmic mode state
@@ -788,9 +769,6 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var flameSmoothTreble: Float = 0
     
     // MARK: - Color Palette
-    
-    /// Current skin's visualization colors (24 colors, updated on skin change)
-    private var colorPalette: [SIMD4<Float>] = []
     
     /// Optional color override for the modern skin system.
     /// When set, these colors are used instead of the classic skin's visColors.
@@ -1367,7 +1345,10 @@ class SpectrumAnalyzerView: NSView {
                 (.ultra, "analyzer_ultra_fragment"),
             ]
             for (mode, name) in fragments {
-                guard let vertexFunc, let fragmentFunc = library.makeFunction(name: name) else { continue }
+                guard let vertexFunc, let fragmentFunc = library.makeFunction(name: name) else {
+                    NSLog("SpectrumAnalyzerView: SpectrumShaders is missing analyzer_vertex or \(name); \(mode.rawValue) unavailable")
+                    continue
+                }
                 let descriptor = MTLRenderPipelineDescriptor()
                 descriptor.label = "Analyzer \(mode.rawValue) Pipeline"
                 descriptor.vertexFunction = vertexFunc
@@ -1806,8 +1787,8 @@ class SpectrumAnalyzerView: NSView {
             return
         }
 
-        let (levels, peaks, colors, barCount, time) = dataLock.withLock {
-            (analyzerLevels, analyzerPeaks, renderColorPalette, renderBarCount, animationTime)
+        let (levels, peaks, palette, barCount, time) = dataLock.withLock {
+            (analyzerCurve.levels, analyzerCurve.peaks, renderColorPalette, renderBarCount, animationTime)
         }
         var params = AnalyzerParams(
             viewportSize: SIMD2<Float>(Float(drawable.texture.width), Float(drawable.texture.height)),
@@ -1817,14 +1798,13 @@ class SpectrumAnalyzerView: NSView {
             brightnessBoost: brightnessBoost,
             pixelScale: Float(metalLayer?.contentsScale ?? 1)
         )
-        var palette = Array(colors.prefix(24))
-        while palette.count < 24 { palette.append(palette.last ?? SIMD4<Float>(0, 1, 0, 1)) }
 
         encoder.setRenderPipelineState(pipeline)
-        levels.withUnsafeBytes { encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 0) }
-        peaks.withUnsafeBytes { encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 1) }
+        encoder.setFragmentBytes(levels, length: levels.count * MemoryLayout<Float>.stride, index: 0)
+        encoder.setFragmentBytes(peaks, length: peaks.count * MemoryLayout<Float>.stride, index: 1)
         encoder.setFragmentBytes(&params, length: MemoryLayout<AnalyzerParams>.stride, index: 2)
-        palette.withUnsafeBytes { encoder.setFragmentBytes($0.baseAddress!, length: $0.count, index: 3) }
+        // Classic only; always exactly `skinPaletteSize` entries (see `setRenderPalette`).
+        encoder.setFragmentBytes(palette, length: palette.count * MemoryLayout<SIMD4<Float>>.stride, index: 3)
         encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
         encoder.endEncoding()
         commit(commandBuffer, presenting: drawable)
@@ -2737,7 +2717,12 @@ class SpectrumAnalyzerView: NSView {
     private func updateDisplaySpectrumLocked() -> Bool {
         switch renderQualityMode {
         case .classic, .enhanced, .ultra:
-            hasVisibleData = updateAnalyzerCurveLocked()
+            animationTime += AnalyzerCurve.frameDuration
+            hasVisibleData = analyzerCurve.advance(
+                raw: rawSpectrum,
+                decayFactor: renderDecayFactor,
+                accurateNormalization: cachedIsAccurateNormalization
+            )
             return hasVisibleData
         default:
             break
@@ -2821,95 +2806,6 @@ class SpectrumAnalyzerView: NSView {
         return hasData
     }
     
-    /// Advances the shared Classic/Enhanced/Ultra curve one frame - caller MUST hold dataLock.
-    /// Attack eases in over a few frames and release follows the responsiveness mode, so heights
-    /// glide instead of stepping; peaks hold briefly, then fall under constant gravity.
-    /// - Returns: true while any point or peak is still visible.
-    private func updateAnalyzerCurveLocked() -> Bool {
-        let n = Self.analyzerPointCount
-        let dt: Float = 1.0 / 60.0
-        animationTime += dt
-        let attack: Float = 0.6
-        let release = 0.70 + 0.45 * renderDecayFactor  // per frame: Instant 0.70 … Smooth 0.95
-        let peakHoldSeconds: Float = 0.35
-        let peakGravity: Float = 1.6                    // heights per second²
-        let displayScale: Float = cachedIsAccurateNormalization ? 1.0 : 0.95
-
-        var target = [Float](repeating: 0, count: n)
-        if !rawSpectrum.isEmpty {
-            let inputCount = rawSpectrum.count
-            for i in 0..<n {
-                // No frequency labels, so the deepest sub range is cropped from the width.
-                let source = analyzerSourceBandIndex(outputIndex: i, outputCount: n, inputCount: inputCount, analyzerMinFreq: 48)
-                let lower = Int(source)
-                let upper = min(lower + 1, inputCount - 1)
-                let fraction = source - Float(lower)
-                let raw = (rawSpectrum[lower] * (1 - fraction) + rawSpectrum[upper] * fraction) * displayScale
-                target[i] = analyzerLevel(raw, frequencyHz: analyzerBandCenterFrequency(source, bandCount: inputCount))
-            }
-            // A 1-2-1 blur across neighbours removes comb jitter between adjacent points.
-            var previous = target[0]
-            for i in 0..<n {
-                let current = target[i]
-                target[i] = 0.25 * previous + 0.5 * current + 0.25 * target[min(i + 1, n - 1)]
-                previous = current
-            }
-        }
-
-        var hasData = false
-        for i in 0..<n {
-            let goal = target[i]
-            var level = analyzerLevels[i]
-            level = goal > level ? level + (goal - level) * attack : level * release + goal * (1 - release)
-            if level < 0.002 { level = 0 }
-            analyzerLevels[i] = level
-
-            if level >= analyzerPeaks[i] {
-                analyzerPeaks[i] = level
-                analyzerPeakHold[i] = peakHoldSeconds
-                peakVelocities[i] = 0
-            } else if analyzerPeakHold[i] > 0 {
-                analyzerPeakHold[i] -= dt
-            } else {
-                peakVelocities[i] += peakGravity * dt
-                analyzerPeaks[i] = max(level, analyzerPeaks[i] - peakVelocities[i] * dt)
-            }
-            if analyzerPeaks[i] > 0.01 { hasData = true }
-        }
-        return hasData
-    }
-
-    private func analyzerSourceBandIndex(outputIndex: Int, outputCount: Int, inputCount: Int, analyzerMinFreq: Float) -> Float {
-        let sourceMinFreq: Float = 20
-        let sourceMaxFreq: Float = 20_000
-        let ratio = Float(outputIndex) / Float(max(1, outputCount - 1))
-        let frequency = analyzerMinFreq * pow(sourceMaxFreq / analyzerMinFreq, ratio)
-        let bandPosition = log(frequency / sourceMinFreq) / log(sourceMaxFreq / sourceMinFreq)
-        let sourceIndex = bandPosition * Float(inputCount) - 0.5
-        return min(max(sourceIndex, 0), Float(max(0, inputCount - 1)))
-    }
-
-    private func analyzerBandCenterFrequency(_ bandIndex: Float, bandCount: Int) -> Float {
-        let minFreq: Float = 20
-        let maxFreq: Float = 20_000
-        let clampedBand = min(max(bandIndex, 0), Float(max(0, bandCount - 1)))
-        let ratio = (clampedBand + 0.5) / Float(max(1, bandCount))
-        return minFreq * pow(maxFreq / minFreq, ratio)
-    }
-
-    private func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
-        let t = min(1.0, max(0.0, (value - edge0) / (edge1 - edge0)))
-        return t * t * (3.0 - 2.0 * t)
-    }
-
-    private func analyzerLevel(_ rawValue: Float, frequencyHz: Float) -> Float {
-        let lowBassControl = 0.58 + 0.42 * smoothstep(42, 90, frequencyHz)
-        let lowMidTaper = 0.90 + 0.10 * smoothstep(90, 240, frequencyHz)
-        let airLift = 1.0 + 0.08 * smoothstep(6_000, 14_000, frequencyHz)
-        let shaped = min(1.0, max(0.0, rawValue * lowBassControl * lowMidTaper * airLift))
-        return pow(shaped, 1.08)
-    }
-
     // MARK: - Public API
     
     /// Clear flame simulation textures to zero (makes fire go black immediately)
@@ -2964,12 +2860,7 @@ class SpectrumAnalyzerView: NSView {
             for i in 0..<displaySpectrum.count {
                 displaySpectrum[i] = 0
             }
-            for i in analyzerLevels.indices {
-                analyzerLevels[i] = 0
-                analyzerPeaks[i] = 0
-                analyzerPeakHold[i] = 0
-                peakVelocities[i] = 0
-            }
+            analyzerCurve.reset()
             
             // Reset idle tracking
             idleFrameCount = 0
@@ -3179,49 +3070,35 @@ class SpectrumAnalyzerView: NSView {
         }
         
         let skin = WindowManager.shared.currentSkin ?? SkinLoader.shared.loadDefault()
-        let nsColors = skin.visColors
-        
-        // Convert NSColor to SIMD4<Float>
-        colorPalette = nsColors.map { color in
-            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            let rgbColor = color.usingColorSpace(.deviceRGB) ?? color
-            rgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
-            return SIMD4<Float>(Float(r), Float(g), Float(b), Float(a))
-        }
-        
-        // Ensure we have at least 24 colors
-        while colorPalette.count < 24 {
-            let brightness = Float(colorPalette.count) / 23.0
-            colorPalette.append(SIMD4<Float>(0, brightness, 0, 1))
-        }
-        
-        // Sync to render-safe variable
-        let colors = colorPalette
-        dataLock.withLock {
-            renderColorPalette = colors
-        }
+        setRenderPalette(skin.visColors)
     }
     
     /// Apply the spectrumColors override from the modern skin system
     private func applySpectrumColorOverride() {
         guard let overrideColors = spectrumColors else { return }
-        
-        colorPalette = overrideColors.map { color in
+        setRenderPalette(overrideColors)
+    }
+
+    /// The analyzer shaders index a 24-entry palette (0 = bottom, 23 = top); store exactly that.
+    private static let skinPaletteSize = 24
+
+    /// A green ramp, for skins with short palettes and for frames before the first skin load.
+    private static func defaultPaletteEntry(_ index: Int) -> SIMD4<Float> {
+        SIMD4<Float>(0, Float(index) / Float(skinPaletteSize - 1), 0, 1)
+    }
+
+    private func setRenderPalette(_ colors: [NSColor]) {
+        var palette = colors.prefix(Self.skinPaletteSize).map { color -> SIMD4<Float> in
             var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-            let rgbColor = color.usingColorSpace(.deviceRGB) ?? color
-            rgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+            (color.usingColorSpace(.deviceRGB) ?? color).getRed(&r, green: &g, blue: &b, alpha: &a)
             return SIMD4<Float>(Float(r), Float(g), Float(b), Float(a))
         }
-        
-        // Ensure we have at least 24 colors
-        while colorPalette.count < 24 {
-            let brightness = Float(colorPalette.count) / 23.0
-            colorPalette.append(SIMD4<Float>(0, brightness, 0, 1))
+        while palette.count < Self.skinPaletteSize {
+            palette.append(Self.defaultPaletteEntry(palette.count))
         }
-        
-        let colors = colorPalette
+        let finished = palette
         dataLock.withLock {
-            renderColorPalette = colors
+            renderColorPalette = finished
         }
     }
     

@@ -55,6 +55,11 @@ static float sampleCurve(constant float* v, int n, float x) {
     return clamp(r, 0.0, 1.0);
 }
 
+/// The peak line at x, never below the level it caps.
+static float samplePeak(constant float* peaks, int n, float x, float level) {
+    return max(sampleCurve(peaks, n, x), level);
+}
+
 /// Continuous sample of the 24-entry skin palette (0 = bottom, 23 = top).
 static float3 paletteAt(constant float4* colors, float t) {
     float p = clamp(t, 0.0, 1.0) * 23.0;
@@ -104,7 +109,7 @@ fragment float4 analyzer_classic_fragment(
 
     float x = (float(bar) + 0.5) / float(n);
     float level = sampleCurve(levels, params.pointCount, x);
-    float peak = max(sampleCurve(peaks, params.pointCount, x), level);
+    float peak = samplePeak(peaks, params.pointCount, x, level);
     float top = level * vp.y;
 
     // Body: anti-aliased top edge so the height moves at sub-pixel precision.
@@ -252,7 +257,7 @@ fragment float4 analyzer_ultra_fragment(
             color = mix(color, body, cover);
 
             // Peak cap gliding above the bar.
-            float peak = max(sampleCurve(peaks, n, bx), level) * span;
+            float peak = samplePeak(peaks, n, bx, level) * span;
             float capH = max(1.0, min(1.25 * s, span * 0.05));
             float capY = peak + max(1.0, min(1.5 * s, span * 0.04));
             float capD = roundedBox(float2(px.x - cx, y - capY - capH * 0.5),

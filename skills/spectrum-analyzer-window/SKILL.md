@@ -60,21 +60,21 @@ picked in Classic survives both (`WindowManager.seedClassicVisualizationDefaults
 
 ## Spectrum Analyzer Curve
 
-Classic, Enhanced and Ultra draw one curve: `SpectrumAnalyzerView.updateAnalyzerCurveLocked` keeps
-128 points (`analyzerLevels`) and their peaks (`analyzerPeaks`), and each mode is a single
-fullscreen fragment shader that samples them with Catmull-Rom — so bar count is a shader decision,
-not CPU state.
+Classic, Enhanced and Ultra draw one curve: `AnalyzerCurve` (`Visualization/AnalyzerCurve.swift`, a
+value type the view advances under `dataLock` each frame) keeps 128 `levels` and their `peaks`, and
+each mode is a single fullscreen fragment shader that samples them with Catmull-Rom — so bar count
+is a shader decision, not CPU state. Its motion is covered by `AnalyzerCurveTests`.
 
 - **Frequency mapping**: a cropped logarithmic range from 48 Hz (no frequency labels, so the deepest
-  sub range gets no columns), low-bass taper from ~42 Hz (`analyzerLevel`), then a 1-2-1 blur across
+  sub range gets no columns), low-bass taper from ~42 Hz (`shapedLevel`), then a 1-2-1 blur across
   neighbours to remove comb jitter.
 - **Motion**: rises ease in (60 % of the gap per frame); falls are exponential with a per-frame
   retention of `0.70 + 0.45 × decayFactor` (Instant 0.70 … Smooth 0.95). Peaks hold 0.35 s, then
   fall under constant gravity.
 - **Smoothness comes from sub-pixel edges**: every height is anti-aliased in the shader, so slow
   motion never steps. Don't quantize heights to rows — that is what made the old modes judder.
-- **Palette**: Classic reads the 24-entry `renderColorPalette` (0 = bottom, 23 = top), the same
-  convention as the main window's CPU renderer. Enhanced and Ultra carry fixed palettes.
+- **Palette**: Classic reads `renderColorPalette`, always exactly 24 entries (0 = bottom, 23 = top;
+  `setRenderPalette` truncates or pads), the same convention as the main window's CPU renderer. Enhanced and Ultra carry fixed palettes.
 - **Small views**: Ultra drops its reflection below 90 pt of height and sizes caps to the view;
   Enhanced hides its peak trace below ~40 pt. Enhanced samples the curve 16 times per pixel for a
   true crest distance, so it is in the fullscreen contents-scale cap with the other heavy shaders.
