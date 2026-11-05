@@ -15,6 +15,10 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
     private let outline = NSOutlineView()
     private let inspector: AvsParameterInspector
     private let addButton = NSPopUpButton(frame: .zero, pullsDown: true)
+    /// The tree the outline shows, read from libavs in one locked pass per `reloadTree`; the
+    /// data source never reaches into libavs between reloads.
+    private var tree: Node?
+    private var nodes: [AVS_Component_Handle: Node] = [:]
     private var observers: [NSObjectProtocol] = []
 
     static func show(for engine: AvsEngine) {
@@ -130,7 +134,7 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
                 return (info.group.map { String(cString: $0) } ?? "", String(cString: name), effect)
             }
         }
-        let menu = addButton.menu!
+        guard let menu = addButton.menu else { return }
         for group in Set(effects.map(\.group)).sorted() {
             let submenu = NSMenu()
             for entry in effects.filter({ $0.group == group }).sorted(by: { $0.name < $1.name }) {
@@ -147,71 +151,77 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: - Tree
 
-    private func root() -> AVS_Component_Handle { core.withHandle { avs_component_root($0) } }
+    /// One component as the outline shows it.
+    final class Node {
+        let handle: AVS_Component_Handle
+        let name: String
+        var enabled: Bool
+        let canHaveChildren: Bool
+        let children: [Node]
 
-    private func children(of component: AVS_Component_Handle) -> [AVS_Component_Handle] {
-        core.withHandle { handle in
+        init(_ handle: AVS_Component_Handle, in avs: AVS_Handle) {
+            self.handle = handle
+            var info = AVS_Effect_Info()
+            name = avs_effect_info(avs, avs_component_effect(avs, handle), &info)
+                ? info.name.map { String(cString: $0) } ?? "?" : "?"
+            var properties = AVS_Component_Properties()
+            enabled = avs_component_properties_get(avs, handle, &properties) && properties.enabled
+            canHaveChildren = avs_component_can_have_child_components(avs, handle)
             var count: UInt32 = 0
-            guard let list = avs_component_children(handle, component, &count) else { return [] }
-            return Array(UnsafeBufferPointer(start: list, count: Int(count)))
+            let list = avs_component_children(avs, handle, &count)
+            children = list.map { UnsafeBufferPointer(start: $0, count: Int(count)).map { Node($0, in: avs) } } ?? []
         }
+
+        func flattened() -> [Node] { [self] + children.flatMap { $0.flattened() } }
     }
 
-    private var selected: AVS_Component_Handle? {
-        (outline.item(atRow: outline.selectedRow) as? NSNumber).map { $0.uint32Value }
-    }
+    private var selected: Node? { outline.item(atRow: outline.selectedRow) as? Node }
 
-    /// Rebuilds the tree, keeping the selection when it still exists.
+    /// Re-reads the tree from libavs, keeping the selection when it still exists.
     private func reloadTree(select wanted: AVS_Component_Handle? = nil) {
-        let keep = wanted ?? selected
+        let keep = wanted ?? selected?.handle
+        tree = core.withHandle { Node(avs_component_root($0), in: $0) }
+        nodes = Dictionary(uniqueKeysWithValues: (tree?.flattened() ?? []).map { ($0.handle, $0) })
         outline.reloadData()
         outline.expandItem(nil, expandChildren: true)
-        let row = keep.map { outline.row(forItem: NSNumber(value: $0)) } ?? -1
+        let row = keep.flatMap { nodes[$0] }.map { outline.row(forItem: $0) } ?? -1
         outline.selectRowIndexes(IndexSet(integer: row >= 0 ? row : 0), byExtendingSelection: false)
-        inspector.show(selected ?? 0)
-    }
-
-    private func effectName(_ component: AVS_Component_Handle) -> String {
-        core.withHandle { handle in
-            var info = AVS_Effect_Info()
-            guard avs_effect_info(handle, avs_component_effect(handle, component), &info), let name = info.name else { return "?" }
-            return String(cString: name)
-        }
+        inspector.show(selected?.handle ?? 0)
     }
 
     // MARK: - Tree actions
 
     @objc private func addComponent(_ sender: NSMenuItem) {
-        let target = selected ?? 0
+        guard let target = selected ?? tree else { return }
+        let intoTarget = target === tree || (target.canHaveChildren && outline.isItemExpanded(target))
         let created = core.withHandle { handle -> AVS_Component_Handle in
-            let intoTarget = target == avs_component_root(handle)
-                || (avs_component_can_have_child_components(handle, target) && outline.isItemExpanded(NSNumber(value: target)))
-            return avs_component_create(handle, AVS_Effect_Handle(sender.tag), target,
+            avs_component_create(handle, AVS_Effect_Handle(sender.tag), target.handle,
                                         intoTarget ? AVS_COMPONENT_POSITION_CHILD : AVS_COMPONENT_POSITION_AFTER)
         }
         reloadTree(select: created == 0 ? nil : created)
     }
 
     @objc private func deleteComponent() {
-        guard let component = selected, component != root() else { return }
-        _ = core.withHandle { avs_component_delete($0, component) }
+        guard let component = selected, component !== tree else { return }
+        _ = core.withHandle { avs_component_delete($0, component.handle) }
         reloadTree()
     }
 
     @objc private func duplicateComponent() {
-        guard let component = selected, component != root() else { return }
-        let copy = core.withHandle { avs_component_duplicate($0, component) }
+        guard let component = selected, component !== tree else { return }
+        let copy = core.withHandle { avs_component_duplicate($0, component.handle) }
         reloadTree(select: copy == 0 ? nil : copy)
     }
 
     @objc private func toggleEnabled(_ sender: NSButton) {
-        guard let component = (outline.item(atRow: outline.row(for: sender)) as? NSNumber)?.uint32Value else { return }
-        core.withHandle { handle in
+        guard let node = outline.item(atRow: outline.row(for: sender)) as? Node else { return }
+        node.enabled = core.withHandle { handle in
             var properties = AVS_Component_Properties()
-            guard avs_component_properties_get(handle, component, &properties) else { return }
+            guard avs_component_properties_get(handle, node.handle, &properties) else { return node.enabled }
             properties.enabled = sender.state == .on
-            _ = avs_component_properties_set(handle, component, properties)
+            return avs_component_properties_set(handle, node.handle, properties) ? properties.enabled : node.enabled
         }
+        sender.state = node.enabled ? .on : .off
     }
 
     // MARK: - File
@@ -262,58 +272,50 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
 
 extension AvsEditorWindowController: NSOutlineViewDataSource, NSOutlineViewDelegate {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
-        guard let item = item as? NSNumber else { return 1 }
-        return children(of: item.uint32Value).count
+        guard let node = item as? Node else { return tree == nil ? 0 : 1 }
+        return node.children.count
     }
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
-        guard let item = item as? NSNumber else { return NSNumber(value: root()) }
-        return NSNumber(value: children(of: item.uint32Value)[index])
+        (item as? Node)?.children[index] ?? tree as Any
     }
 
     func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
-        let component = (item as! NSNumber).uint32Value
-        return core.withHandle { avs_component_can_have_child_components($0, component) }
+        (item as? Node)?.canHaveChildren ?? false
     }
 
     func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
-        let component = (item as! NSNumber).uint32Value
-        let enabled = core.withHandle { handle -> Bool in
-            var properties = AVS_Component_Properties()
-            return avs_component_properties_get(handle, component, &properties) && properties.enabled
-        }
+        guard let node = item as? Node else { return nil }
         // A bare checkbox beside a label: a click on the name selects the row, not toggles it.
         let box = NSButton(checkboxWithTitle: "", target: self, action: #selector(toggleEnabled(_:)))
-        box.state = enabled ? .on : .off
-        return NSStackView(views: [box, NSTextField(labelWithString: effectName(component))])
+        box.state = node.enabled ? .on : .off
+        return NSStackView(views: [box, NSTextField(labelWithString: node.name)])
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
-        inspector.show(selected ?? 0)
+        inspector.show(selected?.handle ?? 0)
     }
 
     // Drag to move: the dragged row's handle on the pasteboard, `avs_component_move` on drop.
 
     func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
-        let component = (item as! NSNumber).uint32Value
-        guard component != root() else { return nil }
+        guard let node = item as? Node, node !== tree else { return nil }
         let entry = NSPasteboardItem()
-        entry.setString(String(component), forType: Self.dragType)
+        entry.setString(String(node.handle), forType: Self.dragType)
         return entry
     }
 
     func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo,
                      proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
-        guard let parent = item as? NSNumber else { return [] }
-        return self.outlineView(outlineView, isItemExpandable: parent) ? .move : []
+        (item as? Node)?.canHaveChildren == true ? .move : []
     }
 
     func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo,
                      item: Any?, childIndex index: Int) -> Bool {
-        guard let parent = (item as? NSNumber)?.uint32Value,
+        guard let parent = item as? Node,
               let string = info.draggingPasteboard.string(forType: Self.dragType),
               let dragged = AVS_Component_Handle(string) else { return false }
-        let siblings = children(of: parent)
+        let siblings = parent.children.map(\.handle)
         let moved = core.withHandle { handle -> Bool in
             if index >= 0, index < siblings.count {
                 return siblings[index] == dragged
@@ -323,7 +325,7 @@ extension AvsEditorWindowController: NSOutlineViewDataSource, NSOutlineViewDeleg
             if let last = siblings.last {
                 return last == dragged || avs_component_move(handle, dragged, last, AVS_COMPONENT_POSITION_AFTER)
             }
-            return avs_component_move(handle, dragged, parent, AVS_COMPONENT_POSITION_CHILD)
+            return avs_component_move(handle, dragged, parent.handle, AVS_COMPONENT_POSITION_CHILD)
         }
         reloadTree(select: dragged)
         return moved

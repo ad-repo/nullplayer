@@ -24,7 +24,8 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 | `Sources/CAvsCore/upstream_port/simd/` | `immintrin.h`, `emmintrin.h`… shims searched before clang's. On arm64 they include sse2neon (v1.8.0, MIT); on x86_64 they `#include_next` the real header. `mmintrin.h` adds the two MMX helpers sse2neon lacks. |
 | `Sources/CAvsCore/include/CAvsCore.h` | The module header: `avs.h` and `avs_editor.h`. |
 | `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, and `AvsBeatDetector`. |
-| `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets, auto-cycle, the menu section. |
+| `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets, auto-cycle. |
+| `Sources/NullPlayer/Visualization/AvsEngine+Menu.swift` | The engine's section of the shared visualization menu and its actions. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsEditorWindowController.swift` | **Edit Preset…**: the component tree, add / duplicate / delete / drag-move, the file buttons. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsParameterInspector.swift` | One component's parameters as controls built from `avs_parameter_info`. |
@@ -89,7 +90,9 @@ libavs is not thread-safe. `AvsCore` serialises the render and every `avs_editor
 - **Render thread** (the host's GL render thread): `AvsEngine.renderFrame` renders under the lock, uploads to a texture, and blits.
 - **Audio tap thread:** the `.audioStereoPCMFullDataUpdated` observer only stores into `AvsAudioSlot`, a lock, an assignment and an unlock. It never takes the core lock.
 - **Main thread:** preset state (`presets`, `currentIndex`) and the menu actions. A preset load takes the core lock and blocks one frame.
-  - `init` builds the preset list before the engine is shared, so a `.wmz` host can apply a preset number at once.
+  - `init` (render thread) scans the preset list and loads the saved preset before the engine is shared, so a `.wmz` host can apply a preset number at once. It posts nothing and saves nothing.
+  - `reloadPresets` (folder change, editor save) scans on a background queue and publishes the list on main. `selectPreset` and `reloadPresets` assert main with `dispatchPrecondition`.
+  - GL objects are freed only in `cleanup()`, which every host calls with its context current. `deinit` removes the audio observer and never touches GL.
   - Auto-cycle is checked once a second from the render thread, and the switch is dispatched to main.
 
 More than one `AvsEngine` can exist at once (the Visualizations window and a skin slot); each owns its own instance.
@@ -148,7 +151,7 @@ All four are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preference
 
 **Generic by design.** Nothing in the editor knows an effect: the tree comes from `avs_component_*` and every control from `avs_parameter_info`. A newly vendored effect is editable with no editor change.
 
-**Tree** (`NSOutlineView`; items are the component handles as `NSNumber`):
+**Tree** (`NSOutlineView`; items are `Node`s, a snapshot of the component tree read under one lock per reload, so the data source never calls libavs between reloads):
 - Root is the single top-level item.
 - **Add Effect** lists `avs_effect_library` effects that are `is_user_creatable`, grouped by `group`. A new effect goes into Root, or into an expanded Effect List, and otherwise after the selection.
 - Rows drag-move with `avs_component_move`: before the row dropped on, or at the end of a list.
