@@ -58,7 +58,8 @@ scripts handle fade animation but do not reliably set text (the bytecode's condi
 Winamp Modern's notifier uses an unusual technique for text shadows: the XML comment says *"I know
 this is an unusual way to get text shadow — but it creates a much better effect than the shadow
 params."* Each `<text>` element has `shadow="1" shadowcolor="notifier.bright" shadowx="1" shadowy="1"`
-attributes. The engine does not render these attributes directly. Instead, during groupdef expansion
+attributes, which the renderer now draws as well ([`rendering/text.md`](../rendering/text.md) →
+*`shadowx`/`shadowy`*, B363). During groupdef expansion
 the engine synthesizes paired text elements with IDs like `title.shadow`, `artist.shadow` — each
 drawn 1px below its sibling, in the shadow colour, to create the shadow effect.
 

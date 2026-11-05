@@ -566,6 +566,19 @@ with `getXmlParam("display")`. So a ClassicPro time readout is `forcefixed` but 
 run, and anything keyed on `isClockDisplay` will not see it.
 
 
+## `shadowx`/`shadowy` draw the string again beneath it (B363)
+
+A `<text>` declaring `shadowx` or `shadowy` is drawn twice: first in `shadowcolor` (black when it
+names none) at that offset, then in its own colour where it belongs (`WasabiTextMetrics.shadowOffset`,
+`drawText`). The offset alone is the switch: The_Official_Lex_Luthor_Winamp5_Skin outlines its white
+frame titles with eight copies of one `<text>`, every ±2 offset in purple, and no `shadow="1"`;
+without the shadow the titles sat nearly invisible on the light band. A (0, 0) offset, or a colour
+with no offset, is no shadow. Not read: `shadow="1"` alone (Vortex, Bio-Nid, T800) and `shadowalpha`
+(GrayZ 90, WooHoo 95), which no corpus reference settles. A bitmap-font text draws no shadow. Corpus
+sweep, 2026-11-05: 235 images over 63 skins changed, every one a skin declaring a non-zero offset,
+apart from B362's two and the run-to-run noise (Clock V2.76's face, measured solo).
+
+
 ## Host-drawn text is not skin-declared text (B130)
 
 The playlist rows, the library rows, the tab-sheet labels and the status lines are **NullPlayer's**

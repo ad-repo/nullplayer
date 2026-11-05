@@ -4833,14 +4833,26 @@ final class WasabiSceneRenderer {
         let unsized: (String, String) -> Bool = { own, fallback in
             attributes[own] == nil && attributes[fallback] == nil && attributes["background"] == nil
         }
-        var fitsWidth = unsized("w", "default_w"), fitsHeight = unsized("h", "default_h")
+        let classic = classicAxes(of: layout)
+        var fitsWidth = unsized("w", "default_w") || classic.width
+        var fitsHeight = unsized("h", "default_h") || classic.height
         guard fitsWidth || fitsHeight else { return declared }
         let ceiling = CGSize(
             width: Self.optionalDimension(attributes["maximum_w"]) ?? 16384,
             height: Self.optionalDimension(attributes["maximum_h"]) ?? 16384)
         let trace = Self.tracesContentFit
         var size = declared
-        var previousSize = declared
+        // An axis at the classic 275x116 is a number nobody drew, so it starts from the content's own
+        // extent rather than only ever growing from it (B362): Psonidelic's EQ shade names a
+        // background its archive does not ship, and opened 275x116 with a 15-row strip at its top
+        // and black below.
+        if classic.width || classic.height {
+            let content = intrinsicContentExtent(at: declared)
+            if classic.width, content.width > 0 { size.width = min(ceiling.width, content.width) }
+            if classic.height, content.height > 0 { size.height = min(ceiling.height, content.height) }
+            if trace { print("FIT \(key) classic axes \(classic) -> content \(content)") }
+        }
+        var previousSize = size
         var previous: CGSize?
         for _ in 0..<4 {
             var growth = CGSize.zero
@@ -4895,6 +4907,38 @@ final class WasabiSceneRenderer {
             size = next
         }
         return size
+    }
+
+    /// The axes of a layout meant to be sized by a `background` its archive does not ship, which
+    /// `defaultSize` therefore leaves at its classic 275x116: no box on the layout, no default on its
+    /// container, no floor. Only those: a layout that names no background at all is often sized by its
+    /// script at show time (Minus' and MIPOD's notifiers measured 95x90 at rest and lost their title).
+    private func classicAxes(of layout: WasabiObject) -> (width: Bool, height: Bool) {
+        let attributes = layout.attributes, container = layout.parent?.attributes ?? [:]
+        guard attributes["background"] != nil, resources.bitmap(identifier: attributes["background"]) == nil
+        else { return (false, false) }
+        func classic(_ own: String, _ box: String, _ floor: String) -> Bool {
+            Self.dimension(attributes, keys: [own, box, floor], fallback: 0) == 0
+                && Self.dimension(container, keys: [own], fallback: 0) == 0
+        }
+        return (classic("default_w", "w", "minimum_w"), classic("default_h", "h", "minimum_h"))
+    }
+
+    /// How far the layout's content reaches on each axis when that reach does not depend on the
+    /// canvas: artwork and absolute boxes count, and children that stretch or anchor to the canvas
+    /// (they end wherever it does) do not. Measured as the nodes whose far edge stays put when the
+    /// canvas grows, so it reads the resolved geometry rather than a second model of `relat*`.
+    private func intrinsicContentExtent(at canvas: CGSize) -> CGSize {
+        let grown = CGSize(width: canvas.width + 64, height: canvas.height + 64)
+        let grownFrames = Dictionary(sceneNodes(canvas: grown).map { (ObjectIdentifier($0.object), $0.frame) },
+                                     uniquingKeysWith: { first, _ in first })
+        var extent = CGSize.zero
+        for node in sceneNodes(canvas: canvas) where node.object !== layout {
+            guard let grownFrame = grownFrames[ObjectIdentifier(node.object)] else { continue }
+            if grownFrame.maxX == node.frame.maxX { extent.width = max(extent.width, node.frame.maxX) }
+            if grownFrame.maxY == node.frame.maxY { extent.height = max(extent.height, node.frame.maxY) }
+        }
+        return extent
     }
 
     /// A layout's canvas size.

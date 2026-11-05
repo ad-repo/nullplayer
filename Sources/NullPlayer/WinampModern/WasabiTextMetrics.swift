@@ -614,6 +614,19 @@ final class WasabiTextMetrics {
         isEnabled(object.attributes["wrap"])
     }
 
+    /// Where a `<text>`'s shadow sits relative to the string, or nil when it has none (B363).
+    ///
+    /// Declaring `shadowx` or `shadowy` is the shadow: The_Official_Lex_Luthor_Winamp5_Skin builds
+    /// its frame titles' outline from eight copies of one white `<text>` with `shadowcolor` and every
+    /// ±2 offset, and no `shadow="1"`. An unparseable offset reads 0, and a (0, 0) offset draws under
+    /// the string itself, so it is no shadow at all (hm_Touch_m_1's `shadow="1"` at 0,0).
+    static func shadowOffset(of object: WasabiObject) -> CGSize? {
+        let x = object.attributes["shadowx"], y = object.attributes["shadowy"]
+        guard x != nil || y != nil else { return nil }
+        let offset = CGSize(width: Double(x ?? "0") ?? 0, height: Double(y ?? "0") ?? 0)
+        return offset == .zero ? nil : offset
+    }
+
     private static func isEnabled(_ value: String?) -> Bool {
         guard let value = value?.lowercased() else { return false }
         return !["0", "off", "false", "no", ""].contains(value)
