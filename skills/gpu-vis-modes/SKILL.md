@@ -125,6 +125,10 @@ Shader file: `Visualization/EKGShaders.metal`
 
 ## Classic / Enhanced / Ultra (analyzer modes)
 
-Cropped logarithmic source range starting at 48 Hz with low-bass tapers from ~42 Hz. See [spectrum-analyzer-window](../spectrum-analyzer-window/SKILL.md) for the analyzer curve details.
+One fullscreen pass each over the shared 128-point analyzer curve: `analyzer_vertex` plus
+`analyzer_classic_fragment`, `analyzer_flow_fragment` (Enhanced) and `analyzer_ultra_fragment`.
+`AnalyzerParams` (32 bytes) and the level/peak/palette arrays go in with `setFragmentBytes`; there
+are no per-mode buffers. See [spectrum-analyzer-window](../spectrum-analyzer-window/SKILL.md) for
+the curve, motion and palette rules.
 
 Shader file: `Visualization/SpectrumShaders.metal`

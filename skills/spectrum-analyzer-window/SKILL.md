@@ -1,6 +1,6 @@
 ---
 name: spectrum-analyzer-window
-description: The dedicated Metal-based spectrum analyzer window — 84-bar mode list, window geometry, docking behavior, the cropped analyzer curve used by Classic/Enhanced/Ultra, vis_classic exact mode and its waveform demand. Use when modifying the spectrum window chrome, mode list, controls, or analyzer curve.
+description: The dedicated Metal-based spectrum analyzer window — 84-bar mode list, window geometry, docking behavior, the shared smoothed analyzer curve drawn by Classic/Enhanced/Ultra, vis_classic exact mode and its waveform demand. Use when modifying the spectrum window chrome, mode list, controls, or analyzer curve.
 ---
 
 # Spectrum Analyzer Window
@@ -40,9 +40,9 @@ picked in Classic survives both (`WindowManager.seedClassicVisualizationDefaults
 
 | Mode | Description |
 |------|-------------|
-| **Classic** | Low-fi stepped bars from the skin palette with chunky peak caps, hard LED bands, and the shared cropped analyzer sub curve (fallback when no mode is saved) |
-| **Enhanced** | Compact professional LED analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, clean peak caps, short release trails |
-| **Ultra** | Dense professional analyzer with cropped logarithmic frequency mapping, controlled low-bass shaping, fast decay, clean peak caps |
+| **Classic** | Soft rounded bars (`barCount`) in a continuous gradient of the skin palette, thin gliding peak caps (fallback when no mode is saved) |
+| **Enhanced** | Filled flowing curve with a glowing crest line (mint → periwinkle across frequency) and a faint peak trace |
+| **Ultra** | Dense rounded bars (rose → violet → blue → cyan across frequency) with bloom, floating peak caps and a floor reflection |
 | **Fire** | GPU fire simulation with audio-reactive flame tongues (4 color styles) |
 | **JWST** | Deep space flythrough with 3D star field, JWST diffraction flares |
 | **Lightning** | GPU lightning storm with fractal bolts mapped to spectrum peaks (8 color schemes) |
@@ -60,11 +60,24 @@ picked in Classic survives both (`WindowManager.seedClassicVisualizationDefaults
 
 ## Spectrum Analyzer Curve
 
-Classic, Enhanced, and Ultra avoid spending visible columns on the deepest sub range because these modes don't render frequency labels. `SpectrumAnalyzerView` maps the visible analyzer width over a cropped logarithmic source range starting at 48 Hz, then applies controlled low-bass tapers that begin around 42 Hz before the values reach the mode-specific renderers.
+Classic, Enhanced and Ultra draw one curve: `AnalyzerCurve` (`Visualization/AnalyzerCurve.swift`, a
+value type the view advances under `dataLock` each frame) keeps 128 `levels` and their `peaks`, and
+each mode is a single fullscreen fragment shader that samples them with Catmull-Rom — so bar count
+is a shader decision, not CPU state. Its motion is covered by `AnalyzerCurveTests`.
 
-- **Classic** keeps its low-fi identity after the shared curve: 19/84 stepped bars, hard palette bands, quantized heights, chunky peak caps
-- **Enhanced** uses the same standard cropped curve as Classic, with smoother LED release trails and clean peak caps
-- **Ultra** uses the same analyzer strategy at a denser bar count, with slightly faster decay and air lift for the larger spectrum window
+- **Frequency mapping**: a cropped logarithmic range from 48 Hz (no frequency labels, so the deepest
+  sub range gets no columns), low-bass taper from ~42 Hz (`shapedLevel`), then a 1-2-1 blur across
+  neighbours to remove comb jitter.
+- **Motion**: rises ease in (60 % of the gap per frame); falls are exponential with a per-frame
+  retention of `0.70 + 0.45 × decayFactor` (Instant 0.70 … Smooth 0.95). Peaks hold 0.35 s, then
+  fall under constant gravity.
+- **Smoothness comes from sub-pixel edges**: every height is anti-aliased in the shader, so slow
+  motion never steps. Don't quantize heights to rows — that is what made the old modes judder.
+- **Palette**: Classic reads `renderColorPalette`, always exactly 24 entries (0 = bottom, 23 = top;
+  `setRenderPalette` truncates or pads), the same convention as the main window's CPU renderer. Enhanced and Ultra carry fixed palettes.
+- **Small views**: Ultra drops its reflection below 90 pt of height and sizes caps to the view;
+  Enhanced hides its peak trace below ~40 pt. Enhanced samples the curve 16 times per pixel for a
+  true crest distance, so it is in the fullscreen contents-scale cap with the other heavy shaders.
 
 ## vis_classic Exact Mode and Waveform Demand
 
