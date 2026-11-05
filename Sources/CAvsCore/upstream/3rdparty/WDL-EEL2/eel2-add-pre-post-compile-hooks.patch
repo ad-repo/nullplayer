@@ -1,0 +1,61 @@
+--- a/WDL-EEL2/eel2/ns-eel-int.h
++++ b/WDL-EEL2/eel2/ns-eel-int.h
+@@ -245,6 +245,9 @@
+   void *gram_blocks;
+ 
+   void *caller_this;
++
++  const char* (*pre_compile_hook)(NSEEL_VMCTX ctx, char *code, void* caller_this);
++  void (*post_compile_hook)(void* caller_this);
+ }
+ compileContext;
+ 
+
+--- a/WDL-EEL2/eel2/ns-eel.h
++++ b/WDL-EEL2/eel2/ns-eel.h
+@@ -148,6 +148,7 @@
+ void NSEEL_VM_SetGRAM(NSEEL_VMCTX ctx, void **gram); 
+ void NSEEL_VM_FreeGRAM(void **ufd); // frees a gmem context.
+ void NSEEL_VM_SetCustomFuncThis(NSEEL_VMCTX ctx, void *thisptr);
++void NSEEL_VM_SetCompileHooks(NSEEL_VMCTX ctx, const char*(*pre_compile_hook)(NSEEL_VMCTX ctx, char* expression, void* caller_this), void(*post_compile_hook)(void* caller_this));
+ 
+ EEL_F *NSEEL_VM_getramptr(NSEEL_VMCTX ctx, unsigned int offs, int *validCount);
+ EEL_F *NSEEL_VM_getramptr_noalloc(NSEEL_VMCTX ctx, unsigned int offs, int *validCount);
+
+--- a/WDL-EEL2/eel2/nseel-compiler.c
++++ b/WDL-EEL2/eel2/nseel-compiler.c
+@@ -4524,6 +4524,13 @@
+ }
+ #endif
+ 
++void NSEEL_VM_SetCompileHooks(NSEEL_VMCTX _ctx, const char*(*pre_compile_hook)(NSEEL_VMCTX ctx, char* expression, void* caller_this), void(*post_compile_hook)(void* caller_this)) {
++  compileContext *ctx = (compileContext *)_ctx;
++  ctx->pre_compile_hook = pre_compile_hook;
++  ctx->post_compile_hook = post_compile_hook;
++}
++
++
+ //------------------------------------------------------------------------------
+ NSEEL_CODEHANDLE NSEEL_code_compile(NSEEL_VMCTX _ctx, const char *_expression, int lineoffs)
+ {
+@@ -4595,6 +4602,10 @@
+ 
+   if (!_expression || !*_expression) return 0;
+ 
++  if (ctx->pre_compile_hook != NULL) {
++    _expression = ctx->pre_compile_hook(_ctx, _expression, ctx->caller_this);
++  }
++
+   _expression_end = _expression + strlen(_expression);
+ 
+   oldCommonFunctionList = ctx->functions_common;
+@@ -5182,6 +5193,10 @@
+   }
+   memset(ctx->l_stats,0,sizeof(ctx->l_stats));
+ 
++  if (ctx->post_compile_hook != NULL) {
++    ctx->post_compile_hook(ctx->caller_this);
++  }
++
+   return (NSEEL_CODEHANDLE)handle;
+ }

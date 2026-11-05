@@ -1,0 +1,13 @@
+--- a/pevents.cpp	2025-01-14 15:18:22.948905529 +0100
++++ b/pevents.cpp	2025-01-02 12:11:49.009799455 +0100
+@@ -373,7 +373,10 @@
+             delete wfmo;
+         }
+ 
+-        return result;
++        if(result == WAIT_TIMEOUT) {
++            return WAIT_TIMEOUT;
++        }
++        return waitIndex;
+     }
+ #endif // WFMO
