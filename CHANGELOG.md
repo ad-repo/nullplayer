@@ -29,6 +29,12 @@
   rows. Before, every profile drew plain bars with peaks that slid down, a dark-grey background, and
   Fade Shadow as a one-pixel edge.
 
+- **The Classic, Enhanced and Ultra analyzers are redrawn, and move smoothly.** They used to step
+  between fixed rows and LED cells; now heights glide and peak caps hold, then fall. Classic draws
+  soft bars in a smooth gradient of the skin's colours; Enhanced is a flowing filled curve with a
+  glowing crest; Ultra is dense rounded bars with a glow, floating peaks and a reflection in the
+  Spectrum Analyzer window.
+
 ## 0.34.2
 
 ### Playback

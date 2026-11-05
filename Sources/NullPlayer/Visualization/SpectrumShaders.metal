@@ -1,521 +1,272 @@
 // =============================================================================
-// SPECTRUM ANALYZER METAL SHADERS - LED Matrix Renderer
+// SPECTRUM ANALYZER METAL SHADERS
 // =============================================================================
-// GPU-accelerated LED matrix spectrum analyzer supporting three quality modes:
-// - Classic (qualityMode=0): Discrete color bands from skin palette
-// - Enhanced (qualityMode=1): Compact LED analyzer with peak caps
-// - Ultra (qualityMode=2): Dense professional analyzer with clean peak caps
+// Classic, Enhanced and Ultra are fullscreen fragment shaders over one smoothed
+// analyzer curve (`levels`) and its gliding peak line (`peaks`), both sampled
+// with Catmull-Rom so every mode moves and reads continuously:
+// - Classic  (analyzer_classic_fragment): soft skin-palette bars
+// - Enhanced (analyzer_flow_fragment):    filled flowing curve with a glowing crest
+// - Ultra    (analyzer_ultra_fragment):   dense rounded bars, bloom and reflection
+// Heights are anti-aliased at sub-pixel precision; that, not the frame rate,
+// is what keeps slow motion from stepping.
 // =============================================================================
 
 #include <metal_stdlib>
 using namespace metal;
 
-// MARK: - Structures
-
-/// Parameters passed from Swift (44 bytes)
-struct LEDParams {
-    float2 viewportSize;    // Width, height in pixels (offset 0)
-    int columnCount;        // Number of columns (offset 8)
-    int rowCount;           // Number of rows (offset 12)
-    float cellWidth;        // Width of each cell (offset 16)
-    float cellHeight;       // Height of each cell (offset 20)
-    float cellSpacing;      // Gap between cells (offset 24)
-    int qualityMode;        // 0 = classic, 1 = enhanced (offset 28)
-    float maxHeight;        // Maximum bar height for classic mode (offset 32)
-    float time;             // Animation time in seconds (offset 36)
-    float brightnessBoost;  // Brightness multiplier (1.0 default) (offset 40)
+/// Must match `AnalyzerParams` in SpectrumAnalyzerView.swift (32 bytes).
+struct AnalyzerParams {
+    float2 viewportSize;    // drawable pixels
+    int pointCount;         // entries in levels/peaks
+    int barCount;           // Classic bar count
+    float time;
+    float brightnessBoost;
+    float pixelScale;       // drawable pixels per point
+    float padding;
 };
 
-/// Vertex shader output for LED matrix mode
-struct LEDVertexOut {
+struct AnalyzerVertexOut {
     float4 position [[position]];
-    float2 uv;              // UV within the cell (0-1)
-    int column;             // Column index
-    int row;                // Row index
-    float brightness;       // Cell brightness (0-1)
-    float isPeak;           // 1.0 if this is the peak cell
-    float normalizedColumn; // Column position 0-1 for color gradient
-    float normalizedRow;    // Row position 0-1 for height effects
 };
 
-/// Vertex shader output for Classic bar mode
-struct BarVertexOut {
-    float4 position [[position]];
-    float2 uv;              // UV coordinates within the bar (x: 0-1 across width)
-    float barIndex;         // Which bar this vertex belongs to
-    float normalizedHeight; // Bar height as 0-1 value
-    float peakPosition;     // Peak indicator position 0-1
-    float2 pixelPos;        // Pre-NDC pixel position for band calculations
-};
-
-// MARK: - Helper Functions
-
-/// HSV to RGB conversion
-float3 hsv2rgb(float h, float s, float v) {
-    float3 c = float3(h * 6.0, s, v);
-    float3 rgb = clamp(abs(fmod(c.x + float3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-    return c.z * mix(float3(1.0), rgb, c.y);
-}
-
-// MARK: - LED Matrix Shaders (Enhanced Mode)
-
-vertex LEDVertexOut led_matrix_vertex(
-    uint vertexID [[vertex_id]],
-    constant float* cellBrightness [[buffer(0)]],
-    constant float* peakPositions [[buffer(1)]],
-    constant LEDParams& params [[buffer(2)]]
-) {
-    LEDVertexOut out;
-    
-    // Each cell is 6 vertices (2 triangles)
-    int cellIndex = vertexID / 6;
-    int vertexInCell = vertexID % 6;
-    
-    // Calculate column and row from cell index
-    // Layout: cells are indexed as [col * rowCount + row]
-    int column = cellIndex / params.rowCount;
-    int row = cellIndex % params.rowCount;
-    
-    // Bounds check
-    if (column >= params.columnCount || row >= params.rowCount) {
-        out.position = float4(0, 0, 0, 1);
-        out.brightness = 0;
-        return out;
-    }
-    
-    // Calculate cell position in pixels
-    float totalCellWidth = params.cellWidth + params.cellSpacing;
-    float totalCellHeight = params.cellHeight + params.cellSpacing;
-    float cellX = float(column) * totalCellWidth;
-    float cellY = float(row) * totalCellHeight;
-    
-    // Get brightness for this cell
-    float brightness = cellBrightness[cellIndex];
-    
-    // Check if this is the peak row
-    float peakPos = peakPositions[column];
-    int peakRow = min(int(peakPos * float(params.rowCount)), params.rowCount - 1);
-    float isPeak = (row == peakRow && peakRow > 0) ? 1.0 : 0.0;
-    
-    // If this is a peak cell, ensure it has brightness
-    if (isPeak > 0.5) {
-        brightness = max(brightness, 1.0);
-    }
-    
-    // Quad vertex positions (2 triangles: 0-1-2, 2-1-3)
-    float2 positions[6] = {
-        float2(0, 0),                                    // Bottom-left (0)
-        float2(params.cellWidth, 0),                     // Bottom-right (1)
-        float2(0, params.cellHeight),                    // Top-left (2)
-        float2(0, params.cellHeight),                    // Top-left (2)
-        float2(params.cellWidth, 0),                     // Bottom-right (1)
-        float2(params.cellWidth, params.cellHeight)      // Top-right (3)
-    };
-    
-    float2 uvs[6] = {
-        float2(0, 0),   // Bottom-left
-        float2(1, 0),   // Bottom-right
-        float2(0, 1),   // Top-left
-        float2(0, 1),   // Top-left
-        float2(1, 0),   // Bottom-right
-        float2(1, 1)    // Top-right
-    };
-    
-    // Apply cell position offset
-    float2 pos = positions[vertexInCell];
-    pos.x += cellX;
-    pos.y += cellY;
-    
-    // Convert to normalized device coordinates (-1 to 1)
-    float2 ndc;
-    ndc.x = (pos.x / params.viewportSize.x) * 2.0 - 1.0;
-    ndc.y = (pos.y / params.viewportSize.y) * 2.0 - 1.0;
-    
-    out.position = float4(ndc, 0.0, 1.0);
-    out.uv = uvs[vertexInCell];
-    out.column = column;
-    out.row = row;
-    out.brightness = brightness;
-    out.isPeak = isPeak;
-    out.normalizedColumn = float(column) / float(max(params.columnCount - 1, 1));
-    out.normalizedRow = float(row) / float(max(params.rowCount - 1, 1));
-    
+vertex AnalyzerVertexOut analyzer_vertex(uint vid [[vertex_id]]) {
+    // One oversized triangle covers the viewport.
+    float2 p = float2((vid << 1) & 2, vid & 2);
+    AnalyzerVertexOut out;
+    out.position = float4(p * 2.0 - 1.0, 0.0, 1.0);
     return out;
 }
 
-fragment float4 led_matrix_fragment(
-    LEDVertexOut in [[stage_in]],
-    constant LEDParams& params [[buffer(1)]]
+// MARK: - Helpers
+
+/// Catmull-Rom sample of `v` at x in [0,1].
+static float sampleCurve(constant float* v, int n, float x) {
+    float p = clamp(x, 0.0, 1.0) * float(n - 1);
+    int i = int(floor(p));
+    float t = p - float(i);
+    float p0 = v[clamp(i - 1, 0, n - 1)];
+    float p1 = v[clamp(i,     0, n - 1)];
+    float p2 = v[clamp(i + 1, 0, n - 1)];
+    float p3 = v[clamp(i + 2, 0, n - 1)];
+    float t2 = t * t, t3 = t2 * t;
+    float r = 0.5 * ((2.0 * p1) + (-p0 + p2) * t
+                     + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+                     + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3);
+    return clamp(r, 0.0, 1.0);
+}
+
+/// Continuous sample of the 24-entry skin palette (0 = bottom, 23 = top).
+static float3 paletteAt(constant float4* colors, float t) {
+    float p = clamp(t, 0.0, 1.0) * 23.0;
+    int i = int(floor(p));
+    return mix(colors[i].rgb, colors[min(i + 1, 23)].rgb, p - float(i));
+}
+
+/// Pixel coordinates with a bottom-left origin.
+static float2 bottomUp(float4 position, float2 viewport) {
+    return float2(position.x, viewport.y - position.y);
+}
+
+/// Distance from p to the segment a-b.
+static float segmentDistance(float2 p, float2 a, float2 b) {
+    float2 ab = b - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    return length(p - (a + ab * t));
+}
+
+/// Signed distance to a rounded box centred at the origin.
+static float roundedBox(float2 p, float2 halfSize, float radius) {
+    float2 q = abs(p) - halfSize + radius;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
+}
+
+// MARK: - Classic: soft skin-palette bars
+
+fragment float4 analyzer_classic_fragment(
+    AnalyzerVertexOut in [[stage_in]],
+    constant float* levels [[buffer(0)]],
+    constant float* peaks [[buffer(1)]],
+    constant AnalyzerParams& params [[buffer(2)]],
+    constant float4* colors [[buffer(3)]]
 ) {
-    // Off cells: discard for clean contrast against active bars
-    if (in.brightness < 0.01 && in.isPeak < 0.5) {
-        discard_fragment();
+    float2 vp = params.viewportSize;
+    float2 px = bottomUp(in.position, vp);
+    float s = params.pixelScale;
+
+    int n = max(params.barCount, 1);
+    float pitch = vp.x / float(n);
+    int bar = min(int(px.x / pitch), n - 1);
+    float local = px.x - float(bar) * pitch;
+    float gap = pitch >= 3.0 * s ? max(1.0, round(pitch * 0.2)) : (pitch >= 3.0 ? 1.0 : 0.0);
+    float left = gap * 0.5, right = pitch - gap * 0.5;
+    float hCover = clamp(min(local - left, right - local) + 0.5, 0.0, 1.0);
+    if (hCover <= 0.0) { return float4(0, 0, 0, 1); }
+
+    float x = (float(bar) + 0.5) / float(n);
+    float level = sampleCurve(levels, params.pointCount, x);
+    float peak = max(sampleCurve(peaks, params.pointCount, x), level);
+    float top = level * vp.y;
+
+    // Body: anti-aliased top edge so the height moves at sub-pixel precision.
+    float body = clamp(top - px.y + 0.5, 0.0, 1.0);
+    float u = (local - left) / max(right - left, 1.0);
+    float shade = 0.80 + 0.20 * sin(3.14159265 * clamp(u, 0.0, 1.0));
+    float3 color = paletteAt(colors, px.y / vp.y) * shade * body;
+
+    // Peak cap: a thin line gliding above the bar.
+    float capH = max(1.0, 1.5 * s);
+    float capTop = peak * vp.y + capH;
+    float cap = clamp(capTop - px.y + 0.5, 0.0, 1.0) * clamp(px.y - (capTop - capH) + 0.5, 0.0, 1.0);
+    if (peak > 0.02) {
+        float3 capColor = min(float3(1.0), colors[23].rgb * 1.25 + 0.15);
+        color = mix(color, capColor, cap);
     }
 
-    // === LED CORNER CLIPPING (hard discard, no alpha) ===
-    // Tiny corner cutouts at cell intersections give LED panel definition.
-    // Using a HARD discard (not smoothstep alpha) so there are no semi-transparent
-    // seams at cell edges — the old shape-as-alpha approach produced shape=0.5 at
-    // every cell boundary, creating a visible dark grid line on all four sides.
-    float2 centered = in.uv * 2.0 - 1.0;
-    float cornerRadius = 0.30;
-    float2 q = abs(centered) - (1.0 - cornerRadius);
-    if (length(max(q, 0.0)) > cornerRadius) {
-        discard_fragment();
-    }
-
-    // === METER COLOR ===
-    float3 lowColor = float3(0.04, 0.78, 0.48);
-    float3 midColor = float3(0.88, 0.82, 0.12);
-    float3 highColor = float3(1.00, 0.18, 0.06);
-    float lowToMid = smoothstep(0.42, 0.76, in.normalizedRow);
-    float midToHigh = smoothstep(0.76, 0.94, in.normalizedRow);
-    float3 baseColor = mix(mix(lowColor, midColor, lowToMid), highColor, midToHigh);
-    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-    float percBrightness = pow(displayBrightness, 0.88);
-
-    float3 color = baseColor * percBrightness;
-
-    // === INNER LED DEPTH ===
-    float radialDist = length(centered);
-    float innerGlow = 1.0 - smoothstep(0.0, 1.0, radialDist) * 0.14;
-    color *= innerGlow;
-
-    // Keep columns readable without rainbow striping.
-    float columnShade = mix(0.88, 1.0, smoothstep(0.0, 1.0, fract(in.normalizedColumn * 9.0)));
-    color *= columnShade * mix(0.92, 1.12, in.normalizedRow);
-
-    // === HIGH-BRIGHTNESS EDGE LIFT ===
-    if (percBrightness > 0.8) {
-        color += baseColor * (percBrightness - 0.8) * 0.35;
-    }
-
-    // === PEAK CAP ===
-    if (in.isPeak > 0.5) {
-        color = mix(baseColor, float3(1.0, 0.95, 0.68), 0.55);
-    }
-
-    color = min(color * params.brightnessBoost, float3(1.0));
-
-    // Fully opaque — no alpha seam artifacts at cell boundaries
+    color = min(color * hCover * params.brightnessBoost, float3(1.0));
     return float4(color, 1.0);
 }
 
-// MARK: - Classic Bar Shaders (Classic Mode)
+// MARK: - Enhanced: flowing filled curve
 
-vertex BarVertexOut spectrum_vertex(
-    uint vertexID [[vertex_id]],
-    constant float* heights [[buffer(0)]],
-    constant float* peakPositions [[buffer(1)]],
-    constant LEDParams& params [[buffer(2)]]
+fragment float4 analyzer_flow_fragment(
+    AnalyzerVertexOut in [[stage_in]],
+    constant float* levels [[buffer(0)]],
+    constant float* peaks [[buffer(1)]],
+    constant AnalyzerParams& params [[buffer(2)]]
 ) {
-    BarVertexOut out;
-    
-    // Calculate which bar and which vertex within the bar
-    int barIndex = vertexID / 6;
-    int vertexInBar = vertexID % 6;
-    
-    // Bounds check
-    if (barIndex >= params.columnCount) {
-        out.position = float4(0, 0, 0, 1);
-        out.normalizedHeight = 0;
-        out.peakPosition = 0;
-        return out;
+    float2 vp = params.viewportSize;
+    float2 px = bottomUp(in.position, vp);
+    float s = params.pixelScale;
+    int n = params.pointCount;
+
+    float x = px.x / vp.x;
+    float h = sampleCurve(levels, n, x) * vp.y;
+
+    // True distance to the curve: nearest of the polyline segments through the
+    // neighbouring columns, so steep flanks don't smear the halo down the column.
+    float stepPx = max(1.0, s);
+    float2 prev = float2(px.x - 8.0 * stepPx, 0.0);
+    prev.y = sampleCurve(levels, n, prev.x / vp.x) * vp.y;
+    float dist = 1e6;
+    for (int k = -7; k <= 8; k++) {
+        float2 cur = float2(px.x + float(k) * stepPx, 0.0);
+        cur.y = sampleCurve(levels, n, cur.x / vp.x) * vp.y;
+        dist = min(dist, segmentDistance(px, prev, cur));
+        prev = cur;
     }
-    
-    // Get bar height and peak position (0-1 normalized)
-    float height = heights[barIndex];
-    float peak = peakPositions[barIndex];
-    
-    // Calculate bar position
-    float totalBarWidth = params.cellWidth + params.cellSpacing;
-    float barX = float(barIndex) * totalBarWidth;
-    
-    // Extend quad to cover both bar body and peak indicator
-    float peakLineMargin = 4.0;  // Extra pixels above peak for line thickness
-    float barPixelHeight = height * params.maxHeight;
-    float peakPixelHeight = peak * params.maxHeight + peakLineMargin;
-    float quadHeight = max(barPixelHeight, peakPixelHeight);
-    quadHeight = min(quadHeight, params.maxHeight);  // Clamp to viewport
-    
-    // Collapse quad if nothing to draw
-    if (height <= 0.001 && peak <= 0.01) {
-        quadHeight = 0;
-    }
-    
-    // Vertex positions within the bar (2 triangles forming a quad)
-    float2 positions[6] = {
-        float2(0, 0),                           // Bottom-left (0)
-        float2(params.cellWidth, 0),            // Bottom-right (1)
-        float2(0, quadHeight),                  // Top-left (2)
-        float2(0, quadHeight),                  // Top-left (2)
-        float2(params.cellWidth, 0),            // Bottom-right (1)
-        float2(params.cellWidth, quadHeight)    // Top-right (3)
-    };
-    
-    float2 uvs[6] = {
-        float2(0, 0),   // Bottom-left
-        float2(1, 0),   // Bottom-right
-        float2(0, 1),   // Top-left
-        float2(0, 1),   // Top-left
-        float2(1, 0),   // Bottom-right
-        float2(1, 1)    // Top-right
-    };
-    
-    // Apply bar position offset
-    float2 pos = positions[vertexInBar];
-    pos.x += barX;
-    
-    // Store pre-NDC pixel position for precise band calculations in fragment shader
-    out.pixelPos = pos;
-    
-    // Convert to normalized device coordinates (-1 to 1)
-    float2 ndc;
-    ndc.x = (pos.x / params.viewportSize.x) * 2.0 - 1.0;
-    ndc.y = (pos.y / params.viewportSize.y) * 2.0 - 1.0;
-    
-    out.position = float4(ndc, 0.0, 1.0);
-    out.uv = uvs[vertexInBar];
-    out.barIndex = float(barIndex);
-    out.normalizedHeight = height;
-    out.peakPosition = peak;
-    
-    return out;
+
+    // Colour drifts from mint (bass) to periwinkle (treble).
+    float3 crest = mix(float3(0.30, 1.00, 0.78), float3(0.52, 0.62, 1.00), smoothstep(0.0, 1.0, x));
+    float3 deep  = mix(float3(0.00, 0.20, 0.26), float3(0.10, 0.08, 0.34), x);
+
+    float3 color = float3(0.0);
+
+    // Fill: dark at the floor, brightening into the crest.
+    float inside = clamp(h - px.y + 0.5, 0.0, 1.0);
+    float t = clamp(px.y / max(h, 1.0), 0.0, 1.0);
+    color += mix(deep, crest * 0.55, t * t) * inside;
+
+    // Crest line plus a soft halo.
+    float lineW = 0.75 * s;
+    float line = 1.0 - smoothstep(lineW, lineW + 1.0, dist);
+    float halo = exp(-dist / (5.0 * s)) * 0.45;
+    float lit = smoothstep(0.0, 2.0 * s, h);   // no line drawn across silence
+    color += (mix(crest, float3(1.0), 0.35) * line + crest * halo) * lit;
+
+    // Peak trace: a faint line that settles back onto the curve.
+    float p = sampleCurve(peaks, n, x) * vp.y;
+    float pSlope = (sampleCurve(peaks, n, x + 1.0 / vp.x) - sampleCurve(peaks, n, x - 1.0 / vp.x)) * 0.5 * vp.y;
+    float pd = abs(px.y - p) / sqrt(1.0 + pSlope * pSlope);
+    float peakLine = (1.0 - smoothstep(0.5 * s, 0.5 * s + 1.0, pd)) * smoothstep(1.0 * s, 4.0 * s, p - h);
+    // Too busy to read in the small main-window display.
+    color += crest * peakLine * 0.6 * smoothstep(40.0 * s, 80.0 * s, vp.y);
+
+    color = min(color * params.brightnessBoost, float3(1.0));
+    return float4(color, 1.0);
 }
 
-fragment float4 spectrum_fragment(
-    BarVertexOut in [[stage_in]],
-    constant float4* colors [[buffer(0)]],
-    constant LEDParams& params [[buffer(1)]]
-) {
-    float pixelY = in.pixelPos.y;
-    float barHeight = in.normalizedHeight * params.maxHeight;
-    float peakHeight = in.peakPosition * params.maxHeight;
-    
-    // === PEAK INDICATOR - chunky low-fi cap ===
-    float bandCount = float(params.rowCount);
-    float bandHeight = max(1.0, params.maxHeight / bandCount);
-    float quantizedBarHeight = floor(barHeight / bandHeight) * bandHeight;
-    float quantizedPeakHeight = floor(peakHeight / bandHeight) * bandHeight;
-    float peakThickness = max(1.0, floor(bandHeight * 0.55));
-    bool isPeakPixel = false;
-    if (in.peakPosition > 0.015) {
-        float peakDist = abs(pixelY - quantizedPeakHeight);
-        isPeakPixel = peakDist < peakThickness;
-    }
-    
-    // === BAR BODY ===
-    bool isBarPixel = pixelY <= quantizedBarHeight && in.normalizedHeight > 0.001;
-    
-    // Discard empty space (not bar, not peak)
-    if (!isBarPixel && !isPeakPixel) {
-        discard_fragment();
-    }
-    
-    // === DISCRETE COLOR BANDS ===
-    float bandIndex = floor(pixelY / bandHeight);
-    float withinBand = fmod(pixelY, bandHeight);
-    
-    // Map band position to 24-color skin palette
-    float yNorm = clamp((bandIndex + 0.5) / bandCount, 0.0, 1.0);
-    const int colorCount = 24;
-    int colorIndex = clamp(int(floor(yNorm * float(colorCount))), 0, colorCount - 1);
-    float4 bandColor = colors[colorIndex];
-    
-    // === PEAK RENDERING ===
-    if (isPeakPixel) {
-        // Color at peak height from palette, heavily brightened
-        float peakBandIndex = floor(quantizedPeakHeight / bandHeight);
-        float peakYNorm = clamp((peakBandIndex + 0.5) / bandCount, 0.0, 1.0);
-        int peakColorIndex = clamp(int(floor(peakYNorm * float(colorCount))), 0, colorCount - 1);
-        float4 peakBaseColor = colors[peakColorIndex];
-        
-        float3 peakColor = min(float3(1.0), peakBaseColor.rgb * 1.35 + 0.12);
-        return float4(peakColor, 1.0);
-    }
-    
-    // === BAND GAPS ===
-    if (withinBand > bandHeight - 1.0) {
-        return float4(bandColor.rgb * 0.18, 1.0);
-    }
-    
-    // === LOW-FI BAR SHADING ===
-    // Coarse edge darkening only; no gloss/specular effects.
-    float edge = (in.uv.x < 0.18 || in.uv.x > 0.82) ? 0.72 : 1.0;
-    float rowDither = fmod(bandIndex, 2.0) < 1.0 ? 0.92 : 1.0;
-    float3 litColor = min(bandColor.rgb * edge * rowDither, float3(1.0));
-    
-    return float4(litColor, 1.0);
+// MARK: - Ultra: dense rounded bars with bloom and reflection
+
+static float3 ultraColor(float x) {
+    float3 c0 = float3(1.00, 0.30, 0.45);   // bass: rose
+    float3 c1 = float3(0.78, 0.32, 1.00);   // low mids: violet
+    float3 c2 = float3(0.28, 0.56, 1.00);   // high mids: blue
+    float3 c3 = float3(0.22, 0.95, 0.92);   // treble: cyan
+    float t = clamp(x, 0.0, 1.0) * 3.0;
+    if (t < 1.0) return mix(c0, c1, t);
+    if (t < 2.0) return mix(c1, c2, t - 1.0);
+    return mix(c2, c3, t - 2.0);
 }
 
-// =============================================================================
-// MARK: - Ultra Mode Shaders (Maximum Quality)
-// =============================================================================
-// Ultra mode features:
-// - Dense analyzer bars with clean peak caps
-// - Vertical green/yellow/red meter palette
-// - Short decay trails tuned for readability
-// =============================================================================
-
-/// Parameters for Ultra mode (56 bytes)
-struct UltraParams {
-    float2 viewportSize;    // Width, height in pixels (offset 0)
-    int columnCount;        // Number of columns (offset 8)
-    int rowCount;           // Number of rows - 24 for Ultra (offset 12)
-    float cellWidth;        // Width of each cell (offset 16)
-    float cellHeight;       // Height of each cell (offset 20)
-    float cellSpacing;      // Gap between cells (offset 24)
-    float glowRadius;       // Bloom spread radius (offset 28)
-    float glowIntensity;    // Bloom strength 0-1 (offset 32)
-    float reflectionHeight; // Height of reflection area (0-0.5) (offset 36)
-    float reflectionAlpha;  // Reflection opacity (offset 40)
-    float time;             // Animation time for subtle effects (offset 44)
-    float brightnessBoost;  // Brightness multiplier (1.0 default) (offset 48)
-    float padding;          // Alignment padding (offset 52)
-};
-
-/// Vertex shader output for Ultra mode
-struct UltraVertexOut {
-    float4 position [[position]];
-    float2 uv;                  // UV within the cell (0-1)
-    int column;                 // Column index
-    int row;                    // Row index
-    float brightness;           // Cell brightness (0-1)
-    float isPeak;               // 1.0 if this is the peak cell
-    float normalizedColumn;     // Column position 0-1 for color gradient
-    float normalizedRow;        // Row position 0-1 for vertical gradient
-};
-
-vertex UltraVertexOut ultra_matrix_vertex(
-    uint vertexID [[vertex_id]],
-    constant float* cellBrightness [[buffer(0)]],
-    constant float* peakPositions [[buffer(1)]],
-    constant UltraParams& params [[buffer(2)]]
+fragment float4 analyzer_ultra_fragment(
+    AnalyzerVertexOut in [[stage_in]],
+    constant float* levels [[buffer(0)]],
+    constant float* peaks [[buffer(1)]],
+    constant AnalyzerParams& params [[buffer(2)]]
 ) {
-    UltraVertexOut out;
-    
-    int totalCells = params.columnCount * params.rowCount;
-    
-    // Each cell is 6 vertices (2 triangles)
-    int cellIndex = vertexID / 6;
-    int vertexInCell = vertexID % 6;
-    
-    // Calculate column and row from cell index
-    int column = cellIndex / params.rowCount;
-    int row = cellIndex % params.rowCount;
-    
-    // Bounds check
-    if (column >= params.columnCount || cellIndex >= totalCells) {
-        out.position = float4(0, 0, 0, 1);
-        out.brightness = 0;
-        return out;
-    }
-    
-    // Calculate cell dimensions
-    float totalCellWidth = params.cellWidth + params.cellSpacing;
-    float totalCellHeight = params.cellHeight + params.cellSpacing;
-    
-    // Calculate cell position in pixels
-    float cellX = float(column) * totalCellWidth;
-    float cellY = float(row) * totalCellHeight;
-    
-    // Get brightness for this cell
-    int cellIdx = column * params.rowCount + row;
-    out.brightness = cellBrightness[cellIdx];
-    
-    // Check if this is the peak row
-    float peakPos = peakPositions[column];
-    int peakRow = min(int(peakPos * float(params.rowCount)), params.rowCount - 1);
-    float isPeak = (row == peakRow && peakRow > 0) ? 1.0 : 0.0;
-    
-    // If this is a peak cell, ensure it has brightness
-    if (isPeak > 0.5) {
-        out.brightness = max(out.brightness, 1.0);
-    }
-    
-    // Quad vertex positions
-    float2 positions[6] = {
-        float2(0, 0),
-        float2(params.cellWidth, 0),
-        float2(0, params.cellHeight),
-        float2(0, params.cellHeight),
-        float2(params.cellWidth, 0),
-        float2(params.cellWidth, params.cellHeight)
-    };
-    
-    float2 uvs[6] = {
-        float2(0, 0),
-        float2(1, 0),
-        float2(0, 1),
-        float2(0, 1),
-        float2(1, 0),
-        float2(1, 1)
-    };
-    
-    // Apply cell position offset
-    float2 pos = positions[vertexInCell];
-    pos.x += cellX;
-    pos.y += cellY;
-    
-    // Convert to normalized device coordinates (-1 to 1)
-    float2 ndc;
-    ndc.x = (pos.x / params.viewportSize.x) * 2.0 - 1.0;
-    ndc.y = (pos.y / params.viewportSize.y) * 2.0 - 1.0;
-    
-    out.position = float4(ndc, 0.0, 1.0);
-    out.uv = uvs[vertexInCell];
-    out.column = column;
-    out.row = row;
-    out.isPeak = isPeak;
-    out.normalizedColumn = float(column) / float(max(params.columnCount - 1, 1));
-    out.normalizedRow = float(row) / float(max(params.rowCount - 1, 1));
-    
-    return out;
-}
+    float2 vp = params.viewportSize;
+    float2 px = bottomUp(in.position, vp);
+    float s = params.pixelScale;
+    int n = params.pointCount;
 
-fragment float4 ultra_matrix_fragment(
-    UltraVertexOut in [[stage_in]],
-    constant UltraParams& params [[buffer(1)]]
-) {
-    // Skip unlit cells aggressively so release does not smear.
-    if (in.brightness < 0.01 && in.isPeak < 0.5) {
-        discard_fragment();
+    // Reflection only where there is room for it.
+    bool hasReflection = vp.y >= 90.0 * s;
+    float floorY = hasReflection ? round(vp.y * 0.16) : 0.0;
+    float span = vp.y - floorY;
+
+    int bars = clamp(int(vp.x / (3.5 * s)), 16, n);
+    float pitch = vp.x / float(bars);
+    float gap = pitch >= 4.0 ? max(1.0, round(pitch * 0.28)) : 0.0;
+    float halfW = (pitch - gap) * 0.5;
+    float radius = min(halfW, 2.0 * s);
+
+    bool mirrored = px.y < floorY;
+    float y = mirrored ? (floorY - px.y) : (px.y - floorY);
+
+    int bar = min(int(px.x / pitch), bars - 1);
+    float3 color = float3(0.0);
+
+    // Neighbouring bars contribute bloom; the own bar contributes its body.
+    for (int k = -2; k <= 2; k++) {
+        int b = bar + k;
+        if (b < 0 || b >= bars) continue;
+        float bx = (float(b) + 0.5) / float(bars);
+        float level = sampleCurve(levels, n, bx);
+        float top = level * span;
+        if (top < 0.5) continue;
+        float3 base = ultraColor(bx);
+
+        float cx = (float(b) + 0.5) * pitch;
+        // Extend the box below the floor so only the top corners are rounded.
+        float2 halfSize = float2(halfW, (top + radius) * 0.5);
+        float2 centre = float2(cx, (top - radius) * 0.5);
+        float d = roundedBox(float2(px.x, y) - centre, halfSize, radius);
+
+        float glow = exp(-max(d, 0.0) / (4.0 * s)) * 0.28 * level;
+        color += base * glow;
+
+        if (k == 0) {
+            float cover = clamp(0.5 - d, 0.0, 1.0);
+            float v = clamp(y / max(top, 1.0), 0.0, 1.0);
+            float3 body = base * mix(0.35, 1.0, v) + float3(1.0) * pow(v, 6.0) * 0.45 * level;
+            color = mix(color, body, cover);
+
+            // Peak cap gliding above the bar.
+            float peak = max(sampleCurve(peaks, n, bx), level) * span;
+            float capH = max(1.0, min(1.25 * s, span * 0.05));
+            float capY = peak + max(1.0, min(1.5 * s, span * 0.04));
+            float capD = roundedBox(float2(px.x - cx, y - capY - capH * 0.5),
+                                    float2(halfW, capH * 0.5), capH * 0.5);
+            float cap = clamp(0.5 - capD, 0.0, 1.0) * smoothstep(0.0, 0.03, peak / span);
+            color = mix(color, mix(base, float3(1.0), 0.7), cap);
+        }
     }
-    
-    float displayBrightness = in.isPeak > 0.5 ? 1.0 : in.brightness;
-    
-    // === PROFESSIONAL METER PALETTE ===
-    float3 green = float3(0.02, 0.86, 0.30);
-    float3 yellow = float3(0.96, 0.84, 0.10);
-    float3 red = float3(1.00, 0.16, 0.06);
-    float lowToMid = smoothstep(0.34, 0.72, in.normalizedRow);
-    float midToHigh = smoothstep(0.72, 0.94, in.normalizedRow);
-    float3 baseColor = mix(mix(green, yellow, lowToMid), red, midToHigh);
-    
-    // === PERCEPTUAL GAMMA ===
-    // A slightly harder curve keeps low-level release crisp.
-    float percBrightness = pow(displayBrightness, 0.92);
-    
-    float3 color = baseColor * percBrightness;
-    
-    // Subtle column separation without rainbow color-coding.
-    float columnShade = mix(0.92, 1.0, smoothstep(0.0, 1.0, fract(in.normalizedColumn * 12.0)));
-    color *= columnShade;
-    
-    // === PEAK CAP ===
-    if (in.isPeak > 0.5) {
-        color = mix(baseColor, float3(1.0, 0.96, 0.70), 0.55);
+
+    if (mirrored) {
+        float fade = 1.0 - clamp(y / max(floorY, 1.0), 0.0, 1.0);
+        color *= 0.22 * fade * fade;
     }
-    
-    // Bright cells get a restrained edge lift instead of neon bloom.
-    if (displayBrightness > 0.85) {
-        float lift = (displayBrightness - 0.85) * 2.0;
-        color += baseColor * lift * 0.08;
-    }
-    
-    // Brightness boost (for small embedded views)
-    color *= params.brightnessBoost;
-    
-    color = min(color, float3(1.0));
+
+    color = min(color * params.brightnessBoost, float3(1.0));
     return float4(color, 1.0);
 }
