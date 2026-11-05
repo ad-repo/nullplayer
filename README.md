@@ -85,7 +85,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 
 ### Unique Nullplayer Windows
 
-- Visualizations -  ProjectM (100 presets included), Geiss and Tripex ports, Art window with album art effects, and spectrum analyzer
+- Visualizations -  ProjectM (100 presets included), Geiss, Tripex and AVS (with preset editor) ports, Art window with album art effects, and spectrum analyzer
 - Audio Analysis window — oscilloscope, stereo peak/RMS meters, scrolling Metal spectrogram
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
@@ -104,9 +104,10 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **ProjectM/MilkDrop** — 100+ bundled presets with OpenGL rendering and fullscreen support
 - **Geiss** — port of Ryan Geiss's classic visualization with runtime controls (sensitivity, gamma, beat detection, palettes, auto-switch)
 - **Tripex** — Winamp-era 3D visualization port
+- **AVS (Advanced Visualization Studio)** — Winamp's AVS engine (libavs) with 35 bundled presets, your own `.avs` preset folder, auto-cycle, and a preset editor (**Edit Preset…**) that changes the running preset live: add, remove, reorder and toggle effects, edit every parameter and EEL code, save as `.avs` or export JSON
 - **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Art window
 - **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
-- **Windows Media Player (`.wmz`) skins** — a skin's `<EFFECTS>` area renders native Spikes, Bars, Ambience, Cava, or vis_classic visuals inside the rectangle the skin draws for them
+- **Windows Media Player (`.wmz`) skins** — a skin's `<EFFECTS>` area renders native Spikes, Bars, Ambience, Cava, vis_classic, ProjectM, Geiss, Tripex, or AVS visuals inside the rectangle the skin draws for them
 - **Audio Analysis** — Friture-style multi-pane window: Scope, Levels (peak/RMS), Spectrogram, Octave, Pitch, and Delay
 - **PeppyMeter** — skinnable analog VU meter (needle/bar) with 25 templates and a random auto-switch mode
 - **Flow** — live network throughput graph with selectable interface
@@ -746,12 +747,14 @@ Bundled third-party components:
 - **vis_classic** (MIT) — Winamp AVS classic port
 - **Geiss** (BSD-3) — Geiss visualization port
 - **Tripex** (MIT) — Winamp-era visualization port by Ben Marsh
+- **Advanced Visualization Studio / libavs** (BSD-3) — AVS engine, from [grandchild/vis_avs](https://github.com/grandchild/vis_avs), with its vendored **EEL2** (Zlib), **nlohmann/json** (MIT), **stb_image** (MIT), and **pevents** (MIT); **sse2neon** (MIT) for arm64
 - **FaceKit** (GPL-3.0-or-later) — Panic's Audion face viewer, adapted
 - **Nullsoft FFT** (BSD-3) — spectrum analysis
 
 **Fonts & assets**
 - **Departure Mono** (SIL OFL-1.1) — bundled font
 - **MilkDrop / projectM presets** — community-authored (attribution in preset filenames)
+- **AVS presets** — the presets shipped with upstream vis_avs (attribution in preset filenames)
 - **PeppyMeter meter templates** (GPL-3.0) — analog VU meter artwork, from [project-owner/PeppyMeter](https://github.com/project-owner/PeppyMeter)
 - **Viridis colormap** (CC0 / public domain) — spectrogram color ramp, by Stéfan van der Walt and Nathaniel Smith
 - **Bundled skins** — original NullPlayer assets
