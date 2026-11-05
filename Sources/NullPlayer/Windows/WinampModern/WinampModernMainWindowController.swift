@@ -1095,6 +1095,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // one that asks for the state the window is already in would re-front it 30 times a second.
         scripts.hooks.containerVisibilityRequested = { [weak self] id, visible in
             guard let self else { return }
+            // The player's own container: GrayZ's shade button hides `main` and shows its `stick`
+            // bar, and the stick's button reverses it (B364).
+            if id.caseInsensitiveCompare(WinampModernScriptRuntime.playerContainerID) == .orderedSame {
+                if window?.isVisible != visible { WindowManager.shared.toggleMainWindow() }
+                return
+            }
             if let hostedID = Self.matchingHostedWindowID(id),
                hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
                 if visible {

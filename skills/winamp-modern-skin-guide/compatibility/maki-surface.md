@@ -254,7 +254,7 @@ By area:
   returns the input and the correction lands. Phase 24
   **Nearest sized ancestor (B332, 2026-10-30).** The "parent" is the nearest ancestor that has a size
   (`WasabiSceneRenderer.coordinateSpace(of:)`); a `<group>` that declares no `w`/`h` is only where its
-  children are placed, so the conversion (and a hover `onMouseMove`'s `x`/`y`; presses stay parent-relative) reaches
+  children are placed, so the conversion (and a hover `onMouseMove`'s `x`/`y`, a press's, and `getLeft`/`getTop`, B365) reaches
   past it to the next sized group or the layout. Xenon's `player.display` is `x=100` with no size, and
   its script opens the tray at `d2.onMouseMove(x)` for `x` 250..330 and keeps it open while the pointer
   is within `d2.clientToScreenX(d2.getGuiX())+250..370`: every number reads right only with the layout

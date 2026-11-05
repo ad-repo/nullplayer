@@ -18,7 +18,6 @@ final class WinampModernDebugClickSweep {
         let object: WasabiObject
         let label: String
         let action: String
-        let point: CGPoint?
     }
 
     private struct Snapshot {
@@ -71,8 +70,7 @@ final class WinampModernDebugClickSweep {
         }
     }
 
-    /// One target per object, in draw order, aimed at a point the hit test returns for it: the centre,
-    /// else the first of a 5x5 grid over its visible box (an arc or ring has nothing at its centre).
+    /// One target per object, in draw order.
     private static func targets(in view: WinampModernMainView) -> [Target] {
         let renderer = view.renderer
         var seen = Set<WasabiObjectID>()
@@ -83,23 +81,34 @@ final class WinampModernDebugClickSweep {
                 WasabiClickAction.split(action: $0, parameter: nil).action.uppercased()
             }
             guard action != nil || view.scripts.hasPressBinding(for: object, button: .left) else { return nil }
-            let box = node.frame.intersection(node.clip)
-            var candidates = [CGPoint(x: box.midX, y: box.midY)]
-            for row in 0..<5 { for column in 0..<5 {
-                candidates.append(CGPoint(x: box.minX + box.width * (CGFloat(column) + 0.5) / 5,
-                                          y: box.minY + box.height * (CGFloat(row) + 0.5) / 5))
-            } }
-            let point = box.isEmpty ? nil : candidates.first { renderer.object(at: $0) === object }
             return Target(object: object, label: "\(object.typeName)#\(object.xmlID ?? "-")",
-                          action: action.flatMap { $0.isEmpty ? nil : $0 } ?? "-", point: point)
+                          action: action.flatMap { $0.isEmpty ? nil : $0 } ?? "-")
         }
+    }
+
+    /// A point the hit test returns for `object` now: the centre, else the first of a 5x5 grid over
+    /// its visible box (an arc or ring has nothing at its centre). Aimed when it is clicked, not when
+    /// the run starts, because an earlier click can move it: Fantana's drawer slide carries the
+    /// transport 70 px down, and buttons aimed at the start hit the drawer it uncovered (B370).
+    private static func point(on object: WasabiObject, in view: WinampModernMainView) -> CGPoint? {
+        let renderer = view.renderer
+        guard let node = renderer.sceneNodes().first(where: { $0.object === object }) else { return nil }
+        let box = node.frame.intersection(node.clip)
+        guard !box.isEmpty else { return nil }
+        var candidates = [CGPoint(x: box.midX, y: box.midY)]
+        for row in 0..<5 { for column in 0..<5 {
+            candidates.append(CGPoint(x: box.minX + box.width * (CGFloat(column) + 0.5) / 5,
+                                      y: box.minY + box.height * (CGFloat(row) + 0.5) / 5))
+        } }
+        return candidates.first { renderer.object(at: $0) === object }
     }
 
     private func step(_ index: Int) {
         guard let view, index < targets.count else { return finish() }
         let target = targets[index]
-        let skip = Self.skippedActions.contains(target.action) ? "skip" : target.point == nil ? "unreachable" : nil
-        guard let point = target.point, skip == nil else {
+        let point = Self.point(on: target.object, in: view)
+        let skip = Self.skippedActions.contains(target.action) ? "skip" : point == nil ? "unreachable" : nil
+        guard let point, skip == nil else {
             let fields = [String(index + 1), target.label, target.action] + Array(repeating: "-", count: 9) + [skip ?? ""]
             NSLog("%@", "WM-SMOKE|" + fields.joined(separator: "|"))
             return step(index + 1)

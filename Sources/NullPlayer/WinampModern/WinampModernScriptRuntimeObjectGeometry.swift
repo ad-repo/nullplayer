@@ -25,6 +25,21 @@ extension WinampModernScriptRuntime {
         return geometry.frame.offsetBy(dx: -geometry.parent.minX, dy: -geometry.parent.minY)
     }
 
+    /// Where `object`'s parent sits inside the object's coordinate space
+    /// (`WasabiSceneRenderer.coordinateSpace`): zero unless the parent is a group that declares no
+    /// size, which is only where its children are placed (B332). Honda Element's `player.volume` is
+    /// such a group at (58,163); its volume script subtracts `getLeft()` from a press to test the arc
+    /// layer's own pixels and samples a layout-sized map with the press itself, so both have to be
+    /// in layout space (B365).
+    func parentOffsetInCoordinateSpace(of object: WasabiObject) -> CGPoint {
+        guard !Self.isWindowObject(object),
+              let parent = hooks.resolvedGeometryRequested?(object)?.parent,
+              let space = WasabiSceneRenderer.coordinateSpace(of: object, frameOf: {
+                  hooks.resolvedGeometryRequested?($0)?.frame
+              }) else { return .zero }
+        return CGPoint(x: parent.minX - space.minX, y: parent.minY - space.minY)
+    }
+
     /// Wasabi's `<GroupList>` is a **vertical stack**: each instance spans the list's width and sits
     /// below the ones already in it. Two things follow, and both have to be stamped onto the child
     /// here because a groupdef carries neither.

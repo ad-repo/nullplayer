@@ -592,19 +592,26 @@ extension WinampModernScriptRuntime {
         // them, so the stock `centerobject.m` — read `getGuiY()`, write it back as `y` — leaves a
         // `y="-83" relaty="1"` group where it is. Answered with the resolved 1086, the write-back
         // added the layout's height on every resize and 1010 Fullscreen's transport left the canvas.
+        //
+        // **`getLeft`/`getTop` answer in the space a mouse event on the object is measured in** — the
+        // header skins ship (`std.mi`) gives both as "the screen" — so past a group that declares no
+        // size, as `onLeftButtonDown`'s x/y and `clientToScreen*` are (B332, B365). `getGui*` stays the
+        // parent's: Xenon's tray test adds `d2.getGuiX()` to `d2.clientToScreenX` (B332).
         table.add(["getleft", "getguix"], 0) { runtime, call in
             if call.method == "getguix",
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x") {
                 return .integer(markup)
             }
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).x)))
+            let offset = call.method == "getleft" ? runtime.parentOffsetInCoordinateSpace(of: call.object).x : 0
+            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).x + offset)))
         }
         table.add(["gettop", "getguiy"], 0) { runtime, call in
             if call.method == "getguiy",
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y") {
                 return .integer(markup)
             }
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).y)))
+            let offset = call.method == "gettop" ? runtime.parentOffsetInCoordinateSpace(of: call.object).y : 0
+            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).y + offset)))
         }
         table.add(["getwidth", "getguiw"], 0) { runtime, call in
             if call.method == "getguiw",
