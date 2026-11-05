@@ -582,6 +582,9 @@ so a corpus run can't lose lines, not *what* is measured.
   MD_-_Iwakura_Lain_the_Fourth_v1 (`.wal` each); copied into `WinampModernSkins/`. i-Skin (rank 323,
   gain 0) added to the batch by the user the same day: **26 silver, 780 bronze**. iPlay (rank 58, gain 2)
   added by the user the same day for GitHub #643 (B320): **27 silver, 779 bronze**.
+- **Intake #6 admitted 2026-11-05** (`feat/wal-intake-6`, rev `039b1d2d`). Run over the 779 bronze:
+  **25 silver, 754 bronze, 0 quarantine**, ~45 min. **Gain curve** (first 60): `2` through rank 45, then
+  `1 1 2 1 1 1 1 1 1 1 1 1 1 1 1`; the 25 silver are all gain 2. Post-admission sweep: not run.
 
 ### Decisions (fixed — re-open only with a measurement)
 
