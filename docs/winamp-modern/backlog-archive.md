@@ -2,6 +2,22 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B369 — WinPlain_ALLRES_V1_4b's Media Library opens as an empty grey window — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B369 | **WinPlain_ALLRES_V1_4b's Media Library opens as an empty grey window.** Found in intake #6's visual review (2026-11-05, live census `--shots`, playing): the window has the skin's title bar and close button but no library content, where every other batch-6 skin shows the library grid. Done when the library content shows inside the skin's frame | WinPlain_ALLRES_V1_4b | ? | 2 |
+
+**Closed 2026-11-05, fixed.** The `ml` container is `<Wasabi:StandardFrame:Status content="library.content.group"/>` and no file in the skin defines `library.content.group`: it is Winamp's stock group, which every skin that does define it (Andromeda, Anime_Shogo, Cannes, Electra, Koalla_2) writes as one Media Library `<component>` filling it. Its frame script's `newGroup` therefore built nothing. `WasabiSurfaceSynthesizer.stockLibraryContentGroup` now appends that definition when a declared container hands the group to a frame and the skin leaves it undefined (`WinampModernStockLibraryGroupTests`). Headless: `ml/normal` gains `HOLDERS library@library.content(8,28,534,204)` inside the frame; live census (fix pass B, playing) shows the library grid in the 550x258 window. Corpus match set: WinPlain (silver), bronze MXP Blue/Green/Rainbow/Silver Flavour, Radio_Flash_Online, UltraBM_v1, VISION. Render sweep against 4a585c4b's stored capture: only WinPlain's `ml-normal` changed outside known noise.
+
+## B368 — MFDAMPbyunl0Kv11 opens every hosted window twice, one copy an empty frame — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B368 | **MFDAMPbyunl0Kv11 opens every hosted window twice, one copy an empty frame.** Found in intake #6's visual review (2026-11-05, live census `--shots`, playing): Equalizer Studio, Library Browser and Playlist Editor each open two windows (census `windows.tsv`: 307052/307053, 307030/307032, 307028/307031); one carries the content, the other is the skin's frame with a see-through body (`transparent=` 82%, 73%, 55%). Done when each opens once, in the skin's frame | MFDAMPbyunl0Kv11 | ? | 2 |
+
+**Closed 2026-11-05: not a defect, the census's reading of the skin's design.** MFDAMP is Itemskin's two-window frame (`components.md`, *A skin's chrome can live in a second window*): `PLEdit`, `MLibrary` and `Video` are bare component boxes, and `scripts/standardframePL.maki`/`standardframeML.maki` (`newDynamicContainer`, `cont.clear.pl`, `cont.clear.ml`) open a `dynamic="1"` frame laid exactly over each; NullPlayer's EQ Studio is framed the same way. Each pair in the census sits at one rect (307052/307053 0,601 744x568; 307030/307032 1240,39 560x340; 307028/307031 762,808 380x228). Compositing each pair's census captures, in either order, gives one framed window with its content inside: EQ Studio, the library grid, and the six-track playlist with its ADD/REMOVE/SELECT/MISC/LIST bar. The census counts the frame as a second window of the item.
+
 ## B371 — zechitoplayer's volume slider does not change the volume — closed 2026-11-05
 
 | Id | Item | Reach | Effort | Tier |
