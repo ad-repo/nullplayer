@@ -346,7 +346,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
             // which the render harness does not have. See `WinampModernMainView.debugClick`.
-            if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
+            if ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] == "auto" {
+                // Every clickable object in the main window, one at a time (`WinampModernDebugClickSweep`);
+                // later than a hand-given point so the launch's playback has started.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+                    if let view = self?.skinView { WinampModernDebugClickSweep.start(on: view) }
+                }
+            } else if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
                 // `<container>@x,y` aims at one of the skin's *other* windows. Without it this hook
                 // could only ever reach the main player, and a skin's configurator — the window whose
                 // switches change every other window — is an auxiliary container (Phase 45).

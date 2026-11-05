@@ -949,6 +949,26 @@ WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
 Coordinates are **skin pixels** in the main window's active layout — take them from
 `RENDER_PROBE`'s `frame=` for the object you want.
 
+**`WINAMP_MODERN_DEBUG_CLICK=auto`** clicks every clickable object in the main window's current layout
+instead (`WinampModernDebugClickSweep.swift`): a markup `action=` or a script left-press hook, so plain
+buttons are in it, unlike the interaction sweep's script-hooked list. Each is hit at its centre or the
+first point of a 5x5 grid the hit test returns for it (else `unreachable`); `CLOSE`, `MINIMIZE`,
+`EXIT`, `QUIT` and `EJECT` are skipped. The run starts from volume 0.5; 1.2 s after each click it logs a
+`WM-SMOKE|…` row, then restores the starting layout and resumes playback if the click changed them,
+and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run. The driver is one command:
+
+```sh
+scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch per skin, music playing
+```
+
+`<out>/smoke.tsv` columns: `skin idx object action point volume play position layout windows main
+note changed` — the state ones as `before>after`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
+whether the main window is on screen, `note` as `menu`/`modal`/`restored-layout`/`resumed`/`skip`/`unreachable`,
+and `changed` the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
+**cannot see** drags (sliders, knobs), right-click and double-click commands, the skin's *other*
+windows' controls, or a change that is only pixels (a lamp, a readout): `nochange` means none of the
+measured state moved, not that nothing happened.
+
 ### Playing a video — or a track — in the *running app*
 
 `WINAMP_MODERN_DEBUG_PLAY=/abs/film.mp4` (DEBUG builds) starts a local video six seconds after
