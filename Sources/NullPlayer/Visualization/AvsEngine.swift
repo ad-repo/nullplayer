@@ -19,7 +19,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
     let displayName = "AVS"
     private(set) var isAvailable = false
 
-    private let core: AvsCore?
+    /// The editor (`AvsEditorWindowController`) edits the preset through this, on main.
+    let core: AvsCore?
     private var audioObserver: NSObjectProtocol?
 
     // Render thread only.
@@ -34,6 +35,13 @@ final class AvsEngine: NSObject, VisualizationEngine {
     private(set) var presets: [URL] = []
     private(set) var currentIndex: Int?
     private var lastPresetChange = Date()
+    /// Set while the editor has this engine open: auto-cycle would throw the edit away.
+    var isBeingEdited = false
+
+    /// Posted on main, object the engine, after a preset load replaced the tree.
+    static let presetDidLoad = Notification.Name("AvsEnginePresetDidLoad")
+    /// Posted on main once the engine stops, with its `ObjectIdentifier` as `"engine"`.
+    static let didStop = Notification.Name("AvsEngineDidStop")
 
     init(width: Int, height: Int) {
         // AVSTrans writes eeltrans.ini into the base path when it is torn down, so it is a
@@ -75,8 +83,10 @@ final class AvsEngine: NSObject, VisualizationEngine {
         isAvailable = false
         if let audioObserver { NotificationCenter.default.removeObserver(audioObserver) }
         audioObserver = nil
+        let id = ObjectIdentifier(self)
         DispatchQueue.main.async {
             WindowManager.shared.audioEngine.removeFullStereoConsumer(Self.audioConsumerID)
+            NotificationCenter.default.post(name: Self.didStop, object: nil, userInfo: ["engine": id])
         }
         if framebuffer != 0 { glDeleteFramebuffers(1, &framebuffer); framebuffer = 0 }
         if texture != 0 { glDeleteTextures(1, &texture); texture = 0 }
@@ -153,6 +163,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
         let url = presets[index]
         if core.loadPreset(at: url) {
             AvsPresets.currentPreset = url.path
+            NotificationCenter.default.post(name: Self.presetDidLoad, object: self)
         } else {
             NSLog("AvsEngine: %@ did not load: %@", url.lastPathComponent, core.lastError)
         }
@@ -172,7 +183,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
 
     private func cycleIfDue() {
         let mode = AvsPresets.cycleMode
-        guard mode != .off, Date().timeIntervalSince(lastPresetChange) >= AvsPresets.cycleInterval else { return }
+        guard mode != .off, !isBeingEdited, Date().timeIntervalSince(lastPresetChange) >= AvsPresets.cycleInterval else { return }
         mode == .random ? selectRandomPreset() : step(by: 1)
     }
 
@@ -219,6 +230,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
         menu.addItem(intervalItem)
         menu.addItem(.separator())
 
+        menu.addItem(item("Edit Preset…", #selector(editPresetAction)))
         menu.addItem(item("Choose AVS Preset Folder…", #selector(choosePresetFolderAction)))
         if AvsPresets.customFolder != nil {
             menu.addItem(item("Use Bundled AVS Presets Only", #selector(clearPresetFolderAction)))
@@ -246,6 +258,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
     @objc private func setCycleIntervalAction(_ sender: NSMenuItem) {
         AvsPresets.cycleInterval = TimeInterval(sender.tag)
     }
+
+    @objc private func editPresetAction() { AvsEditorWindowController.show(for: self) }
 
     @objc private func choosePresetFolderAction() {
         let panel = NSOpenPanel()

@@ -133,7 +133,33 @@ final class AvsCoreSmokeTests: XCTestCase {
         XCTAssertTrue(steadyBeats.allSatisfy { $0 < 2 }, "steady tone beat at \(steadyBeats)")
     }
 
+    /// The editor's inspector builds its controls from libavs's parameter metadata, so building it
+    /// for every component of every bundled preset walks every parameter type those effects use,
+    /// lists included.
+    @MainActor
+    func testInspectorBuildsForEveryComponentOfEveryPreset() throws {
+        for url in Self.presets {
+            let core = try XCTUnwrap(AvsCore())
+            XCTAssertTrue(core.loadPreset(at: url), url.lastPathComponent)
+            let inspector = AvsParameterInspector(core: core)
+            for component in core.withHandle(allComponents) {
+                inspector.show(component)
+                XCTAssertFalse(inspector.subviews.first?.subviews.isEmpty ?? true,
+                               "\(url.lastPathComponent): component \(component) built no controls")
+            }
+        }
+    }
+
     // MARK: - Helpers
+
+    private func allComponents(_ handle: AVS_Handle) -> [AVS_Component_Handle] {
+        func walk(_ component: AVS_Component_Handle) -> [AVS_Component_Handle] {
+            var count: UInt32 = 0
+            guard let children = avs_component_children(handle, component, &count), count > 0 else { return [component] }
+            return [component] + Array(UnsafeBufferPointer(start: children, count: Int(count))).flatMap(walk)
+        }
+        return walk(avs_component_root(handle))
+    }
 
     /// One 1024-frame buffer of a tone that is loud for 2 frames in every 10: many presets
     /// only colour or move on a beat, which AVS's detector finds in energy jumps.

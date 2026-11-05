@@ -524,6 +524,12 @@ Bundled AVS Presets Only** drops it again. Right-click for the preset list, Next
 and Hold Preset / Auto-Cycle / Auto-Random with a Cycle Interval. The preset, folder and cycle
 setting persist across launches and are cleared by Reset All Visualization Preferences.
 
+**Edit Preset…** opens the AVS Preset Editor on the preset that is playing:
+- **Effect tree** on the left. Each effect has an on/off checkbox; there is **Add Effect**, **Duplicate** and **Delete**, and dragging an effect moves it, including into an Effect List.
+- **Settings** of the selected effect on the right: checkboxes, sliders, colours, pop-ups, and code boxes for scripted effects (applied when you click away).
+- **Edits show immediately.** Auto-cycle waits while the editor is open.
+- **New**, **Open…** (`.avs` or JSON), **Save…** (Winamp `.avs`, which then appears in the preset list) and **Export JSON…**.
+
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 

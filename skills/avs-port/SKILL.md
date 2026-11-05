@@ -1,6 +1,6 @@
 ---
 name: avs-port
-description: Implementation reference for NullPlayer's AVS (Advanced Visualization Studio) engine — the BSD-3 libavs from grandchild/vis_avs vendored as CAvsCore and run as a ProjectM-peer engine in the Visualizations window, a `.wal` AVS slot and a `.wmz` effects area. Covers the upstream-vs-port split, the patches, build flags and sse2neon, the EEL2 JIT and its entitlement, threading, the stereo audio feed and beat detector, presets, the hosts, licensing and debugging. Use when touching Sources/CAvsCore/, AvsCore.swift, AvsEngine.swift, AvsPresets.swift or the AVS cases in the visualization hosts.
+description: Implementation reference for NullPlayer's AVS (Advanced Visualization Studio) engine — the BSD-3 libavs from grandchild/vis_avs vendored as CAvsCore and run as a ProjectM-peer engine in the Visualizations window, a `.wal` AVS slot and a `.wmz` effects area. Covers the upstream-vs-port split, the patches, build flags and sse2neon, the EEL2 JIT and its entitlement, threading, the stereo audio feed and beat detector, presets, the hosts, the preset editor, licensing and debugging. Use when touching Sources/CAvsCore/, AvsCore.swift, AvsEngine.swift, AvsPresets.swift, Windows/AvsEditor/ or the AVS cases in the visualization hosts.
 ---
 
 # AVS Port Guide
@@ -26,8 +26,10 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 | `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, and `AvsBeatDetector`. |
 | `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets, auto-cycle, the menu section. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
+| `Sources/NullPlayer/Windows/AvsEditor/AvsEditorWindowController.swift` | **Edit Preset…**: the component tree, add / duplicate / delete / drag-move, the file buttons. |
+| `Sources/NullPlayer/Windows/AvsEditor/AvsParameterInspector.swift` | One component's parameters as controls built from `avs_parameter_info`. |
 | `Sources/NullPlayer/Resources/AVSPresets/` | Upstream's 35 bundled `.avs` presets. |
-| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; the SuperScope JIT; lock serialisation; the beat detector. |
+| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; the SuperScope JIT; lock serialisation; the beat detector; the inspector builds for every component of every preset. |
 
 ## Build
 
@@ -139,6 +141,45 @@ All four are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preference
   - `SkinEffectSelection` has an `avs` style and catalogue entry.
   - `SkinEffectsSurfaceView` treats it as an offscreen engine.
   - `applyPreset` maps the skin's preset number onto the AVS list.
+
+## Preset editor
+
+**Edit Preset…** (in the engine's menu section) opens `AvsEditorWindowController` on the engine whose menu was used. It is a plain, unskinned AppKit window, and only one is open at a time.
+
+**Generic by design.** Nothing in the editor knows an effect: the tree comes from `avs_component_*` and every control from `avs_parameter_info`. A newly vendored effect is editable with no editor change.
+
+**Tree** (`NSOutlineView`; items are the component handles as `NSNumber`):
+- Root is the single top-level item.
+- **Add Effect** lists `avs_effect_library` effects that are `is_user_creatable`, grouped by `group`. A new effect goes into Root, or into an expanded Effect List, and otherwise after the selection.
+- Rows drag-move with `avs_component_move`: before the row dropped on, or at the end of a list.
+- Each row's checkbox is `AVS_Component_Properties.enabled`. It is a bare checkbox beside a label, so a click on the name selects the row instead of toggling it.
+
+**Inspector controls**, by parameter type:
+
+| Type | Control |
+|---|---|
+| bool | checkbox |
+| int, float | slider and field; field only when the range is unbounded. The value written is read back, since libavs clamps. |
+| color | colour well; values are the framebuffer's `0x00RRGGBB` despite the header's "RGBA16" |
+| string | monospaced text view, written on end-editing because EEL strings recompile. There is no flag marking code, so every string gets one. |
+| select, resource | popup; select by index, resource by string |
+| list | one box per element, with ↑ / ↓ / Remove and **Add *name***. List paths are libavs's (depth, indices). |
+| action | button; the pane rebuilds after it runs |
+
+The read-only arrays are effect output and are not shown.
+
+**Threading:** every call goes through `AvsCore.withHandle` on main, so an EEL recompile stalls at most one frame.
+
+**Engine coordination:**
+- While the editor is open, `AvsEngine.isBeingEdited` holds auto-cycle, which would throw the edit away.
+- The engine posts `presetDidLoad` when a preset change replaces the tree, and the editor reloads.
+- The engine posts `didStop`, with its `ObjectIdentifier`, when it stops; the editor closes.
+
+**Files:** libavs sniffs the format from the content.
+- **Save…** writes legacy `.avs` (`avs_preset_save_legacy`), which is what the preset list reads and Winamp opens. It then reloads the engine's preset list.
+- **Export JSON…** writes `avs_preset_save`.
+- **Open…** takes either.
+- **New** deletes the root, and libavs makes a fresh empty one.
 
 ## Gaps (tasks/MISC_TASKS.md)
 
