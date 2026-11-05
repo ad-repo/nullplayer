@@ -8,8 +8,8 @@
 #
 # One launch per skin (skills/app-control/scripts/launch.sh, music playing) with
 # WINAMP_MODERN_DEBUG_CLICK=auto (WinampModernDebugClickSweep.swift). A skin is a path or a name
-# launch.sh resolves. `changed` lists what moved (volume, play, position jump, layout, windows, main,
-# menu, modal), or `nochange`; a row the sweep did not click says why in `note` (skip, unreachable).
+# launch.sh resolves. `changed` lists what moved (volume, play, position jump, track, eq, layout,
+# windows, main, menu, modal), or `nochange`; a row the sweep did not click says why in `note` (skip, unreachable).
 # Why: a live pass clicked each control by hand, ~50 tool calls a skin.
 
 set -u -o pipefail
@@ -27,7 +27,7 @@ done
 OUT="${OUT:-$(mktemp -d)}"
 mkdir -p "$OUT"
 TSV="$OUT/smoke.tsv"
-printf 'skin\tidx\tobject\taction\tpoint\tvolume\tplay\tposition\tlayout\twindows\tmain\tnote\tchanged\n' >"$TSV"
+printf 'skin\tidx\tobject\taction\tpoint\tvolume\tplay\tposition\ttrack\teq\tlayout\twindows\tmain\tnote\tchanged\n' >"$TSV"
 
 for SKIN in "${SKINS[@]}"; do
     NAME=$(basename "${SKIN%.*}")
@@ -51,17 +51,19 @@ for SKIN in "${SKINS[@]}"; do
                 if (moved($6)) changed = changed ",volume"
                 if (moved($7)) changed = changed ",play"
                 split($8, t, ">"); d = t[2] - t[1]; if (d < -0.5 || d > 2.5) changed = changed ",position"
-                if (moved($9)) changed = changed ",layout"
-                if ($10 != "-") changed = changed ",windows"
-                if (moved($11)) changed = changed ",main"
-                if ($12 ~ /menu/) changed = changed ",menu"
-                if ($12 ~ /modal/) changed = changed ",modal"
+                if (moved($9)) changed = changed ",track"
+                if (moved($10)) changed = changed ",eq"
+                if (moved($11)) changed = changed ",layout"
+                if ($12 != "-") changed = changed ",windows"
+                if (moved($13)) changed = changed ",main"
+                if ($14 ~ /menu/) changed = changed ",menu"
+                if ($14 ~ /modal/) changed = changed ",modal"
                 changed = changed == "" ? "nochange" : substr(changed, 2)
             }
-            print skin, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, changed
+            print skin, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, changed
         }' >>"$TSV"
     awk -F'\t' -v skin="$NAME" -v status="$STATUS" '$1 == skin {
-            if ($13 == "-") other++; else { clicked++; if ($13 == "nochange") same++ }
+            if ($15 == "-") other++; else { clicked++; if ($15 == "nochange") same++ }
         } END { printf "%s: %s, %d clicked, %d nochange, %d not clicked\n", skin, status, clicked, same, other }' "$TSV"
 done
 pkill -x NullPlayer 2>/dev/null || true

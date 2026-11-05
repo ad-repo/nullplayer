@@ -1612,7 +1612,7 @@ final class WinampModernMainView: NSView {
     }
 
     /// Top-left skin coordinates to the view's bottom-left ones, at the current UI Size.
-    private func viewRect(fromSkin rect: CGRect) -> NSRect {
+    func viewRect(fromSkin rect: CGRect) -> NSRect {
         NSRect(x: rect.minX * skinScale, y: bounds.height - rect.maxY * skinScale,
                width: rect.width * skinScale, height: rect.height * skinScale)
     }

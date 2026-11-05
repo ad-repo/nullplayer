@@ -953,19 +953,22 @@ Coordinates are **skin pixels** in the main window's active layout — take them
 instead (`WinampModernDebugClickSweep.swift`): a markup `action=` or a script left-press hook, so plain
 buttons are in it, unlike the interaction sweep's script-hooked list. Each is hit at its centre or the
 first point of a 5x5 grid the hit test returns for it (else `unreachable`); `CLOSE`, `MINIMIZE`,
-`EXIT`, `QUIT` and `EJECT` are skipped. The run starts from volume 0.5; 1.2 s after each click it logs a
+`EXIT`, `QUIT` and `EJECT` are skipped. A `slider` takes its value on press and drag, which
+`debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
+released through the view's own mouse handlers. The run starts from volume 0.5; 1.2 s after each click it logs a
 `WM-SMOKE|…` row, then restores the starting layout and resumes playback if the click changed them,
-and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run. The driver is one command:
+and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
 
 ```sh
 scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch per skin, music playing
 ```
 
-`<out>/smoke.tsv` columns: `skin idx object action point volume play position layout windows main
-note changed` — the state ones as `before>after`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
+`<out>/smoke.tsv` columns: `skin idx object action point volume play position track eq layout
+windows main note changed` — the state ones as `before>after`, `point` as `x,y` (a slider's `x,y>x,y`), `track` the
+playing file's name, `eq` as `e<on>a<auto>p<preamp dB>b<band checksum>`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
 whether the main window is on screen, `note` as `menu`/`modal`/`restored-layout`/`resumed`/`skip`/`unreachable`,
 and `changed` the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
-**cannot see** drags (sliders, knobs), right-click and double-click commands, the skin's *other*
+**cannot see** drags other than a slider's (knobs, scrollbars), right-click and double-click commands, the skin's *other*
 windows' controls, or a change that is only pixels (a lamp, a readout): `nochange` means none of the
 measured state moved, not that nothing happened.
 
