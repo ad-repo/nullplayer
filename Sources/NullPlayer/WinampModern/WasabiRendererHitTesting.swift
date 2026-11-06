@@ -25,10 +25,8 @@ extension WasabiSceneRenderer {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
-        for node in sceneNodes().reversed() where node.clipping.contains(point) {
+        for node in sceneNodes().reversed() where node.clipping.contains(point) && lands(point, on: node) {
             let object = node.object
-            let inFrame = node.frame.contains(point)
-            guard inFrame || isOnSliderThumb(object, frame: node.frame, point: point) else { continue }
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
@@ -43,7 +41,9 @@ extension WasabiSceneRenderer {
             // A group's artwork is its `background`, and its region is that artwork's alpha like any
             // layer's. RODE 3 Lite lays `player.main.sliders` (343x212, 97% transparent mask) over the
             // whole player; tested as a solid box it covered 24 of the controls beneath it.
-            if inFrame, object.attributes["rectrgn"] != "1",
+            // The region is the artwork inside the object's own frame, so a point past the frame —
+            // on a slider's overhanging thumb, which `lands(_:on:)` already placed — is not tested by it.
+            if node.frame.contains(point), object.attributes["rectrgn"] != "1",
                let bitmap = node.bitmapID.map({ resources.bitmap(identifier: $0) }) ?? groupHitArtwork(object),
                !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
@@ -71,13 +71,17 @@ extension WasabiSceneRenderer {
         return nil
     }
 
-    /// A slider's drawn thumb is part of the slider even where it hangs past the slider's box (B378).
-    /// Enya_Winamp_3_Skin's EQ bands are 3-px `<slider>`s under a 5-px thumb: a press on either outer
-    /// column of the knob the user is aiming at fell through to the bar behind it.
-    private func isOnSliderThumb(_ object: WasabiObject, frame: CGRect, point: CGPoint) -> Bool {
-        guard object.tag.is(.slider), let thumb = resources.bitmap(identifier: object.attributes["thumb"])
+    /// Whether `point` lands on `node`: in its frame, or for a slider on its drawn thumb, even where
+    /// that hangs past the slider's box (B378). Enya_Winamp_3_Skin's EQ bands are 3-px `<slider>`s
+    /// under a 5-px thumb: a press on either outer column of the knob the user is aiming at fell
+    /// through to the bar behind it. The thumb is the hovered one, as drawn under the pointer a hit
+    /// test is asked about. The two rects, never their bounding box: meridian's 44x5 seek thumb on a
+    /// 4-px track would otherwise claim a half-pixel strip the whole length of the track.
+    private func lands(_ point: CGPoint, on node: WasabiSceneNode) -> Bool {
+        if node.frame.contains(point) { return true }
+        guard node.object.tag.is(.slider), let thumb = sliderThumb(node.object, pressed: false, hovered: true)
         else { return false }
-        return sliderThumbFrame(object, thumb: thumb, in: frame).contains(point)
+        return sliderThumbFrame(node.object, thumb: thumb, in: node.frame).contains(point)
     }
 
     /// A layer whose artwork is clear in every pixel, with a press a script hooks on it: an empty

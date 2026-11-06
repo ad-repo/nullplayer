@@ -79,8 +79,9 @@ Two rules about *which* objects may claim a point:
   declared region. Only objects that *have* a bitmap are affected; a bare `rectrgn` layer never had an
   alpha test to skip.
 - **A slider's drawn thumb is the slider's, even past the slider's box** (B378, 2026-11-05, the user's
-  ruling). `object(at:)` claims a point inside `sliderThumbFrame` (the `thumb` bitmap where
-  `drawSlider` places it) for the slider before anything under it. Enya_Winamp_3_Skin's EQ bands are
+  ruling). `object(at:)` asks `lands(_:on:)` of each node, which for a slider is its frame or
+  `sliderThumbFrame` (the hovered thumb, `sliderThumb`, where `drawSlider` places it), so a point on
+  the thumb is the slider's before anything under it; the alpha region applies only inside the frame. Enya_Winamp_3_Skin's EQ bands are
   `w="3"` sliders under a 5-px thumb, and a press on either outer column of the knob landed on the
   bar layer behind it. The value still maps from the slider's own box, clamped.
 - **A wholly clear layer a script hooks a press on is its rect** (2026-10-25). An empty region is no

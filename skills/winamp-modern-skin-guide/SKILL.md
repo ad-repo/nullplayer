@@ -244,6 +244,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Fonts + text measurement (shared) | `WasabiTextMetrics.swift` |
 | Resource cache + scene renderer | `WasabiRenderer.swift` — the spine: scene walk, clipping, dispatch |
 | Sprites, text, colour, hit testing, Layer FX | `WasabiRendererSprites.swift`, `…Text.swift`, `…Colour.swift`, `…HitTesting.swift`, `…LayerFX.swift` |
+| A layout's opening size: `defaultSize` and the content, component-room and hosted-floor fits | `WasabiRendererLayoutSizing.swift` |
 | MAKI parser + interpreter | `MakiBytecode.swift` |
 | Script runtime + method dispatch | `WinampModernScriptRuntime.swift` — the class, its stored state, dispatch and teardown; by concern: `…Signatures.swift` (`MakiMethodTable`, and `signature(for:)` derived from every table), `…Config.swift` (`cfgattrib`/`ConfigAttribute`), `…WindowGeometry.swift`, `…Visibility.swift`, `…XUIParams.swift`, `…GroupInstantiation.swift`, `…Equalizer.swift`, `…LayerFX.swift`, `…Map.swift`, `…XmlDoc.swift`, `…HostControls.swift` |
 | MAKI receivers, by class | Each receiver is one method table per concern, arity beside body (B243): `WinampModernScriptRuntimeSystem.swift` (System), `…Singletons.swift` (PlEdit, MLPlaylists, ColorMgr), `…Desktop.swift` (System's clock, screen and window lookups), `…Files.swift` (the skin-path sandbox and ClassicPro's file shell, also answered on objects a script makes with `new`), `…Object.swift` (GuiObject: `invokeGUI` asks `guiKindTables` for the object's widget kind, then `guiFamilies` in order — structure, text, state there; position, animation, list and actions in `…ObjectFamilies.swift`), `…Window.swift` (GuiObject's window, stacking and snapping methods), `…Dynamic.swift` (objects a script makes with `new`), `…Menu.swift` (PopupMenu), `…Timer.swift` (`target*`), `…Text.swift` |
@@ -251,7 +252,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Component model + host protocol | `WinampModernComponents.swift` |
 | Component bucket (thinger): icon set, box layout, strip state | `WinampModernComponentBucket.swift`, `WasabiRenderer.swift` |
 | Container topology | `WinampModernContainerTopology.swift` |
-| Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiStandardFrames.swift` |
+| Surface inventory + synthesis | `WasabiSurfaceInventory.swift`, `WasabiSurfaceSynthesizer.swift`, `WasabiSurfaceStockLibrary.swift`, `WasabiStandardFrames.swift` |
 | Colour theme + palette | `WinampModernThemeCoordinator.swift`, `WasabiPalette.swift` |
 | Colour theme picker (`<ColorThemes:List>`) | `WasabiColorThemeList.swift`, `WasabiRenderer.swift` |
 | Style for NullPlayer-drawn surfaces | `WinampModernSurfaceStyle.swift` |

@@ -296,7 +296,7 @@ The content a frame names can itself be Winamp's: WinPlain's `ml` window is
 group, so its frame script's `newGroup` came back empty and the Media Library opened as the skin's
 title bar around a grey body. Every skin that does define the group (Andromeda, Anime_Shogo, Cannes,
 Electra, Koalla_2) defines the same thing: one `<component>` with the Media Library GUID, filling it.
-`WasabiSurfaceSynthesizer.stockLibraryContentGroup` appends exactly that when a declared container
+`WasabiSurfaceSynthesizer.stockLibraryContentGroup` (`WasabiSurfaceStockLibrary.swift`) appends exactly that when a declared container
 hands the group to a frame and the skin leaves it undefined. Corpus match set (2026-11-05): WinPlain
 (silver); bronze MXP Blue/Green/Rainbow/Silver Flavour, Radio_Flash_Online, UltraBM_v1, VISION.
 

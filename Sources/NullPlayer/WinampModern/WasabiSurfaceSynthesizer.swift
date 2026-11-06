@@ -68,7 +68,7 @@ enum WasabiSurfaceSynthesizer {
     /// The reference a synthetic `<component>`/`<container component=…>` names. Winamp defines no
     /// equalizer component GUID — no measured skin contains one — so the equalizer uses the `guid:eq`
     /// short form the registry already understands.
-    private static func componentReference(for kind: WinampModernComponentKind) -> String? {
+    static func componentReference(for kind: WinampModernComponentKind) -> String? {
         switch kind {
         case .playlist: return "guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"
         case .library: return "guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
@@ -228,7 +228,7 @@ enum WasabiSurfaceSynthesizer {
     }
 
     /// The id of a skin-declared container whose layout hands `group` to a frame as its `content`.
-    private static func containerHosting(group: String, in nodes: [WalXMLNode]) -> String? {
+    static func containerHosting(group: String, in nodes: [WalXMLNode]) -> String? {
         let wanted = fold(group)
         func hostsGroup(_ node: WalXMLNode) -> Bool {
             if let content = node.attribute("content"), fold(content) == wanted { return true }
@@ -943,30 +943,6 @@ enum WasabiSurfaceSynthesizer {
         }
     }
 
-    // MARK: - Winamp's stock library content group
-
-    /// The group a standard frame names as `content` to show the Media Library. Winamp defines it
-    /// itself, so a skin may name it without defining it: WinPlain's `ml` window, the MXP flavours,
-    /// UltraBM, VISION and Radio_Flash_Online do, and their frame opened empty (B369). Every skin
-    /// that does define it defines the same thing — Andromeda, Anime_Shogo, Cannes, Electra and
-    /// Koalla_2 — one Media Library `<component>` filling the group.
-    static let stockLibraryGroupIdentifier = "library.content.group"
-
-    /// That group, for a skin whose declared window names it and which does not define it.
-    private static func stockLibraryContentGroup(document: WalExpandedXMLDocument,
-                                                 definitions: [String: WalXMLNode]) -> WalXMLNode? {
-        let id = stockLibraryGroupIdentifier
-        guard definitions[fold(id)] == nil, containerHosting(group: id, in: document.roots) != nil,
-              let reference = componentReference(for: .library) else { return nil }
-        let location = WalSourceLocation(path: sourcePath)
-        let component = WalXMLNode(name: "component", attributes: [
-            "id": "library.content", "param": reference,
-            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
-        ], location: location)
-        return WalXMLNode(name: "groupdef", attributes: ["id": id], location: location,
-                          children: [component])
-    }
-
     // MARK: - Node construction
 
     private static func makeNodes(kind: WinampModernComponentKind, reference: String,
@@ -1035,7 +1011,7 @@ enum WasabiSurfaceSynthesizer {
         nodes.reduce(0) { $0 + 1 + countNodes($1.children) }
     }
 
-    private static func fold(_ value: String) -> String {
+    static func fold(_ value: String) -> String {
         value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 }

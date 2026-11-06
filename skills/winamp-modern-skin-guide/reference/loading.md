@@ -761,10 +761,11 @@ the step-back serves both:
 down to the content (B362).** Growing alone could not: Psonidelic's EQ shade is
 `<layout id="shade" background="player.eq.winshade.bg">` with no box, its bitmap is missing, and
 its `relatw`/`relath` content group holds a 275×15 strip, so it opened 275×116 with black under the
-strip. An axis with no box, no container default, no floor and a named-but-missing `background`
-starts from `intrinsicContentExtent`: the far edge of every node that stays put when the canvas grows
-(artwork and absolute boxes; stretched and anchored children end wherever the canvas does), clamped by
-`maximum_*`, and then grows as above. Only a *named* background: a layout naming none is often sized
+strip. An axis with no box, no container default, no floor and a named-but-missing `background` is
+`AxisFit.seedFromContent` (`WasabiRendererLayoutSizing.swift`, which decides every axis once:
+`authored`, `growFromDeclared` or that): it starts from `intrinsicContentExtent`, the far edge of every
+node that stays put when the canvas grows (`canvasProbe`; artwork and absolute boxes, while stretched and
+anchored children end wherever the canvas does), clamped by `maximum_*`, and then grows as above. Only a *named* background: a layout naming none is often sized
 by its script at show time, and Minus' and MIPOD's notifiers measured 95x90 at rest and lost their
 title. Gold+silver, 2026-11-05: Psonidelic's shade 275x15, EPS_High-End's `shade_metallic` 275x116 →
 400x100 (all five buttons, two had been cut off) and its speakers 86x193 (no art either way).

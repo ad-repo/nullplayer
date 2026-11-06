@@ -36,8 +36,8 @@ extension WasabiSceneRenderer {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }
-        // Optional for the same reason as the font below: nothing that ends up in a CoreText
-        // attribute dictionary may be a null pointer, and only an `Optional` binding can see one.
+        // Optional for the same reason as `drawTrueTypeText`'s font: nothing that ends up in a
+        // CoreText attribute dictionary may be a null pointer, and only an `Optional` binding can see one.
         let resolved: NSColor? = object.attributes["color"].flatMap(resolvedColor)
         // `shadowx`/`shadowy`: the same string again, in `shadowcolor` (black when undeclared),
         // beneath it at that offset (B363).
