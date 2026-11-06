@@ -3096,6 +3096,7 @@ final class WinampModernMainView: NSView {
     }
 
     static let volumeButtonStep = 0.05
+    static let seekButtonStep: TimeInterval = 5
 
     private func performAction(action rawAction: String?, parameter rawParameter: String?, object: WasabiObject? = nil) {
         // `ACTION;PARAM` is the other way a skin writes a parameter — mmd3, ZDL and winampmodern566
@@ -3115,6 +3116,12 @@ final class WinampModernMainView: NSView {
         case "PREV": host.previous()
         case "NEXT": host.next()
         case "EJECT": host.openFiles()
+        case "REWIND_5S", "FFWD_5S":
+            // Five seconds back or on, held inside the track (B374: Vex, Rammstein and WinPlain).
+            let step = action?.uppercased() == "FFWD_5S" ? Self.seekButtonStep : -Self.seekButtonStep
+            let target = max(0, host.currentTime + step)
+            host.seek(to: host.duration > 0 ? min(host.duration, target) : target)
+            updatePlaybackState()
         case "VOLUME_UP", "VOLUME_DOWN":
             // The same 5% step the arrow keys take (B299); the engine announces no change, so the
             // skin's readout is told here.
@@ -3144,6 +3151,10 @@ final class WinampModernMainView: NSView {
             // dialog, and the popup below is the same list that dialog would show.
             if parameter?.uppercased().contains(Self.colorThemePreferencesGUID) == true {
                 showColorThemeMenu()
+            } else if parameter?.uppercased().contains(Self.preferencesGUID) == true {
+                // Winamp's Preferences window (B374: Vex's `cfg`, warp's `pref`, and about twenty
+                // other skins' prefs buttons). NullPlayer's settings live in its main menu.
+                showMainMenu(from: object)
             } else if parameter?.uppercased().contains(Self.aboutWinampGUID) == true {
                 // Winamp's **About Winamp** window. ClassicPro's corner bolt is a multi-button whose
                 // default command is this GUID (`player.m`'s `bolt.onLeftClick`, branch 0), so with
@@ -3369,6 +3380,8 @@ final class WinampModernMainView: NSView {
     /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list
     /// the popup below shows.
     private static let colorThemePreferencesGUID = "53DE6284-7E88-4C62-9F93-22ED68E6A024"
+    /// Winamp's Preferences window: the button skins label `pref`, `cfg` or `config`.
+    private static let preferencesGUID = "B397A4CE-455A-4D62-8BF6-D0F91ACB70E6"
     /// Winamp's About Winamp window, the ClassicPro corner bolt's default command.
     private static let aboutWinampGUID = "D6201408-476A-4308-BF1B-7BACA1124B12"
 

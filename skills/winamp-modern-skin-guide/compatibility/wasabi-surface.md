@@ -42,7 +42,15 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
   container's id, not a layout (`normal`, `shade`), so `activateLayout` found nothing and the shade
   had no way back. Only it and LG_Free_touch_the_music_ do this in gold+silver; a switch naming
   *another* container (iCandy-2's and i-Skin's `pledit`) is unchanged, and a missing layout name is
-  still dead (Abducted's `stick`). `testSwitchNamingTheContainerReturnsToItsDefaultLayout`
+  still dead (Abducted's `stick`). `testSwitchNamingTheContainerReturnsToItsDefaultLayout`.
+  `param="default"`, where no layout has that id, goes there too (B376, 2026-11-05): WinPlain's mini
+  layout returns only that way. `testSwitchToDefaultReturnsToTheFirstLayout`
+- **`REWIND_5S` / `FFWD_5S`** (B374, 2026-11-05) — five seconds back or on, held inside the track
+  (Vex, Rammstein_Reise_Reise, WinPlain). `testFiveSecondButtonsSeekWithinTheTrack`
+- **`TOGGLE guid:{B397A4CE-455A-4D62-8BF6-D0F91ACB70E6}`** (B374) — Winamp's Preferences window, the
+  button skins label `pref`, `cfg` or `config` (21 bronze-to-gold skins: Vex, warp, Enkera, Kepler,
+  venom, the Media Towers …). NullPlayer has no preferences window; its settings are the main menu,
+  so the button opens that, as `SYSMENU` does
 - **`TRACKINFO` / `TRACKMENU`** (Phase 36) — the two song-title commands, reached through those
   attributes. `TRACKINFO` opens a File Info **sheet** for the playing track (never a modal run loop:
   the action is script-reachable); `TRACKMENU` opens a track menu — File Info / Copy Title / Reveal in

@@ -2,6 +2,46 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B374 — Vex: no close control in the top-right area, the 5-second rewind/forward buttons do nothing, and the cfg button does nothing — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B374 | **Vex: no close control in the top-right area, the 5-second rewind/forward buttons do nothing, and the cfg button does nothing.** Found in the intake #6 user UI round (2026-11-05, reporter driving). The click smoke agrees on two of the three: Vex's `button#normal.pb.prev` (`REWIND_5S`) and `button#normal.pb.next` (`FFWD_5S`) leave the position running on (41.9>43.1, 43.9>45.1), and so do Rammstein_Reise_Reise's `rewind`/`forward` (2.1>3.3, 4.2>5.4), so `REWIND_5S`/`FFWD_5S` look dead engine-wide; `togglebutton#normal.cfg` (`TOGGLE`) changed nothing measured. Vex has `button#normal.close` (`CLOSE`), so find why the user sees none. Done when 5-s rewind/forward move the position on both skins, cfg opens what it names, and the close control is where the skin draws it | Vex; Rammstein_Reise_Reise | ? | 1 |
+
+**Closed 2026-11-05, fixed (5-s seek, cfg) and the skin's (the close).** `REWIND_5S`/`FFWD_5S` had no case in `WinampModernMainView.performAction`; they now seek 5 s back or on, held inside the track. Re-check smoke (debug build, playing): Vex `pb.prev` 92.4>88.6, `pb.next` 89.4>95.7; Rammstein_Reise_Reise `rewind` 2.1>1.3, `forward` 2.1>8.4; WinPlain `5Back` 16.7>13.0, `5Forward` 13.8>20.1 (all `nochange` before). `cfg` is `TOGGLE guid:{B397A4CE-455A-4D62-8BF6-D0F91ACB70E6}`, Winamp's Preferences window, which 21 corpus skins' `pref`/`cfg`/`config` buttons name (warp's `pref` among them); NullPlayer has no preferences window, so it now opens the main menu, where its settings are (smoke: `menu`). The close: Vex's player has no top-right close. Its own Help window labels the centre × `EXIT` (`normal.close`, 154,87), and the Help window's top-right `close` (494,16, 26x10, `CLOSE`) is hit (`RENDER_CLICK Help/main@500,22`). The skin's. `testFiveSecondButtonsSeekWithinTheTrack`; `compatibility/wasabi-surface.md`
+
+## B376 — WinPlain_ALLRES_V1_4b gets stuck in its mini/compact mode and cannot return — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B376 | **WinPlain_ALLRES_V1_4b gets stuck in its mini/compact mode and cannot return.** Found in the intake #6 user UI round (2026-11-05, reporter driving). After switching the main window to its mini/compact layout, nothing switches it back. Done when the skin's own control returns to the normal layout | WinPlain_ALLRES_V1_4b | ? | 1 |
+
+**Closed 2026-11-05, fixed.** The `mini` layout's restore button `miniwin` is `action="SWITCH" param="default"`, and the `main` container declares no `default` layout (`normal`, `shade`, `medshade`, `maxshade`, `mini`, `minimaxshade`), so `activateLayout` threw and nothing switched. `default` with no layout of that id now goes to the container's first layout, as B348's container id does (`WasabiSceneRenderer.activateLayout`). Re-check smoke: `miniwin` mini>normal (`nochange` before). `testSwitchToDefaultReturnsToTheFirstLayout`
+
+## B377 — Corpse_Bride's EQ cannot be enabled — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B377 | **Corpse_Bride's EQ cannot be enabled.** Found in the intake #6 user UI round (2026-11-05, reporter driving). The EQ's on control does not turn the equalizer on. Done when it toggles the EQ on and off | Corpse_Bride | ? | 1 |
+
+**Closed 2026-11-05 as the skin's.** Corpse_Bride's `eq` container (`xml/player.xml`) declares the preamp, ten bands, a close and three `cfgattrib` toggles (crossfade, shuffle, repeat: the ON/OFF rows the census `Equalizer.png` shows), and no `EQ_TOGGLE`; no script calls an EQ method (`player.maki` strings: links and `messageBox`; the others are seek, volume and the frame). The skin ships no control that turns the equalizer on.
+
+## B379 — Hellemium's artist/title text does not scroll when cut off — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B379 | **Hellemium's artist/title text does not scroll when cut off.** Found in the intake #6 user UI round (2026-11-05, reporter driving). A title too long for its field is clipped instead of marqueeing. Done when it scrolls as the skin's `<text>` asks | Hellemium | ? | 1 |
+
+**Closed 2026-11-05 as the skin's.** `Songticker` (`xml/player-normal.xml:12`) declares no `ticker`, and no script sets one (`info.m`, `toggles.m`, `seekvol.m` only call `setText`, `setAlternateText` and the tooltip). A `<text>` without `ticker` does not scroll (Defix's `Disable` mode, `skins/defix-hi-end-200.md`); the skin's standard frame ticker is explicitly `ticker="0"`.
+
+## B380 — Java_Duke has no seek bar — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B380 | **Java_Duke has no seek bar.** Found in the intake #6 user UI round (2026-11-05, reporter driving). Nothing on the player seeks. Find whether the skin declares one that we fail to draw or hit, or ships none. Done when it seeks, or the skin is shown to have none | Java_Duke | ? | 1 |
+
+**Closed 2026-11-05 as the skin's.** Its one layout (`xml/player.xml`, `main/normal`) declares transport buttons, a song ticker, a timer, a vis, the volume animation and its hidden `Volume` slider, and no `SEEK` slider or seek layer; its only script, `volume.maki`, drives the volume animation. The skin ships no seek control.
+
 ## B369 — WinPlain_ALLRES_V1_4b's Media Library opens as an empty grey window — closed 2026-11-05
 
 | Id | Item | Reach | Effort | Tier |

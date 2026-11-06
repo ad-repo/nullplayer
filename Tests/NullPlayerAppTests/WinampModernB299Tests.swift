@@ -2,15 +2,70 @@ import XCTest
 import ZIPFoundation
 @testable import NullPlayer
 
-/// B299 — Quadelic's `vol +`/`vol -` (`action="VOLUME_UP"`/`"VOLUME_DOWN"`) had no handler.
+/// Host actions on plain `<button>`s that had no handler. B299: Quadelic's `vol +`/`vol -`
+/// (`VOLUME_UP`/`VOLUME_DOWN`). B374: Vex's, Rammstein's and WinPlain's `REWIND_5S`/`FFWD_5S`.
+/// B376: WinPlain's mini layout returns with `SWITCH` to `default`, a layout it does not declare.
 final class WinampModernB299Tests: XCTestCase {
     func testVolumeButtonsStepTheHostBothWays() throws {
+        let (view, host, loaded) = try makeView(buttons: """
+              <button id="up" action="VOLUME_UP" x="0" y="0" w="20" h="20"/>
+              <button id="down" action="VOLUME_DOWN" x="40" y="0" w="20" h="20"/>
+        """)
+        try click("up", in: view, loaded)
+        XCTAssertEqual(host.volume, 0.55, accuracy: 1e-9)
+        try click("down", in: view, loaded)
+        try click("down", in: view, loaded)
+        XCTAssertEqual(host.volume, 0.45, accuracy: 1e-9)
+    }
+
+    func testFiveSecondButtonsSeekWithinTheTrack() throws {
+        let (view, host, loaded) = try makeView(buttons: """
+              <button id="back" action="REWIND_5S" x="0" y="0" w="20" h="20"/>
+              <button id="on" action="FFWD_5S" x="40" y="0" w="20" h="20"/>
+        """)
+        host.currentTime = 12
+        host.duration = 15
+        try click("on", in: view, loaded)
+        XCTAssertEqual(host.seeks.last, 15, "held at the end of the track")
+        try click("back", in: view, loaded)
+        XCTAssertEqual(host.seeks.last, 7)
+        host.currentTime = 3
+        try click("back", in: view, loaded)
+        XCTAssertEqual(host.seeks.last, 0, "held at the start")
+    }
+
+    func testSwitchToDefaultReturnsToTheFirstLayout() throws {
+        let (view, _, loaded) = try makeView(buttons: """
+              <button id="mini" action="SWITCH" param="mini" x="0" y="0" w="20" h="20"/>
+            </layout>
+            <layout id="mini" w="100" h="40">
+              <button id="back" action="SWITCH" param="default" x="0" y="0" w="20" h="20"/>
+        """)
+        try click("mini", in: view, loaded)
+        XCTAssertEqual(view.renderer.layout.xmlID, "mini")
+        try click("back", in: view, loaded)
+        XCTAssertEqual(view.renderer.layout.xmlID, "normal")
+    }
+
+    private func click(_ id: String, in view: WinampModernMainView, _ loaded: WinampModernLoadedSkin) throws {
+        let renderer = view.renderer
+        let object = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: id).first)
+        let frame = try XCTUnwrap(renderer.frame(of: object))
+        let point = NSPoint(x: frame.midX, y: renderer.canvasSize.height - frame.midY)
+        for (type, number) in [(NSEvent.EventType.leftMouseDown, 1), (.leftMouseUp, 2)] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                                                         timestamp: 0, windowNumber: 0, context: nil,
+                                                         eventNumber: number, clickCount: 1, pressure: 1))
+            if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseUp(with: event) }
+        }
+    }
+
+    private func makeView(buttons: String) throws -> (WinampModernMainView, TestHost, WinampModernLoadedSkin) {
         let loaded = try makeSkin(xml: """
         <WasabiXML>
           <container id="main">
             <layout id="normal" w="200" h="100">
-              <button id="up" action="VOLUME_UP" x="0" y="0" w="20" h="20"/>
-              <button id="down" action="VOLUME_DOWN" x="40" y="0" w="20" h="20"/>
+        \(buttons)
             </layout>
           </container>
         </WasabiXML>
@@ -22,23 +77,7 @@ final class WinampModernB299Tests: XCTestCase {
         addTeardownBlock { scripts.teardown() }
         let view = WinampModernMainView(renderer: renderer, scripts: scripts, host: host, componentHost: nil)
         view.setFrameSize(renderer.canvasSize)
-
-        func click(_ id: String) throws {
-            let object = try XCTUnwrap(loaded.runtime.graph.objects(xmlID: id).first)
-            let frame = try XCTUnwrap(renderer.frame(of: object))
-            let point = NSPoint(x: frame.midX, y: renderer.canvasSize.height - frame.midY)
-            for (type, number) in [(NSEvent.EventType.leftMouseDown, 1), (.leftMouseUp, 2)] {
-                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
-                                                             timestamp: 0, windowNumber: 0, context: nil,
-                                                             eventNumber: number, clickCount: 1, pressure: 1))
-                if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseUp(with: event) }
-            }
-        }
-        try click("up")
-        XCTAssertEqual(host.volume, 0.55, accuracy: 1e-9)
-        try click("down")
-        try click("down")
-        XCTAssertEqual(host.volume, 0.45, accuracy: 1e-9)
+        return (view, host, loaded)
     }
 
     private final class TestHost: WinampModernHost {
@@ -51,12 +90,13 @@ final class WinampModernB299Tests: XCTestCase {
         var trackTitle = ""
         var trackInfo = ""
         var spectrumLevels: [Float] = []
+        var seeks: [TimeInterval] = []
         func play() {}
         func pause() {}
         func stop() {}
         func previous() {}
         func next() {}
-        func seek(to seconds: TimeInterval) {}
+        func seek(to seconds: TimeInterval) { seeks.append(seconds) }
         func openFiles() {}
         func beginVisualizationConsumption() {}
         func endVisualizationConsumption() {}
