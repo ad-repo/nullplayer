@@ -40,7 +40,9 @@ is a regression by definition. `skin-subsystem-blueprint` § *The rule that outr
   0.25×–4×, not Sonique's 50–200 %). Never drive the oracle to measure a behaviour; decision record
   § *Decisions*.
 - **The navigator's screens are not to be cloned pixel for pixel.** The menu keeps Sonique's layout
-  and colours with NullPlayer's items; visual mode hosts the shared effects surface (S16); playlist and
+  and colours with NullPlayer's items; visual mode hosts the shared effects surface (S16), whose
+  ⌘↓/⌘↑ pick the effect and ⌘→/⌘← step inside it while plain arrows stay seek and volume (the
+  standard visualization keys, [visualizations](../visualizations/SKILL.md) § *Standard keys*); playlist and
   library are NullPlayer's windows beside the player; the drawer is the equaliser. **The other skin
   families are the template:** a surface the skin draws itself never gets a NullPlayer window too
   (NullPlayer's EQ window never opens here; WMP's `revealSkinSurface` is the model). What must look

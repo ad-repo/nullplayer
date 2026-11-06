@@ -549,29 +549,8 @@ class MainWindowView: NSView {
     }
     
     /// Cycle the main window visualization mode through all available modes
-    private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.visualizationOrder
-        guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
-            mainVisMode = .spectrum
-            return
-        }
-        // Skip modes whose shader file is missing
-        var nextIndex = allModes.index(after: currentIndex)
-        if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
-        let startIndex = nextIndex
-        while true {
-            let mode = allModes[nextIndex]
-            if let qualityMode = mode.spectrumQualityMode,
-               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
-                nextIndex = allModes.index(after: nextIndex)
-                if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
-                if nextIndex == startIndex { break }  // All modes checked, none available
-                continue
-            }
-            mainVisMode = mode
-            return
-        }
-        mainVisMode = .spectrum  // Fallback if nothing available
+    private func cycleMainVisMode(by delta: Int = 1) {
+        mainVisMode = mainVisMode.advanced(by: delta)
     }
     
     @objc private func mainVisSettingsChanged() {
@@ -1934,6 +1913,17 @@ class MainWindowView: NSView {
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
         let isVideoActive = WindowManager.shared.isVideoActivePlayback
+
+        // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the mode, ⌘→/⌘← its style.
+        if let key = VisualizationKey(event) {
+            switch key {
+            case .engine(let delta): cycleMainVisMode(by: delta)
+            case .preset(let delta) where mainVisMode == .visClassicExact:
+                _ = delta > 0 ? metalOverlay?.loadNextVisClassicProfile() : metalOverlay?.loadPreviousVisClassicProfile()
+            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta)
+            }
+            return
+        }
 
         if mainVisMode == .visClassicExact,
            let overlay = metalOverlay,

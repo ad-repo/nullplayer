@@ -71,6 +71,20 @@
 - **A short song title stays put** (#698). The title line scrolled round its box even when the
   whole title fit; now it scrolls only when it is too long, as the artist line does.
 
+### Keyboard
+
+- **The arrows seek and set the volume on every skin's main window** (#707). ←/→ seek 5 seconds and
+  ↑/↓ step the volume in Winamp Modern (`.wal`) and Windows Media Player (`.wmz`) skins too, as in
+  Classic, Original, Audion and Sonique. A skin's own arrow handler still wins where it has one.
+- **⌘-arrows step the visualization in every window that shows one** (#707). ⌘↓/⌘↑ pick the next or
+  previous visualization — the main window's mode, the engine (ProjectM, Geiss, Tripex, AVS, Goom),
+  the Spectrum window's mode, a `.wmz` or Sonique skin's effect, the Art window's effect group — and
+  ⌘→/⌘← step the preset inside it: an engine's presets, Fire, Lightning, Matrix and EKG styles,
+  Cava's colours, vis_classic's profiles, the Art window's effects. In a `.wal` or `.wmz` skin's
+  embedded visualization the presets moved from the plain arrows to ⌘-arrows.
+- **⌘→ / ⌘← no longer jump to the Visualizations window** (#707). While it was open, ⌘→ in any other
+  window stepped its preset instead, and kept doing so after it closed.
+
 ## 0.34.2
 
 ### Playback

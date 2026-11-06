@@ -849,7 +849,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         // running both is one keypress acting twice.
         if skinHandled(event, named: "keydown", focused: focused) { return }
         guard let target = focused else {
-            if hostedSurfaceHandled(event) { return }
+            if arrowHandled(event) || hostedSurfaceHandled(event) { return }
             return super.keyDown(with: event)
         }
         if event.keyCode == 49 || event.keyCode == 36 {
@@ -859,7 +859,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             else { onScriptEvent?("click", target.nodeID, target.stableID) }
             return
         }
-        if [123, 124, 125, 126].contains(event.keyCode), target.kind.lowercased().contains("slider") {
+        if [123, 124, 125, 126].contains(event.keyCode), !event.modifierFlags.contains(.command),
+           target.kind.lowercased().contains("slider") {
             let widget = scene.widgets.first { $0.stableID == target.stableID }
             let minimum = widget?.minimumValue ?? 0, maximum = widget?.maximumValue ?? 100
             let old = widgetValues[target.stableID] ?? minimum
@@ -868,8 +869,27 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
             widgetValues[target.stableID] = value
             onElementValueChanged?(target.stableID, target.nodeID, value); return
         }
-        if hostedSurfaceHandled(event) { return }
+        if arrowHandled(event) || hostedSurfaceHandled(event) { return }
         super.keyDown(with: event)
+    }
+
+    /// The arrows every mode's main window shares: ←/→ seek 5 s, ↓/↑ step the volume 5%. They go
+    /// through the host, as the skin's own sliders do, so a cast device or a playing video takes them
+    /// and the mute latch is cleared. ⌘-arrows stay a hosted `<EFFECTS>` surface's, as in Sonique.
+    private func arrowHandled(_ event: NSEvent) -> Bool {
+        guard !event.modifierFlags.contains(.command) else { return false }
+        let snapshot = currentSnapshot
+        switch event.keyCode {
+        case 123, 124:
+            guard snapshot.duration > 0 else { return true }
+            let time = snapshot.currentTime + (event.keyCode == 124 ? 5 : -5)
+            onAction?(.seek, .number(max(0, min(1, time / snapshot.duration))))
+        case 125, 126:
+            onAction?(.volume, .number(max(0, min(1, snapshot.volume + (event.keyCode == 126 ? 0.05 : -0.05)))))
+        default:
+            return false
+        }
+        return true
     }
 
     /// The release half. **`onkeyup` had a dispatch site before it had a name** — `WMPMainView`

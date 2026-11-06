@@ -891,6 +891,15 @@ class ContextMenuBuilder {
 
     // MARK: - Visualizations Submenu
     
+    private static func releaseArrowKeyEquivalents(in menu: NSMenu) {
+        let arrows = [NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey]
+            .compactMap(UnicodeScalar.init).map(String.init)
+        for item in menu.items {
+            if arrows.contains(item.keyEquivalent) { item.keyEquivalent = "" }
+            if let submenu = item.submenu { releaseArrowKeyEquivalents(in: submenu) }
+        }
+    }
+
     private static func buildVisualizationsMenuItem() -> NSMenuItem {
         let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
         visItem.submenu = buildVisualizationsMenu()
@@ -916,6 +925,10 @@ class ContextMenuBuilder {
         visMenu.addItem(NSMenuItem.separator())
 
         if let liveMenu = wm.buildVisualizationMenu() {
+            // The live window's ⌘←/⌘→ are the standard visualization keys of whichever window is key
+            // (`VisualizationKey`). Left on this menu-bar copy they would step this window's preset
+            // from every other window, and from a stale copy after it closed.
+            releaseArrowKeyEquivalents(in: liveMenu)
             moveMenuItems(from: liveMenu, to: visMenu)
             visMenu.addItem(NSMenuItem.separator())
         } else {
@@ -4743,17 +4756,9 @@ class MenuActions: NSObject {
     }
 
     @objc func setMainVisCavaColorScheme(_ sender: NSMenuItem) {
-        guard let index = sender.representedObject as? Int else { return }
-        let scope = CavaSettings.Scope.mainWindow
-        if index < 0 {
-            CavaSettings.setHasCustomColors(false, for: scope)
-        } else {
-            guard CavaSettings.colorSchemes.indices.contains(index) else { return }
-            let scheme = CavaSettings.colorSchemes[index]
-            CavaSettings.setLowGradientColor(scheme.low, for: scope)
-            CavaSettings.setHighGradientColor(scheme.high, for: scope)
-            CavaSettings.setHasCustomColors(true, for: scope)
-        }
+        guard let index = sender.representedObject as? Int,
+              index < CavaSettings.colorSchemes.count else { return }
+        CavaSettings.applyColorSchemeChoice(index, for: .mainWindow)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
 

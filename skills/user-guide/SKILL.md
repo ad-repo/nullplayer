@@ -637,7 +637,20 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 - **B**: Next track
 - **Z**: Previous track
 - **←/→**: Seek backward/forward 5s
-- **↑/↓**: Volume up/down
+- **↑/↓**: Volume up/down 5%
+- The same on the main window of every skin family — Classic, Original, Winamp Modern `.wal`,
+  Windows Media Player `.wmz`, Audion and Sonique. A skin's own key handler still wins where it
+  binds an arrow, and a focused slider in a `.wmz` skin takes them.
+
+### Visualization Keys (every window that shows one)
+- **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
+  (ProjectM, Geiss, Tripex, AVS, Goom), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  effect, or the Art window's effect group
+- **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
+  Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
+  an Art effect; add **⇧** for a hard cut where the engine blends
+- Works on Classic, Original, `.wal`, `.wmz` and Sonique main windows (Sonique in visual mode), the
+  Visualizations window, the Spectrum window and the Art window. Audion faces have no visualization.
 
 ### vis_classic Profiles
 - **Main window**: **, / .** previous/next profile

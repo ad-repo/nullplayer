@@ -14,22 +14,8 @@ enum MainWindowKeys {
         case 49: // Space - play/pause
             togglePlayPause()
 
-        case 123: // Left arrow - seek backward 5s
-            if WindowManager.shared.isVideoActivePlayback {
-                WindowManager.shared.skipVideoBackward(5)
-            } else {
-                audioEngine.seek(to: max(0, audioEngine.currentTime - 5))
-            }
-
-        case 124: // Right arrow - seek forward 5s
-            if WindowManager.shared.isVideoActivePlayback {
-                WindowManager.shared.skipVideoForward(5)
-            } else {
-                audioEngine.seek(to: min(audioEngine.duration, audioEngine.currentTime + 5))
-            }
-
-        case 125, 126:
-            _ = performVolumeStep(event)
+        case 123, 124, 125, 126:
+            return performArrow(event)
 
         case 36: // Return - stop
             if WindowManager.shared.isVideoActivePlayback {
@@ -56,9 +42,25 @@ enum MainWindowKeys {
         return true
     }
 
-    /// The arrows' volume half: ↓ and ↑ step it 5%. Answers false for any other key.
-    static func performVolumeStep(_ event: NSEvent) -> Bool {
+    /// The arrows: ← and → seek 5 s (the playing video's player while one plays), ↓ and ↑ step the
+    /// volume 5%. Answers false for any other key, and for a ⌘-arrow: those are the visualization
+    /// keys (`VisualizationKey`), never seek or volume, even in a window with nothing to visualize.
+    static func performArrow(_ event: NSEvent) -> Bool {
+        guard !event.modifierFlags.contains(.command) else { return false }
+        let audioEngine = WindowManager.shared.audioEngine
         switch event.keyCode {
+        case 123: // Left arrow - seek backward 5s
+            if WindowManager.shared.isVideoActivePlayback {
+                WindowManager.shared.skipVideoBackward(5)
+            } else {
+                audioEngine.seek(to: max(0, audioEngine.currentTime - 5))
+            }
+        case 124: // Right arrow - seek forward 5s
+            if WindowManager.shared.isVideoActivePlayback {
+                WindowManager.shared.skipVideoForward(5)
+            } else {
+                audioEngine.seek(to: min(audioEngine.duration, audioEngine.currentTime + 5))
+            }
         case 125: stepVolume(-1) // Down arrow
         case 126: stepVolume(1)  // Up arrow
         default: return false

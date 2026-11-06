@@ -28,6 +28,12 @@ enum ArtVisEffect: String, CaseIterable {
         let index = all.firstIndex(of: self) ?? 0
         return all[(index + offset % all.count + all.count) % all.count]
     }
+
+    /// The first effect of the group `offset` groups from this one's, wrapping.
+    func advancedGroup(by offset: Int) -> ArtVisEffect {
+        let index = Self.groups.firstIndex { $0.effects.contains(self) } ?? 0
+        return Self.groups[Array(Self.groups.indices).stepping(from: index, by: offset)].effects[0]
+    }
 }
 
 /// Renders one frame of an `ArtVisEffect` on the GPU.

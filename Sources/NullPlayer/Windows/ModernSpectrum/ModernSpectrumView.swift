@@ -435,6 +435,9 @@ class ModernSpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
+        // ⌘↓/⌘↑: the standard engine keys (`VisualizationKey`); ⌘→/⌘← fall to the arrows below.
+        if case .engine(let delta)? = VisualizationKey(event) { cycleQualityMode(by: delta); return }
+
         if spectrumAnalyzerView?.qualityMode == .visClassicExact,
            let chars = event.charactersIgnoringModifiers {
             if chars == "[" {
@@ -487,16 +490,10 @@ class ModernSpectrumView: NSView {
     
     // MARK: - Visualization Mode Cycling
     
-    private func cycleQualityMode() {
-        guard let view = spectrumAnalyzerView else { return }
-        let modes = SpectrumQualityMode.visualizationOrder
-        guard let idx = modes.firstIndex(of: view.qualityMode) else { return }
-        // Skip modes whose shader file is missing
-        var newIdx = (idx + 1) % modes.count
-        while !SpectrumAnalyzerView.isShaderAvailable(for: modes[newIdx]) && newIdx != idx {
-            newIdx = (newIdx + 1) % modes.count
-        }
-        let newMode = modes[newIdx]
+    private func cycleQualityMode(by delta: Int = 1) {
+        guard let view = spectrumAnalyzerView,
+              SpectrumQualityMode.visualizationOrder.contains(view.qualityMode) else { return }
+        let newMode = view.qualityMode.advanced(by: delta)
         view.qualityMode = newMode
         UserDefaults.standard.set(newMode.rawValue, forKey: "spectrumQualityMode")
     }

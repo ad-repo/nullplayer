@@ -368,6 +368,21 @@ enum CavaSettings {
         defaults.set(customized, forKey: key(.colorsCustomized, for: scope))
     }
 
+    /// The Color Preset menu's choice: -1 for the skin's own colours (and for a custom gradient that
+    /// matches no preset), else an index into `colorSchemes`.
+    static func colorSchemeChoice(for scope: Scope) -> Int {
+        hasCustomColors(for: scope) ? currentColorSchemeIndex(for: scope) ?? -1 : -1
+    }
+
+    /// Picks a Color Preset by that same number: -1 returns to the skin's own colours.
+    static func applyColorSchemeChoice(_ index: Int, for scope: Scope) {
+        if index < 0 { setHasCustomColors(false, for: scope); return }
+        guard colorSchemes.indices.contains(index) else { return }
+        setLowGradientColor(colorSchemes[index].low, for: scope)
+        setHighGradientColor(colorSchemes[index].high, for: scope)
+        setHasCustomColors(true, for: scope)
+    }
+
     /// Reset appearance choices owned by the outgoing skin after an explicit skin change.
     ///
     /// Tuning and mode remain durable user preferences, but colors and standalone-window
