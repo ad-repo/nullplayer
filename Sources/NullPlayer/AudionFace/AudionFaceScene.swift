@@ -100,11 +100,11 @@ struct AudionFaceScene {
     }
 
     /// Whether `frame` moves anything in this state — an animation with frames to step through, or
-    /// an album line that scrolls — so the window runs its clock only then.
+    /// a line that scrolls — so the window runs its clock only then.
     static func isAnimated(_ face: AudionFace, _ host: AudionFaceHostState) -> Bool {
         if let role = host.streamPhase.animation, let animation = face.animations[role],
            animation.frames.count > 1, animation.frameDelay > 0 { return true }
-        return labels(face, host).contains { scrolls($0.role, $0.line, $0.text, host) }
+        return labels(face, host).contains { scrolls($0.line, $0.text, host) }
     }
 
     /// The text lines drawn in this state: a box 12 px wide or narrower draws no text.
@@ -116,13 +116,11 @@ struct AudionFaceScene {
         }
     }
 
-    /// The album line always scrolls, as FaceKit's does; the artist line only when it does not fit.
-    /// Reduce Motion stops both, and only then is a line cut with an ellipsis. Departure: FaceKit
-    /// cuts the artist line, and a justified album line, rather than scroll them (the user's call).
-    private static func scrolls(_ role: AudionFace.TextRole, _ line: AudionFace.TextLine, _ text: String,
-                                _ host: AudionFaceHostState) -> Bool {
+    /// A line scrolls only when it does not fit its box. Reduce Motion stops it, and only then is a
+    /// line cut with an ellipsis. Departure: FaceKit always scrolls the album line (#698), and cuts
+    /// the artist line and a justified album line rather than scroll them (the user's call).
+    private static func scrolls(_ line: AudionFace.TextLine, _ text: String, _ host: AudionFaceHostState) -> Bool {
         guard !host.reduceMotion else { return false }
-        guard role == .artist else { return true }
         let width = AudionFaceText.image(text, line: line, scale: 1, reduceMotion: false)?.width ?? 0
         return width > line.rect.width
     }
@@ -219,7 +217,7 @@ struct AudionFaceScene {
         labels(face, host).compactMap { role, line, text in
             guard let image = AudionFaceText.image(text, line: line, scale: scale, reduceMotion: host.reduceMotion)
             else { return nil }
-            let offset = scrolls(role, line, text, host)
+            let offset = scrolls(line, text, host)
                 ? marqueeOffset(frame: frame, textWidth: image.width, boxWidth: line.rect.width * scale)
                 : alignmentOffset(line, textWidth: image.width, scale: scale)
             return AudionFaceDrawOp(element: .label(role, offset: offset), image: image, rect: line.rect)

@@ -165,7 +165,7 @@ final class AudionFaceSceneTests: XCTestCase {
     }
 
     /// The window's clock runs only while `frame` moves something: a multi-frame animation that
-    /// advances, or an album line that scrolls (never under Reduce Motion).
+    /// advances, or a line that scrolls (never under Reduce Motion).
     func testTheClockRunsOnlyWhileSomethingMoves() async throws {
         let fixture = try AudionFaceFixture(json: [
             "timeDigit2Rect": AudionFaceFixture.rect(top: 0, left: 1, bottom: 1, right: 2), "timeDigit2FirstPICTID": 100,
@@ -190,27 +190,36 @@ final class AudionFaceSceneTests: XCTestCase {
         XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
         host.streamPhase = .none
         host.title = "Something"
-        XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "the album line scrolls")
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "a title too wide for its box scrolls")
         host.reduceMotion = true
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host))
 
         XCTAssertEqual(AudionFaceScene.timeDigitRects(face), [AudionFaceRect(x: 1, y: 0, width: 1, height: 1)])
     }
 
-    /// Departure: the artist line scrolls only when it does not fit its box; FaceKit cuts it.
-    func testTheArtistLineScrollsOnlyWhenItDoesNotFit() async throws {
+    /// Departure: either line scrolls only when it does not fit its box. FaceKit cuts the artist
+    /// line, and scrolls the album line even when it fits (#698).
+    func testALineScrollsOnlyWhenItDoesNotFit() async throws {
+        let black = ["red": 0, "green": 0, "blue": 0]
         let fixture = try AudionFaceFixture(json: [
             "artistDisplayRect": AudionFaceFixture.rect(top: 0, left: 0, bottom: 14, right: 40), "artistTextMode": 1,
-            "artistDisplayTextFaceColorFromFace": ["red": 0, "green": 0, "blue": 0],
+            "artistDisplayTextFaceColorFromFace": black,
+            "albumDisplayRect": AudionFaceFixture.rect(top: 14, left: 0, bottom: 28, right: 40), "albumTextMode": 1,
+            "albumDisplayTextFaceColorFromFace": black,
         ])
-        try fixture.png("base.png", width: 40, height: 14)
+        try fixture.png("base.png", width: 40, height: 28)
         let face = try await fixture.load()
+        let long = "Far too long for a forty pixel box"
 
         var host = AudionFaceHostState()
         host.artist = "Hi"
-        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "it fits: pinned")
-        host.artist = "An artist far too long for a forty pixel box"
-        XCTAssertTrue(AudionFaceScene.isAnimated(face, host))
+        host.title = "Yo"
+        XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "both fit: pinned")
+        host.artist = long
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "the artist line scrolls")
+        host.artist = "Hi"
+        host.title = long
+        XCTAssertTrue(AudionFaceScene.isAnimated(face, host), "the album line scrolls")
         host.reduceMotion = true
         XCTAssertFalse(AudionFaceScene.isAnimated(face, host), "Reduce Motion cuts it instead")
     }

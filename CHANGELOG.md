@@ -60,6 +60,11 @@
   volume came back to full a moment before the music actually stopped, so a short blip played after
   the fade.
 
+### Audion faces
+
+- **A short song title stays put** (#698). The title line scrolled round its box even when the
+  whole title fit; now it scrolls only when it is too long, as the artist line does.
+
 ## 0.34.2
 
 ### Playback
