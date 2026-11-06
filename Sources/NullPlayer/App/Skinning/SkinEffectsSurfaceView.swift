@@ -669,6 +669,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         transparent.target = self
         transparent.state = VisClassicBridge.transparentBgDefault(for: selection.visClassicScope) ? .on : .off
         menu.addItem(transparent)
+        menu.addItem(WinampModernVisSensitivityMenu.shared.menuItem(for: .visClassic))
         return menu
     }
 

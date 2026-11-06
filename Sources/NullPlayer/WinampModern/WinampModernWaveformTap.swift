@@ -67,10 +67,12 @@ final class WinampModernWaveformTap {
                                  count: WinampModernWaveformTap.sampleCount)
 
     /// How many chunks may wait to be shown. Each is ~13 ms of audio, so this is the most latency the
-    /// scope can be behind the sound — a little over one tap buffer, enough to ride out the burst
-    /// without the trace visibly lagging the music. Past it the oldest are dropped and the clock
-    /// resynchronises: better a skipped chunk than a scope that drifts further behind every second.
-    static let maximumQueuedChunks = 6
+    /// scope can be behind the sound — one whole tap buffer, enough to ride out the burst without the
+    /// trace visibly lagging the music. The tap delivers 4410 frames (7–8 chunks) at 44.1 kHz, not the
+    /// 2048 it asks for (`WINAMP_MODERN_VIS_GAPS`); a cap of 6 dropped a chunk or two of every buffer.
+    /// Past it the oldest are dropped and the clock resynchronises: better a skipped chunk than a
+    /// scope that drifts further behind every second.
+    static let maximumQueuedChunks = 8
 
     init(consumerId: String) {
         self.consumerId = consumerId

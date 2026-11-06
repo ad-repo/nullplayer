@@ -225,11 +225,8 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         // buffer is the reliable sign that this is another box of the same frame.
         if left != lastProcessed {
             lastProcessed = left
-            // The core's own scaling is cut for a 128px-tall window, so in a 30px skin box it reads
-            // cold; the gain goes on the input, about the 128 centre line (`WasabiVisStyle.Gain`).
-            let amplified = Self.amplified(left)
-            let amplifiedRight = right == left ? amplified : Self.amplified(right)
-            core.processAndDraw(leftData: amplified, rightData: amplifiedRight,
+            // The bridge applies the engine's input gain and Sensitivity, as for every surface.
+            core.processAndDraw(leftData: left, rightData: right,
                                 sampleRate: input.sampleRate,
                                 width: width, height: height, into: &frameBytes, stride: stride)
         } else {
@@ -361,18 +358,6 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         bridge = made
         bridgeSize = (width, height)
         return made
-    }
-
-    /// The 576-sample buffer with the excursion either side of 128 scaled up, clamped to the byte
-    /// range Winamp's `visdata` format is defined on.
-    static func amplified(_ samples: [UInt8],
-                          gain: Double = Double(WinampModernVisSensitivity.gain(for: .visClassic)))
-        -> [UInt8] {
-        guard gain != 1 else { return samples }
-        return samples.map { sample in
-            let scaled = 128 + (Double(sample) - 128) * gain
-            return UInt8(max(0, min(255, scaled.rounded())))
-        }
     }
 
     /// The core writes **BGRA**, top row first (`setPixelBounded` in `VisClassicCore.cpp`), which is

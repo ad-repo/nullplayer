@@ -756,9 +756,11 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var ekgEmbeddedScrollPixelCarry: Float = 0
     nonisolated(unsafe) private var renderEKGStyle: EKGStyle = .clinical
 
-    // vis_classic waveform state (latest 576-sample stereo frame)
-    nonisolated(unsafe) private var visClassicWaveLeft: [UInt8] = Array(repeating: 128, count: 576)
-    nonisolated(unsafe) private var visClassicWaveRight: [UInt8] = Array(repeating: 128, count: 576)
+    // vis_classic waveform: each tap buffer posts several 576-sample chunks at once, and keeping only
+    // the newest showed one 13 ms slice per buffer (100 ms on a 4410-frame tap), so bars jumped on
+    // whatever that slice caught. The playout queue hands them out at the audio's own rate. Only its
+    // `receive` / `samples(at:)` are used: this view registers the consumer and observes itself.
+    private let visClassicPlayout = WinampModernWaveformTap(consumerId: "")
     nonisolated(unsafe) private var visClassicWaveSampleRate: Double = 44100
     
     // Flame mode state
@@ -1036,10 +1038,10 @@ class SpectrumAnalyzerView: NSView {
               let sampleRate = userInfo["sampleRate"] as? Double else { return }
 
         let hasData = left.contains { $0 != 128 } || right.contains { $0 != 128 }
+        visClassicPlayout.receive(left: left, right: right, sampleRate: sampleRate,
+                                  at: ProcessInfo.processInfo.systemUptime)
 
         dataLock.withLock {
-            visClassicWaveLeft = left
-            visClassicWaveRight = right
             visClassicWaveSampleRate = sampleRate
 
             if hasData {
@@ -2643,9 +2645,8 @@ class SpectrumAnalyzerView: NSView {
             return
         }
 
-        let (waveLeft, waveRight, waveSR) = dataLock.withLock {
-            (visClassicWaveLeft, visClassicWaveRight, visClassicWaveSampleRate)
-        }
+        let (waveLeft, waveRight) = visClassicPlayout.samples
+        let waveSR = dataLock.withLock { visClassicWaveSampleRate }
         let stride = width * 4
         bridge.processAndDraw(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR,
                               width: width, height: height, into: &visClassicFrameBytes, stride: stride)
@@ -2866,9 +2867,6 @@ class SpectrumAnalyzerView: NSView {
             idleFrameCount = 0
             hasClearedAfterIdle = false
             stoppedDueToIdle = false
-
-            visClassicWaveLeft = Array(repeating: 128, count: 576)
-            visClassicWaveRight = Array(repeating: 128, count: 576)
 
             ekgAmplitudeLevel = 0.5
             ekgTargetAmplitudeLevel = 0.5

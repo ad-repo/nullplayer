@@ -102,11 +102,18 @@ final class VisClassicBridge {
 
     /// Process and draw atomically, so no other caller can touch the shared core between this
     /// view's processing and its draw.
+    ///
+    /// Every surface's waveform takes the engine's input gain here (`WasabiVisStyle.Gain.visClassicInput`
+    /// times the user's vis_classic **Sensitivity**): the core maps magnitude linearly and most
+    /// profiles halve it, so ungained music left the mids and highs near the floor in every window.
     func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double,
                         width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
         guard let core else { return }
         let needed = stride * height
         if buffer.count < needed { buffer = [UInt8](repeating: 0, count: needed) }
+        let gain = Double(WinampModernVisSensitivity.gain(for: .visClassic))
+        let leftData = Self.amplified(leftData, gain: gain)
+        let rightData = Self.amplified(rightData, gain: gain)
         coreLock.withLock {
             leftData.withUnsafeBufferPointer { lp in
                 rightData.withUnsafeBufferPointer { rp in
@@ -118,6 +125,16 @@ final class VisClassicBridge {
             buffer.withUnsafeMutableBufferPointer { bp in
                 _ = vc_draw_at_size(core, bp.baseAddress, Int32(width), Int32(height), Int32(stride))
             }
+        }
+    }
+
+    /// The 576-sample buffer with the excursion either side of 128 scaled up, clamped to the byte
+    /// range Winamp's `visdata` format is defined on.
+    static func amplified(_ samples: [UInt8], gain: Double) -> [UInt8] {
+        guard gain != 1 else { return samples }
+        return samples.map { sample in
+            let scaled = 128 + (Double(sample) - 128) * gain
+            return UInt8(max(0, min(255, scaled.rounded())))
         }
     }
 

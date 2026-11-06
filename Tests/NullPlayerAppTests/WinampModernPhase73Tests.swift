@@ -202,6 +202,20 @@ final class WinampModernPhase73Tests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Int(shown ?? 0), 20 - WinampModernWaveformTap.maximumQueuedChunks)
     }
 
+    /// One real tap buffer plays out whole. The mixer tap delivers 4410 frames at 44.1 kHz — eight
+    /// chunks in the worst burst — and a cap of 6 dropped the first of them every buffer; vis_classic,
+    /// fed the newest chunk alone, drew one 13 ms slice per 100 ms and spiked on whatever it caught.
+    func testOneTapBufferOfChunksIsPlayedOutWithoutDroppingAny() {
+        let tap = WinampModernWaveformTap(consumerId: "test")
+        let burst = Int((4410.0 / 576).rounded(.up))
+        for value in 1...burst {
+            tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)), sampleRate: 44_100, at: 100)
+        }
+        let step = 576.0 / 44_100
+        let shown = (0..<burst).compactMap { tap.samples(at: 100 + step * (Double($0) + 0.5)).left.first }
+        XCTAssertEqual(shown, (1...burst).map { UInt8($0) })
+    }
+
     // MARK: - What the renderer asks the host for
 
     /// The tap is real-time audio work, so it stays off unless a skin actually declares a scope —

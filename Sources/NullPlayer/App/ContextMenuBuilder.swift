@@ -1510,7 +1510,7 @@ class ContextMenuBuilder {
         }
         
         // Responsiveness submenu
-        if currentMode != .cava {
+        if currentMode != .cava && currentMode != .visClassicExact {
             let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
             let responsivenessMenu = NSMenu()
             responsivenessMenu.autoenablesItems = false
@@ -1530,7 +1530,7 @@ class ContextMenuBuilder {
         }
         
         // Normalization submenu (not shown for Fire mode)
-        if currentMode != .fire && currentMode != .cava {
+        if currentMode != .fire && currentMode != .cava && currentMode != .visClassicExact {
             let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
             let normMenu = NSMenu()
             normMenu.autoenablesItems = false
@@ -1672,59 +1672,21 @@ class ContextMenuBuilder {
             visMenu.addItem(ekgStyleItem)
         }
 
-        // vis_classic profile controls (only when vis_classic mode active)
         if currentMode == .visClassicExact {
-            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
-            let profilesMenu = NSMenu()
-            profilesMenu.autoenablesItems = false
-
-            let currentName = VisClassicBridge.lastProfileName(for: .mainWindow)
-            let profiles = VisClassicBridge.availableProfilesCatalog()
-            if profiles.isEmpty {
-                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
-                none.isEnabled = false
-                profilesMenu.addItem(none)
-            } else {
-                for entry in profiles {
-                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadMainVisClassicProfile(_:)), keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = entry.name
-                    item.state = (entry.name == currentName) ? .on : .off
-                    profilesMenu.addItem(item)
-                }
-            }
-
-            profilesMenuItem.submenu = profilesMenu
-            visMenu.addItem(profilesMenuItem)
-            visMenu.addItem(NSMenuItem.separator())
-
-            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .mainWindow)
-            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleMainVisClassicFitToWidth), keyEquivalent: "")
-            fitItem.target = MenuActions.shared
-            fitItem.state = fitEnabled ? .on : .off
-            visMenu.addItem(fitItem)
-
-            let transparentBgEnabledMain = VisClassicBridge.transparentBgDefault(for: .mainWindow)
-            let transparentBgItemMain = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleMainVisClassicTransparentBg), keyEquivalent: "")
-            transparentBgItemMain.target = MenuActions.shared
-            transparentBgItemMain.state = transparentBgEnabledMain ? .on : .off
-            visMenu.addItem(transparentBgItemMain)
-
-            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextMainVisClassicProfile), keyEquivalent: "")
-            nextItem.target = MenuActions.shared
-            visMenu.addItem(nextItem)
-
-            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousMainVisClassicProfile), keyEquivalent: "")
-            prevItem.target = MenuActions.shared
-            visMenu.addItem(prevItem)
-
-            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importMainVisClassicProfile), keyEquivalent: "")
-            importItem.target = MenuActions.shared
-            visMenu.addItem(importItem)
-
-            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportMainVisClassicProfile), keyEquivalent: "")
-            exportItem.target = MenuActions.shared
-            visMenu.addItem(exportItem)
+            VisClassicMenu.addItems(
+                to: visMenu,
+                profileNames: VisClassicBridge.availableProfilesCatalog().map(\.name),
+                currentProfile: VisClassicBridge.lastProfileName(for: .mainWindow),
+                fitToWidth: VisClassicBridge.fitToWidthDefault(for: .mainWindow),
+                transparentBackground: VisClassicBridge.transparentBgDefault(for: .mainWindow),
+                target: MenuActions.shared,
+                actions: .init(loadProfile: #selector(MenuActions.loadMainVisClassicProfile(_:)),
+                               nextProfile: #selector(MenuActions.nextMainVisClassicProfile),
+                               previousProfile: #selector(MenuActions.previousMainVisClassicProfile),
+                               toggleFitToWidth: #selector(MenuActions.toggleMainVisClassicFitToWidth),
+                               toggleTransparentBackground: #selector(MenuActions.toggleMainVisClassicTransparentBg),
+                               importProfile: #selector(MenuActions.importMainVisClassicProfile),
+                               exportProfile: #selector(MenuActions.exportMainVisClassicProfile)))
         }
 
         visMenu.addItem(NSMenuItem.separator())
@@ -1774,42 +1736,43 @@ class ContextMenuBuilder {
         modeItem.submenu = modeMenu
         spectrumWindowMenu.addItem(modeItem)
         
-        // Responsiveness submenu
-        let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
-        let responsivenessMenu = NSMenu()
-        responsivenessMenu.autoenablesItems = false
-        
-        let currentDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode")
-            .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
-        
-        for mode in SpectrumDecayMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumResponsiveness(_:)), keyEquivalent: "")
-            item.target = MenuActions.shared
-            item.representedObject = mode
-            item.state = (currentDecay == mode) ? .on : .off
-            responsivenessMenu.addItem(item)
+        // Responsiveness and Normalization: vis_classic draws through its own core and ignores both.
+        if currentQuality != .visClassicExact {
+            let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
+            let responsivenessMenu = NSMenu()
+            responsivenessMenu.autoenablesItems = false
+
+            let currentDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode")
+                .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
+
+            for mode in SpectrumDecayMode.allCases {
+                let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumResponsiveness(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = mode
+                item.state = (currentDecay == mode) ? .on : .off
+                responsivenessMenu.addItem(item)
+            }
+            responsivenessItem.submenu = responsivenessMenu
+            spectrumWindowMenu.addItem(responsivenessItem)
+
+            let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
+            let normMenu = NSMenu()
+            normMenu.autoenablesItems = false
+
+            let currentNorm = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
+                .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
+
+            for mode in SpectrumNormalizationMode.allCases {
+                let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(MenuActions.setSpectrumNormalization(_:)), keyEquivalent: "")
+                item.target = MenuActions.shared
+                item.representedObject = mode
+                item.state = (currentNorm == mode) ? .on : .off
+                normMenu.addItem(item)
+            }
+            normItem.submenu = normMenu
+            spectrumWindowMenu.addItem(normItem)
         }
-        responsivenessItem.submenu = responsivenessMenu
-        spectrumWindowMenu.addItem(responsivenessItem)
-        
-        // Normalization submenu
-        let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
-        let normMenu = NSMenu()
-        normMenu.autoenablesItems = false
-        
-        let currentNorm = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
-            .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
-        
-        for mode in SpectrumNormalizationMode.allCases {
-            let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(MenuActions.setSpectrumNormalization(_:)), keyEquivalent: "")
-            item.target = MenuActions.shared
-            item.representedObject = mode
-            item.state = (currentNorm == mode) ? .on : .off
-            normMenu.addItem(item)
-        }
-        normItem.submenu = normMenu
-        spectrumWindowMenu.addItem(normItem)
-        
+
         // Flame Style submenu (only when Fire mode active)
         if currentQuality == .flame {
             let flameStyleItem = NSMenuItem(title: "Flame Style", action: nil, keyEquivalent: "")
@@ -1933,59 +1896,21 @@ class ContextMenuBuilder {
             spectrumWindowMenu.addItem(ekgStyleItem)
         }
 
-        // vis_classic profile controls (only when vis_classic mode active)
         if currentQuality == .visClassicExact {
-            let profilesMenuItem = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
-            let profilesMenu = NSMenu()
-            profilesMenu.autoenablesItems = false
-
-            let currentName = VisClassicBridge.lastProfileName(for: .spectrumWindow)
-            let profiles = VisClassicBridge.availableProfilesCatalog()
-            if profiles.isEmpty {
-                let none = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
-                none.isEnabled = false
-                profilesMenu.addItem(none)
-            } else {
-                for entry in profiles {
-                    let item = NSMenuItem(title: entry.name, action: #selector(MenuActions.loadVisClassicProfile(_:)), keyEquivalent: "")
-                    item.target = MenuActions.shared
-                    item.representedObject = entry.name
-                    item.state = (entry.name == currentName) ? .on : .off
-                    profilesMenu.addItem(item)
-                }
-            }
-
-            profilesMenuItem.submenu = profilesMenu
-            spectrumWindowMenu.addItem(profilesMenuItem)
-            spectrumWindowMenu.addItem(NSMenuItem.separator())
-
-            let fitEnabled = VisClassicBridge.fitToWidthDefault(for: .spectrumWindow)
-            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(MenuActions.toggleVisClassicFitToWidth), keyEquivalent: "")
-            fitItem.target = MenuActions.shared
-            fitItem.state = fitEnabled ? .on : .off
-            spectrumWindowMenu.addItem(fitItem)
-
-            let transparentEnabled = VisClassicBridge.transparentBgDefault(for: .spectrumWindow)
-            let transparentItem = NSMenuItem(title: "Transparent Background", action: #selector(MenuActions.toggleVisClassicTransparentBg), keyEquivalent: "")
-            transparentItem.target = MenuActions.shared
-            transparentItem.state = transparentEnabled ? .on : .off
-            spectrumWindowMenu.addItem(transparentItem)
-
-            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(MenuActions.nextVisClassicProfile), keyEquivalent: "")
-            nextItem.target = MenuActions.shared
-            spectrumWindowMenu.addItem(nextItem)
-
-            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(MenuActions.previousVisClassicProfile), keyEquivalent: "")
-            prevItem.target = MenuActions.shared
-            spectrumWindowMenu.addItem(prevItem)
-
-            let importItem = NSMenuItem(title: "Import INI...", action: #selector(MenuActions.importVisClassicProfile), keyEquivalent: "")
-            importItem.target = MenuActions.shared
-            spectrumWindowMenu.addItem(importItem)
-
-            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(MenuActions.exportVisClassicProfile), keyEquivalent: "")
-            exportItem.target = MenuActions.shared
-            spectrumWindowMenu.addItem(exportItem)
+            VisClassicMenu.addItems(
+                to: spectrumWindowMenu,
+                profileNames: VisClassicBridge.availableProfilesCatalog().map(\.name),
+                currentProfile: VisClassicBridge.lastProfileName(for: .spectrumWindow),
+                fitToWidth: VisClassicBridge.fitToWidthDefault(for: .spectrumWindow),
+                transparentBackground: VisClassicBridge.transparentBgDefault(for: .spectrumWindow),
+                target: MenuActions.shared,
+                actions: .init(loadProfile: #selector(MenuActions.loadVisClassicProfile(_:)),
+                               nextProfile: #selector(MenuActions.nextVisClassicProfile),
+                               previousProfile: #selector(MenuActions.previousVisClassicProfile),
+                               toggleFitToWidth: #selector(MenuActions.toggleVisClassicFitToWidth),
+                               toggleTransparentBackground: #selector(MenuActions.toggleVisClassicTransparentBg),
+                               importProfile: #selector(MenuActions.importVisClassicProfile),
+                               exportProfile: #selector(MenuActions.exportVisClassicProfile)))
         }
 
         spectrumWindowMenu.addItem(NSMenuItem.separator())

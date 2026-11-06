@@ -226,7 +226,7 @@ final class WinampModernPhase75Tests: XCTestCase {
     /// about that centre and clamped to the byte range rather than wrapping around it.
     func testTheVisClassicInputGainScalesAboutTheCentreAndClamps() {
         let samples: [UInt8] = [128, 168, 88, 255, 0]
-        let amplified = VisClassicVisRenderer.amplified(samples, gain: 2)
+        let amplified = VisClassicBridge.amplified(samples, gain: 2)
 
         XCTAssertEqual(amplified[0], 128, "silence is the centre line, whatever the gain")
         XCTAssertEqual(amplified[1], 208, "+40 doubles to +80")
@@ -237,7 +237,7 @@ final class WinampModernPhase75Tests: XCTestCase {
 
     func testAUnitInputGainLeavesTheBufferAlone() {
         let samples: [UInt8] = [0, 64, 128, 192, 255]
-        XCTAssertEqual(VisClassicVisRenderer.amplified(samples, gain: 1), samples)
+        XCTAssertEqual(VisClassicBridge.amplified(samples, gain: 1), samples)
     }
 
     // MARK: - The skin's own popup, and the id that meant "nothing"

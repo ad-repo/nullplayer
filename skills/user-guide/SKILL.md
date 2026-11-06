@@ -656,6 +656,8 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 - **Main window**: **, / .** previous/next profile
 - **Spectrum window**: **[ / ]** previous/next profile (left/right also cycle profiles in vis_classic mode)
 - **Transparent Background**: right-click in vis_classic mode and toggle per window (main and spectrum persist separately)
+- **Sensitivity** (Lowest…Highest): right-click in vis_classic mode; one setting for every vis_classic
+  analyzer — main window, Spectrum window, a `.wal` vis box and `.wmz` / Sonique effects
 
 ### Geiss
 - **→ / ←**: Next / Previous effect
