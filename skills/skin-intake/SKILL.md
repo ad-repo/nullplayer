@@ -121,6 +121,13 @@ window is still judged, and every control is still clicked.
 3. **Re-check only what a fix touched**, with the same tools on only those skins: the census for
    a window or drawing fix, the smoke for a control fix.
 
+**What "never split" protects is the sweeps, not the worker.** A split is wrong only when each part
+pays for its own sweeps. When the work is wide, split it by file area across small Sonnet workers
+that build and test their own part but run no sweeps. Then run one `wal_fix_check.sh` over the
+combined result. Intake #6's pre-PR review fixes (12 findings, about 20 files) ran as one Opus
+worker. It took 210 calls and 86 minutes, and its context grew past 350k, which cost the same way
+the hand-clicking passes did.
+
 ## The visual review
 
 No skin moves to `live` without it, whether or not it says `headless clean`. A clean sweep is a
