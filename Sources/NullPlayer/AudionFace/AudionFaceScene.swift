@@ -117,8 +117,8 @@ struct AudionFaceScene {
     }
 
     /// A line scrolls only when it does not fit its box. Reduce Motion stops it, and only then is a
-    /// line cut with an ellipsis. Departure: FaceKit always scrolls the album line (#698), and cuts
-    /// the artist line and a justified album line rather than scroll them (the user's call).
+    /// line cut with an ellipsis. Departure: FaceKit always scrolls the album line, and cuts the
+    /// artist line and a justified album line rather than scroll them.
     private static func scrolls(_ line: AudionFace.TextLine, _ text: String, _ host: AudionFaceHostState) -> Bool {
         guard !host.reduceMotion else { return false }
         let width = AudionFaceText.image(text, line: line, scale: 1, reduceMotion: false)?.width ?? 0

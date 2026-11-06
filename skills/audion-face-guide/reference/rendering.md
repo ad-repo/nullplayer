@@ -97,9 +97,9 @@ rather than scroll them; the whole text scrolls instead. FaceKit scrolls the alb
 fits; a line that fits is pinned instead (#698). `AudionFaceScene.isAnimated` runs the clock
 for a scrolling line.
 
-**Alignment** (`AudionFaceScene.alignmentOffset`): a pinned line — one that fits, or any line
-under Reduce Motion — narrower than its box is offset by half the room (centre) or all of it
-(right), in whole face pixels; a wider one stays left. A scrolling line ignores it.
+**Alignment** (`AudionFaceScene.alignmentOffset`): a line that does not scroll and is narrower than
+its box is offset by half the room (centre) or all of it (right), in whole face pixels; a wider one
+stays left. A scrolling line ignores it.
 
 **Bitmap fonts** (`AudionFaceBitmapFont`, a departure): when the line's style holds nothing beyond
 bold, condense, extend and justify, and the line has a 1-bit font — a shipped `NFNT` strike at its
