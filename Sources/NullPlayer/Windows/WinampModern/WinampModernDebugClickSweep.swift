@@ -2,13 +2,14 @@
 import AppKit
 
 /// `WINAMP_MODERN_DEBUG_CLICK=auto`: click every clickable object in the main window's current layout,
-/// two seconds apart, through `WinampModernMainView.debugClick`, and log one `WM-SMOKE|…` row per click
-/// with what changed. `scripts/wal_live_smoke.sh` drives it and turns the rows into a TSV; see
-/// `harness.md` § *Driving a click in the running app*.
+/// two seconds apart, through `WinampModernMainView.debugClick`, and log one `WM-SMOKE|key=value|…` row
+/// per object with what changed, its keys in `fields` order. `scripts/wal_live_smoke.sh` drives it and
+/// turns the rows into a TSV, reading each value by its key; see `harness.md` § *Driving a click in the
+/// running app*.
 ///
 /// Clickable means a markup `action=` or a script left-press hook. A slider takes its value on press
-/// and drag, which `debugClick` (the release path) never replays, so a slider is driven through the
-/// view's own `mouseDown`/`mouseDragged`/`mouseUp` to a quarter of the way along its long axis. Window commands that would end the
+/// and drag, which `debugClick` (the release path) never replays, so a slider is dragged
+/// (`WinampModernMainView.debugDrag`) to a quarter of the way along its long axis. Window commands that would end the
 /// run (close, minimize, quit) and `EJECT`'s modal file panel are skipped; a menu or modal alert a click
 /// pops up is dismissed and noted. Between clicks the sweep puts back the starting layout and resumes playback,
 /// and the run starts from volume 0.5 so a control that pins it to either end shows. (Not reset per
@@ -31,12 +32,18 @@ final class WinampModernDebugClickSweep {
         let mainOnScreen: Bool
     }
 
+    /// The keys of a `WM-SMOKE|` row, in order. A row the sweep did not click carries the first three
+    /// and `note`; the rest read `-`.
+    private static let fields = ["idx", "object", "action", "point", "volume", "play", "position", "track",
+                                 "eq", "layout", "windows", "main", "note"]
     private static let skippedActions: Set<String> = ["CLOSE", "MINIMIZE", "EXIT", "QUIT", "EJECT"]
     private static let probeVolume = 0.5
     /// The sweep keeps itself alive until `done`.
     private static var running: WinampModernDebugClickSweep?
 
     private weak var view: WinampModernMainView?
+    /// The skin's container id for one of its auxiliary windows, nil for any other window.
+    private let containerID: (NSWindow) -> String?
     private let targets: [Target]
     private let startLayout: String
     private let startVolume: Double
@@ -47,17 +54,18 @@ final class WinampModernDebugClickSweep {
     private weak var openMenu: NSMenu?
     private var menuObserver: NSObjectProtocol?
 
-    static func start(on view: WinampModernMainView) {
+    static func start(on view: WinampModernMainView, containerID: @escaping (NSWindow) -> String?) {
         let startVolume = view.host.volume
         view.host.volume = probeVolume
-        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume)
+        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume, containerID: containerID)
         running = sweep
         sweep.step(0)
     }
 
-    private init(view: WinampModernMainView, startVolume: Double) {
+    private init(view: WinampModernMainView, startVolume: Double, containerID: @escaping (NSWindow) -> String?) {
         self.view = view
         self.startVolume = startVolume
+        self.containerID = containerID
         startEQ = view.componentHost?.equalizerSnapshot()
         startLayout = view.renderer.activeLayoutID
         targets = Self.targets(in: view)
@@ -108,9 +116,9 @@ final class WinampModernDebugClickSweep {
         let target = targets[index]
         let point = Self.point(on: target.object, in: view)
         let skip = Self.skippedActions.contains(target.action) ? "skip" : point == nil ? "unreachable" : nil
+        let identity = ["idx": "\(index + 1)", "object": target.label, "action": target.action]
         guard let point, skip == nil else {
-            let fields = [String(index + 1), target.label, target.action] + Array(repeating: "-", count: 9) + [skip ?? ""]
-            NSLog("%@", "WM-SMOKE|" + fields.joined(separator: "|"))
+            Self.log(identity.merging(["note": skip ?? ""]) { $1 })
             return step(index + 1)
         }
         let before = snapshot(view)
@@ -128,7 +136,7 @@ final class WinampModernDebugClickSweep {
         RunLoop.main.add(unblock, forMode: .common)
         let dragEnd = target.object.tag.is(.slider)
             ? view.renderer.frame(of: target.object).map(Self.quarterPoint) : nil
-        if let dragEnd { drag(view, from: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
+        if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self, let view = self.view else { return self?.finish() ?? () }
             let after = self.snapshot(view)
@@ -146,22 +154,25 @@ final class WinampModernDebugClickSweep {
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
             }.sorted().joined(separator: ",")
-            let fields = [
-                "\(index + 1)", target.label, target.action,
-                "\(Int(point.x)),\(Int(point.y))" + (dragEnd.map { ">\(Int($0.x)),\(Int($0.y))" } ?? ""),
-                String(format: "%.2f>%.2f", before.volume, after.volume),
-                "\(before.play)>\(after.play)",
-                String(format: "%.1f>%.1f", before.position, after.position),
-                "\(before.track)>\(after.track)",
-                "\(before.eq)>\(after.eq)",
-                "\(before.layout)>\(after.layout)",
-                windows.isEmpty ? "-" : windows,
-                "\(before.mainOnScreen ? 1 : 0)>\(after.mainOnScreen ? 1 : 0)",
-                notes.joined(separator: ","),
-            ]
-            NSLog("%@", "WM-SMOKE|" + fields.joined(separator: "|"))
+            Self.log(identity.merging([
+                "point": "\(Int(point.x)),\(Int(point.y))" + (dragEnd.map { ">\(Int($0.x)),\(Int($0.y))" } ?? ""),
+                "volume": String(format: "%.2f>%.2f", before.volume, after.volume),
+                "play": "\(before.play)>\(after.play)",
+                "position": String(format: "%.1f>%.1f", before.position, after.position),
+                "track": "\(before.track)>\(after.track)",
+                "eq": "\(before.eq)>\(after.eq)",
+                "layout": "\(before.layout)>\(after.layout)",
+                "windows": windows.isEmpty ? "-" : windows,
+                "main": "\(before.mainOnScreen ? 1 : 0)>\(after.mainOnScreen ? 1 : 0)",
+                "note": notes.joined(separator: ","),
+            ]) { $1 })
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.step(index + 1) }
         }
+    }
+
+    /// One `WM-SMOKE|` row: every key in `fields` order, `-` for one the row does not carry.
+    private static func log(_ values: [String: String]) {
+        NSLog("%@", "WM-SMOKE|" + fields.map { "\($0)=\(values[$0] ?? "-")" }.joined(separator: "|"))
     }
 
     private static func quarterPoint(along frame: CGRect) -> CGPoint {
@@ -169,30 +180,12 @@ final class WinampModernDebugClickSweep {
             : CGPoint(x: frame.midX, y: frame.minY + frame.height / 4)
     }
 
-    /// Press at `start`, drag to `end` and release there, as real events through the view's handlers.
-    private func drag(_ view: WinampModernMainView, from start: CGPoint, to end: CGPoint) {
-        guard let window = view.window else { return }
-        func event(_ type: NSEvent.EventType, at skin: CGPoint) -> NSEvent? {
-            let location = view.convert(view.viewRect(fromSkin: CGRect(origin: skin, size: .zero)).origin, to: nil)
-            return NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
-                                      timestamp: ProcessInfo.processInfo.systemUptime,
-                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
-                                      clickCount: 1, pressure: 1)
-        }
-        event(.leftMouseDown, at: start).map(view.mouseDown)
-        event(.leftMouseDragged, at: end).map(view.mouseDragged)
-        event(.leftMouseUp, at: end).map(view.mouseUp)
-    }
-
     private func snapshot(_ view: WinampModernMainView) -> Snapshot {
         // A skin window is named by its container id (`stick`), anything else by title or class.
-        let containers = (view.window?.windowController as? WinampModernMainWindowController)?
-            .auxiliaryContainers ?? []
         var windows: [ObjectIdentifier: String] = [:]
         for window in NSApp.windows where window.isVisible && window.alphaValue > 0
             && !window.ignoresMouseEvents {  // not a skin's drop-shadow window
-            let name = containers.first { $0.window === window }?.containerID
-                ?? (window.title.isEmpty ? "\(type(of: window))" : window.title)
+            let name = containerID(window) ?? (window.title.isEmpty ? "\(type(of: window))" : window.title)
             windows[ObjectIdentifier(window)] = "\(name)(\(Int(window.frame.width))x\(Int(window.frame.height)))"
                 .replacingOccurrences(of: "|", with: "/")
         }

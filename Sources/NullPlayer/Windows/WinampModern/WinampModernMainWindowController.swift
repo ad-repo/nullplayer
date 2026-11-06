@@ -346,13 +346,18 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // `WINAMP_MODERN_DEBUG_CLICK=x,y[;x,y…]` drives clicks at skin points a few seconds after
             // launch — the only way to reproduce a click-path defect that lives in the *window* layer,
             // which the render harness does not have. See `WinampModernMainView.debugClick`.
-            if ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] == "auto" {
+            switch ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
+            case nil: break
+            case "auto"?:
                 // Every clickable object in the main window, one at a time (`WinampModernDebugClickSweep`);
                 // later than a hand-given point so the launch's playback has started.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
-                    if let view = self?.skinView { WinampModernDebugClickSweep.start(on: view) }
+                    guard let self, let view = skinView else { return }
+                    WinampModernDebugClickSweep.start(on: view) { [weak self] window in
+                        self?.auxiliaryContainers.first { $0.window === window }?.containerID
+                    }
                 }
-            } else if let spec = ProcessInfo.processInfo.environment["WINAMP_MODERN_DEBUG_CLICK"] {
+            case let spec?:
                 // `<container>@x,y` aims at one of the skin's *other* windows. Without it this hook
                 // could only ever reach the main player, and a skin's configurator — the window whose
                 // switches change every other window — is an auxiliary container (Phase 45).
@@ -1096,9 +1101,16 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         scripts.hooks.containerVisibilityRequested = { [weak self] id, visible in
             guard let self else { return }
             // The player's own container: GrayZ's shade button hides `main` and shows its `stick`
-            // bar, and the stick's button reverses it (B364).
-            if id.caseInsensitiveCompare(WinampModernScriptRuntime.playerContainerID) == .orderedSame {
-                if window?.isVisible != visible { WindowManager.shared.toggleMainWindow() }
+            // bar, and the stick's button reverses it (B364). An explicit show or hide, never a
+            // toggle, so a request in Compact Mode does not exit it.
+            if isMainContainer(id) {
+                guard let window, window.isVisible != visible else { return }
+                if visible {
+                    WindowManager.shared.showMainWindow()
+                } else {
+                    window.orderOut(nil)
+                    WindowManager.shared.notifyMainWindowVisibilityChanged()
+                }
                 return
             }
             if let hostedID = Self.matchingHostedWindowID(id),
@@ -1122,6 +1134,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // window without writing it.
         scripts.containerVisibilityQuery = { [weak self] id in
             guard let self else { return nil }
+            if isMainContainer(id) { return window?.isVisible }
             if let hostedID = Self.matchingHostedWindowID(id),
                hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) != nil {
                 return hostedWindowMaterializer?.isVisible(hostedID)
@@ -1139,10 +1152,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // otherwise read inactive from its own window.
         scripts.containerActiveQuery = { [weak self] id in
             guard let self else { return nil }
-            if let view = skinView, let mainID = view.renderer.container.xmlID,
-               mainID.caseInsensitiveCompare(id) == .orderedSame {
-                return view.window?.isKeyWindow ?? false
-            }
+            if isMainContainer(id) { return skinView?.window?.isKeyWindow ?? false }
             if let hostedID = Self.matchingHostedWindowID(id),
                let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
                 return window.isKeyWindow
@@ -1171,10 +1181,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// main container is the player's own window, a hosted id is answered only once its window has
     /// actually been materialized, and everything else is one of the skin's auxiliary windows.
     private func containerWindow(forID id: String) -> NSWindow? {
-        if let view = skinView, let mainID = view.renderer.container.xmlID,
-           mainID.caseInsensitiveCompare(id) == .orderedSame {
-            return view.window
-        }
+        if isMainContainer(id) { return skinView?.window }
         if let hostedID = Self.matchingHostedWindowID(id),
            let window = hostedWindowMaterializer?.nativeWindow(ifMaterialized: hostedID) {
             return window
@@ -1194,6 +1201,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard let screen = window.screen ?? NSScreen.main else { return .zero }
         return WinampModernScreenSpace.point(fromCocoa: NSPoint(x: window.frame.minX, y: window.frame.maxY),
                                              on: screen)
+    }
+
+    /// Whether a container id names the player's own window: the container the main view draws.
+    private func isMainContainer(_ id: String) -> Bool {
+        skinView?.renderer.container.xmlID?.caseInsensitiveCompare(id) == .orderedSame
     }
 
     static func matchingContainerID(_ requestedID: String, in containerIDs: [String]) -> String? {

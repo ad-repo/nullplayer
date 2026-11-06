@@ -89,6 +89,15 @@ extension WinampModernScriptRuntime {
     /// recognise a round trip (B61), and only a window's: for anything else the read resolves the
     /// whole layout, the write invalidates it again, and doing that on every write was most of a
     /// skin switch's script start-up.
+    ///
+    /// **An `x`/`y` written here is the parent's markup, and `getLeft`/`getTop` do not answer in it**
+    /// past a group that declares no size: they answer in the object's coordinate space (B365,
+    /// `WinampModernOriginSpace`), so `o.resize(o.getLeft(), …)` there moves `o` by the group's
+    /// offset. The corpus does not write that idiom on such an object (2026-11-06: every single-line
+    /// `getLeft`/`getTop` write-back in the shipped `.m` sources of all four tiers). The one cross-object
+    /// write that crosses the two spaces is bronze cPro2__HOLOlike's `volclick.m`, which places
+    /// `skin.vol` at `vol.on.getLeft() - skin.vol.getWidth()` with `vol.on` past the sizeless
+    /// `skin.control.nonPlay`; see `reference/rendering.md` → *A hover reaches `onMouseMove`*.
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }

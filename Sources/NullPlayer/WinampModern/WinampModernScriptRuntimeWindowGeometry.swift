@@ -29,6 +29,15 @@ struct WinampModernGeometrySettle {
     mutating func end() { isSettling = false }
 }
 
+/// The box a reported origin of an object that is not a window is measured from.
+enum WinampModernOriginSpace {
+    /// Its parent's: `getGuiX`/`getGuiY`, and the space an `x`/`y` write lands in.
+    case parent
+    /// Its coordinate space (`WasabiSceneRenderer.coordinateSpace`): `getLeft`/`getTop`, as a mouse
+    /// event on it is (B365).
+    case coordinateSpace
+}
+
 /// Window geometry: origins a script reads and writes, glued windows, settling geometry after a
 /// change, and the move/resize events. Split out of
 /// `WinampModernScriptRuntime.swift`.
@@ -74,10 +83,11 @@ extension WinampModernScriptRuntime {
         return borrowedOrigin.takeRead(of: object.stableID, moves: moves)
     }
 
-    /// `getLeft()`/`getTop()`: the reported origin, remembered when it was read off a window object
-    /// so a write on another window can be recognised as relative to it.
-    func scriptReadsOrigin(of object: WasabiObject) -> CGPoint {
-        let reported = reportedOrigin(of: object)
+    /// `getLeft()`/`getTop()` (and `getGuiX()`/`getGuiY()` on an absolute axis): the reported
+    /// origin, remembered when it was read off a window object so a write on another window can be
+    /// recognised as relative to it.
+    func scriptReadsOrigin(of object: WasabiObject, in space: WinampModernOriginSpace) -> CGPoint {
+        let reported = reportedOrigin(of: object, in: space)
         guard Self.isWindowObject(object) else { return reported }
         borrowedOrigin.noteRead(of: object.stableID)
         if let desktop = windowOrigin(of: object) {
@@ -133,8 +143,9 @@ extension WinampModernScriptRuntime {
     /// multipass compares its layout's origin with the screen-space cursor), the declared or
     /// resolved one when no host answers. **The only place that answer is worked out**, so the round
     /// trip `applyContainerGeometry` recognises compares against the very integers the script was
-    /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move.
-    func reportedOrigin(of object: WasabiObject) -> CGPoint {
+    /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move. `space`
+    /// only matters for an object that is not a window (`WinampModernOriginSpace`).
+    func reportedOrigin(of object: WasabiObject, in space: WinampModernOriginSpace = .parent) -> CGPoint {
         let isWindow = Self.isWindowObject(object)
         if let origin = windowOrigin(of: object) {
             return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
@@ -143,7 +154,8 @@ extension WinampModernScriptRuntime {
         // never declared one, answers from the resolved layout.
         let x = isWindow ? Double(object.attributes["x"] ?? "") : nil
         let y = isWindow ? Double(object.attributes["y"] ?? "") : nil
-        let frame = x == nil || y == nil ? resolvedFrame(of: object) : nil
+        let frame = x == nil || y == nil
+            ? (space == .parent ? resolvedFrame(of: object) : frameInCoordinateSpace(of: object)) : nil
         // A floated group is a window in Wasabi: its canvas position plus the owner's origin, the
         // space `floatedToCanvas` takes a write back out of.
         let floated = floatedGroupOrigin(of: object) ?? .zero

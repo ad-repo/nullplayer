@@ -200,7 +200,10 @@ By area:
   handler, and a fail-closed refusal took both buttons with it. The direction comes from the **host's
   window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
   host never writes when a window is opened from the Windows menu or closed from its own titlebar —
-  read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
+  read off the attribute the toggle inverts after the first manual close. The player's own container
+  is answered from the player window as well, and its `show()`/`hide()` are an explicit show and
+  order-out, never the main window's toggle, so a request in Compact Mode does not leave it (B364:
+  GrayZ's shade hides `main` and its `stick` bar brings it back). `isVisible()` answers from
   the same place, in **two terms and only two**: the window the object lives in, asked of the host,
   and then the object's **own** `visible` attribute. Nothing inside a closed window is visible; inside
   an open one the object's attribute is the whole answer, and the ancestor **groups** between the two

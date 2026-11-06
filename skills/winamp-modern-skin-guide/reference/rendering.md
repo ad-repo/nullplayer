@@ -1427,5 +1427,13 @@ child reaches (`contentBottom`).
   together: SingItKitty, SONY__WALKMAN and YoYoBoy's volume knobs subtract `getLeft()` from a press
   and went silent when only the press moved (interaction sweep 2026-10-30), and Official_Honda_Element_Skin's
   volume arc tests `inRegion(x - getLeft(), …)` on its own layer and then samples a layout-sized map
-  with the bare `x`, so it reads right only with both in layout space (`parentOffsetInCoordinateSpace`).
+  with the bare `x`, so it reads right only with both in layout space (`frameInCoordinateSpace`,
+  `WinampModernOriginSpace`). **Reads and writes are not symmetric there:** an `x`/`y` write (`setXmlParam`,
+  `resize`) is still the parent's markup, so writing `getLeft()` back onto an object past a sizeless group
+  moves it by the group's offset. No corpus script does that to such an object (2026-11-06, every
+  single-line `getLeft`/`getTop` write-back in the shipped `.m` sources of all four tiers, each target's
+  parent resolved headlessly; a value carried through a variable is not covered). The one write that
+  crosses the two spaces is bronze cPro2__HOLOlike's `volclick.m`, `skin.vol.x = vol.on.getLeft() −
+  skin.vol.getWidth()`, with `vol.on` 228 px into the sizeless `skin.control.nonPlay`; unverified against
+  Winamp.
   `getGuiX`/`getGuiY` stay parent-relative: Xenon adds `d2.getGuiX()` to `d2.clientToScreenX`.

@@ -596,22 +596,21 @@ extension WinampModernScriptRuntime {
         // **`getLeft`/`getTop` answer in the space a mouse event on the object is measured in** — the
         // header skins ship (`std.mi`) gives both as "the screen" — so past a group that declares no
         // size, as `onLeftButtonDown`'s x/y and `clientToScreen*` are (B332, B365). `getGui*` stays the
-        // parent's: Xenon's tray test adds `d2.getGuiX()` to `d2.clientToScreenX` (B332).
-        table.add(["getleft", "getguix"], 0) { runtime, call in
-            if call.method == "getguix",
-               let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x") {
-                return .integer(markup)
-            }
-            let offset = call.method == "getleft" ? runtime.parentOffsetInCoordinateSpace(of: call.object).x : 0
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).x + offset)))
+        // parent's: Xenon's tray test adds `d2.getGuiX()` to `d2.clientToScreenX` (B332). An `x`/`y`
+        // write is the parent's too (`writeGeometry`).
+        table.add("getleft", 0) { runtime, call in
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).x)))
         }
-        table.add(["gettop", "getguiy"], 0) { runtime, call in
-            if call.method == "getguiy",
-               let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y") {
-                return .integer(markup)
-            }
-            let offset = call.method == "gettop" ? runtime.parentOffsetInCoordinateSpace(of: call.object).y : 0
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).y + offset)))
+        table.add("gettop", 0) { runtime, call in
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).y)))
+        }
+        table.add("getguix", 0) { runtime, call in
+            .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x")
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).x)))
+        }
+        table.add("getguiy", 0) { runtime, call in
+            .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y")
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).y)))
         }
         table.add(["getwidth", "getguiw"], 0) { runtime, call in
             if call.method == "getguiw",

@@ -25,19 +25,19 @@ extension WinampModernScriptRuntime {
         return geometry.frame.offsetBy(dx: -geometry.parent.minX, dy: -geometry.parent.minY)
     }
 
-    /// Where `object`'s parent sits inside the object's coordinate space
-    /// (`WasabiSceneRenderer.coordinateSpace`): zero unless the parent is a group that declares no
-    /// size, which is only where its children are placed (B332). Honda Element's `player.volume` is
-    /// such a group at (58,163); its volume script subtracts `getLeft()` from a press to test the arc
-    /// layer's own pixels and samples a layout-sized map with the press itself, so both have to be
-    /// in layout space (B365).
-    func parentOffsetInCoordinateSpace(of object: WasabiObject) -> CGPoint {
-        guard !Self.isWindowObject(object),
-              let parent = hooks.resolvedGeometryRequested?(object)?.parent,
-              let space = WasabiSceneRenderer.coordinateSpace(of: object, frameOf: {
-                  hooks.resolvedGeometryRequested?($0)?.frame
-              }) else { return .zero }
-        return CGPoint(x: parent.minX - space.minX, y: parent.minY - space.minY)
+    /// An object's box in its **coordinate space** (`WasabiSceneRenderer.coordinateSpace`) — the
+    /// space `getLeft`/`getTop` and a mouse event on it are measured in: its parent, or past a group
+    /// that declares no size, which is only where its children are placed, the nearest one that does
+    /// (B332). Honda Element's `player.volume` is such a group at (58,163); its volume script
+    /// subtracts `getLeft()` from a press to test the arc layer's own pixels and samples a
+    /// layout-sized map with the press itself, so both have to be in layout space (B365). A window
+    /// object answers `resolvedFrame`.
+    func frameInCoordinateSpace(of object: WasabiObject) -> CGRect? {
+        guard let geometry = hooks.resolvedGeometryRequested?(object) else { return nil }
+        let space = Self.isWindowObject(object) ? geometry.parent
+            : WasabiSceneRenderer.coordinateSpace(of: object) { hooks.resolvedGeometryRequested?($0)?.frame }
+                ?? geometry.parent
+        return geometry.frame.offsetBy(dx: -space.minX, dy: -space.minY)
     }
 
     /// Wasabi's `<GroupList>` is a **vertical stack**: each instance spans the list's width and sits

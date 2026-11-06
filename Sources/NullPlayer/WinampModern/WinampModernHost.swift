@@ -147,6 +147,8 @@ protocol WinampModernHost: AnyObject {
     func previous()
     func next()
     func seek(to seconds: TimeInterval)
+    /// `seconds` back (negative) or on from the playhead, held inside the track.
+    func seek(by seconds: TimeInterval)
     func openFiles()
     func beginVisualizationConsumption()
     func endVisualizationConsumption()
@@ -165,6 +167,11 @@ protocol WinampModernHost: AnyObject {
 }
 
 extension WinampModernHost {
+    /// A host with only an absolute seek (the render harness, a test double) seeks to the clamped
+    /// target.
+    func seek(by seconds: TimeInterval) {
+        seek(to: max(0, min(duration, currentTime + seconds)))
+    }
     var albumArtwork: CGImage? { nil }
     var isVideo: Bool { false }
     // A host with no mixer to pan (the render harness, a test double) reads centred and swallows the
@@ -863,6 +870,10 @@ final class WinampModernAudioEngineHost: WinampModernHost {
 
     func seek(to seconds: TimeInterval) {
         if let transport = videoTransport() { transport.seek(seconds) } else { engine.seek(to: seconds) }
+    }
+
+    func seek(by seconds: TimeInterval) {
+        if let transport = videoTransport() { transport.skip(seconds) } else { engine.seekBy(seconds: seconds) }
     }
     func openFiles() { MenuActions.shared.openFile() }
 

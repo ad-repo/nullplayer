@@ -6,7 +6,7 @@ final class WinampModernB365Tests: XCTestCase {
     /// B365: past a group that declares no size, a press and `getLeft()` are both measured from the
     /// nearest sized ancestor, so `x - getLeft()` is still the object's own pixels and `x` is the
     /// layout's (Honda Element's volume arc samples a layout-sized map with it). A sized group is
-    /// still a space of its own.
+    /// still a space of its own, and `getGuiX` stays the parent's.
     func testAPressAndGetLeftShareTheSpacePastASizelessGroup() throws {
         let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML><container id="main"><layout id="normal" w="300" h="200">
@@ -26,9 +26,19 @@ final class WinampModernB365Tests: XCTestCase {
             scripts.pointInEventSpace(of: object, event: "onleftbuttondown", canvasPoint: point, renderer: renderer)
         }
 
+        let program = MakiProgram(version: 0x0403, classes: [], methods: [], variables: [], bindings: [],
+                                  instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/b365.maki"),
+                                  ownerID: nil, parameter: nil)
+        func call(_ method: String, _ object: WasabiObject) throws -> Int32 {
+            try scripts.invokeGUI(method: method, object: object, arguments: [], program: program).integerValue
+        }
+
         XCTAssertEqual(press(arc, CGPoint(x: 64, y: 129)), CGPoint(x: 64, y: 129))
-        XCTAssertEqual(scripts.parentOffsetInCoordinateSpace(of: arc), CGPoint(x: 58, y: 100))
+        XCTAssertEqual(try call("getleft", arc), 58)
+        XCTAssertEqual(try call("gettop", arc), 100)
+        XCTAssertEqual(try call("getguix", arc), 0, "getGuiX stays the parent's")
         XCTAssertEqual(press(knob, CGPoint(x: 40, y: 30)), CGPoint(x: 10, y: 10))
-        XCTAssertEqual(scripts.parentOffsetInCoordinateSpace(of: knob), .zero)
+        XCTAssertEqual(try call("getleft", knob), 5)
+        XCTAssertEqual(try call("gettop", knob), 5)
     }
 }

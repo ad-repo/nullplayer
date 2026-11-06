@@ -14,9 +14,10 @@ extension WinampModernScriptRuntime {
     /// The window-level methods the header names.
     static let guiWindowMethods: MakiMethodTable<WasabiObject> = {
         var table = MakiMethodTable<WasabiObject>()
-        // Client ↔ screen conversion, relative to the receiver's **parent** client area — the space
-        // `getLeft()`/`getTop()` already answer in, which is what every measured call site converts:
-        // `b.clientToScreenX(b.getLeft())`, receiver and coordinate the same object. Reading it as the
+        // Client ↔ screen conversion, relative to the receiver's **coordinate space** — its parent, or
+        // past a group that declares no size the nearest one that does (`coordinateSpace(of:)`, B332).
+        // That is the space `getLeft()`/`getTop()` answer in, which is what every measured call site
+        // converts: `b.clientToScreenX(b.getLeft())`, receiver and coordinate the same object. Reading it as the
         // receiver's *own* box instead double-counts that idiom, and reading it as pure identity loses
         // the parent chain, which is what put ClassicPro's tab menu at the window's left edge instead
         // of under its tab.
