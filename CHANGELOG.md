@@ -91,7 +91,8 @@
   main window's analyzer saw only the newest 13 ms of every 100 ms of audio, so bars jumped on
   whatever that slice caught and missed the beats in between, in every profile. They now see all of
   it, as a `.wal` skin's scope already did; that scope, and a `.wmz` skin's vis_classic effects, no
-  longer drop part of every buffer either.
+  longer drop part of every buffer either, and those effects place their bars by the track's real
+  sample rate instead of assuming 44.1 kHz.
 - **vis_classic is louder, with a Sensitivity setting.** The bars sat near the floor in the
   Spectrum window, the main window and `.wmz` / Sonique effects; every vis_classic analyzer now takes
   the boost a `.wal` skin's vis box already had, about 1.7× as tall, and right-click ▸ Sensitivity

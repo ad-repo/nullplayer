@@ -219,6 +219,15 @@ final class WinampModernPhase73Tests: XCTestCase {
         }
     }
 
+    /// The rate the chunks arrived at is what an analyzer maps its bins with: the `.wmz` effects
+    /// surface assumed 44.1 kHz, which put every bar at the wrong frequency on a 48 kHz stream.
+    func testThePlayoutReportsTheRateItsChunksArrivedAt() {
+        let tap = WaveformPlayout()
+        XCTAssertEqual(tap.sampleRate, 44_100, "before any audio, the plugin's own default")
+        tap.receive(left: chunk(1), right: chunk(1), sampleRate: 48_000, at: 100)
+        XCTAssertEqual(tap.sampleRate, 48_000)
+    }
+
     /// A reset forgets what was queued, so a restarted surface never shows the old track's last chunk.
     func testAResetDropsTheQueueAndReadsSilence() {
         let tap = WaveformPlayout()
