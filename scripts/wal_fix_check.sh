@@ -6,13 +6,15 @@
 #   scripts/wal_fix_check.sh <base-rev> <outdir> [--dry-run]
 #
 # The change is <base-rev> against the working tree, uncommitted and untracked files included.
-#   render                  any change under Sources/ outside Windows/WinampModern/ (~25 s sharded)
-#   + interaction, motion   only when it touches hit testing, script runtime, MAKI, the object graph, loading,
-#                           click/host/EQ actions, key accelerators, or code outside the .wal engine
-#                           (~17 and ~10 min over gold+silver)
-#   none                    a change only in Sources/NullPlayer/Windows/WinampModern/ (the live window
-#                           layer) or in docs/scripts: no headless sweep can see it. Check it live
-#                           with window-census.sh --shots and wal_live_smoke.sh on the skins instead.
+#   render, interaction, motion   any change under Sources/ outside Windows/WinampModern/: the .wal
+#                                 engine, and shared code (which must be gated on .wal)
+#                                 (~25 s, ~17 min and ~2 min over gold+silver, sharded)
+#   render only                   a change confined to the engine files on `render_only` below
+#   none                          a change only in Sources/NullPlayer/Windows/WinampModern/ (the live
+#                                 window layer) or in docs/scripts: no headless sweep can see it. Check
+#                                 it live with window-census.sh --shots and wal_live_smoke.sh instead.
+# Every sweep is the default. A file list is not a call graph: a render-only file that grows a helper
+# hit testing, a script or a clock calls is no longer render-only, so its entry goes with that change.
 # The baseline is served from the run store (--rev). One never captured stops the script: capture it
 # once per batch in a worktree (scripts/baseline_worktree.sh, harness.md § "The run store") and every
 # later fix pass in that batch reuses it.
@@ -34,16 +36,20 @@ git rev-parse --verify -q "$base^{commit}" >/dev/null || { echo "wal_fix_check: 
 mkdir -p "$out"
 
 changed=$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u | grep '^Sources/' || true)
-engine='^Sources/NullPlayer/WinampModern/'
 window='^Sources/NullPlayer/Windows/WinampModern/'
-behaviour='WinampModern/(WasabiRendererHitTesting|WinampModernScriptRuntime|WinampModernScriptHooks|MakiBytecode|WasabiObjectGraph|WasabiSkinInitializer|WinampModernSkinLoader|WinampModernClickActions|WinampModernHostActions|WinampModernEQActions|WinampModernKeyAccelerator|WinampModernConfig)'
+# Engine files that only paint: nothing in them is read by hit testing, a script or a clock, so the
+# interaction and motion sweeps cannot see a change to them. Measured 2026-11-06; not on the list:
+# WasabiRendererText (ticker and wrap motion), WasabiTextMetrics and WasabiGdiFontMetrics (autowidth
+# geometry, which scripts read and presses land on), WasabiRendererSprites (the region and animation
+# frame tests), WasabiRendererColour (ColorMgr.getColor), WasabiBitmapInterpolationPolicy (region cuts).
+render_only='^Sources/NullPlayer/WinampModern/(WasabiDrawList|WasabiRendererLayerFX|WasabiVisPainter)\.swift$'
 
 render=0; behave=0
 while IFS= read -r f; do
   [[ -z $f ]] && continue
   if [[ $f =~ $window ]]; then continue
-  elif [[ $f =~ $engine ]]; then render=1; [[ $f =~ $behaviour ]] && behave=1
-  else render=1; behave=1          # shared code: every sweep, and the change must be gated on .wal
+  elif [[ $f =~ $render_only ]]; then render=1
+  else render=1; behave=1          # the engine, or shared code (which must be gated on .wal)
   fi
 done <<< "$changed"
 

@@ -703,13 +703,18 @@ scripts/wal_fix_check.sh <base-rev> <outdir> [--dry-run]
 ```
 
 This picks the sweeps from the diff (base against the working tree), then runs each one once, base
-served from the store and after with `--allow-dirty`. It runs **render** (~25 s) for any engine
-change, and adds **interaction and motion** (~27 min together) only when the diff touches script
-runtime, MAKI, the object graph, loading, click/host/EQ actions, key accelerators or code outside
-the engine. A change only in `Windows/WinampModern/` gets **none**, because no headless sweep loads
-the window layer; check it live with `window-census.sh --shots` and `wal_live_smoke.sh`. A base
-never captured stops it. Capture one per batch in a worktree and reuse it. Outputs are
-`render/compare.txt` and `interaction|motion/diff.txt`, classified by `skin-triage` Phase 8.
+served from the store and after with `--allow-dirty`. **Every sweep is the default**: any change
+under `Sources/` outside `Windows/WinampModern/` runs **render, interaction and motion** (~25 s,
+~17 min and ~2 min). Only a change confined to the script's commented `render_only` list — engine
+files that only paint, read by no hit test, script or clock (`WasabiDrawList`, `WasabiRendererLayerFX`,
+`WasabiVisPainter`) — runs render alone. The list is the exception because a file list is not a call
+graph: text drawing carries the ticker's motion, metrics size autowidth boxes scripts read and presses
+land on, and sprites hold the region and animation-frame tests, so none of them is on it. A file that
+grows a helper one of those calls leaves the list in the same change. A change only in
+`Windows/WinampModern/` gets **none**, because no headless sweep loads the window layer; check it
+live with `window-census.sh --shots` and `wal_live_smoke.sh`. A base never captured stops it. Capture
+one per batch in a worktree and reuse it. Outputs are `render/compare.txt` and
+`interaction|motion/diff.txt`, classified by `skin-triage` Phase 8.
 
 #### Impact-selected and sharded sweeps
 
@@ -973,8 +978,8 @@ carries its transport 70 px down, B370; zechitoplayer's vis button lays an `alph
 blocker over its volume, B371); `CLOSE`, `MINIMIZE`,
 `EXIT`, `QUIT` and `EJECT` are skipped. A `slider` takes its value on press and drag, which
 `debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
-released through the view's own mouse handlers. The run starts from volume 0.5; 1.2 s after each click it logs a
-`WM-SMOKE|…` row, then restores the starting layout and resumes playback if the click changed them,
+released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5; 1.2 s after each click it logs a
+`WM-SMOKE|key=value|…` row (keys in the sweep's `fields` order, the TSV's columns, read by name), then restores the starting layout and resumes playback if the click changed them,
 and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
 
 ```sh
