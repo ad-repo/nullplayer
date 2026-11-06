@@ -2991,7 +2991,7 @@ final class WasabiSceneRenderer {
         // a golden image) falls back to asking the host directly.
         let waveform = visRenderer.needsWaveform(forMode: style.mode)
             ? (frameWaveform ?? host.waveformSamples)
-            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+            : (WaveformPlayout.silence, WaveformPlayout.silence)
         // The analyzer's bands are asked for by count from inside the draw — the renderer is what
         // knows whether this box wants 19 or 75 — and the tap memoizes the analysis behind them, so
         // the four boxes of a butterfly share one FFT (B73).
@@ -4155,7 +4155,7 @@ final class WasabiSceneRenderer {
         let renderer = visRenderer(for: .componentHolder)
         let waveform = renderer.needsWaveform(forMode: mode)
             ? (frameWaveform ?? host.waveformSamples)
-            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+            : (WaveformPlayout.silence, WaveformPlayout.silence)
         context.saveGState()
         defer { context.restoreGState() }
         context.clip(to: frame)

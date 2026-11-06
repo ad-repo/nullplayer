@@ -38,12 +38,31 @@ Implementation location:
 
 ## 2.2 Visual consumer and render loop
 
-`SpectrumAnalyzerView` subscribes to `.audioWaveform576DataUpdated` and stores the latest vis_classic waveform.
+`SpectrumAnalyzerView` subscribes to `.audioWaveform576DataUpdated` and queues each chunk in its own
+`WaveformPlayout` (`Visualization/WaveformPlayout.swift`), which plays them out at the audio's own
+rate; `resetState` empties it. Every surface that feeds vis_classic does the same — the `.wal` and
+`.wmz` surfaces through `WinampModernWaveformTap`, which owns one.
+
+**Never feed vis_classic the newest chunk.** The mixer tap delivers 4410 frames (100 ms) at 44.1 kHz —
+not the 2048 it requests; `WINAMP_MODERN_VIS_GAPS=1` logs the real sizes — and `AudioEngine` posts all
+7–8 chunks of a buffer at once. Keeping only the newest showed one 13 ms slice per 100 ms, so bars
+spiked on whatever that slice caught and missed the beats between: "huge spikes that don't make
+musical sense", in every profile. The queue's cap (`maximumQueuedDuration`, 120 ms) is a duration, so it holds a whole buffer at any
+rate — 48 kHz bursts nine chunks.
 
 When `qualityMode == .visClassicExact`, render loop behavior differs from GPU spectrum modes:
 - skips generic spectrum decay/idle transform path
 - uses vis_classic waveform-driven frames
 - calls `renderVisClassicExact(drawable:)`
+
+**Input gain.** `VisClassicBridge.processAndDraw` scales every surface's waveform about 128 by
+`WinampModernVisSensitivity.gain(for: .visClassic)` — the calibration `WasabiVisStyle.Gain.visClassicInput`
+(1.6) times the user's **Sensitivity** (key `winampModern.visSensitivity.visClassic`, one setting for
+every vis_classic surface). The core maps magnitude linearly and most profiles halve it
+(`FFTScale=200`), so ungained music sat near the floor: on `music`'s Hackbeat the mean bar was 24 of
+255, 41 at Normal, 61 at Highest. Gain belongs on the input, never on the bar heights, which would
+stretch the profile's artwork. Every vis_classic options menu offers the Sensitivity submenu
+(`WinampModernVisSensitivityMenu`).
 
 `renderVisClassicExact(drawable:)` pipeline:
 1. Lazily create `VisClassicBridge` (scoped by embedded/main-window vs spectrum-window).
@@ -147,6 +166,15 @@ Global menu/context menu builder (`ContextMenuBuilder`):
 
 Local spectrum window context menus (`SpectrumView`, `ModernSpectrumView`):
 - call `SpectrumAnalyzerView` vis_classic methods directly
+
+The four analyzer menus — both Spectrum windows' right-click, the menu bar's Spectrum Window and Main
+Window submenus — build their vis_classic block with `VisClassicMenu.addItems` (`Visualization/VisClassicMenu.swift`),
+each passing its own target and selectors: Profiles / Next / Previous, then Sensitivity / Fit to Width /
+Transparent Background, then Import / Export INI. None offers Responsiveness or Normalization in
+vis_classic mode — the core ignores both (`offersResponsiveness` / `offersNormalization` on the mode
+enums). Add a vis_classic menu item there, never in one host. The one exception is the `.wmz` /
+Sonique effects menu (`SkinEffectsSurfaceView.visClassicOptionsMenu`): a compact Profile, Fit to
+Width, Transparent Background and Sensitivity of its own, with no stepping or INI files.
 
 ## 4.3 Transparent-background rendering behavior
 

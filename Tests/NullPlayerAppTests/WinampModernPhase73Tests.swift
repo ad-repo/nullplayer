@@ -143,7 +143,7 @@ final class WinampModernPhase73Tests: XCTestCase {
     /// three quarters of the audio away and left the survivors 46 ms apart, which is what a scope
     /// that jumps actually is.
     func testBurstedChunksArePlayedOutInOrderRatherThanOverwritingEachOther() {
-        let tap = WinampModernWaveformTap(consumerId: "test")
+        let tap = WaveformPlayout()
         // A burst, as the audio tap delivers it: three chunks at the same instant.
         for value in [10, 20, 30] as [UInt8] {
             tap.receive(left: chunk(value), right: chunk(value), sampleRate: 44_100, at: 100)
@@ -159,7 +159,7 @@ final class WinampModernPhase73Tests: XCTestCase {
     /// the waveform once per frame as well, so the two halves of a mirrored pair cannot straddle a
     /// chunk boundary — this is the property that makes that safe.)
     func testReadingTheSameInstantTwiceAnswersTheSameChunk() {
-        let tap = WinampModernWaveformTap(consumerId: "test")
+        let tap = WaveformPlayout()
         for value in [10, 20] as [UInt8] {
             tap.receive(left: chunk(value), right: chunk(value), sampleRate: 44_100, at: 100)
         }
@@ -170,7 +170,7 @@ final class WinampModernPhase73Tests: XCTestCase {
 
     /// An underrun — the next buffer is late — holds the chunk on screen rather than blanking it.
     func testAnUnderrunHoldsTheLastChunkRatherThanBlanking() {
-        let tap = WinampModernWaveformTap(consumerId: "test")
+        let tap = WaveformPlayout()
         tap.receive(left: chunk(42), right: chunk(42), sampleRate: 44_100, at: 100)
         XCTAssertEqual(tap.samples(at: 100 + 0.1).left.first, 42,
                        "still inside the silence timeout, so this is jitter, not silence")
@@ -180,18 +180,18 @@ final class WinampModernPhase73Tests: XCTestCase {
     /// or a move to a cast device — there is no "zero" notification — so without this the last
     /// waveform hangs on screen forever.
     func testTheScopeFlattensToTheCentreLineOnceTheAudioStops() {
-        let tap = WinampModernWaveformTap(consumerId: "test")
+        let tap = WaveformPlayout()
         tap.receive(left: chunk(200), right: chunk(200), sampleRate: 44_100, at: 100)
-        let quiet = tap.samples(at: 100 + WinampModernWaveformTap.silenceTimeout + 0.01)
-        XCTAssertEqual(quiet.left, WinampModernWaveformTap.silence)
-        XCTAssertEqual(quiet.right, WinampModernWaveformTap.silence)
-        XCTAssertEqual(WinampModernWaveformTap.centre, 128, "Winamp's visdata centres on 128")
+        let quiet = tap.samples(at: 100 + WaveformPlayout.silenceTimeout + 0.01)
+        XCTAssertEqual(quiet.left, WaveformPlayout.silence)
+        XCTAssertEqual(quiet.right, WaveformPlayout.silence)
+        XCTAssertEqual(WaveformPlayout.centre, 128, "Winamp's visdata centres on 128")
     }
 
     /// The queue is bounded, so a scope cannot drift further behind the music every buffer: past the
     /// cap the oldest chunks go and the clock resynchronises.
     func testTheQueueIsBoundedSoTheScopeCannotDriftBehindTheMusic() {
-        let tap = WinampModernWaveformTap(consumerId: "test")
+        let tap = WaveformPlayout()
         for value in 1...20 {
             tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)),
                         sampleRate: 44_100, at: 100)
@@ -199,7 +199,41 @@ final class WinampModernPhase73Tests: XCTestCase {
         // The most recent chunks survive, not the oldest: what is on screen stays near the sound.
         let shown = tap.samples(at: 100).left.first
         XCTAssertNotNil(shown)
-        XCTAssertGreaterThanOrEqual(Int(shown ?? 0), 20 - WinampModernWaveformTap.maximumQueuedChunks)
+        XCTAssertGreaterThanOrEqual(Int(shown ?? 0), 20 - WaveformPlayout.maximumQueuedChunks(chunkDuration: 576.0 / 44_100))
+    }
+
+    /// One real tap buffer plays out whole, at either common rate. The mixer tap delivers 100 ms —
+    /// 4410 frames at 44.1 kHz, up to eight chunks a burst; 4800 at 48 kHz, up to nine — and a cap
+    /// of 6 dropped the first of them every buffer; vis_classic, fed the newest chunk alone, drew one
+    /// 13 ms slice per 100 ms and spiked on whatever it caught.
+    func testOneTapBufferOfChunksIsPlayedOutWithoutDroppingAny() {
+        for rate in [44_100.0, 48_000.0] {
+            let tap = WaveformPlayout()
+            let burst = Int((rate / 10 / 576).rounded(.up))
+            for value in 1...burst {
+                tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)), sampleRate: rate, at: 100)
+            }
+            let step = 576.0 / rate
+            let shown = (0..<burst).compactMap { tap.samples(at: 100 + step * (Double($0) + 0.5)).left.first }
+            XCTAssertEqual(shown, (1...burst).map { UInt8($0) }, "\(Int(rate)) Hz")
+        }
+    }
+
+    /// The rate the chunks arrived at is what an analyzer maps its bins with: the `.wmz` effects
+    /// surface assumed 44.1 kHz, which put every bar at the wrong frequency on a 48 kHz stream.
+    func testThePlayoutReportsTheRateItsChunksArrivedAt() {
+        let tap = WaveformPlayout()
+        XCTAssertEqual(tap.sampleRate, 44_100, "before any audio, the plugin's own default")
+        tap.receive(left: chunk(1), right: chunk(1), sampleRate: 48_000, at: 100)
+        XCTAssertEqual(tap.sampleRate, 48_000)
+    }
+
+    /// A reset forgets what was queued, so a restarted surface never shows the old track's last chunk.
+    func testAResetDropsTheQueueAndReadsSilence() {
+        let tap = WaveformPlayout()
+        tap.receive(left: chunk(200), right: chunk(200), sampleRate: 44_100, at: 100)
+        tap.reset()
+        XCTAssertEqual(tap.samples(at: 100).left, WaveformPlayout.silence)
     }
 
     // MARK: - What the renderer asks the host for
@@ -296,7 +330,7 @@ final class WinampModernPhase73Tests: XCTestCase {
     }
 
     private func chunk(_ value: UInt8) -> [UInt8] {
-        [UInt8](repeating: value, count: WinampModernWaveformTap.sampleCount)
+        [UInt8](repeating: value, count: WaveformPlayout.sampleCount)
     }
 
     /// A host with no audio: the spectrum is empty and the waveform is the flat centre line, which is

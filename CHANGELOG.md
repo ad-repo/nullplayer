@@ -85,6 +85,22 @@
 - **⌘→ / ⌘← no longer jump to the Visualizations window** (#707). While it was open, ⌘→ in any other
   window stepped its preset instead, and kept doing so after it closed.
 
+### Visualizations
+
+- **vis_classic's bars follow the music instead of spiking at random.** The Spectrum window and the
+  main window's analyzer saw only the newest 13 ms of every 100 ms of audio, so bars jumped on
+  whatever that slice caught and missed the beats in between, in every profile. They now see all of
+  it, as a `.wal` skin's scope already did; that scope, and a `.wmz` skin's vis_classic effects, no
+  longer drop part of every buffer either, and those effects place their bars by the track's real
+  sample rate instead of assuming 44.1 kHz.
+- **vis_classic is louder, with a Sensitivity setting.** The bars sat near the floor in the
+  Spectrum window, the main window and `.wmz` / Sonique effects; every vis_classic analyzer now takes
+  the boost a `.wal` skin's vis box already had, about 1.7× as tall, and right-click ▸ Sensitivity
+  (Lowest to Highest) sets it for all of them at once. The Spectrum window's right-click, the
+  menu bar's Spectrum Window submenu and the main window's visualization menu are grouped the same
+  way in vis_classic mode, into profiles, display and profile files, and none offers
+  Responsiveness or Normalization there, which vis_classic never used.
+
 ## 0.34.2
 
 ### Playback

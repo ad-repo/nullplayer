@@ -547,22 +547,26 @@ class ModernSpectrumView: NSView {
         let qualityMenuItem = NSMenuItem(title: "Mode", action: nil, keyEquivalent: "")
         qualityMenuItem.submenu = qualityMenu
         menu.addItem(qualityMenuItem)
-        
+
+        let mode = spectrumAnalyzerView?.qualityMode
+
         // Decay/Responsiveness submenu
-        let decayMenu = NSMenu()
-        for mode in SpectrumDecayMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(setDecayMode(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = (spectrumAnalyzerView?.decayMode == mode) ? .on : .off
-            decayMenu.addItem(item)
+        if mode?.offersResponsiveness ?? true {
+            let decayMenu = NSMenu()
+            for mode in SpectrumDecayMode.allCases {
+                let item = NSMenuItem(title: mode.displayName, action: #selector(setDecayMode(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = mode
+                item.state = (spectrumAnalyzerView?.decayMode == mode) ? .on : .off
+                decayMenu.addItem(item)
+            }
+            let decayMenuItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
+            decayMenuItem.submenu = decayMenu
+            menu.addItem(decayMenuItem)
         }
-        let decayMenuItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
-        decayMenuItem.submenu = decayMenu
-        menu.addItem(decayMenuItem)
-        
-        // Normalization Mode submenu (not shown for Flame mode)
-        if spectrumAnalyzerView?.qualityMode != .flame {
+
+        // Normalization Mode submenu
+        if mode?.offersNormalization ?? true {
             let normMenu = NSMenu()
             let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
                 .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
@@ -666,58 +670,21 @@ class ModernSpectrumView: NSView {
             menu.addItem(ekgMenuItem)
         }
 
-        // vis_classic profile controls (only when vis_classic mode is active)
-        if spectrumAnalyzerView?.qualityMode == .visClassicExact {
-            let profilesMenu = NSMenu()
-            let fitToWidthEnabled = spectrumAnalyzerView?.visClassicFitToWidthEnabled() ?? true
-
-            if let profiles = spectrumAnalyzerView?.visClassicProfiles(), !profiles.isEmpty {
-                let current = spectrumAnalyzerView?.visClassicCurrentProfileName()
-                for entry in profiles {
-                    let item = NSMenuItem(title: entry.name, action: #selector(setVisClassicProfile(_:)), keyEquivalent: "")
-                    item.target = self
-                    item.representedObject = entry.name
-                    item.state = (entry.name == current) ? .on : .off
-                    profilesMenu.addItem(item)
-                }
-            } else {
-                let noneItem = NSMenuItem(title: "No Profiles", action: nil, keyEquivalent: "")
-                noneItem.isEnabled = false
-                profilesMenu.addItem(noneItem)
-            }
-
-            let profilesRoot = NSMenuItem(title: "Profiles", action: nil, keyEquivalent: "")
-            profilesRoot.submenu = profilesMenu
-            menu.addItem(profilesRoot)
-
-            menu.addItem(NSMenuItem.separator())
-
-            let fitItem = NSMenuItem(title: "Fit to Width", action: #selector(toggleVisClassicFitToWidth(_:)), keyEquivalent: "")
-            fitItem.target = self
-            fitItem.state = fitToWidthEnabled ? .on : .off
-            menu.addItem(fitItem)
-
-            let transparentBgEnabled = spectrumAnalyzerView?.visClassicTransparentBackgroundEnabled() ?? false
-            let transparentBgItem = NSMenuItem(title: "Transparent Background", action: #selector(toggleVisClassicTransparentBg(_:)), keyEquivalent: "")
-            transparentBgItem.target = self
-            transparentBgItem.state = transparentBgEnabled ? .on : .off
-            menu.addItem(transparentBgItem)
-
-            let nextItem = NSMenuItem(title: "Next Profile", action: #selector(loadNextVisClassicProfile(_:)), keyEquivalent: "")
-            nextItem.target = self
-            menu.addItem(nextItem)
-
-            let prevItem = NSMenuItem(title: "Previous Profile", action: #selector(loadPreviousVisClassicProfile(_:)), keyEquivalent: "")
-            prevItem.target = self
-            menu.addItem(prevItem)
-
-            let importItem = NSMenuItem(title: "Import INI...", action: #selector(importVisClassicProfile(_:)), keyEquivalent: "")
-            importItem.target = self
-            menu.addItem(importItem)
-
-            let exportItem = NSMenuItem(title: "Export Current INI...", action: #selector(exportVisClassicProfile(_:)), keyEquivalent: "")
-            exportItem.target = self
-            menu.addItem(exportItem)
+        if mode == .visClassicExact, let analyzer = spectrumAnalyzerView {
+            VisClassicMenu.addItems(
+                to: menu,
+                profileNames: analyzer.visClassicProfiles().map(\.name),
+                currentProfile: analyzer.visClassicCurrentProfileName(),
+                fitToWidth: analyzer.visClassicFitToWidthEnabled(),
+                transparentBackground: analyzer.visClassicTransparentBackgroundEnabled(),
+                target: self,
+                actions: .init(loadProfile: #selector(setVisClassicProfile(_:)),
+                               nextProfile: #selector(loadNextVisClassicProfile(_:)),
+                               previousProfile: #selector(loadPreviousVisClassicProfile(_:)),
+                               toggleFitToWidth: #selector(toggleVisClassicFitToWidth(_:)),
+                               toggleTransparentBackground: #selector(toggleVisClassicTransparentBg(_:)),
+                               importProfile: #selector(importVisClassicProfile(_:)),
+                               exportProfile: #selector(exportVisClassicProfile(_:))))
         }
         
         menu.addItem(NSMenuItem.separator())

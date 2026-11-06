@@ -213,7 +213,7 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         let left = input.waveform.left
         let right = input.waveform.right.isEmpty ? left : input.waveform.right
         guard !left.isEmpty else { return }
-        if left.contains(where: { $0 != WinampModernWaveformTap.centre }) {
+        if left.contains(where: { $0 != WaveformPlayout.centre }) {
             lastActiveDraw = CACurrentMediaTime()
         }
         let stride = width * 4
@@ -225,12 +225,9 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         // buffer is the reliable sign that this is another box of the same frame.
         if left != lastProcessed {
             lastProcessed = left
-            // The core's own scaling is cut for a 128px-tall window, so in a 30px skin box it reads
-            // cold; the gain goes on the input, about the 128 centre line (`WasabiVisStyle.Gain`).
-            let amplified = Self.amplified(left)
-            let amplifiedRight = right == left ? amplified : Self.amplified(right)
-            core.processAndDraw(leftData: amplified, rightData: amplifiedRight,
+            core.processAndDraw(leftData: left, rightData: right,
                                 sampleRate: input.sampleRate,
+                                gain: Double(WinampModernVisSensitivity.gain(for: .visClassic)),
                                 width: width, height: height, into: &frameBytes, stride: stride)
         } else {
             core.drawAtSize(width: width, height: height, into: &frameBytes, stride: stride)
@@ -361,18 +358,6 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         bridge = made
         bridgeSize = (width, height)
         return made
-    }
-
-    /// The 576-sample buffer with the excursion either side of 128 scaled up, clamped to the byte
-    /// range Winamp's `visdata` format is defined on.
-    static func amplified(_ samples: [UInt8],
-                          gain: Double = Double(WinampModernVisSensitivity.gain(for: .visClassic)))
-        -> [UInt8] {
-        guard gain != 1 else { return samples }
-        return samples.map { sample in
-            let scaled = 128 + (Double(sample) - 128) * gain
-            return UInt8(max(0, min(255, scaled.rounded())))
-        }
     }
 
     /// The core writes **BGRA**, top row first (`setPixelBounded` in `VisClassicCore.cpp`), which is

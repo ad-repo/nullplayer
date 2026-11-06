@@ -102,22 +102,38 @@ final class VisClassicBridge {
 
     /// Process and draw atomically, so no other caller can touch the shared core between this
     /// view's processing and its draw.
-    func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double,
+    ///
+    /// `gain` scales the waveform about 128 before the FFT — every caller passes
+    /// `WinampModernVisSensitivity.gain(for: .visClassic)`: the core maps magnitude linearly and most
+    /// profiles halve it, so ungained music left the mids and highs near the floor in every window.
+    func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double, gain: Double,
                         width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
         guard let core else { return }
         let needed = stride * height
         if buffer.count < needed { buffer = [UInt8](repeating: 0, count: needed) }
+        let gainedLeft = Self.amplified(leftData, gain: gain)
+        let gainedRight = Self.amplified(rightData, gain: gain)
         coreLock.withLock {
-            leftData.withUnsafeBufferPointer { lp in
-                rightData.withUnsafeBufferPointer { rp in
+            gainedLeft.withUnsafeBufferPointer { lp in
+                gainedRight.withUnsafeBufferPointer { rp in
                     vc_set_waveform_u8(core, lp.baseAddress, rp.baseAddress,
-                                       leftData.count, sampleRate)
+                                       gainedLeft.count, sampleRate)
                 }
             }
             vc_process_frame_only(core)
             buffer.withUnsafeMutableBufferPointer { bp in
                 _ = vc_draw_at_size(core, bp.baseAddress, Int32(width), Int32(height), Int32(stride))
             }
+        }
+    }
+
+    /// The 576-sample buffer with the excursion either side of 128 scaled up, clamped to the byte
+    /// range Winamp's `visdata` format is defined on.
+    static func amplified(_ samples: [UInt8], gain: Double) -> [UInt8] {
+        guard gain != 1 else { return samples }
+        return samples.map { sample in
+            let scaled = 128 + (Double(sample) - 128) * gain
+            return UInt8(max(0, min(255, scaled.rounded())))
         }
     }
 
