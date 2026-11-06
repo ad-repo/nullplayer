@@ -617,7 +617,7 @@ extension WinampModernScriptRuntime {
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "w") {
                 return .integer(markup)
             }
-            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object)?.width,
+            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.width,
                                               declared: runtime.declaredFrame(of: call.object).width))
         }
         table.add(["getheight", "getguih"], 0) { runtime, call in
@@ -625,7 +625,7 @@ extension WinampModernScriptRuntime {
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "h") {
                 return .integer(markup)
             }
-            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object)?.height,
+            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.height,
                                               declared: runtime.declaredFrame(of: call.object).height))
         }
         // "is the pointer still on me?" — what a button asks in `onLeftButtonUp` to tell a click
@@ -656,7 +656,7 @@ extension WinampModernScriptRuntime {
         // ponytail: the frame only, not the object's region; add the region test when a skin needs it.
         table.add("ismouseover", 2) { runtime, call in
             let point = CGPoint(x: Int(call.arguments[0].integerValue), y: Int(call.arguments[1].integerValue))
-            return .boolean(runtime.resolvedFrame(of: call.object)?.contains(point) ?? false)
+            return .boolean(runtime.resolvedFrame(of: call.object, in: .parent)?.contains(point) ?? false)
         }
         table.add("refresh", 0) { runtime, call in
             runtime.notifyObjectDidMutate(call.object)

@@ -2,6 +2,50 @@ import AppKit
 import CoreGraphics
 import Foundation
 
+/// The fits' bookkeeping for one renderer (`WasabiSceneRenderer.autoFit`), in one place so a layout
+/// switch and a bounds change reset it as a unit.
+struct WasabiLayoutAutoFit {
+    /// The content fit's measurements for the active layout: `fitted` from the content and
+    /// frame-content fits, `titleWidth` the width its title needs on top of that (never less than
+    /// `fitted.width`).
+    struct ContentFit {
+        let declared: CGSize
+        let fitted: CGSize
+        let titleWidth: CGFloat
+    }
+
+    /// The canvas the renderer last chose *for itself*. While `canvasSize` still equals it the fits
+    /// may replace it; the moment anything else sets a size — a drag, a script, restored state — the
+    /// two diverge and the fit never touches the canvas again.
+    var canvas: CGSize?
+    /// The once-only guards of the content and component-room fits. `isFittingContent` also keeps
+    /// the content floor from re-entering the measurement it shares with the fit.
+    var hasFittedContent = false
+    var isFittingContent = false
+    var hasFittedComponentRoom = false
+    var isFittingComponentRoom = false
+    /// `contentFit()`, measured once per layout.
+    var contentFit: ContentFit?
+    /// `hostedComponentFloorWidth`, per layout id.
+    var hostedComponentFloor: [String: CGFloat?] = [:]
+
+    init(canvas: CGSize) { self.canvas = canvas }
+
+    /// A layout switch: the entered layout's own canvas, and a content fit still to run against it.
+    /// The component-room fit and the per-layout floors carry over.
+    mutating func enterLayout(canvas: CGSize) {
+        self.canvas = canvas
+        hasFittedContent = false
+        contentFit = nil
+    }
+
+    /// The layout's bounds were rewritten, so what was measured against them is stale.
+    mutating func forgetMeasurements() {
+        contentFit = nil
+        hostedComponentFloor.removeAll()
+    }
+}
+
 /// How big a layout opens: its declared size (`defaultSize`), and the fits that replace it where the
 /// skin's numbers leave it unsized — the content fit, the component-room fit and the hosted
 /// component's floor. Split out of `WasabiRenderer.swift`; see
@@ -29,25 +73,54 @@ extension WasabiSceneRenderer {
     /// and 30 after — and a first attempt that fitted in `init` left it at 100x400, its whole
     /// defect, while growing four *other* skins that happened to be complete by then.)
     func fitCanvasToContentIfNeeded() {
-        guard !hasFittedContent, !isFittingContent,
+        guard !autoFit.hasFittedContent, !autoFit.isFittingContent,
               loadedSkin.runtime.hasStartedScripts,
-              storedCanvasSize == autoFittedCanvas else { return }
-        isFittingContent = true
-        defer { isFittingContent = false; hasFittedContent = true }
+              storedCanvasSize == autoFit.canvas else { return }
+        autoFit.isFittingContent = true
+        defer { autoFit.isFittingContent = false; autoFit.hasFittedContent = true }
         let fit = contentFit()
         commitAutoFit(componentRoomFittedSize(CGSize(width: fit.titleWidth, height: fit.fitted.height),
                                               for: layout))
     }
 
-    /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
-    /// *opens* at that floor rather than being grown to it after the tiler has already placed it.
-    private func commitAutoFit(_ fitted: CGSize) {
-        let size = CGSize(width: max(fitted.width, hostedComponentFloorWidth ?? 0), height: fitted.height)
-        guard size != storedCanvasSize else { return }
-        storedCanvasSize = size
-        autoFittedCanvas = size
-        invalidateSceneCache()
-        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+    /// Measured once per layout and shared by the auto-fit and the floor. Every step resolves the
+    /// scene at hypothetical canvases — the title fit alone up to five times — over the object graph
+    /// the scripts own on the main thread, so it cannot move off it; it can only run less.
+    /// Callers set `autoFit.isFittingContent` around it, so neither re-enters it.
+    func contentFit() -> WasabiLayoutAutoFit.ContentFit {
+        if let cached = autoFit.contentFit { return cached }
+        let declared = defaultSize(for: layout)
+        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
+        let fit = WasabiLayoutAutoFit.ContentFit(declared: declared, fitted: fitted,
+                                                 titleWidth: titleFittedSize(fitted).width)
+        autoFit.contentFit = fit
+        return fit
+    }
+
+    /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout
+    /// the skin sized itself, which is nearly all of them.
+    ///
+    /// `fitCanvasToContentIfNeeded` only applies while the canvas is still the one this renderer
+    /// chose, so it cannot help a window whose size arrives from somewhere else first — restored
+    /// state, above all. ClassicPro's Widgets Manager is the case: a frame saved before the fit
+    /// existed puts the canvas at its useless 100x400 *before* the scripts run, the fit then declines
+    /// to touch a canvas it did not set, and the window comes back the wrong size every launch.
+    ///
+    /// Making it a minimum settles that without second-guessing the user: below this width the
+    /// content is genuinely clipped (a 305px header in a 92px pane), so it is not a size anyone can
+    /// have meant, and the existing `contentMinSize` plumbing carries it to the window.
+    var contentFittedFloor: CGSize? {
+        // Same gate as the fit: before the scripts run, a `Wasabi:StandardFrame`'s content does not
+        // exist yet and the measurement would be of an empty frame.
+        guard loadedSkin.runtime.hasStartedScripts, !autoFit.isFittingContent else { return nil }
+        autoFit.isFittingContent = true
+        defer { autoFit.isFittingContent = false }
+        let fit = contentFit()
+        let content: CGSize? = fit.fitted == fit.declared ? nil : fit.fitted
+        // The title floors the width alone: Silverskin_3's playlist states `default_h="154"` over a
+        // `minimum_h="116"`, and a floor of the whole fitted size took that minimum to 154.
+        guard fit.titleWidth > fit.fitted.width else { return content }
+        return CGSize(width: fit.titleWidth, height: content?.height ?? 0)
     }
 
     /// A component window narrower than this on an axis its skin never sized has no window in it.
@@ -73,10 +146,10 @@ extension WasabiSceneRenderer {
     /// Waiting buys nothing here anyway: the `<component>` this measures is plain markup inside the
     /// layout, in the graph from the moment it is built, and its box is relative to the canvas alone.
     func fitCanvasToComponentRoomIfNeeded() {
-        guard !hasFittedComponentRoom, !isFittingComponentRoom,
-              storedCanvasSize == autoFittedCanvas else { return }
-        isFittingComponentRoom = true
-        defer { isFittingComponentRoom = false; hasFittedComponentRoom = true }
+        guard !autoFit.hasFittedComponentRoom, !autoFit.isFittingComponentRoom,
+              storedCanvasSize == autoFit.canvas else { return }
+        autoFit.isFittingComponentRoom = true
+        defer { autoFit.isFittingComponentRoom = false; autoFit.hasFittedComponentRoom = true }
         commitAutoFit(componentRoomFittedSize(storedCanvasSize, for: layout))
     }
 
@@ -148,9 +221,9 @@ extension WasabiSceneRenderer {
     /// asks before start) reads no holder, and caching it left EMP2's library without its floor.
     var hostedComponentFloorWidth: CGFloat? {
         let key = activeLayoutID
-        if let cached = hostedComponentFloorCache[key] { return cached }
+        if let cached = autoFit.hostedComponentFloor[key] { return cached }
         let computed = computeHostedComponentFloorWidth()
-        if loadedSkin.runtime.hasStartedScripts { hostedComponentFloorCache[key] = computed }
+        if loadedSkin.runtime.hasStartedScripts { autoFit.hostedComponentFloor[key] = computed }
         return computed
     }
 

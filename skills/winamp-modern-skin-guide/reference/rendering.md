@@ -1427,7 +1427,7 @@ child reaches (`contentBottom`).
   together: SingItKitty, SONY__WALKMAN and YoYoBoy's volume knobs subtract `getLeft()` from a press
   and went silent when only the press moved (interaction sweep 2026-10-30), and Official_Honda_Element_Skin's
   volume arc tests `inRegion(x - getLeft(), …)` on its own layer and then samples a layout-sized map
-  with the bare `x`, so it reads right only with both in layout space (`frameInCoordinateSpace`,
+  with the bare `x`, so it reads right only with both in layout space (`resolvedFrame(of:in: .coordinateSpace)`,
   `WinampModernOriginSpace`). **Reads and writes are not symmetric there:** an `x`/`y` write (`setXmlParam`,
   `resize`) is still the parent's markup, so writing `getLeft()` back onto an object past a sizeless group
   moves it by the group's offset. No corpus script does that to such an object (2026-11-06, every

@@ -990,7 +990,7 @@ scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch 
 windows main note changed` — the state ones as `before>after`, `point` as `x,y` (a slider's `x,y>x,y`), `track` the
 playing file's name, `eq` as `e<on>a<auto>p<preamp dB>b<band checksum>`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
 whether the main window is on screen, `note` as `menu`/`modal`/`restored-layout`/`resumed`/`skip`/`unreachable`,
-and `changed` the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
+and `changed` the sweep's own verdict, the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
 **cannot see** drags other than a slider's (knobs, scrollbars), right-click and double-click commands, the skin's *other*
 windows' controls, or a change that is only pixels (a lamp, a readout): `nochange` means none of the
 measured state moved, not that nothing happened.

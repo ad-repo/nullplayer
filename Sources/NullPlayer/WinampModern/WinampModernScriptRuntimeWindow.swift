@@ -77,9 +77,9 @@ extension WinampModernScriptRuntime {
         table.add("center", 0) { runtime, call in
             if call.object.tag.is(.layout) {
                 let screen = NSScreen.main?.frame.size ?? .zero
-                let width = runtime.dimension(runtime.resolvedFrame(of: call.object)?.width,
+                let width = runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.width,
                                               declared: runtime.declaredFrame(of: call.object).width)
-                let height = runtime.dimension(runtime.resolvedFrame(of: call.object)?.height,
+                let height = runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.height,
                                                declared: runtime.declaredFrame(of: call.object).height)
                 runtime.writeGeometry([("x", String((Int32(screen.width) - width) / 2)),
                                        ("y", String((Int32(screen.height) - height) / 2))], on: call.object, borrowed: nil)

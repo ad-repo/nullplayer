@@ -808,8 +808,11 @@ final class WasabiSceneRenderer {
         return storedCanvasSize
     }
 
-    /// `canvasSize` without the fit — for the fit itself, and for the reads inside it.
-    var storedCanvasSize: CGSize
+    /// `canvasSize` without the fit — for the fit itself, and for the reads inside it. Written only
+    /// here: by `resize(to:)`, a layout switch and `commitAutoFit`.
+    private(set) var storedCanvasSize: CGSize
+    /// The fits' bookkeeping (`WasabiRendererLayoutSizing.swift`).
+    var autoFit: WasabiLayoutAutoFit
     let clock: () -> TimeInterval
 
     /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
@@ -903,6 +906,7 @@ final class WasabiSceneRenderer {
         self.container = container
         self.layout = layout
         self.storedCanvasSize = Self.defaultSize(for: layout, resources: self.resources)
+        self.autoFit = WasabiLayoutAutoFit(canvas: storedCanvasSize)
         let resources = self.resources
         self.declaredLayoutHeights = Dictionary(
             container.children
@@ -911,7 +915,6 @@ final class WasabiSceneRenderer {
             uniquingKeysWith: { first, _ in first })
         // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
         themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
-        self.autoFittedCanvas = self.storedCanvasSize
     }
 
     var paletteCache: WasabiPalette?
@@ -955,12 +958,10 @@ final class WasabiSceneRenderer {
         // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
         // which is what turns a remembered 691x541 into shade's 691x23 rather than a canvas its own
         // `maximum_h="23"` forbids.
-        autoFittedCanvas = storedCanvasSize
-        hasFittedContent = false
-        contentFitCache = nil
+        autoFit.enterLayout(canvas: storedCanvasSize)
         if let restored {
             _ = resize(to: restored)
-            autoFittedCanvas = nil
+            autoFit.canvas = nil
         }
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
@@ -1013,64 +1014,15 @@ final class WasabiSceneRenderer {
         return CGSize(width: max(width, hostedComponentFloorWidth ?? 0), height: height)
     }
 
-    /// The content fit's measurements for the active layout: `fitted` from the content and frame-content
-    /// fits, `titleWidth` the width its title needs on top of that (never less than `fitted.width`).
-    struct ContentFit {
-        let declared: CGSize
-        let fitted: CGSize
-        let titleWidth: CGFloat
-    }
-
-    /// The canvas this renderer last chose *for itself*. While `canvasSize` still equals it the fits
-    /// (`WasabiRendererLayoutSizing.swift`) may replace it; the moment anything else sets a size — a
-    /// drag, a script, restored state — the two diverge and the fit never touches the canvas again.
-    var autoFittedCanvas: CGSize?
-    /// The once-only guards of those fits, and the hosted component's floor per layout.
-    var hasFittedContent = false
-    var isFittingContent = false
-    var hasFittedComponentRoom = false
-    var isFittingComponentRoom = false
-    var hostedComponentFloorCache: [String: CGFloat?] = [:]
-
-    private var contentFitCache: ContentFit?
-
-    /// Measured once per layout and shared by the auto-fit and the floor. Every step resolves the
-    /// scene at hypothetical canvases — the title fit alone up to five times — over the object graph
-    /// the scripts own on the main thread, so it cannot move off it; it can only run less.
-    /// Callers set `isFittingContent` around it, so `layoutMaximumSize` reads the skin's own value.
-    func contentFit() -> ContentFit {
-        if let contentFitCache { return contentFitCache }
-        let declared = defaultSize(for: layout)
-        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
-        let fit = ContentFit(declared: declared, fitted: fitted, titleWidth: titleFittedSize(fitted).width)
-        contentFitCache = fit
-        return fit
-    }
-
-    /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout
-    /// the skin sized itself, which is nearly all of them.
-    ///
-    /// `fitCanvasToContentIfNeeded` only applies while the canvas is still the one this renderer
-    /// chose, so it cannot help a window whose size arrives from somewhere else first — restored
-    /// state, above all. ClassicPro's Widgets Manager is the case: a frame saved before the fit
-    /// existed puts the canvas at its useless 100x400 *before* the scripts run, the fit then declines
-    /// to touch a canvas it did not set, and the window comes back the wrong size every launch.
-    ///
-    /// Making it a minimum settles that without second-guessing the user: below this width the
-    /// content is genuinely clipped (a 305px header in a 92px pane), so it is not a size anyone can
-    /// have meant, and the existing `contentMinSize` plumbing carries it to the window.
-    var contentFittedFloor: CGSize? {
-        // Same gate as the fit: before the scripts run, a `Wasabi:StandardFrame`'s content does not
-        // exist yet and the measurement would be of an empty frame.
-        guard loadedSkin.runtime.hasStartedScripts, !isFittingContent else { return nil }
-        isFittingContent = true
-        defer { isFittingContent = false }
-        let fit = contentFit()
-        let content: CGSize? = fit.fitted == fit.declared ? nil : fit.fitted
-        // The title floors the width alone: Silverskin_3's playlist states `default_h="154"` over a
-        // `minimum_h="116"`, and a floor of the whole fitted size took that minimum to 154.
-        guard fit.titleWidth > fit.fitted.width else { return content }
-        return CGSize(width: fit.titleWidth, height: content?.height ?? 0)
+    /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
+    /// *opens* at that floor rather than being grown to it after the tiler has already placed it.
+    func commitAutoFit(_ fitted: CGSize) {
+        let size = CGSize(width: max(fitted.width, hostedComponentFloorWidth ?? 0), height: fitted.height)
+        guard size != storedCanvasSize else { return }
+        storedCanvasSize = size
+        autoFit.canvas = size
+        invalidateSceneCache()
+        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
     }
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
@@ -1112,8 +1064,7 @@ final class WasabiSceneRenderer {
     /// `minimum_h`/`default_h` — a hosted window whose borrowed chrome dropped a strip.
     func layoutBoundsDidChange() {
         protectiveMinimumCache.removeAll()
-        contentFitCache = nil
-        hostedComponentFloorCache.removeAll()
+        autoFit.forgetMeasurements()
     }
 
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.

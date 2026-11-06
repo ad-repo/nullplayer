@@ -145,7 +145,7 @@ extension WinampModernScriptRuntime {
     /// trip `applyContainerGeometry` recognises compares against the very integers the script was
     /// handed: a layout's `x="12.7"` reads back as 12, and a 12 written back is not a move. `space`
     /// only matters for an object that is not a window (`WinampModernOriginSpace`).
-    func reportedOrigin(of object: WasabiObject, in space: WinampModernOriginSpace = .parent) -> CGPoint {
+    func reportedOrigin(of object: WasabiObject, in space: WinampModernOriginSpace) -> CGPoint {
         let isWindow = Self.isWindowObject(object)
         if let origin = windowOrigin(of: object) {
             return CGPoint(x: origin.x.rounded(), y: origin.y.rounded())
@@ -154,8 +154,7 @@ extension WinampModernScriptRuntime {
         // never declared one, answers from the resolved layout.
         let x = isWindow ? Double(object.attributes["x"] ?? "") : nil
         let y = isWindow ? Double(object.attributes["y"] ?? "") : nil
-        let frame = x == nil || y == nil
-            ? (space == .parent ? resolvedFrame(of: object) : frameInCoordinateSpace(of: object)) : nil
+        let frame = x == nil || y == nil ? resolvedFrame(of: object, in: space) : nil
         // A floated group is a window in Wasabi: its canvas position plus the owner's origin, the
         // space `floatedToCanvas` takes a write back out of.
         let floated = floatedGroupOrigin(of: object) ?? .zero

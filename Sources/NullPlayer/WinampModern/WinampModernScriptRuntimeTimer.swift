@@ -101,7 +101,7 @@ extension WinampModernScriptRuntime {
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
-        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
+        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object, in: .parent) : nil
         for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()

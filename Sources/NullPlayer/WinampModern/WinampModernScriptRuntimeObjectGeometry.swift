@@ -12,32 +12,27 @@ extension WinampModernScriptRuntime {
         return Int32(clamping: Int(raw))
     }
 
-    /// An object's box in its **parent's** coordinates — the space Wasabi's `getGuiX`/`getGuiY` and
-    /// `getLeft`/`getTop` report in — or `nil` when no scene can place it.
+    /// An object's resolved box, measured from `space` (`WinampModernOriginSpace`), or `nil` when no
+    /// scene can place it. A window object is always measured from its parent.
     ///
     /// Reading the raw `x`/`y`/`w`/`h` attributes instead is only right for absolute geometry, and
     /// Bento-style skins barely use any: cPro's tab strip is `w="-4" relatw="1"`, so `getWidth()`
     /// answered **−4**, `CproTabs.m` concluded it had no room for its tabs, switched to short names and
     /// squeezed every tab to the 20px floor. The declared value stays as the fallback for an object the
     /// active scene does not contain (a hidden layout, or a runtime with no window wired at all).
-    func resolvedFrame(of object: WasabiObject) -> CGRect? {
+    ///
+    /// `.coordinateSpace` differs from `.parent` only past a group that declares no size, which is
+    /// only where its children are placed (B332). Honda Element's `player.volume` is such a group at
+    /// (58,163); its volume script subtracts `getLeft()` from a press to test the arc layer's own
+    /// pixels and samples a layout-sized map with the press itself, so both have to be in layout
+    /// space (B365).
+    func resolvedFrame(of object: WasabiObject, in space: WinampModernOriginSpace) -> CGRect? {
         guard let geometry = hooks.resolvedGeometryRequested?(object) else { return nil }
-        return geometry.frame.offsetBy(dx: -geometry.parent.minX, dy: -geometry.parent.minY)
-    }
-
-    /// An object's box in its **coordinate space** (`WasabiSceneRenderer.coordinateSpace`) — the
-    /// space `getLeft`/`getTop` and a mouse event on it are measured in: its parent, or past a group
-    /// that declares no size, which is only where its children are placed, the nearest one that does
-    /// (B332). Honda Element's `player.volume` is such a group at (58,163); its volume script
-    /// subtracts `getLeft()` from a press to test the arc layer's own pixels and samples a
-    /// layout-sized map with the press itself, so both have to be in layout space (B365). A window
-    /// object answers `resolvedFrame`.
-    func frameInCoordinateSpace(of object: WasabiObject) -> CGRect? {
-        guard let geometry = hooks.resolvedGeometryRequested?(object) else { return nil }
-        let space = Self.isWindowObject(object) ? geometry.parent
-            : WasabiSceneRenderer.coordinateSpace(of: object) { hooks.resolvedGeometryRequested?($0)?.frame }
-                ?? geometry.parent
-        return geometry.frame.offsetBy(dx: -space.minX, dy: -space.minY)
+        let origin = space == .coordinateSpace && !Self.isWindowObject(object)
+            ? WasabiSceneRenderer.coordinateSpace(of: object) { hooks.resolvedGeometryRequested?($0)?.frame }
+            : nil
+        let box = origin ?? geometry.parent
+        return geometry.frame.offsetBy(dx: -box.minX, dy: -box.minY)
     }
 
     /// Wasabi's `<GroupList>` is a **vertical stack**: each instance spans the list's width and sits

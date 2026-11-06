@@ -33,9 +33,11 @@ final class WinampModernDebugClickSweep {
     }
 
     /// The keys of a `WM-SMOKE|` row, in order. A row the sweep did not click carries the first three
-    /// and `note`; the rest read `-`.
+    /// and `note`; the rest read `-`. `changed` is the verdict: what moved, or `nochange`.
     private static let fields = ["idx", "object", "action", "point", "volume", "play", "position", "track",
-                                 "eq", "layout", "windows", "main", "note"]
+                                 "eq", "layout", "windows", "main", "note", "changed"]
+    /// The playhead's own drift over one click's settle time (`step`'s 1.2 s), which is not a seek.
+    private static let positionDrift: ClosedRange<TimeInterval> = -0.5...2.5
     private static let skippedActions: Set<String> = ["CLOSE", "MINIMIZE", "EXIT", "QUIT", "EJECT"]
     private static let probeVolume = 0.5
     /// The sweep keeps itself alive until `done`.
@@ -154,6 +156,16 @@ final class WinampModernDebugClickSweep {
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
             }.sorted().joined(separator: ",")
+            let changed = [
+                // At the row's two decimals: a host's float round trip is not a volume change.
+                ("volume", (before.volume * 100).rounded() != (after.volume * 100).rounded()),
+                ("play", before.play != after.play),
+                ("position", !Self.positionDrift.contains(after.position - before.position)),
+                ("track", before.track != after.track), ("eq", before.eq != after.eq),
+                ("layout", before.layout != after.layout), ("windows", !windows.isEmpty),
+                ("main", before.mainOnScreen != after.mainOnScreen),
+                ("menu", self.menuOpened), ("modal", self.modalOpened),
+            ].filter(\.1).map(\.0)
             Self.log(identity.merging([
                 "point": "\(Int(point.x)),\(Int(point.y))" + (dragEnd.map { ">\(Int($0.x)),\(Int($0.y))" } ?? ""),
                 "volume": String(format: "%.2f>%.2f", before.volume, after.volume),
@@ -165,6 +177,7 @@ final class WinampModernDebugClickSweep {
                 "windows": windows.isEmpty ? "-" : windows,
                 "main": "\(before.mainOnScreen ? 1 : 0)>\(after.mainOnScreen ? 1 : 0)",
                 "note": notes.joined(separator: ","),
+                "changed": changed.isEmpty ? "nochange" : changed.joined(separator: ","),
             ]) { $1 })
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.step(index + 1) }
         }

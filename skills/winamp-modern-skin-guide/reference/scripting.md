@@ -1431,7 +1431,7 @@ Two rules replace the reset, both Winamp's:
   answer and already carries the width. The height stays the entered layout's business, which is what
   lets shade's `maximum_h="23"` still win.
 
-A restored size is not one the renderer chose, so `autoFittedCanvas` is cleared with it and the
+A restored size is not one the renderer chose, so `autoFit.canvas` is cleared with it and the
 content fit leaves it alone — the same rule `resize(to:)` already relied on.
 
 ### `onMove()` is dispatched to the window objects only
