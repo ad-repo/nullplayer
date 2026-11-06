@@ -601,7 +601,13 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
 
         // Check for modifier keys
         let hasShift = event.modifierFlags.contains(.shift)
-        
+
+        // ⌘↓/⌘↑: the standard engine keys (`VisualizationKey`); ⌘→/⌘← fall to the arrows below.
+        if case .engine(let delta)? = VisualizationKey(event) {
+            switchVisualizationEngine(to: (visualizationGLView?.currentEngineType ?? .projectM).advanced(by: delta))
+            return true
+        }
+
         switch event.keyCode {
         case 53: // Escape - exit fullscreen if in fullscreen mode
             if isFullscreen {
@@ -842,6 +848,10 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     
     @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
         guard let type = sender.representedObject as? VisualizationType else { return }
+        switchVisualizationEngine(to: type)
+    }
+
+    private func switchVisualizationEngine(to type: VisualizationType) {
         if type != .projectM {
             hidePresetRatingOverlay()
             presetCycleMode = .off

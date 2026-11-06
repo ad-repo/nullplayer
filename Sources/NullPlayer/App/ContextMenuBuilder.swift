@@ -4743,17 +4743,9 @@ class MenuActions: NSObject {
     }
 
     @objc func setMainVisCavaColorScheme(_ sender: NSMenuItem) {
-        guard let index = sender.representedObject as? Int else { return }
-        let scope = CavaSettings.Scope.mainWindow
-        if index < 0 {
-            CavaSettings.setHasCustomColors(false, for: scope)
-        } else {
-            guard CavaSettings.colorSchemes.indices.contains(index) else { return }
-            let scheme = CavaSettings.colorSchemes[index]
-            CavaSettings.setLowGradientColor(scheme.low, for: scope)
-            CavaSettings.setHighGradientColor(scheme.high, for: scope)
-            CavaSettings.setHasCustomColors(true, for: scope)
-        }
+        guard let index = sender.representedObject as? Int,
+              index < CavaSettings.colorSchemes.count else { return }
+        CavaSettings.applyColorSchemeChoice(index, for: .mainWindow)
         NotificationCenter.default.post(name: NSNotification.Name("MainWindowVisChanged"), object: nil)
     }
 

@@ -303,7 +303,7 @@ final class SoniqueSkinMainView: NSView {
     /// Command-arrows step the visual mode screen's effect (down/up) and the preset inside it
     /// (left/right); every other key is the main window's.
     override func keyDown(with event: NSEvent) {
-        if event.modifierFlags.contains(.command), let effects, effects.handleKeyDown(event) { return }
+        if let effects, effects.handleKeyDown(event) { return }
         if !MainWindowKeys.perform(event) { super.keyDown(with: event) }
     }
 }

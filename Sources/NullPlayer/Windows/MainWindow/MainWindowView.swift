@@ -548,32 +548,6 @@ class MainWindowView: NSView {
         }
     }
     
-    /// Cycle the main window visualization mode through all available modes
-    private func cycleMainVisMode() {
-        let allModes = MainWindowVisMode.visualizationOrder
-        guard let currentIndex = allModes.firstIndex(of: mainVisMode) else {
-            mainVisMode = .spectrum
-            return
-        }
-        // Skip modes whose shader file is missing
-        var nextIndex = allModes.index(after: currentIndex)
-        if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
-        let startIndex = nextIndex
-        while true {
-            let mode = allModes[nextIndex]
-            if let qualityMode = mode.spectrumQualityMode,
-               !SpectrumAnalyzerView.isShaderAvailable(for: qualityMode) {
-                nextIndex = allModes.index(after: nextIndex)
-                if nextIndex >= allModes.endIndex { nextIndex = allModes.startIndex }
-                if nextIndex == startIndex { break }  // All modes checked, none available
-                continue
-            }
-            mainVisMode = mode
-            return
-        }
-        mainVisMode = .spectrum  // Fallback if nothing available
-    }
-    
     @objc private func mainVisSettingsChanged() {
         // Reload vis mode from UserDefaults
         if let savedMode = UserDefaults.standard.string(forKey: MainWindowVisMode.classicDefaultsKey),
@@ -1553,7 +1527,7 @@ class MainWindowView: NSView {
                 // Double-click: cancel pending single-click and cycle vis mode
                 visClickTimer?.invalidate()
                 visClickTimer = nil
-                cycleMainVisMode()
+                mainVisMode = mainVisMode.advanced(by: 1)
             } else if event.clickCount == 1 {
                 // Single-click: delay to check if double-click follows
                 visClickTimer?.invalidate()
@@ -1630,7 +1604,7 @@ class MainWindowView: NSView {
             let rect = exactViewRect(forSkinRect: button.rect)
             clutterbar.press(button, menuAnchor: NSPoint(x: rect.maxX, y: rect.maxY), in: self)
 
-        // Note: cycleMainVisMode is handled via single-click in mouseDown()
+        // Note: mode cycling is handled via double-click in mouseDown()
             
         // Slider interactions
         case .seekPosition(let value):
@@ -1934,6 +1908,15 @@ class MainWindowView: NSView {
     override func keyDown(with event: NSEvent) {
         let engine = WindowManager.shared.audioEngine
         let isVideoActive = WindowManager.shared.isVideoActivePlayback
+
+        // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the mode, ⌘→/⌘← its style.
+        if let key = VisualizationKey(event) {
+            switch key {
+            case .engine(let delta): mainVisMode = mainVisMode.advanced(by: delta)
+            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta, overlay: metalOverlay)
+            }
+            return
+        }
 
         if mainVisMode == .visClassicExact,
            let overlay = metalOverlay,

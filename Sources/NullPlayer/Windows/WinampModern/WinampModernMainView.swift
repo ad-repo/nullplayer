@@ -910,19 +910,21 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
-        // A film parked in this window, which never becomes key itself (M18), then the visualization
-        // window's own keys (←/→, R, F, P, C) — after the skin has had its say, so a skin accelerator
-        // always wins (B20a). The film goes first: it is what is on screen, and the visualization
-        // shares its keys while the engine feeding it is paused.
-        if hostedVideoSurface?.handleKeyDown(event) == true { return }
-        if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
-        // ↑/↓ step the volume, as in every other mode's main window. Only those two: the rest of that
-        // table's letters are the visualization's keys here. The engine announces no volume change, so
-        // the skin's own readout is told here, the way `updatePlaybackState` tells it of any other.
-        if MainWindowKeys.performVolumeStep(event) {
+        // Plain arrows are the main window's, as in every other mode: ←/→ seek 5 s (a parked film's
+        // too, through the window manager, rather than the film's own 10 s skip), ↑/↓ step the
+        // volume. Only those: the rest of that table's letters are the visualization's keys here.
+        // The engine announces no volume change, so the skin's own readout is told here, the way
+        // `updatePlaybackState` tells it of any other.
+        if MainWindowKeys.performArrow(event) {
             updatePlaybackState()
             return
         }
+        // Then a film parked in this window, which never becomes key itself (M18), then the
+        // visualization's own keys (⌘-arrows, R, F, P, C) — after the skin has had its say, so a skin
+        // accelerator always wins (B20a). The film goes before the visualization: it is what is on
+        // screen, and the visualization shares its keys while the engine feeding it is paused.
+        if hostedVideoSurface?.handleKeyDown(event) == true { return }
+        if let surface = hostedVisualizationSurface, surface.handleKeyDown(event) { return }
         super.keyDown(with: event)
     }
 

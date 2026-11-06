@@ -30,8 +30,9 @@ ART button any more.
 |---|---|---|
 | Click | star rating panel (held for the double-click interval) | next effect |
 | Double-click | next embedded picture (a local file with several) | — |
-| ← → | — | previous / next effect |
+| ← → or ⌘← ⌘→ | — | previous / next effect |
 | ↑ ↓ | — | intensity ±0.25 (0.5–2.0) |
+| ⌘↑ ⌘↓ | — | first effect of the previous / next group (`ArtVisEffect.advancedGroup`) |
 | V | VIS on | VIS off |
 | R / C | — | random-on-beat / auto-cycle |
 | F | fullscreen | fullscreen |

@@ -261,9 +261,11 @@ final class ArtView: NSView {
         needsDisplay = true
     }
 
-    private func step(by offset: Int) {
+    private func step(by offset: Int) { show(effect.advanced(by: offset)) }
+
+    private func show(_ next: ArtVisEffect) {
         visMode = .single
-        effect = effect.advanced(by: offset)
+        effect = next
         needsDisplay = true
     }
 
@@ -362,6 +364,15 @@ final class ArtView: NSView {
                 return
             default: break
             }
+        }
+        // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the effect group, ⌘→/⌘← the
+        // effect. Ahead of the plain arrows, which ↑/↓ would otherwise take as intensity.
+        if isVisualizing, let key = VisualizationKey(event) {
+            switch key {
+            case .engine(let delta): show(effect.advancedGroup(by: delta))
+            case .preset(let delta): step(by: delta)
+            }
+            return
         }
         switch event.keyCode {
         case 3: host?.toggleArtFullscreen()                              // F

@@ -35,13 +35,13 @@ final class TripexMenuBuilder {
 
         let nextItem = NSMenuItem(title: "Next Effect",
                                   action: #selector(TripexMenuTarget.nextTripexEffectAction(_:)),
-                                  keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+                                  keyEquivalent: "")
         nextItem.target = target
         menu.addItem(nextItem)
 
         let prevItem = NSMenuItem(title: "Previous Effect",
                                   action: #selector(TripexMenuTarget.previousTripexEffectAction(_:)),
-                                  keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+                                  keyEquivalent: "")
         prevItem.target = target
         menu.addItem(prevItem)
 

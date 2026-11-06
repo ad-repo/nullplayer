@@ -238,8 +238,9 @@ a dispatch defect — it is a control the pointer never reached at all.
   that must outlive the transaction (releasing a hold, clearing a gate) has to `await
   presentation.scriptTask?.value`, not simply follow the call.
 - **A key handler owns an arrow only where it compares that arrow.** `WMPMainView.keyDown` offers
-  every key to the skin before the hosted `<EFFECTS>` surface's own keys (up/down pick the effect,
-  left/right step inside it), and the offer must be answered synchronously, from the markup.
+  every key to the skin before its built-in arrows (plain arrows seek and step the volume; ⌘↓/⌘↑
+  pick the hosted `<EFFECTS>` surface's effect and ⌘→/⌘← step inside it), and the offer must be
+  answered synchronously, from the markup.
   "A handler is authored" was that answer, and **68 of the 154 archives with an `<EFFECTS>` hang a
   letter-hotkey handler on its view** (`onKeyPress="viewHotKeys();"`) that never compares `37`…`40`
   — so on those skins every arrow was claimed and the visualization keys did nothing (`Halloween`,

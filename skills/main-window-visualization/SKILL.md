@@ -27,6 +27,11 @@ The main window's built-in visualization area (76×16 pixels in Winamp coordinat
 ## Switching Modes
 
 - **Double-click** the visualization area to cycle through modes
+- **⌘↓ / ⌘↑** step the mode forward / back in the same order (`MainWindowVisMode.advanced(by:)`,
+  shader-missing modes skipped, Off steps to Classic); **⌘→ / ⌘←** step the mode's own list —
+  Fire's flame style, Lightning's style, Matrix's colour, EKG's style, Cava's colour preset
+  (`MainWindowVisStyle`), vis_classic's profile — and do nothing in a mode without one. The
+  standard visualization keys: see [visualizations](../visualizations/SKILL.md) § *Standard keys*
 - **Visuals → Main Window → Mode** selects a specific mode, including **Off**
 - Persisted per family: Classic in `mainWindowVisMode`, Original in `modernMainWindowVisMode`, so
   each keeps its mode across a trip through the other. `MainWindowVisMode.defaultsKey(for:)` owns

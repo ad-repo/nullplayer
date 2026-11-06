@@ -116,10 +116,13 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   or the arrow keys never writes `visualizationEngineType`, which the visualization window and
   menu bar share.
   **The keys are two-level, because the catalogue is.** Eight effects, and most carry a list of
-  their own, so **up/down pick the effect and left/right step inside it** — ProjectM's presets,
+  their own, so **⌘↓/⌘↑ pick the effect and ⌘→/⌘← step inside it** — ProjectM's presets,
   Geiss's and Tripex's effects, vis_classic's profiles, Cava's mono/stereo. An effect with no
-  inside (Spikes, Bars, Ambience) *refuses* left/right rather than swallowing them, so the key
-  falls through. Two things this wiring depends on: a preset step goes through
+  inside (Spikes, Bars, Ambience) *refuses* ⌘→/⌘← rather than swallowing them, so the key
+  falls through. Plain arrows never reach the surface: they are the main window's seek and volume
+  (`WMPMainView.arrowHandled`, through the host so a cast or a video takes them), after the skin's
+  handlers and a focused slider — the standard visualization keys, see
+  [visualizations](../../../visualizations/SKILL.md) § *Standard keys*. Two things this wiring depends on: a preset step goes through
   `SkinEffectSelection.setPreset`, never the engine's own `nextPreset()`, or the `currentPreset` /
   `currentPresetTitle` bindings 144 archives read would show a preset that is not on screen; and
   `applySelection` must tell a preset change from an effect change, because `setPreset` posts the

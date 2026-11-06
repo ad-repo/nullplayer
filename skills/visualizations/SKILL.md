@@ -16,6 +16,38 @@ name, select, step, random). Every host (the Visualizations window's keys, the `
 `.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine adds its
 cases there. Each engine's context-menu section stays its own (`VisualizationContextMenu`).
 
+## Standard keys: one seam
+
+Every window that shows a visualization answers the same keys, defined once in
+`Visualization/VisualizationKeys.swift` (`VisualizationKey`): **⌘↓ / ⌘↑ step the engine** (a
+main window's mode, the Spectrum window's mode, the `.wmz` / Sonique effect, Art's effect group) and
+**⌘→ / ⌘← step the preset inside it** (an engine's presets, a mode's style, a vis_classic profile,
+Cava's colour preset or channel mode, an Art effect). ⇧ added is a hard cut where an engine blends.
+Plain arrows stay each window's own: seek and volume on every main window, presets in the
+Visualizations and Spectrum windows, effect and intensity in Art.
+
+| Window | ⌘↓ / ⌘↑ | ⌘→ / ⌘← |
+|---|---|---|
+| Classic / Original main window | `MainWindowVisMode.advanced(by:)` | `MainWindowVisStyle.step`, vis_classic via the overlay |
+| `.wal` hosted visualization | `WindowManager.switchVisualizationEngine` (the shared preference) | the engine's presets |
+| `.wmz` / Sonique `<EFFECTS>` | `SkinEffectsSurfaceView.handleKeyDown` (effect) | within the effect |
+| Visualizations window | `VisualizationType.advanced(by:)` | presets (its plain arrows) |
+| Spectrum window | `SpectrumQualityMode.advanced(by:)` | style / profile (its plain arrows) |
+| Art window | `ArtVisEffect.advancedGroup(by:)` | `ArtVisEffect.advanced(by:)` |
+| Audion | no visualization: the keys do nothing | |
+
+- **A ⌘-arrow is never seek or volume**, even in a main window with nothing to visualize:
+  `MainWindowKeys.performArrow` refuses it.
+- **No visualization menu item carries an arrow key equivalent.** The menu bar's Visuals →
+  Visualizations copies the live Visualizations window's context menu, so an arrow equivalent on
+  any item `VisualizationContextMenu` / `TripexMenuBuilder` build becomes app-wide: key equivalent
+  routing gave every ⌘→ in the app to the Visualizations window — and a stale copy kept eating it
+  after that window closed — so the key window never saw it. The Next / Previous items therefore
+  show no shortcut.
+- **The effects surface (`.wmz`, Sonique) takes only ⌘-arrows** (`SkinEffectsSurfaceView.handleKeyDown`
+  parses `VisualizationKey`), so its host offers it every key after its own plain arrows.
+- Tests: `Tests/NullPlayerAppTests/VisualizationKeysTests.swift`.
+
 ## Persistence and Reset Policy
 
 Visualization choices are durable `UserDefaults` preferences, not AppState session fields. AppState only remembers quit-session state such as window visibility/layout and playlist/audio state.

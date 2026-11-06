@@ -544,25 +544,23 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     // MARK: - Keyboard
 
-    /// **Up/down pick the effect, left/right move inside it.** The catalogue is two levels deep —
-    /// eight effects, and most of them carry a list of their own (ProjectM's presets, Geiss's and
-    /// Tripex's effects, vis_classic's profiles, Cava's mono/stereo) — so the axes are split the
-    /// way a two-level list reads: **down is the next effect** and up the previous, left/right step
-    /// within whatever is now selected. An effect with nothing inside it (Spikes, Bars, Ambience)
-    /// refuses left/right rather than swallowing them.
+    /// **The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ pick the effect, ⌘→/⌘← move
+    /// inside it.** The catalogue is two levels deep — eight effects, and most of them carry a list
+    /// of their own (ProjectM's presets, Geiss's and Tripex's effects, vis_classic's profiles,
+    /// Cava's mono/stereo) — so the axes are split the way a two-level list reads: **down is the
+    /// next effect** and up the previous, left/right step within whatever is now selected. An effect
+    /// with nothing inside it (Spikes, Bars, Ambience) refuses ⌘→/⌘← rather than swallowing them.
+    /// Plain arrows are never this surface's: they are the main window's seek and volume.
     ///
-    /// Offered only after the skin has refused the key, so a focused slider still takes its own
-    /// arrows and an authored accelerator always wins. Fullscreen is not among them: this surface
-    /// is a box inside the skin's window and has no screen of its own to take.
+    /// Offered only after the skin has refused the key, so an authored accelerator always wins.
+    /// Fullscreen is not among them: this surface is a box inside the skin's window and has no
+    /// screen of its own to take.
     @discardableResult
     func handleKeyDown(_ event: NSEvent) -> Bool {
-        guard !isTornDown else { return false }
-        switch event.keyCode {
-        case 125: selection.step(by: 1); return true
-        case 126: selection.step(by: -1); return true
-        case 124: return stepWithinEffect(by: 1)
-        case 123: return stepWithinEffect(by: -1)
-        default: return false
+        guard !isTornDown, let key = VisualizationKey(event) else { return false }
+        switch key {
+        case .engine(let delta): selection.step(by: delta); return true
+        case .preset(let delta): return stepWithinEffect(by: delta)
         }
     }
 

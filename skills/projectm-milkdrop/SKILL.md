@@ -33,8 +33,10 @@ Place `.milk` files there and use "Reload Presets" from the context menu.
 ## Controls
 
 **Keyboard:**
-- **→ / ←** — Next/Previous preset
+- **→ / ←** (or **⌘→ / ⌘←**) — Next/Previous preset
 - **Shift+→ / Shift+←** — Hard cut (no blend)
+- **⌘↓ / ⌘↑** — Next/Previous engine, in the Visualization Engine menu's order (the standard
+  visualization keys: [visualizations](../visualizations/SKILL.md) § *Standard keys*)
 - **R** — Random preset
 - **Shift+R** — Random preset (hard cut)
 - **L** — Lock/unlock preset

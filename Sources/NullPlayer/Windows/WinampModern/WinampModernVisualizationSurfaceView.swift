@@ -420,6 +420,17 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     func handleKeyDown(_ event: NSEvent) -> Bool {
         guard !isTornDown else { return false }
         let hard = event.modifierFlags.contains(.shift)
+        // The standard visualization keys (`VisualizationKey`). The engine goes through the window
+        // manager, as the menu's does: it is a preference the visualization window shares.
+        if let key = VisualizationKey(event) {
+            switch key {
+            case .engine(let delta):
+                WindowManager.shared.switchVisualizationEngine(to: engineType.advanced(by: delta))
+                applyPresetCycleMode()
+            case .preset(let delta): stepPreset(by: delta, hardCut: hard)
+            }
+            return true
+        }
         switch event.keyCode {
         case 53: // Escape — only meaningful while this surface owns a screen
             guard isFullscreen else { return false }
