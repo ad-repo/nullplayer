@@ -143,11 +143,8 @@ families, SF Digital Readout, Junior Pro and others); they keep lookalikes.
 - XOR text (`…TextMode & 2`) is parsed and drawn plainly: FaceKit leaves its invert filter
   commented out. Mode 4 (`notSrcCopy`) draws inverse video, the line colour's box with the glyphs
   knocked out in white (A14, a departure; FaceKit draws it plainly).
-- The album line scrolls as a marquee: an 80-frame startup hold, then one pixel per two frames,
-  with a 60 px gap before it repeats. The artist line scrolls the same way when it is wider than its
-  box, and is pinned when it fits. Only Reduce Motion stops them, and only then is a line cut in the
-  middle with `…` (a departure: FaceKit cuts the artist line, and a justified album line's text).
-  `rendering.md` § *Text* has the full rule.
+- A line wider than its box scrolls as a marquee; when a line scrolls, is pinned or is cut, and the
+  departures from FaceKit, are `rendering.md` § *Text*.
 - The artist line shows the artist and the album line the track title (#662): Panic's face
   previews put the artist on top (FX, Car Stereo, Mint 1.2), and RackView labels its lines ARTIST
   and TRACK.

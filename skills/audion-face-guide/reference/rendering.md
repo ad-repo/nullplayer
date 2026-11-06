@@ -90,15 +90,16 @@ line in an image as wide as the whole string, baseline at `(ascent − descent) 
 | Line | Text | Truncation | Marquee |
 |---|---|---|---|
 | artist | the artist; nothing for an empty one | only under Reduce Motion, cut from the middle with `…` | when wider than its box, unless Reduce Motion |
-| album | the title; nothing for an empty one | only under Reduce Motion | always, unless Reduce Motion |
+| album | the title; nothing for an empty one | only under Reduce Motion | when wider than its box, unless Reduce Motion |
 
-A departure (the user's call): FaceKit cuts the artist line, and a justified album line's text,
-rather than scroll them; the whole text scrolls instead. `AudionFaceScene.isAnimated` runs the clock
+Departures (the user's call): FaceKit cuts the artist line, and a justified album line's text,
+rather than scroll them; the whole text scrolls instead. FaceKit scrolls the album line even when it
+fits; a line that fits is pinned instead (#698). `AudionFaceScene.isAnimated` runs the clock
 for a scrolling line.
 
-**Alignment** (`AudionFaceScene.alignmentOffset`): a pinned line — the artist line, and the album
-line under Reduce Motion — narrower than its box is offset by half the room (centre) or all of it
-(right), in whole face pixels; a wider one stays left. A scrolling line ignores it.
+**Alignment** (`AudionFaceScene.alignmentOffset`): a line that does not scroll and is narrower than
+its box is offset by half the room (centre) or all of it (right), in whole face pixels; a wider one
+stays left. A scrolling line ignores it.
 
 **Bitmap fonts** (`AudionFaceBitmapFont`, a departure): when the line's style holds nothing beyond
 bold, condense, extend and justify, and the line has a 1-bit font — a shipped `NFNT` strike at its

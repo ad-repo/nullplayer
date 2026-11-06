@@ -62,7 +62,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here. The polic
 - **Commands refresh the host:** the controller re-snapshots `AudionFaceHostState` after every
   `AudionFaceCommand`, so a seek while paused shows at once.
 - **Frame clock:** a 60 Hz `Timer` (common run-loop modes) advances the scene's `frame` only while
-  `AudionFaceScene.isAnimated` (a multi-frame animation, or an album line that scrolls) and the
+  `AudionFaceScene.isAnimated` (a multi-frame animation, or a line that scrolls) and the
   window is visible (`windowDidChangeOcclusionState`). A tick redraws only what moved (`rendering.md`
   § *Redrawing only what changed*). The tick count is never reset, as FaceKit's is not, so a new track's
   marquee can start mid-cycle.
