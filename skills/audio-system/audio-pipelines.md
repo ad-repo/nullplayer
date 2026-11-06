@@ -162,6 +162,10 @@ do not dip: `mainMixerNode.outputVolume` for local playback (inside `applyNormal
   from `.paused` starts from silence; a start from `.stopped` plays at full level. A seek, stop or
   track change bumps `playbackGeneration`, and the deferred pause is dropped; a change to a
   different track also resets the gain, so the new track does not dip with the old pause.
+- **A faded pause stays at gain 0** until the resume ramps it up; `resetLocalCrossfadeStateForDirectPlayback()`
+  (Stop, every track load, a load error) resets it to 1, since a streaming load starts its player
+  directly, with no ramp. Restoring it when the ramp ended played the players' tail at full level —
+  their pause lands a render cycle or more later, a stream's later still — as a spike (#699).
 - `pauseLocalOnly()` without `fadeOut` (casting takeover) pauses at once.
 - Next, Previous and Stop do not fade: that would hold the command back, which complicates rapid
   clicks and casting.

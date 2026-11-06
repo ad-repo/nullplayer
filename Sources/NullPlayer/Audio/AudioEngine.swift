@@ -78,6 +78,7 @@ extension AudioEngine {
     }
 
     var normalizationGainForTesting: Float { normalizationGain }
+    var outputFadeGainForTesting: Float { outputFades.gain }
     var hasLocalAudioFileForTesting: Bool { audioFile != nil }
     var isPreparingLocalFileForTesting: Bool { localTrackPreparation.payload != nil }
     var preparedCrossfadeTrackIDForTesting: UUID? {
@@ -2720,13 +2721,13 @@ class AudioEngine {
         }
         if fadesOut {
             // A resume replaces the ramp, so this never runs; a seek, stop or track change bumps
-            // the generation and has already set the players up itself.
+            // the generation and has already set the players up itself. The gain stays at 0 until
+            // the resume ramps it back up: a player pause lands a render cycle or more later (a
+            // stream's later still), and restoring it here played that tail at full level (#699).
             let generation = playbackGeneration
             outputFades.transport.ramp(to: 0) { [weak self] in
-                guard let self else { return }
-                if self.state == .paused, self.playbackGeneration == generation { pausePlayers() }
-                self.outputFades.transport.set(1)
-            }
+                guard let self, self.state == .paused, self.playbackGeneration == generation else { return }
+                pausePlayers()            }
         } else {
             pausePlayers()
         }
@@ -6130,6 +6131,9 @@ class AudioEngine {
 
         // Local playback is scheduled on playerNode; keep it at unity gain.
         playerNode.volume = 1.0
+        // A faded pause holds the output at 0 until a resume; a stream started directly by a load
+        // (the same track reloaded after it dropped while paused) never ramps it back (#699).
+        outputFades.transport.set(1)
     }
     
     // MARK: - Volume Normalization

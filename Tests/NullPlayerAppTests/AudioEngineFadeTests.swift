@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import NullPlayer
 
@@ -65,6 +66,25 @@ final class AudioEngineFadeTests: XCTestCase {
         fade.ramp(to: 1) { resumed.fulfill() }
         wait(for: [resumed], timeout: 2)
         XCTAssertEqual(fade.gain, 1)
+    }
+
+    /// #699: restoring the gain when the ramp ended played the players' tail, still rendering
+    /// after their pause, at full level.
+    func testAFadedPauseStaysSilentUntilAStopRestoresTheGain() throws {
+        let url = try TestAudioFile.temporaryWAV(seconds: 10)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let engine = AudioEngine()
+        engine.pauseFadeEnabled = true
+        engine.setAudioGraphFileForTesting(try AVAudioFile(forReading: url), state: .playing, position: 0)
+
+        engine.pauseLocalOnly(fadeOut: true)
+        let faded = expectation(description: "past the pause ramp")
+        DispatchQueue.main.asyncAfter(deadline: .now() + TransportFade.duration * 2) { faded.fulfill() }
+        wait(for: [faded], timeout: 2)
+        XCTAssertEqual(engine.outputFadeGainForTesting, 0)
+
+        engine.stop()
+        XCTAssertEqual(engine.outputFadeGainForTesting, 1)
     }
 
     func testSetCancelsARunningRamp() {
