@@ -1,0 +1,42 @@
+Goom2k26 — copyright and licensing notice
+=========================================
+
+Goom2k26 is a revival of Goom, the music visualizer effect engine
+originally developed by Jean-Christophe Hoelt and Guillaume Borios,
+with contributions from Florent Boudet, released 2000-2003 under the
+informal group name "iOS-software" (a hobbyist developer group, no
+relation to Apple Inc. or its iOS operating system).
+
+The Goom core sources carry the "LGPL Licence" notice from the
+original releases. This distribution licenses the whole Goom2k26
+tree under the GNU Lesser General Public License, version 2.1
+(see the LICENSE file in this directory).
+
+Copyright holders:
+  - Goom core (Goom/):            (c)2000-2003 Jean-Christophe Hoelt;
+                                  Guillaume Borios (PPC/AltiVec zoom filter,
+                                  CPU detection)
+                                  (c)2026 the Goom2k26 contributors
+  - Engine layers (gametools/, iosfc/, sdl/, libs/ additions):
+                                  (c)2003-2012 Jean-Christophe Hoelt (Fovea.cc),
+                                  with Guillaume Borios and Florent Boudet
+                                  (c)2026 the Goom2k26 contributors
+
+If you use this library in a visual program, credit is appreciated:
+a visible mention of Goom and its original authors in your about
+screen or documentation is the historical convention of this codebase.
+
+Vendored third-party components keep their own licenses:
+  - libs/soil         — public domain / MIT (image_helper.c is MIT; includes
+                        GLFreeType, upstream tutorial code with no
+                        license statement)
+  - freetype2         — FTL or GPL-2.0, at your option; not linked by the
+                        goom desktop build
+
+Note on closed-source applications built on this core: the Goom
+core itself is distributed under this LGPL license, and nothing in
+a closed-source application changes that; application-layer glue
+and platform bindings are separate works. The copyright holders'
+additional permission for static linking, granted only to
+themselves and Fovea.cc (not to third parties), is recorded in
+LGPL-ADDITIONAL-PERMISSION.md.

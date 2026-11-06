@@ -34,6 +34,12 @@
   soft bars in a smooth gradient of the skin's colours; Enhanced is a flowing filled curve with a
   glowing crest; Ultra is dense rounded bars with a glow, floating peaks and a reflection in the
   Spectrum Analyzer window.
+- **Goom is a visualization engine** (Visualization Engine ▸ Goom), beside ProjectM, Geiss, Tripex
+  and AVS: the classic XMMS-era visualizer, from the Goom2k26 revival. It picks its own effects as
+  the music changes; right-click to jump to one of its fifteen zoom effects, and → / ← / R step
+  through them. **Hold Effect** stops it changing effect by itself and is remembered across launches. Five are new to NullPlayer: **Spiral**, **Vortex**, **Flower**, **Heart**, where
+  the waveform becomes a pair of pink hearts that echo outward in heart-shaped ripples, and
+  **Pentagram**, where it becomes a crimson star inside a circle with star-shaped ripples.
 
 ### Winamp Modern (`.wal`) skins
 

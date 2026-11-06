@@ -169,6 +169,21 @@ let package = Package(
                 + avsDefines.map { .define($0) }
                 + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)]
         ),
+        // Goom (Goom2k26, LGPL-2.1): the pure-C effect core from j3k0/goom's Goom/ directory, with
+        // the port's own edits (each marked in the file), behind the GoomCore.h shim; see
+        // skills/goom-port.
+        .target(
+            name: "CGoomCore",
+            dependencies: [],
+            path: "Sources/CGoomCore",
+            exclude: ["upstream/LICENSE", "upstream/COPYING.README"],
+            publicHeadersPath: "include",
+            // -O2 in debug too: a software renderer, like libavs. The two warning kinds silenced are
+            // the only ones upstream raises (GNU field designators; abs() on a float in
+            // tentacle3d.c, which upstream's look depends on); any other warning still shows.
+            cSettings: [.headerSearchPath("upstream"),
+                        .unsafeFlags(["-O2", "-Wno-gnu-designator", "-Wno-absolute-value"])]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -208,6 +223,7 @@ let package = Package(
                 "CGeissCore",
                 "CTripexCore",
                 "CAvsCore",
+                "CGoomCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "AudioStreaming",
