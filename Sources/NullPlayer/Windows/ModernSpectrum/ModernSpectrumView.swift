@@ -548,11 +548,10 @@ class ModernSpectrumView: NSView {
         qualityMenuItem.submenu = qualityMenu
         menu.addItem(qualityMenuItem)
 
-        // vis_classic draws through its own core, which ignores Responsiveness and Normalization.
-        let isVisClassic = spectrumAnalyzerView?.qualityMode == .visClassicExact
+        let mode = spectrumAnalyzerView?.qualityMode
 
         // Decay/Responsiveness submenu
-        if !isVisClassic {
+        if mode?.offersResponsiveness ?? true {
             let decayMenu = NSMenu()
             for mode in SpectrumDecayMode.allCases {
                 let item = NSMenuItem(title: mode.displayName, action: #selector(setDecayMode(_:)), keyEquivalent: "")
@@ -566,8 +565,8 @@ class ModernSpectrumView: NSView {
             menu.addItem(decayMenuItem)
         }
 
-        // Normalization Mode submenu (not shown for Flame mode)
-        if spectrumAnalyzerView?.qualityMode != .flame && !isVisClassic {
+        // Normalization Mode submenu
+        if mode?.offersNormalization ?? true {
             let normMenu = NSMenu()
             let currentNormMode = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
                 .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
@@ -671,7 +670,7 @@ class ModernSpectrumView: NSView {
             menu.addItem(ekgMenuItem)
         }
 
-        if isVisClassic, let analyzer = spectrumAnalyzerView {
+        if mode == .visClassicExact, let analyzer = spectrumAnalyzerView {
             VisClassicMenu.addItems(
                 to: menu,
                 profileNames: analyzer.visClassicProfiles().map(\.name),

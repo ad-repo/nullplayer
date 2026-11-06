@@ -41,6 +41,11 @@ enum SpectrumQualityMode: String, CaseIterable {
     
     var displayName: String { rawValue }
 
+    /// Whether the Responsiveness and Normalization menus apply: vis_classic runs its own core and
+    /// ignores both; Fire normalizes itself.
+    var offersResponsiveness: Bool { self != .visClassicExact }
+    var offersNormalization: Bool { self != .flame && self != .visClassicExact }
+
     /// Shared user-facing order for visualization mode menus and click cycling.
     static let visualizationOrder: [SpectrumQualityMode] = [
         .classic,
@@ -756,12 +761,8 @@ class SpectrumAnalyzerView: NSView {
     nonisolated(unsafe) private var ekgEmbeddedScrollPixelCarry: Float = 0
     nonisolated(unsafe) private var renderEKGStyle: EKGStyle = .clinical
 
-    // vis_classic waveform: each tap buffer posts several 576-sample chunks at once, and keeping only
-    // the newest showed one 13 ms slice per buffer (100 ms on a 4410-frame tap), so bars jumped on
-    // whatever that slice caught. The playout queue hands them out at the audio's own rate. Only its
-    // `receive` / `samples(at:)` are used: this view registers the consumer and observes itself.
-    private let visClassicPlayout = WinampModernWaveformTap(consumerId: "")
-    nonisolated(unsafe) private var visClassicWaveSampleRate: Double = 44100
+    // vis_classic's waveform, played out chunk by chunk at the audio's own rate (`WaveformPlayout`).
+    private let visClassicPlayout = WaveformPlayout()
     
     // Flame mode state
     nonisolated(unsafe) private var renderFlameStyle: FlameStyle = .inferno
@@ -1041,10 +1042,8 @@ class SpectrumAnalyzerView: NSView {
         visClassicPlayout.receive(left: left, right: right, sampleRate: sampleRate,
                                   at: ProcessInfo.processInfo.systemUptime)
 
-        dataLock.withLock {
-            visClassicWaveSampleRate = sampleRate
-
-            if hasData {
+        if hasData {
+            dataLock.withLock {
                 stoppedDueToIdle = false
                 idleFrameCount = 0
                 hasClearedAfterIdle = false
@@ -2646,9 +2645,10 @@ class SpectrumAnalyzerView: NSView {
         }
 
         let (waveLeft, waveRight) = visClassicPlayout.samples
-        let waveSR = dataLock.withLock { visClassicWaveSampleRate }
         let stride = width * 4
-        bridge.processAndDraw(leftData: waveLeft, rightData: waveRight, sampleRate: waveSR,
+        bridge.processAndDraw(leftData: waveLeft, rightData: waveRight,
+                              sampleRate: visClassicPlayout.sampleRate,
+                              gain: Double(WinampModernVisSensitivity.gain(for: .visClassic)),
                               width: width, height: height, into: &visClassicFrameBytes, stride: stride)
 
         guard visClassicFrameBytes.count >= width * height * 4 else {
@@ -2854,6 +2854,7 @@ class SpectrumAnalyzerView: NSView {
     
     /// Reset all spectrum state - call when switching audio sources
     func resetState() {
+        visClassicPlayout.reset()
         dataLock.withLock {
             // Clear raw spectrum
             rawSpectrum = []

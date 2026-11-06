@@ -1509,45 +1509,12 @@ class ContextMenuBuilder {
             visMenu.addItem(bassItem)
         }
         
-        // Responsiveness submenu
-        if currentMode != .cava && currentMode != .visClassicExact {
-            let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
-            let responsivenessMenu = NSMenu()
-            responsivenessMenu.autoenablesItems = false
-
-            let currentDecay = UserDefaults.standard.string(forKey: "mainWindowDecayMode")
-                .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
-
-            for mode in SpectrumDecayMode.allCases {
-                let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setMainVisResponsiveness(_:)), keyEquivalent: "")
-                item.target = MenuActions.shared
-                item.representedObject = mode
-                item.state = (currentDecay == mode) ? .on : .off
-                responsivenessMenu.addItem(item)
-            }
-            responsivenessItem.submenu = responsivenessMenu
-            visMenu.addItem(responsivenessItem)
-        }
-        
-        // Normalization submenu (not shown for Fire mode)
-        if currentMode != .fire && currentMode != .cava && currentMode != .visClassicExact {
-            let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
-            let normMenu = NSMenu()
-            normMenu.autoenablesItems = false
-            
-            let currentNorm = UserDefaults.standard.string(forKey: "mainWindowNormalizationMode")
-                .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
-            
-            for mode in SpectrumNormalizationMode.allCases {
-                let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(MenuActions.setMainVisNormalization(_:)), keyEquivalent: "")
-                item.target = MenuActions.shared
-                item.representedObject = mode
-                item.state = (currentNorm == mode) ? .on : .off
-                normMenu.addItem(item)
-            }
-            normItem.submenu = normMenu
-            visMenu.addItem(normItem)
-        }
+        addResponsivenessAndNormalization(
+            to: visMenu,
+            responsiveness: currentMode.offersResponsiveness, normalization: currentMode.offersNormalization,
+            decayKey: "mainWindowDecayMode", normalizationKey: "mainWindowNormalizationMode",
+            decayAction: #selector(MenuActions.setMainVisResponsiveness(_:)),
+            normalizationAction: #selector(MenuActions.setMainVisNormalization(_:)))
         
         // Flame Style submenu (only when Fire mode active)
         if currentMode == .fire {
@@ -1697,6 +1664,45 @@ class ContextMenuBuilder {
         return visMenu
     }
     
+    /// The Responsiveness and Normalization submenus of a window's analyzer menu, each only where the
+    /// mode uses it.
+    private static func addResponsivenessAndNormalization(
+        to menu: NSMenu, responsiveness: Bool, normalization: Bool,
+        decayKey: String, normalizationKey: String,
+        decayAction: Selector, normalizationAction: Selector
+    ) {
+        if responsiveness {
+            let current = UserDefaults.standard.string(forKey: decayKey)
+                .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
+            menu.addItem(choiceSubmenu("Responsiveness", SpectrumDecayMode.allCases, current: current,
+                                       title: \.displayName, action: decayAction))
+        }
+        if normalization {
+            let current = UserDefaults.standard.string(forKey: normalizationKey)
+                .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
+            menu.addItem(choiceSubmenu("Normalization", SpectrumNormalizationMode.allCases, current: current,
+                                       title: { "\($0.displayName) - \($0.description)" },
+                                       action: normalizationAction))
+        }
+    }
+
+    private static func choiceSubmenu<T: Equatable>(_ title: String, _ choices: [T], current: T,
+                                                    title choiceTitle: (T) -> String,
+                                                    action: Selector) -> NSMenuItem {
+        let submenu = NSMenu()
+        submenu.autoenablesItems = false
+        for choice in choices {
+            let item = NSMenuItem(title: choiceTitle(choice), action: action, keyEquivalent: "")
+            item.target = MenuActions.shared
+            item.representedObject = choice
+            item.state = choice == current ? .on : .off
+            submenu.addItem(item)
+        }
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
     // MARK: - Spectrum Window Submenu
 
     private static func buildSpectrumWindowMenu() -> NSMenu {
@@ -1736,42 +1742,12 @@ class ContextMenuBuilder {
         modeItem.submenu = modeMenu
         spectrumWindowMenu.addItem(modeItem)
         
-        // Responsiveness and Normalization: vis_classic draws through its own core and ignores both.
-        if currentQuality != .visClassicExact {
-            let responsivenessItem = NSMenuItem(title: "Responsiveness", action: nil, keyEquivalent: "")
-            let responsivenessMenu = NSMenu()
-            responsivenessMenu.autoenablesItems = false
-
-            let currentDecay = UserDefaults.standard.string(forKey: "spectrumDecayMode")
-                .flatMap { SpectrumDecayMode(rawValue: $0) } ?? .snappy
-
-            for mode in SpectrumDecayMode.allCases {
-                let item = NSMenuItem(title: mode.displayName, action: #selector(MenuActions.setSpectrumResponsiveness(_:)), keyEquivalent: "")
-                item.target = MenuActions.shared
-                item.representedObject = mode
-                item.state = (currentDecay == mode) ? .on : .off
-                responsivenessMenu.addItem(item)
-            }
-            responsivenessItem.submenu = responsivenessMenu
-            spectrumWindowMenu.addItem(responsivenessItem)
-
-            let normItem = NSMenuItem(title: "Normalization", action: nil, keyEquivalent: "")
-            let normMenu = NSMenu()
-            normMenu.autoenablesItems = false
-
-            let currentNorm = UserDefaults.standard.string(forKey: "spectrumNormalizationMode")
-                .flatMap { SpectrumNormalizationMode(rawValue: $0) } ?? .accurate
-
-            for mode in SpectrumNormalizationMode.allCases {
-                let item = NSMenuItem(title: "\(mode.displayName) - \(mode.description)", action: #selector(MenuActions.setSpectrumNormalization(_:)), keyEquivalent: "")
-                item.target = MenuActions.shared
-                item.representedObject = mode
-                item.state = (currentNorm == mode) ? .on : .off
-                normMenu.addItem(item)
-            }
-            normItem.submenu = normMenu
-            spectrumWindowMenu.addItem(normItem)
-        }
+        addResponsivenessAndNormalization(
+            to: spectrumWindowMenu,
+            responsiveness: currentQuality.offersResponsiveness, normalization: currentQuality.offersNormalization,
+            decayKey: "spectrumDecayMode", normalizationKey: "spectrumNormalizationMode",
+            decayAction: #selector(MenuActions.setSpectrumResponsiveness(_:)),
+            normalizationAction: #selector(MenuActions.setSpectrumNormalization(_:)))
 
         // Flame Style submenu (only when Fire mode active)
         if currentQuality == .flame {

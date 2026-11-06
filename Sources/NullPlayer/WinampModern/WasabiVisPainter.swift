@@ -222,8 +222,8 @@ struct WasabiVisStyle {
         static let cava: Float = 1.45
         /// vis_classic takes its gain on the **input** — the 576-sample buffer, scaled about the
         /// 128 centre line — because the core does its own FFT and paints its own bars, so there is
-        /// no height to scale on the way out without stretching its artwork. Applied by
-        /// `VisClassicBridge.processAndDraw`, so every vis_classic surface takes it, not only this box.
+        /// no height to scale on the way out without stretching its artwork. Every vis_classic
+        /// surface passes it to `VisClassicBridge.processAndDraw`, not only this box.
         static let visClassicInput: Double = 1.6
     }
 }

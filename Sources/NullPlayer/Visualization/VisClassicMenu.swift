@@ -3,7 +3,9 @@ import AppKit
 /// The vis_classic block of every analyzer menu — the Spectrum window's right-click (Classic and
 /// Original), the menu bar's Spectrum Window submenu and the main window's visualization menu — so
 /// the four cannot drift apart again. Each host passes its own target and selectors; the grouping is
-/// fixed here: the profile and stepping through it, then how it draws, then its files.
+/// fixed here: the profile and stepping through it, then how it draws, then its files. (The `.wmz` /
+/// Sonique effects menu keeps a compact block of its own — profile, fit, transparency and
+/// Sensitivity, with no stepping or INI files.)
 enum VisClassicMenu {
     struct Actions {
         let loadProfile: Selector  // the item's `representedObject` is the profile name

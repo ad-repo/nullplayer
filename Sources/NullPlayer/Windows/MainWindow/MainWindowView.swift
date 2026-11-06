@@ -45,6 +45,11 @@ enum MainWindowVisMode: String, CaseIterable {
     
     /// Whether this mode uses the Metal overlay.
     var usesMetal: Bool { spectrumQualityMode != nil }
+
+    /// The Responsiveness and Normalization menus: Cava shapes its own bars; the Metal modes follow
+    /// `SpectrumQualityMode`.
+    var offersResponsiveness: Bool { self != .cava && spectrumQualityMode?.offersResponsiveness != false }
+    var offersNormalization: Bool { self != .cava && spectrumQualityMode?.offersNormalization != false }
     
     /// Map to the corresponding SpectrumQualityMode for the Metal overlay
     var spectrumQualityMode: SpectrumQualityMode? {

@@ -193,7 +193,7 @@ extension WinampModernHost {
     }
     var vuLevels: (left: Double, right: Double) { (0, 0) }
     var waveformSamples: (left: [UInt8], right: [UInt8]) {
-        (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+        (WaveformPlayout.silence, WaveformPlayout.silence)
     }
     func setWaveformNeeded(_ needed: Bool) {}
     func analyzerBands(count: Int) -> [CGFloat] { [] }
@@ -372,7 +372,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
     private var isWaveformNeeded = false
     var waveformSamples: (left: [UInt8], right: [UInt8]) {
         isWaveformNeeded ? waveformTap.samples
-            : (WinampModernWaveformTap.silence, WinampModernWaveformTap.silence)
+            : (WaveformPlayout.silence, WaveformPlayout.silence)
     }
 
     func setWaveformNeeded(_ needed: Bool) {

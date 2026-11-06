@@ -409,7 +409,9 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         let waveform = visClassicWaveform.samples
         let stride = width * 4
         bridge.processAndDraw(leftData: waveform.left, rightData: waveform.right,
-                              sampleRate: 44_100, width: width, height: height,
+                              sampleRate: 44_100,
+                              gain: Double(WinampModernVisSensitivity.gain(for: .visClassic)),
+                              width: width, height: height,
                               into: &visClassicBytes, stride: stride)
         guard visClassicBytes.count >= stride * height,
               let image = visClassicImage(width: width, height: height, stride: stride) else { return }

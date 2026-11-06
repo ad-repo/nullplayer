@@ -213,7 +213,7 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         let left = input.waveform.left
         let right = input.waveform.right.isEmpty ? left : input.waveform.right
         guard !left.isEmpty else { return }
-        if left.contains(where: { $0 != WinampModernWaveformTap.centre }) {
+        if left.contains(where: { $0 != WaveformPlayout.centre }) {
             lastActiveDraw = CACurrentMediaTime()
         }
         let stride = width * 4
@@ -225,9 +225,9 @@ final class VisClassicVisRenderer: NSObject, WasabiSpectrumAnalyzerRenderer {
         // buffer is the reliable sign that this is another box of the same frame.
         if left != lastProcessed {
             lastProcessed = left
-            // The bridge applies the engine's input gain and Sensitivity, as for every surface.
             core.processAndDraw(leftData: left, rightData: right,
                                 sampleRate: input.sampleRate,
+                                gain: Double(WinampModernVisSensitivity.gain(for: .visClassic)),
                                 width: width, height: height, into: &frameBytes, stride: stride)
         } else {
             core.drawAtSize(width: width, height: height, into: &frameBytes, stride: stride)

@@ -95,10 +95,10 @@
 - **vis_classic is louder, with a Sensitivity setting.** The bars sat near the floor in the
   Spectrum window, the main window and `.wmz` / Sonique effects; every vis_classic analyzer now takes
   the boost a `.wal` skin's vis box already had, about 1.7× as tall, and right-click ▸ Sensitivity
-  (Lowest to Highest) sets it for all of them at once. Every vis_classic menu — the Spectrum
-  window's right-click, the menu bar's Spectrum Window submenu and the main window's visualization
-  menu — is grouped the same way, into profiles, display and profile files, and none offers
-  Responsiveness or Normalization in vis_classic mode, which vis_classic never used.
+  (Lowest to Highest) sets it for all of them at once. The Spectrum window's right-click, the
+  menu bar's Spectrum Window submenu and the main window's visualization menu are grouped the same
+  way in vis_classic mode, into profiles, display and profile files, and none offers
+  Responsiveness or Normalization there, which vis_classic never used.
 
 ## 0.34.2
 

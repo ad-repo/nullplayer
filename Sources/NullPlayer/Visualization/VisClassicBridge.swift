@@ -103,22 +103,21 @@ final class VisClassicBridge {
     /// Process and draw atomically, so no other caller can touch the shared core between this
     /// view's processing and its draw.
     ///
-    /// Every surface's waveform takes the engine's input gain here (`WasabiVisStyle.Gain.visClassicInput`
-    /// times the user's vis_classic **Sensitivity**): the core maps magnitude linearly and most
+    /// `gain` scales the waveform about 128 before the FFT — every caller passes
+    /// `WinampModernVisSensitivity.gain(for: .visClassic)`: the core maps magnitude linearly and most
     /// profiles halve it, so ungained music left the mids and highs near the floor in every window.
-    func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double,
+    func processAndDraw(leftData: [UInt8], rightData: [UInt8], sampleRate: Double, gain: Double,
                         width: Int, height: Int, into buffer: inout [UInt8], stride: Int) {
         guard let core else { return }
         let needed = stride * height
         if buffer.count < needed { buffer = [UInt8](repeating: 0, count: needed) }
-        let gain = Double(WinampModernVisSensitivity.gain(for: .visClassic))
-        let leftData = Self.amplified(leftData, gain: gain)
-        let rightData = Self.amplified(rightData, gain: gain)
+        let gainedLeft = Self.amplified(leftData, gain: gain)
+        let gainedRight = Self.amplified(rightData, gain: gain)
         coreLock.withLock {
-            leftData.withUnsafeBufferPointer { lp in
-                rightData.withUnsafeBufferPointer { rp in
+            gainedLeft.withUnsafeBufferPointer { lp in
+                gainedRight.withUnsafeBufferPointer { rp in
                     vc_set_waveform_u8(core, lp.baseAddress, rp.baseAddress,
-                                       leftData.count, sampleRate)
+                                       gainedLeft.count, sampleRate)
                 }
             }
             vc_process_frame_only(core)
