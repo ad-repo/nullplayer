@@ -236,9 +236,8 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard let engine = effect.engine, let view = makeEngineView() else { return }
         view.switchEngine(to: engine, persistPreference: false)
         applyPreset(to: view)
-        // No display link starts it, and the switch above is skipped when the view already loaded
-        // this engine.
-        view.presetCycler.restart()
+        // No display link starts it: this host drives the engine.
+        view.presetCycler.start()
         engineFrameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
                                                 repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pullOffscreenFrame() }

@@ -1,5 +1,22 @@
 import AppKit
 
+/// What the shared menu needs from whoever owns the engine. Every method is an action a menu item
+/// targets, so the protocol is `@objc`: the builder makes its selectors against *this* type, which is
+/// what lets one menu serve unrelated views. The presets and cycle every engine shares target the
+/// engine view itself (`VisualizationGLView+Presets`), so no host repeats them.
+@objc(VisualizationMenuTarget) protocol VisualizationMenuTarget: GeissMenuTarget, TripexMenuTarget {
+    func setCurrentPresetAsDefault(_ sender: NSMenuItem?)
+    func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem)
+    func toggleCurrentPresetFavorite(_ sender: NSMenuItem?)
+    func selectFavoritePresetFromMenu(_ sender: NSMenuItem)
+    func switchVisualizationEngine(_ sender: NSMenuItem)
+    func setAudioSensitivity(_ sender: NSMenuItem)
+    func setBeatSensitivityAction(_ sender: NSMenuItem)
+    func togglePerformanceMode(_ sender: NSMenuItem?)
+    func toggleFullscreenAction(_ sender: NSMenuItem?)
+    func closeWindow(_ sender: NSMenuItem?)
+}
+
 /// The visualization context menu — one copy, for every view that owns a `VisualizationGLView`.
 ///
 /// It was written twice, identically, in `ProjectMView` and `ModernProjectMView`, and a third caller
@@ -14,24 +31,6 @@ import AppKit
 /// engine's own items, then the engine picker, sensitivity, quality and the window items. The target
 /// supplies the engine (`visualizationGLView`) and the host actions; whether a window-level
 /// Fullscreen / Close item makes sense comes in as `Options`.
-///
-/// What the shared menu needs from whoever owns the engine. Every method is an action a menu item
-/// targets, so the protocol is `@objc`: the builder makes its selectors against *this* type, which is
-/// what lets one menu serve three unrelated views. The presets and cycle every engine shares target
-/// the engine view itself (`VisualizationGLView` below), so no host repeats them.
-@objc(VisualizationMenuTarget) protocol VisualizationMenuTarget: GeissMenuTarget, TripexMenuTarget {
-    func setCurrentPresetAsDefault(_ sender: NSMenuItem?)
-    func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem)
-    func toggleCurrentPresetFavorite(_ sender: NSMenuItem?)
-    func selectFavoritePresetFromMenu(_ sender: NSMenuItem)
-    func switchVisualizationEngine(_ sender: NSMenuItem)
-    func setAudioSensitivity(_ sender: NSMenuItem)
-    func setBeatSensitivityAction(_ sender: NSMenuItem)
-    func togglePerformanceMode(_ sender: NSMenuItem?)
-    func toggleFullscreenAction(_ sender: NSMenuItem?)
-    func closeWindow(_ sender: NSMenuItem?)
-}
-
 enum VisualizationContextMenu {
 
     /// What the menu shows but does not own.
@@ -54,15 +53,18 @@ enum VisualizationContextMenu {
         let currentEngineType = glView?.currentEngineType ?? .projectM
 
         if let glView {
-            addPresets(to: menu, glView: glView)
+            // ProjectM rates its presets: read once, for the preset titles and its own items.
+            let rated = currentEngineType == .projectM && glView.isProjectMAvailable
+                ? RatedPresets(glView: glView) : nil
+            addPresets(to: menu, glView: glView, rated: rated)
             menu.addItem(.separator())
             addCycle(to: menu, glView: glView)
             menu.addItem(.separator())
             let extrasStart = menu.numberOfItems
             switch currentEngineType {
-            case .projectM where glView.isProjectMAvailable:
-                addProjectMRatings(to: menu, target: target, glView: glView)
-            case .projectM, .goom:
+            case .projectM:
+                if let rated { addProjectMRatings(to: menu, target: target, glView: glView, rated: rated) }
+            case .goom:
                 break
             case .geiss:
                 GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: target, visualizationView: glView)
@@ -157,15 +159,14 @@ enum VisualizationContextMenu {
 
     /// The block every engine shares: the running preset, stepping, and the full list. ProjectM
     /// rates its presets, so its titles carry the stars.
-    private static func addPresets(to menu: NSMenu, glView: VisualizationGLView) {
+    private static func addPresets(to menu: NSMenu, glView: VisualizationGLView, rated: RatedPresets?) {
         let count = glView.enginePresetCount
         let current = glView.currentEnginePresetIndex
-        let rated = glView.currentEngineType == .projectM && glView.isProjectMAvailable
-        let ratings = rated ? presetRatings(glView: glView, count: count) : [:]
         func title(_ index: Int) -> String {
             let name = glView.enginePresetName(at: index)
             let shown = name.isEmpty ? "Preset \(index + 1)" : name
-            return rated ? "\(shown) [\(starString(for: ratings[index] ?? 0))]" : shown
+            guard let rated, rated.ratings.indices.contains(index) else { return shown }
+            return "\(shown) [\(starString(for: rated.ratings[index]))]"
         }
 
         let header = current.map { "Preset: \(title($0)) (\($0 + 1)/\(count))" } ?? "Preset: (none)"
@@ -222,19 +223,25 @@ enum VisualizationContextMenu {
         menu.addItem(intervalItem)
     }
 
-    private static func presetRatings(glView: VisualizationGLView, count: Int) -> [Int: Int] {
-        let paths = (0..<count).map { (glView.presetPath(at: $0) as NSString).standardizingPath }
-        let byPath = ProjectMPresetRatingsStore.shared.ratings(forPresetPaths: paths)
-        return Dictionary(uniqueKeysWithValues: paths.enumerated().map { ($0.offset, byPath[$0.element] ?? 0) })
+    /// ProjectM's presets by index: each path as the ratings store keys it, and its rating.
+    private struct RatedPresets {
+        let paths: [String]
+        let ratings: [Int]
+
+        init(glView: VisualizationGLView) {
+            paths = (0..<glView.presetCount).map { (glView.presetPath(at: $0) as NSString).standardizingPath }
+            let byPath = ProjectMPresetRatingsStore.shared.ratings(forPresetPaths: paths)
+            ratings = paths.map { byPath[$0] ?? 0 }
+        }
     }
 
     /// ProjectM's own items: its default preset, ratings and favorites.
-    private static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+    private static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget,
+                                           glView: VisualizationGLView, rated: RatedPresets) {
         let ratingsStore = ProjectMPresetRatingsStore.shared
-        let presetCount = glView.presetCount
-        let currentPresetIndex = glView.currentPresetIndex
-        let currentPresetPath = glView.presetPath(at: currentPresetIndex)
-        let currentRating = ratingsStore.rating(forPresetPath: currentPresetPath)
+        let presetCount = rated.paths.count
+        let currentPresetIndex = glView.currentEnginePresetIndex
+        let currentRating = currentPresetIndex.map { rated.ratings[$0] } ?? 0
 
         let setDefaultItem = NSMenuItem(title: "Set Current to Default", action: #selector(VisualizationMenuTarget.setCurrentPresetAsDefault(_:)), keyEquivalent: "")
         setDefaultItem.target = target
@@ -257,7 +264,7 @@ enum VisualizationContextMenu {
         menu.addItem(rateCurrentMenuItem)
 
         let favoritesMenu = NSMenu()
-        let isCurrentPresetFavorite = ratingsStore.isFavorite(forPresetPath: currentPresetPath)
+        let isCurrentPresetFavorite = currentPresetIndex.map { ratingsStore.isFavorite(forPresetPath: rated.paths[$0]) } ?? false
         let toggleFavoriteItem = NSMenuItem(
             title: isCurrentPresetFavorite ? "Remove Current Preset from Favorites" : "Add Current Preset to Favorites",
             action: #selector(VisualizationMenuTarget.toggleCurrentPresetFavorite(_:)),
@@ -267,15 +274,11 @@ enum VisualizationContextMenu {
         toggleFavoriteItem.isEnabled = presetCount > 0
         favoritesMenu.addItem(toggleFavoriteItem)
 
-        let presetPaths = (0..<presetCount).map { glView.presetPath(at: $0) }
-        let ratingsByPath = ratingsStore.ratings(forPresetPaths: presetPaths)
-        let favoritePaths = ratingsStore.favoritePresetPaths(forPresetPaths: presetPaths)
+        let favoritePaths = ratingsStore.favoritePresetPaths(forPresetPaths: rated.paths)
         if !favoritePaths.isEmpty {
             favoritesMenu.addItem(NSMenuItem.separator())
-            for i in 0..<presetCount {
-                let path = (presetPaths[i] as NSString).standardizingPath
-                guard favoritePaths.contains(path) else { continue }
-                let title = "\(glView.presetName(at: i)) [\(starString(for: ratingsByPath[path] ?? 0))]"
+            for (i, path) in rated.paths.enumerated() where favoritePaths.contains(path) {
+                let title = "\(glView.presetName(at: i)) [\(starString(for: rated.ratings[i]))]"
                 let item = NSMenuItem(title: title, action: #selector(VisualizationMenuTarget.selectFavoritePresetFromMenu(_:)), keyEquivalent: "")
                 item.target = target
                 item.representedObject = path
@@ -286,22 +289,5 @@ enum VisualizationContextMenu {
         let favoritesMenuItem = NSMenuItem(title: "Favorites", action: nil, keyEquivalent: "")
         favoritesMenuItem.submenu = favoritesMenu
         menu.addItem(favoritesMenuItem)
-    }
-}
-
-/// The shared block's actions, on the engine view every host owns, so no host repeats them.
-extension VisualizationGLView {
-    @objc func nextPresetMenuAction(_ sender: NSMenuItem) { stepEnginePreset(by: 1) }
-    @objc func previousPresetMenuAction(_ sender: NSMenuItem) { stepEnginePreset(by: -1) }
-    @objc func randomPresetMenuAction(_ sender: NSMenuItem) { randomEnginePreset() }
-    @objc func selectPresetMenuAction(_ sender: NSMenuItem) { selectEnginePreset(at: sender.tag) }
-
-    @objc func setCycleModeMenuAction(_ sender: NSMenuItem) {
-        guard let mode = (sender.representedObject as? String).flatMap(VisualizationCycleMode.init) else { return }
-        presetCycler.mode = mode
-    }
-
-    @objc func setCycleIntervalMenuAction(_ sender: NSMenuItem) {
-        presetCycler.interval = TimeInterval(sender.tag)
     }
 }

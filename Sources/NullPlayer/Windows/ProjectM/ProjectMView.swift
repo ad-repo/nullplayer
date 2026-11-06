@@ -130,6 +130,11 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             // Don't use autoresizingMask - we manually update frame in layout()
             visView.autoresizingMask = []
             addSubview(visView)
+            // The rating overlay rates the preset showing; any preset change closes it.
+            visView.enginePresetDidChange = { [weak self] in
+                guard let self, self.isPresetRatingOverlayVisible else { return }
+                self.hidePresetRatingOverlay()
+            }
         }
     }
 

@@ -28,12 +28,15 @@ folder (`AvsEngine.addMenuItems`), nothing for Goom. A new engine needs no menu 
 block.
 
 - **The shared block targets the `VisualizationGLView`** (`nextPresetMenuAction` etc., in
-  `VisualizationContextMenu.swift`), so no host repeats preset or cycle actions.
+  `VisualizationGLView+Presets.swift`), so no host repeats preset or cycle actions. Every preset
+  change made through the seam (keys, menu, cycler) calls `enginePresetDidChange`; the ProjectM
+  windows close their rating overlay there.
 - **`VisualizationPresetCycler` is the only thing that auto-advances an engine.** It is owned by the
   GL view; the mode and interval are per engine (`VisualizationCycleSettings`, keys
-  `<engine>.cycleMode` / `.cycleInterval`) and shared by every host. `stopRendering` stops it;
-  `startRendering` and `switchEngine` restart it. The `.wmz` / Sonique surface never starts a
-  display link, so it calls `presetCycler.restart()` itself.
+  `<engine>.cycleMode` / `.cycleInterval`) and shared by every host. Whoever drives the engine
+  calls `start()` / `stop()` (`startRendering` / `stopRendering`); `switchEngine` and a new mode or
+  interval only re-read the settings (`restart()`), so they never start a stopped cycler. The
+  `.wmz` / Sonique surface never starts a display link, so it calls `presetCycler.start()` itself.
 - **Every engine's own switching is held at creation** (`VisualizationGLView.createEngine`): Tripex
   `setHold(true)`, Geiss `modeLocked = true`, Goom always held on its chosen effect. Manual Only
   therefore means the engine stays put; there are no per-engine Hold / Mode Lock / Auto-Switch items.

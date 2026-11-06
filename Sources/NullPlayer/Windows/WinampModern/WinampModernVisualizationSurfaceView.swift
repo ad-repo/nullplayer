@@ -222,7 +222,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     @objc func randomizePalette(_ sender: NSMenuItem) { engineView.randomizeGeissPalette() }
 
     private func editGeissConfig(_ edit: (inout GeissEngine.Config) -> Void) {
-        guard var config = engineView.getGeissConfig() else { return }
+        var config = engineView.getGeissConfig()
         edit(&config)
         engineView.setGeissConfig(config)
     }

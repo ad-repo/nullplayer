@@ -45,6 +45,10 @@ class VisualizationGLView: NSOpenGLView {
     /// reaches it through `stopRendering`, where a first weak reference to `self` would trap.
     let presetCycler = VisualizationPresetCycler()
 
+    /// Called on main after any preset change made through `VisualizationGLView+Presets` — keys,
+    /// the shared menu, the preset cycler — so a host can drop state tied to the old preset.
+    var enginePresetDidChange: (() -> Void)?
+
     /// Lock for thread-safe engine access during rendering
     /// Protects engine reference and ensures render completes before engine destruction
     private let engineLock = NSLock()
@@ -80,7 +84,7 @@ class VisualizationGLView: NSOpenGLView {
 
     /// Cached Geiss configuration loaded from UserDefaults.
     /// Applied to GeissEngine immediately after construction (before first render).
-    private var geissConfigCache: GeissEngine.Config?
+    private var geissConfigCache = VisualizationGLView.loadGeissConfigFromDefaults()
 
     /// Pending NSOpenGLView surface update (window moved/resized).
     /// Set on main thread by AppKit via update(); cleared on render thread after openGLContext?.update().
@@ -228,9 +232,6 @@ class VisualizationGLView: NSOpenGLView {
         // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
         loadScopedSettings(for: currentEngineType)
 
-        // Load saved Geiss configuration preferences
-        loadGeissConfigFromDefaults()
-
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
@@ -256,9 +257,6 @@ class VisualizationGLView: NSOpenGLView {
 
         // Load per-engine scoped settings (low power, PCM gain, beat sensitivity)
         loadScopedSettings(for: currentEngineType)
-
-        // Load saved Geiss configuration preferences
-        loadGeissConfigFromDefaults()
 
         setupOpenGL()
         setupGeissFFT()
@@ -395,13 +393,8 @@ class VisualizationGLView: NSOpenGLView {
             let geiss = GeissEngine(width: width, height: height)
             if geiss.isAvailable {
                 NSLog("VisualizationGLView: Geiss engine initialized")
-                // Apply persisted configuration before first render. Mode Lock stays on: the
-                // preset cycler, not Geiss's own auto-switch, changes its mode.
-                if var cfg = geissConfigCache {
-                    cfg.modeLocked = true
-                    geiss.setConfig(cfg)
-                    NSLog("VisualizationGLView: Applied cached Geiss config to engine")
-                }
+                // Apply persisted configuration before first render.
+                geiss.setConfig(geissConfigCache)
                 return geiss
             } else {
                 NSLog("VisualizationGLView: Geiss engine not available")
@@ -651,7 +644,7 @@ class VisualizationGLView: NSOpenGLView {
         
         CVDisplayLinkStart(displayLink)
         isRendering = true
-        presetCycler.restart()
+        presetCycler.start()
     }
     
     func stopRendering() {
@@ -1523,14 +1516,15 @@ class VisualizationGLView: NSOpenGLView {
 
     // MARK: - Geiss Configuration (UserDefaults persistence)
 
-    private func loadGeissConfigFromDefaults() {
+    /// `modeLocked` is always on: the preset cycler, not Geiss's own auto-switch, changes its mode.
+    private static func loadGeissConfigFromDefaults() -> GeissEngine.Config {
         var cfg = GeissEngine.Config(
             sensitivity: 0.20,
             gamma: 10,
             beatDetection: true,
             syncColorToSound: false,
             slideShift: true,
-            modeLocked: false,
+            modeLocked: true,
             paletteLocked: false,
             autoSwitchSeconds: 15,
             visMode: 0
@@ -1551,9 +1545,6 @@ class VisualizationGLView: NSOpenGLView {
         if let val = UserDefaults.standard.object(forKey: "geiss.slideShift") as? NSNumber {
             cfg.slideShift = val.boolValue
         }
-        if let val = UserDefaults.standard.object(forKey: "geiss.modeLocked") as? NSNumber {
-            cfg.modeLocked = val.boolValue
-        }
         if let val = UserDefaults.standard.object(forKey: "geiss.paletteLocked") as? NSNumber {
             cfg.paletteLocked = val.boolValue
         }
@@ -1564,7 +1555,7 @@ class VisualizationGLView: NSOpenGLView {
             cfg.visMode = val.intValue
         }
 
-        geissConfigCache = cfg
+        return cfg
     }
 
     func setGeissConfig(_ cfg: GeissEngine.Config) {
@@ -1576,7 +1567,6 @@ class VisualizationGLView: NSOpenGLView {
         UserDefaults.standard.set(cfg.beatDetection, forKey: "geiss.beatDetection")
         UserDefaults.standard.set(cfg.syncColorToSound, forKey: "geiss.syncColorToSound")
         UserDefaults.standard.set(cfg.slideShift, forKey: "geiss.slideShift")
-        UserDefaults.standard.set(cfg.modeLocked, forKey: "geiss.modeLocked")
         UserDefaults.standard.set(cfg.paletteLocked, forKey: "geiss.paletteLocked")
         UserDefaults.standard.set(cfg.autoSwitchSeconds, forKey: "geiss.autoSwitchSeconds")
         UserDefaults.standard.set(cfg.visMode, forKey: "geiss.visMode")
@@ -1586,12 +1576,9 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
 
-    func getGeissConfig() -> GeissEngine.Config? {
+    func getGeissConfig() -> GeissEngine.Config {
         engineLock.lock()
         defer { engineLock.unlock() }
-        if let geiss = engine as? GeissEngine {
-            return geiss.config
-        }
-        return geissConfigCache
+        return (engine as? GeissEngine)?.config ?? geissConfigCache
     }
 }

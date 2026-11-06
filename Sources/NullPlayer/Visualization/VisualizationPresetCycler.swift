@@ -3,13 +3,17 @@ import Foundation
 /// Auto-advances the running engine's presets: the one cycle timer for every engine in every host
 /// (the Visualizations windows, the `.wal` surface, the `.wmz` / Sonique effects area). Each
 /// engine's own switching is held when it is created (`VisualizationGLView.createEngine`), so a
-/// preset changes only here or by hand. `stopRendering` stops it and `startRendering` or an engine
-/// switch starts it again; the `.wmz` / Sonique surface's offscreen engine never starts a display
-/// link, so that host starts it itself. Main thread only.
+/// preset changes only here or by hand.
+///
+/// Whoever drives the engine starts and stops it: `startRendering` / `stopRendering`, or the
+/// `.wmz` / Sonique surface, whose offscreen engine never starts a display link. An engine switch
+/// or a new mode or interval only re-reads the settings, so nothing cycles while stopped.
+/// Main thread only.
 final class VisualizationPresetCycler {
     /// The view whose engine this cycles, set once by that view's `init`.
     weak var view: VisualizationGLView?
     private var timer: Timer?
+    private var isStarted = false
 
     deinit { timer?.invalidate() }
 
@@ -31,18 +35,25 @@ final class VisualizationPresetCycler {
         }
     }
 
-    /// Re-reads the running engine's choice and waits a full interval from now.
-    func restart() {
-        stop()
-        guard view != nil, mode != .off else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-            self?.advance()
-        }
+    func start() {
+        isStarted = true
+        restart()
     }
 
     func stop() {
+        isStarted = false
         timer?.invalidate()
         timer = nil
+    }
+
+    /// Re-reads the running engine's choice and waits a full interval from now; nothing while stopped.
+    func restart() {
+        timer?.invalidate()
+        timer = nil
+        guard isStarted, view != nil, mode != .off else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            self?.advance()
+        }
     }
 
     private func advance() {

@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// The running engine's presets, whatever the engine: ProjectM's preset list, Geiss's, Tripex's
 /// and Goom's effect lists, AVS's preset files. The one place that knows each engine's calls, so
@@ -50,6 +50,7 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.selectPreset(at: index)
         case .goom: (currentEngine as? GoomEngine)?.selectEffect(at: index)
         }
+        enginePresetDidChange?()
     }
 
     /// One step forwards (`delta > 0`) or backwards.
@@ -62,6 +63,7 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.step(by: delta > 0 ? 1 : -1)
         case .goom: (currentEngine as? GoomEngine)?.step(by: delta > 0 ? 1 : -1)
         }
+        enginePresetDidChange?()
     }
 
     func randomEnginePreset(hardCut: Bool = false) {
@@ -72,5 +74,22 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.selectRandomPreset()
         case .goom: (currentEngine as? GoomEngine)?.selectRandomEffect()
         }
+        enginePresetDidChange?()
+    }
+
+    // MARK: - The shared menu's actions (`VisualizationContextMenu`), so no host repeats them
+
+    @objc func nextPresetMenuAction(_ sender: NSMenuItem) { stepEnginePreset(by: 1) }
+    @objc func previousPresetMenuAction(_ sender: NSMenuItem) { stepEnginePreset(by: -1) }
+    @objc func randomPresetMenuAction(_ sender: NSMenuItem) { randomEnginePreset() }
+    @objc func selectPresetMenuAction(_ sender: NSMenuItem) { selectEnginePreset(at: sender.tag) }
+
+    @objc func setCycleModeMenuAction(_ sender: NSMenuItem) {
+        guard let mode = (sender.representedObject as? String).flatMap(VisualizationCycleMode.init) else { return }
+        presetCycler.mode = mode
+    }
+
+    @objc func setCycleIntervalMenuAction(_ sender: NSMenuItem) {
+        presetCycler.interval = TimeInterval(sender.tag)
     }
 }

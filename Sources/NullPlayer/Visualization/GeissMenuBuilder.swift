@@ -16,7 +16,7 @@ enum GeissMenuBuilder {
             keyEquivalent: ""
         )
         beatDetectionItem.target = target
-        beatDetectionItem.state = (currentConfig?.beatDetection ?? true) ? .on : .off
+        beatDetectionItem.state = currentConfig.beatDetection ? .on : .off
         menu.addItem(beatDetectionItem)
 
         let syncColorItem = NSMenuItem(
@@ -25,7 +25,7 @@ enum GeissMenuBuilder {
             keyEquivalent: ""
         )
         syncColorItem.target = target
-        syncColorItem.state = (currentConfig?.syncColorToSound ?? false) ? .on : .off
+        syncColorItem.state = currentConfig.syncColorToSound ? .on : .off
         menu.addItem(syncColorItem)
 
         let slideShiftItem = NSMenuItem(
@@ -34,7 +34,7 @@ enum GeissMenuBuilder {
             keyEquivalent: ""
         )
         slideShiftItem.target = target
-        slideShiftItem.state = (currentConfig?.slideShift ?? true) ? .on : .off
+        slideShiftItem.state = currentConfig.slideShift ? .on : .off
         menu.addItem(slideShiftItem)
 
         let paletteLockItem = NSMenuItem(
@@ -43,13 +43,13 @@ enum GeissMenuBuilder {
             keyEquivalent: ""
         )
         paletteLockItem.target = target
-        paletteLockItem.state = (currentConfig?.paletteLocked ?? false) ? .on : .off
+        paletteLockItem.state = currentConfig.paletteLocked ? .on : .off
         menu.addItem(paletteLockItem)
 
         // Submenu: Geiss Sensitivity
         let sensitivityValues: [Float] = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0]
         let sensitivityMenu = NSMenu()
-        let currentSensitivity = currentConfig?.sensitivity ?? 0.20
+        let currentSensitivity = currentConfig.sensitivity
         for val in sensitivityValues {
             let item = NSMenuItem(
                 title: String(format: "%.2f×", val),
@@ -69,7 +69,7 @@ enum GeissMenuBuilder {
         let gammaValues = [0, 25, 50, 100, 150, 200]
         let gammaFactors = ["1.00×", "1.25×", "1.50×", "2.00×", "2.50×", "3.00×"]
         let gammaMenu = NSMenu()
-        let currentGamma = currentConfig?.gamma ?? 10
+        let currentGamma = currentConfig.gamma
         for (i, val) in gammaValues.enumerated() {
             let item = NSMenuItem(
                 title: gammaFactors[i],
@@ -88,7 +88,7 @@ enum GeissMenuBuilder {
         // Submenu: visMode
         let visModeTitles = ["Wave", "Spectrum"]
         let visModeMenu = NSMenu()
-        let currentVisMode = currentConfig?.visMode ?? 0
+        let currentVisMode = currentConfig.visMode
         for (i, title) in visModeTitles.enumerated() {
             let item = NSMenuItem(
                 title: title,

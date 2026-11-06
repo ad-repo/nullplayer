@@ -122,7 +122,7 @@ libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-t
 - `Windows/ModernProjectM/ModernProjectMWindowController.swift` — window controller (modern)
 - `Windows/ModernProjectM/ModernProjectMView.swift` — container with modern chrome
 - `Visualization/VisualizationGLView.swift` — OpenGL rendering (shared)
-- `Visualization/VisualizationContextMenu.swift` — the one context menu all three hosts build (`VisualizationMenuTarget` supplies the engine and the actions; `Options` the cycle state and whether Fullscreen/Close apply)
+- `Visualization/VisualizationContextMenu.swift` — the one context menu all three hosts build (`VisualizationMenuTarget` supplies the engine and the actions; `Options` whether Fullscreen/Close apply)
 - `Windows/WinampModern/WinampModernVisualizationSurfaceView.swift` — the third host: the engine inside a `.wal` skin's own AVS window ([winamp-modern-skin-guide](../winamp-modern-skin-guide/reference/components.md))
 - `Visualization/ProjectMWrapper.swift` — ProjectM library wrapper
 - `App/ProjectMWindowProviding.swift` — protocol abstracting classic/modern
