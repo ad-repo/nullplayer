@@ -20,6 +20,7 @@ HN = "/System/Library/Fonts/HelveticaNeue.ttc"
 SWITCH, STORM0, STORM1, ALIVE, UP, UNPLUG, FINALE = 2.0, 2.6, 4.6, 4.6, 6.0, 6.3, 15.2   # seconds
 FLASHES = (2.7, 3.25, 3.9, 4.6)
 BY, HZ, D = 832, 300, 1500                       # window's hinge (bottom edge) y, horizon y, camera distance
+CAPTION_Y = 560
 CLIPK = 0.78                                    # clip scale
 
 def ease(x):
@@ -54,7 +55,7 @@ logo = Image.new("RGBA", (300 + 50 + tw + 40, 450))
 logo.alpha_composite(icon, (0, 30))
 ld = ImageDraw.Draw(logo)
 ld.text((350, 180), "NullPlayer", font=font, fill=(28, 30, 38, 255), anchor="lm")
-ld.text((logo.width // 2, 405), "nullplayer.fyi", font=ImageFont.truetype(HN, 76, index=0), fill=(45, 48, 60, 255), anchor="mm")
+ld.text((logo.width // 2, 355), "nullplayer.fyi", font=ImageFont.truetype(HN, 76, index=0), fill=(45, 48, 60, 255), anchor="mm")
 logo = logo.resize((int(logo.width * 0.5), int(logo.height * 0.5)), Image.LANCZOS)
 brand = plate(logo.size, 110, 90, 170, 50)
 brand.alpha_composite(logo, (110, 110))
@@ -82,6 +83,7 @@ for x in (360, 1560):
     d.polygon([(x - 10, SHELF_Y + 30), (x + 10, SHELF_Y + 30), (x + 10, SHELF_Y + 90)], fill=(45, 30, 20, 255))
 
 JARS = [(470, "WMP skin", (120, 170, 255)), (960, "macOS", (200, 200, 210)), (1450, "Winamp AVS", (255, 170, 60))]
+WMP, MAC, AVS = range(3)                                                          # index into JARS
 JW, JH = 150, 200
 tag = ImageFont.truetype(HN, 30, index=1)
 for x, name, col in JARS:                                                         # specimen jars with a glowing fluid
@@ -94,8 +96,8 @@ for x, name, col in JARS:                                                       
     d.rounded_rectangle((x - JW / 2, top + 30, x + JW / 2, SHELF_Y), 24, outline=(170, 200, 190, 255), width=4)
     d.rectangle((x - JW / 2 + 12, top, x + JW / 2 - 12, top + 34), fill=(90, 90, 96, 255))  # lid + terminal
     d.rectangle((x - 6, top - 22, x + 6, top), fill=(150, 150, 160, 255))
-    tw = tag.getlength(name) + 28
-    d.rounded_rectangle((x - tw / 2, SHELF_Y + 40, x + tw / 2, SHELF_Y + 84), 6, fill=(226, 214, 180, 255))
+    lw = tag.getlength(name) + 28
+    d.rounded_rectangle((x - lw / 2, SHELF_Y + 40, x + lw / 2, SHELF_Y + 84), 6, fill=(226, 214, 180, 255))
     d.text((x, SHELF_Y + 62), name, font=tag, fill=(50, 34, 24, 255), anchor="mm")
 
 COILS = [(150, 1000), (1770, 1000)]                                               # tesla coils: base centre
@@ -136,7 +138,9 @@ FB = CW * CH * 4
 
 def clip_frame():
     b = dec.stdout.read(FB)
-    return Image.frombytes("RGBA", (CW, CH), b) if len(b) == FB else None
+    if len(b) != FB:
+        sys.exit(f"{CLIP} ran out of frames")
+    return Image.frombytes("RGBA", (CW, CH), b)
 
 first = clip_frame()
 m = first.copy()
@@ -151,12 +155,12 @@ PAD = 60                                                                        
 # stitches + bolts, in sprite space; they stay after it is alive
 seams = Image.new("RGBA", (WW + 2 * PAD, WH + 2 * PAD))
 sd = ImageDraw.Draw(seams)
-r = random.Random(9)
+sr = random.Random(9)
 for (x0, y0), (x1, y1) in [((0.08, 0.28), (0.62, 0.12)), ((0.55, 0.55), (0.95, 0.78)), ((0.04, 0.84), (0.5, 0.94))]:
     p0, p1 = (PAD + x0 * WW, PAD + y0 * WH), (PAD + x1 * WW, PAD + y1 * WH)
     L = math.dist(p0, p1)
     ux, uy = (p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L
-    pts = [(p0[0] + ux * s + r.uniform(-2, 2), p0[1] + uy * s + r.uniform(-2, 2)) for s in range(0, int(L), 12)]
+    pts = [(p0[0] + ux * s + sr.uniform(-2, 2), p0[1] + uy * s + sr.uniform(-2, 2)) for s in range(0, int(L), 12)]
     sd.line(pts, fill=(70, 20, 30, 255), width=5, joint="curve")                  # the scar
     for i, (x, y) in enumerate(pts[::2]):                                         # cross stitches
         k = 11 + (i % 2) * 3
@@ -164,8 +168,7 @@ for (x0, y0), (x1, y1) in [((0.08, 0.28), (0.62, 0.12)), ((0.55, 0.55), (0.95, 0
 clipped = Image.new("L", seams.size)                                              # scars only on the window itself
 clipped.paste(MASK, (PAD, PAD))
 seams.putalpha(ImageChops.multiply(seams.getchannel("A"), clipped))
-sd = ImageDraw.Draw(seams)
-BOLTS = [(PAD - 46, PAD + WH * 0.5), (PAD + WW + 46, PAD + WH * 0.5)]             # bolt tips, sprite space
+BOLTS = [(PAD - 46, PAD + WH * 0.5), (PAD + WW + 46, PAD + WH * 0.5)]             # bolt tips, sprite space: left ← WMP, right ← AVS
 for i, (bx, by) in enumerate(BOLTS):
     inner = PAD + (WW if i else 0)
     sd.rectangle((min(bx, inner), by - 13, max(bx, inner), by + 13), fill=(130, 134, 140, 255))
@@ -179,7 +182,7 @@ def sprite(frame, life):
     f = frame.crop(BOX)
     if life < 1:
         dead = ImageOps.colorize(ImageOps.grayscale(f), (18, 34, 24), (186, 214, 170)).convert("RGBA")
-        f = Image.blend(dead, f, life) if life > 0 else dead
+        f = Image.blend(dead, f, life)
     f.putalpha(MASK)
     s = Image.new("RGBA", seams.size)
     s.alpha_composite(f, (PAD, PAD))
@@ -261,7 +264,7 @@ SPARK = [(255, 240, 160), (255, 210, 90), (170, 210, 255), (255, 255, 255)]
 sparks = []
 for t0, n, (ox, oy), sp in ([(f, 60, BOLT_SCREEN[i % 2], 0.7) for i, f in enumerate(FLASHES)]
                             + [(UNPLUG, 70, BOLT_SCREEN[0], 0.6), (UNPLUG, 70, BOLT_SCREEN[1], 0.6)]
-                            + [(FINALE, 240, (W / 2, 560), 0.85)]):
+                            + [(FINALE, 240, (W / 2, CAPTION_Y), 0.85)]):
     for _ in range(n):
         a = math.radians(rng.uniform(-170, -10) if t0 == FINALE else rng.uniform(0, 360))
         v = rng.uniform(500, 1500) * sp
@@ -280,6 +283,8 @@ caption.alpha_composite(cap, (120, 120))
 
 # electricity, synthesized on the absolute timeline: a clunk as the switch closes, a mains hum with tremolo and
 # random crackle until it lives (then dying away), and a burst of noise on every lightning flash
+NF = min(N, int((SECS - T0) * FPS))                                               # frames to render; FRAMES shortens all of it
+DUR = NF / FPS
 ON = SWITCH + 0.5
 env = f"between(t,{ON},{ALIVE + 1.5})*if(lt(t,{ALIVE}),1,exp(-(t-{ALIVE})*3))*(0.65+0.35*sin(2*PI*7*t))"
 hum = "(sin(2*PI*120*t)+0.6*sin(2*PI*240*t)+0.35*sin(2*PI*360*t)+0.2*sin(2*PI*600*t))"
@@ -291,25 +296,22 @@ clunk = f"between(t,{ON},{ON + 0.3})*sin(2*PI*70*t)*exp(-(t-{ON})*16)"
 elec = (f"aevalsrc=exprs='{env}*(0.12*{hum}+0.35*{crackle}*{noise})+0.8*({zaps})*{noise}+0.9*{clunk}':s=44100:d={SECS},"
         f"atrim=start={T0},asetpts=PTS-STARTPTS[e]")
 clip_a = f"[1:a]adelay={int(ALIVE * 1000)}:all=1,atrim=start={T0},asetpts=PTS-STARTPTS[c]"   # the clip's own sound, from the moment it lives
+ain, chains = ["-i", CLIP], [clip_a, elec]
 if AUDIO:                                                                         # the lab's ambience until then, ducking out as it lives
-    ain = ["-i", CLIP, "-ss", str(ASTART + T0), "-i", AUDIO]
-    beds = f"[2:a]atrim=end={max(0.01, ALIVE + 0.3 - T0)},afade=in:d=0.5,afade=out:st={max(0, ALIVE - 0.2 - T0)}:d=0.5[r];"
-    ins = "[r][c][e]"
-else:
-    ain = ["-i", CLIP]
-    beds, ins = "", "[c][e]"
-af = (f"{clip_a};{elec};{beds}{ins}amix=inputs={ins.count('[')}:duration=longest:normalize=0,"
-      f"afade=out:st={SECS - T0 - 2}:d=2[a]")
+    ain += ["-ss", str(ASTART + T0), "-i", AUDIO]
+    chains.append(f"[2:a]atrim=end={max(0.01, ALIVE + 0.3 - T0)},afade=in:d=0.5,afade=out:st={max(0, ALIVE - 0.2 - T0)}:d=0.5[r]")
+labels = "".join(c[c.rindex("["):] for c in chains)
+af = ";".join(chains) + f";{labels}amix=inputs={len(chains)}:duration=longest:normalize=0,afade=out:st={max(0, DUR - 2)}:d=2[a]"
 ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{W}x{H}",
                        "-r", str(FPS), "-i", "-"] + ain
                       + ["-filter_complex", af, "-map", "0:v", "-map", "[a]", "-c:a", "aac", "-b:a", "256k",
                          "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart",
-                         "-t", str(SECS - T0), OUT], stdin=subprocess.PIPE)
+                         "-t", str(DUR), OUT], stdin=subprocess.PIPE)
 
 frame = first
 for _ in range(max(0, int((T0 - ALIVE) * FPS))):                                  # skip clip frames when starting late
-    frame = clip_frame() or frame
-for n in range(min(N, int((SECS - T0) * FPS))):
+    frame = clip_frame()
+for n in range(NF):
     t = T0 + n / FPS
     zr = random.Random(n)
     light = 0.15 + 0.85 * smooth((t - UP) / 6)                                     # lights come up after it sits up
@@ -325,9 +327,9 @@ for n in range(min(N, int((SECS - T0) * FPS))):
         phi, cx, _ = pose(t)
         bs = [project(phi, *p, cx) for p in BOLTS]
         top = project(phi, PAD + WW / 2, PAD, cx)
-        cable(fr, JAR_FOOT[0], bs[0], 120, hot)
-        cable(fr, JAR_FOOT[2], bs[1], 120, hot)
-        cable(fr, JAR_FOOT[1], top, 60, hot)
+        cable(fr, JAR_FOOT[WMP], bs[0], 120, hot)
+        cable(fr, JAR_FOOT[AVS], bs[1], 120, hot)
+        cable(fr, JAR_FOOT[MAC], top, 60, hot)
 
     a = (1 - smooth((t - SWITCH) / 0.5)) * math.radians(110)                       # knife switch: open at 110°, closed upright
     bx, by = SW[0] + 118 * math.sin(a), SW[1] - 118 * math.cos(a)
@@ -348,24 +350,23 @@ for n in range(min(N, int((SECS - T0) * FPS))):
     if t < ALIVE:
         sp = DEAD
     else:
-        frame = clip_frame() or frame
+        frame = clip_frame()
         sp = sprite(frame, smooth((t - ALIVE) / 0.4))
     place(fr, sp, phi, cx, bob)
 
     if storm:                                                                      # arcs: coils → jars, jars → slab, the switch
         arcs = []
-        for (cx_, _), (jx, jy) in zip(COILS, (JAR_TERM[0], JAR_TERM[2])):
+        for (cx_, _), (jx, jy) in zip(COILS, (JAR_TERM[WMP], JAR_TERM[AVS])):
             if zr.random() < 0.8:
                 arcs.append(bolt((cx_ + (60 if cx_ < W / 2 else -60), CTOP), (jx, jy), zr))
-        for jt, b in zip((JAR_TERM[0], JAR_TERM[2]), BOLT_SCREEN):
+        for b in BOLT_SCREEN:
             if zr.random() < 0.35:
                 arcs.append(bolt(b, (b[0] + zr.uniform(-120, 120), b[1] - zr.uniform(80, 200)), zr, 0.35, 4))
-        if zr.random() < 0.5:
-            arcs.append(bolt((COILS[0][0], CTOP - 30), (COILS[0][0] + zr.uniform(-80, 160), CTOP - zr.uniform(120, 260)), zr, 0.35, 4))
-        if zr.random() < 0.5:
-            arcs.append(bolt((COILS[1][0], CTOP - 30), (COILS[1][0] + zr.uniform(-160, 80), CTOP - zr.uniform(120, 260)), zr, 0.35, 4))
+        for (cx_, _), reach in zip(COILS, ((-80, 160), (-160, 80))):                # stray arcs off the coil tops, reaching inwards
+            if zr.random() < 0.5:
+                arcs.append(bolt((cx_, CTOP - 30), (cx_ + zr.uniform(*reach), CTOP - zr.uniform(120, 260)), zr, 0.35, 4))
         if fl > 0.5:                                                               # the big one, down into the body
-            arcs.append(bolt((JAR_TERM[1][0], JAR_TERM[1][1]), project(0, PAD + WW / 2, PAD + WH / 2, W / 2), zr, 0.3))
+            arcs.append(bolt(JAR_TERM[MAC], project(0, PAD + WW / 2, PAD + WH / 2, W / 2), zr, 0.3))
         zap(fr, arcs)
     if fl:
         fr = Image.blend(fr, Image.new("RGBA", (W, H), (235, 240, 255, 255)), fl * 0.55)
@@ -373,7 +374,7 @@ for n in range(min(N, int((SECS - T0) * FPS))):
     if t > FINALE:
         a = ease((t - FINALE) / 0.9)
         c = caption.resize((int(caption.width * (0.9 + 0.1 * a)), int(caption.height * (0.9 + 0.1 * a))), Image.LANCZOS)
-        paste(fr, fade(c, a), W / 2, 560)
+        paste(fr, fade(c, a), W / 2, CAPTION_Y)
 
     sd = ImageDraw.Draw(fr)
     for s in sparks:
@@ -396,5 +397,7 @@ for n in range(min(N, int((SECS - T0) * FPS))):
     if n % 100 == 0:
         print(f"{t:.1f}s", file=sys.stderr)
 ff.stdin.close()
-ff.wait()
 dec.kill()
+dec.wait()
+if ff.wait():
+    sys.exit("ffmpeg failed")
