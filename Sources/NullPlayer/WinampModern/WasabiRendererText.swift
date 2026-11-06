@@ -36,6 +36,23 @@ extension WasabiSceneRenderer {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }
+        // Optional for the same reason as `drawTrueTypeText`'s font: nothing that ends up in a
+        // CoreText attribute dictionary may be a null pointer, and only an `Optional` binding can see one.
+        let resolved: NSColor? = object.attributes["color"].flatMap(resolvedColor)
+        // `shadowx`/`shadowy`: the same string again, in `shadowcolor` (black when undeclared),
+        // beneath it at that offset (B363).
+        if let shadow = WasabiTextMetrics.shadowOffset(of: object) {
+            let shadowColor: NSColor? = object.attributes["shadowcolor"].flatMap(resolvedColor)
+            drawTrueTypeText(text, object: object,
+                             frame: frame.offsetBy(dx: shadow.width, dy: shadow.height),
+                             color: shadowColor ?? .black, context: context)
+        }
+        drawTrueTypeText(text, object: object, frame: frame, color: resolved ?? undeclaredColor,
+                         context: context)
+    }
+
+    private func drawTrueTypeText(_ text: String, object: WasabiObject, frame: CGRect,
+                                  color: NSColor, context: WasabiDrawList) {
         // A skin (or one of its scripts) can name any point size at all, including 0, a negative, or
         // something that does not parse. CoreText builds its own attribute dictionary from whatever
         // it is handed, and an unusable size or font there aborts the process from inside a draw.
@@ -43,10 +60,6 @@ extension WasabiSceneRenderer {
         let font = resources.font(identifier: object.attributes["font"], size: size,
                                   traits: WasabiTextMetrics.traits(of: object))
             ?? NSFont.systemFont(ofSize: size)
-        // Optional for the same reason as the font: nothing that ends up in a CoreText attribute
-        // dictionary may be a null pointer, and only an `Optional` binding can see one.
-        let resolved: NSColor? = object.attributes["color"].flatMap(resolvedColor)
-        let color = resolved ?? undeclaredColor
         let alignment = WasabiTextMetrics.horizontalAlignment(of: object)
         // A wrapping object is laid out as a paragraph rather than as a line: broken at word
         // boundaries inside its own width, stacked downward, and never scrolled. See

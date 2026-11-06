@@ -89,10 +89,19 @@ extension WinampModernScriptRuntime {
     /// recognise a round trip (B61), and only a window's: for anything else the read resolves the
     /// whole layout, the write invalidates it again, and doing that on every write was most of a
     /// skin switch's script start-up.
+    ///
+    /// **An `x`/`y` written here is the parent's markup, and `getLeft`/`getTop` do not answer in it**
+    /// past a group that declares no size: they answer in the object's coordinate space (B365,
+    /// `WinampModernOriginSpace`), so `o.resize(o.getLeft(), …)` there moves `o` by the group's
+    /// offset. The corpus does not write that idiom on such an object (2026-11-06: every single-line
+    /// `getLeft`/`getTop` write-back in the shipped `.m` sources of all four tiers). The one cross-object
+    /// write that crosses the two spaces is bronze cPro2__HOLOlike's `volclick.m`, which places
+    /// `skin.vol` at `vol.on.getLeft() - skin.vol.getWidth()` with `vol.on` past the sizeless
+    /// `skin.control.nonPlay`; see `reference/rendering.md` → *A hover reaches `onMouseMove`*.
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
         let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
-        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object) : nil
+        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object, in: .parent) : nil
         for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
@@ -305,13 +314,21 @@ extension WinampModernScriptRuntime {
             return
         }
 
+        // Armed before the state is stored: a timer the budget refuses would leave the object
+        // `goingtotarget` forever, with no tick to clear it.
+        let timerID = TimerNamespace.targetAnimation.id(for: id)
+        do {
+            try timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
+                self?.tickTargetAnimation(objectID: id)
+            }
+        } catch let failure as WalFailure {
+            recordScriptFailure(failure)
+            return
+        } catch {
+            return
+        }
         _ = object.setAttribute("goingtotarget", value: "1")
         activeTargetAnimations[id] = state
-
-        let timerID = TimerNamespace.targetAnimation.id(for: id)
-        _ = try? timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
-            self?.tickTargetAnimation(objectID: id)
-        }
     }
 
     private func tickTargetAnimation(objectID: WasabiObjectID) {

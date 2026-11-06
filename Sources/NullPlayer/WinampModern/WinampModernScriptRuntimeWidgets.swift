@@ -64,13 +64,15 @@ extension WinampModernScriptRuntime {
     }
 
     /// The canvas point in the space `event` on `object` is measured in: `mouseEventSpace`, else
-    /// `object`'s parent. Unchanged for anything whose space sits at the origin, which is why this was
-    /// invisible until a skin put a knob inside a placed group. The view and both click harnesses
-    /// convert through here, so a probe drives exactly what the app sends.
+    /// `object`'s coordinate space — its parent, or past a group that declares no size to the nearest
+    /// one that does (`WasabiSceneRenderer.coordinateSpace`, the space `getLeft()` answers in too).
+    /// Unchanged for anything whose space sits at the origin, which is why this was invisible until a
+    /// skin put a knob inside a placed group. The view and both click harnesses convert through here,
+    /// so a probe drives exactly what the app sends.
     func pointInEventSpace(of object: WasabiObject, event: String, canvasPoint: CGPoint,
                            renderer: WasabiSceneRenderer) -> CGPoint {
         let space = mouseEventSpace(of: object, event: event).flatMap { renderer.resolvedGeometry(of: $0)?.frame }
-            ?? renderer.resolvedGeometry(of: object)?.parent
+            ?? renderer.coordinateSpace(of: object)
         guard let space else { return canvasPoint }
         return CGPoint(x: canvasPoint.x - space.minX, y: canvasPoint.y - space.minY)
     }

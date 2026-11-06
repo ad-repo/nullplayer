@@ -200,7 +200,10 @@ By area:
   handler, and a fail-closed refusal took both buttons with it. The direction comes from the **host's
   window state** (`containerVisibilityQuery`), not from the graph's `visible` attribute, which the
   host never writes when a window is opened from the Windows menu or closed from its own titlebar —
-  read off the attribute the toggle inverts after the first manual close. `isVisible()` answers from
+  read off the attribute the toggle inverts after the first manual close. The player's own container
+  is answered from the player window as well, and its `show()`/`hide()` are an explicit show and
+  order-out, never the main window's toggle, so a request in Compact Mode does not leave it (B364:
+  GrayZ's shade hides `main` and its `stick` bar brings it back). `isVisible()` answers from
   the same place, in **two terms and only two**: the window the object lives in, asked of the host,
   and then the object's **own** `visible` attribute. Nothing inside a closed window is visible; inside
   an open one the object's attribute is the whole answer, and the ancestor **groups** between the two
@@ -254,7 +257,7 @@ By area:
   returns the input and the correction lands. Phase 24
   **Nearest sized ancestor (B332, 2026-10-30).** The "parent" is the nearest ancestor that has a size
   (`WasabiSceneRenderer.coordinateSpace(of:)`); a `<group>` that declares no `w`/`h` is only where its
-  children are placed, so the conversion (and a hover `onMouseMove`'s `x`/`y`; presses stay parent-relative) reaches
+  children are placed, so the conversion (and a hover `onMouseMove`'s `x`/`y`, a press's, and `getLeft`/`getTop`, B365) reaches
   past it to the next sized group or the layout. Xenon's `player.display` is `x=100` with no size, and
   its script opens the tray at `d2.onMouseMove(x)` for `x` 250..330 and keeps it open while the pointer
   is within `d2.clientToScreenX(d2.getGuiX())+250..370`: every number reads right only with the layout

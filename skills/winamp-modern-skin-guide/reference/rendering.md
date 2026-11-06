@@ -1423,7 +1423,17 @@ child reaches (`contentBottom`).
   to the object under the pointer when it has a binding, before the enter/leave identity guard; before
   it only a pressed object heard it. Its point is in layout space (`coordinateSpace(of:)`, the nearest
   sized ancestor; `WINAMP_MODERN_PARENT_SPACE=1` is the A/B switch), the space Xenon's `x` 250..330
-  assumes; **presses and drags stay parent-relative**, because SingItKitty, SONY__WALKMAN and
-  YoYoBoy's volume knobs subtract `getLeft()` and went silent in layout space (interaction sweep
-  2026-10-30). Winamp's real rule is unmeasured: Xenon wants layout space for hover and
-  `clientToScreen`, those three want the parent for presses.
+  assumes. **Presses, drags and `getLeft`/`getTop` use the same space (B365)**, and must move
+  together: SingItKitty, SONY__WALKMAN and YoYoBoy's volume knobs subtract `getLeft()` from a press
+  and went silent when only the press moved (interaction sweep 2026-10-30), and Official_Honda_Element_Skin's
+  volume arc tests `inRegion(x - getLeft(), …)` on its own layer and then samples a layout-sized map
+  with the bare `x`, so it reads right only with both in layout space (`resolvedFrame(of:in: .coordinateSpace)`,
+  `WinampModernOriginSpace`). **Reads and writes are not symmetric there:** an `x`/`y` write (`setXmlParam`,
+  `resize`) is still the parent's markup, so writing `getLeft()` back onto an object past a sizeless group
+  moves it by the group's offset. No corpus script does that to such an object (2026-11-06, every
+  single-line `getLeft`/`getTop` write-back in the shipped `.m` sources of all four tiers, each target's
+  parent resolved headlessly; a value carried through a variable is not covered). The one write that
+  crosses the two spaces is bronze cPro2__HOLOlike's `volclick.m`, `skin.vol.x = vol.on.getLeft() −
+  skin.vol.getWidth()`, with `vol.on` 228 px into the sizeless `skin.control.nonPlay`; unverified against
+  Winamp.
+  `getGuiX`/`getGuiY` stay parent-relative: Xenon adds `d2.getGuiX()` to `d2.clientToScreenX`.

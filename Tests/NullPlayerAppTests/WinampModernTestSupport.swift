@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import XCTest
 import ZIPFoundation
@@ -48,6 +49,20 @@ extension XCTestCase {
         let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: url)
         addTeardownBlock { loaded.teardown() }
         return loaded
+    }
+
+    /// An opaque white PNG of `width`x`height` pixels, for a fixture bitmap the resource cache has to
+    /// serve: a `$solid` bitmap is a colour, and `WasabiResourceCache.bitmap(identifier:)` has no image for it.
+    func whitePNG(width: Int, height: Int) throws -> Data {
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        let image = try pixels.withUnsafeMutableBytes { bytes -> CGImage in
+            let context = try XCTUnwrap(CGContext(data: bytes.baseAddress, width: width, height: height,
+                                                  bitsPerComponent: 8, bytesPerRow: width * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            return try XCTUnwrap(context.makeImage())
+        }
+        return try XCTUnwrap(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
     }
 }
 

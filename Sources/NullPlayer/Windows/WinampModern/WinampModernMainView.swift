@@ -1725,6 +1725,22 @@ final class WinampModernMainView: NSView {
         logHolders(tag: "debug click")
     }
 
+    /// Press at skin point `start`, drag to `end` and release there, as real events through this
+    /// view's own handlers — the slider path `debugClick`, which replays a release, never reaches.
+    func debugDrag(fromSkinPoint start: CGPoint, to end: CGPoint) {
+        guard let window else { return }
+        func event(_ type: NSEvent.EventType, at skin: CGPoint) -> NSEvent? {
+            let location = convert(viewRect(fromSkin: CGRect(origin: skin, size: .zero)).origin, to: nil)
+            return NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                                      timestamp: ProcessInfo.processInfo.systemUptime,
+                                      windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                                      clickCount: 1, pressure: 1)
+        }
+        event(.leftMouseDown, at: start).map(mouseDown)
+        event(.leftMouseDragged, at: end).map(mouseDragged)
+        event(.leftMouseUp, at: end).map(mouseUp)
+    }
+
     /// `WINAMP_MODERN_DEBUG_HOLDERS=1` — after every click: the component holders the scene actually
     /// has, and the live host subviews still in the hierarchy. A subview whose holder is gone is the
     /// tab-overlap bug as a *live* view; a holder gone with no subview left is a stale-pixel bug.
@@ -3138,25 +3154,10 @@ final class WinampModernMainView: NSView {
             // every container-addressed button dead, and Defix's `CONF` button is exactly one
             // (`action="TOGGLE" param="Config"`): the whole configurator — the 31 backgrounds, the
             // nine display styles, the songticker scrolling mode — was unreachable, so a preference
-            // the skin ships switched off could never be switched on.
-            // Winamp's preferences dialog, Colour Themes page. multipass's "open in preferences"
-            // button is `action="TOGGLE"` with this GUID as its parameter; we have no preferences
-            // dialog, and the popup below is the same list that dialog would show.
-            if parameter?.uppercased().contains(Self.colorThemePreferencesGUID) == true {
-                showColorThemeMenu()
-            } else if parameter?.uppercased().contains(Self.aboutWinampGUID) == true {
-                // Winamp's **About Winamp** window. ClassicPro's corner bolt is a multi-button whose
-                // default command is this GUID (`player.m`'s `bolt.onLeftClick`, branch 0), so with
-                // nothing answering it the logo did nothing at all until the user picked one of the
-                // other five from its right-click menu.
-                //
-                // Most skins draw this page themselves — twenty of the measured seventy define
-                // `skin.about.group`, the artwork Winamp instantiates on the "Skin" page of its own
-                // About box — so the skin's window is the answer wherever it exists, in the skin's
-                // own frame with the skin's own artwork. NullPlayer's AppKit panel is the fallback
-                // for a skin that draws none.
-                if let id = skinAboutContainerID, containerWindowToggleRequested?(id) == true { return }
-                NSApp.sendAction(#selector(AppDelegate.showAbout), to: nil, from: nil)
+            // the skin ships switched off could never be switched on. A Winamp window named by GUID
+            // (Preferences, About) is decoded first.
+            if let window = WinampModernHostAction(toggling: parameter) {
+                performHostAction(window, object: object)
             } else if let kind = WinampModernComponentRegistry.kind(for: parameter) {
                 routeComponentToggle(kind)
             } else if let parameter, !parameter.isEmpty {
@@ -3272,7 +3273,7 @@ final class WinampModernMainView: NSView {
 
     /// The host's context menu, dropped under the button that asked for it (the mouse if that button
     /// has no resolved frame — a script can raise this from anywhere).
-    private func showMainMenu(from object: WasabiObject?) {
+    func showMainMenu(from object: WasabiObject?) {
         if menuWaitsForDoubleClick {
             let item = DispatchWorkItem { [weak self] in self?.showMainMenu(from: object) }
             pendingMainMenu = item
@@ -3366,12 +3367,6 @@ final class WinampModernMainView: NSView {
         host.revealInFinder(track.url.path)
     }
 
-    /// Winamp's preferences page for colour themes. A skin that opens it is asking for the same list
-    /// the popup below shows.
-    private static let colorThemePreferencesGUID = "53DE6284-7E88-4C62-9F93-22ED68E6A024"
-    /// Winamp's About Winamp window, the ClassicPro corner bolt's default command.
-    private static let aboutWinampGUID = "D6201408-476A-4308-BF1B-7BACA1124B12"
-
     /// Apply a theme and repaint.
     ///
     /// `activateTheme` answers `false` for a theme that is *already* applied, and the coordinator
@@ -3396,9 +3391,10 @@ final class WinampModernMainView: NSView {
     /// The host's own colour-theme list, as a popup.
     ///
     /// The route for every skin that defines themes and ships no list to pick them from: Defix's
-    /// `colorthemes_switch` button, multipass's unresolvable target, and the preferences GUID above.
-    /// The applied theme is checked, so the popup answers "which one am I wearing?" as well.
-    private func showColorThemeMenu() {
+    /// `colorthemes_switch` button, multipass's unresolvable target, and the Colour Themes preferences
+    /// GUID (`WinampModernHostAction.colorThemePreferences`). The applied theme is checked, so the
+    /// popup answers "which one am I wearing?" as well.
+    func showColorThemeMenu() {
         let names = renderer.colorThemeNames
         guard names.count > 1, let event = NSApp.currentEvent else { return }
         let menu = NSMenu(title: "Color Themes")
@@ -3468,13 +3464,11 @@ final class WinampModernMainView: NSView {
         guard !isResolvingToggleLamp else { return nil }
         isResolvingToggleLamp = true
         defer { isResolvingToggleLamp = false }
-        let upper = parameter.uppercased()
-        // The colour-theme preferences GUID opens a popup, which is not a window and has no lamp.
-        guard !upper.contains(Self.colorThemePreferencesGUID) else { return nil }
-        // The About GUID is a window exactly when the skin draws its own About page; the AppKit
-        // panel it otherwise falls back to has no lamp to answer for either.
-        if upper.contains(Self.aboutWinampGUID) {
-            guard let id = skinAboutContainerID else { return nil }
+        // A GUID-named window has a lamp only as About, and only where the skin draws its own About
+        // page; the popups the preferences GUIDs open, and the AppKit panel About otherwise falls back
+        // to, have none.
+        if let window = WinampModernHostAction(toggling: parameter) {
+            guard window == .aboutWinamp, let id = skinAboutContainerID else { return nil }
             return containerWindowVisibilityQuery?(id)
         }
         if let kind = WinampModernComponentRegistry.kind(for: parameter) {

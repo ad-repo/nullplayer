@@ -592,26 +592,32 @@ extension WinampModernScriptRuntime {
         // them, so the stock `centerobject.m` — read `getGuiY()`, write it back as `y` — leaves a
         // `y="-83" relaty="1"` group where it is. Answered with the resolved 1086, the write-back
         // added the layout's height on every resize and 1010 Fullscreen's transport left the canvas.
-        table.add(["getleft", "getguix"], 0) { runtime, call in
-            if call.method == "getguix",
-               let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x") {
-                return .integer(markup)
-            }
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).x)))
+        //
+        // **`getLeft`/`getTop` answer in the space a mouse event on the object is measured in** — the
+        // header skins ship (`std.mi`) gives both as "the screen" — so past a group that declares no
+        // size, as `onLeftButtonDown`'s x/y and `clientToScreen*` are (B332, B365). `getGui*` stays the
+        // parent's: Xenon's tray test adds `d2.getGuiX()` to `d2.clientToScreenX` (B332). An `x`/`y`
+        // write is the parent's too (`writeGeometry`).
+        table.add("getleft", 0) { runtime, call in
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).x)))
         }
-        table.add(["gettop", "getguiy"], 0) { runtime, call in
-            if call.method == "getguiy",
-               let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y") {
-                return .integer(markup)
-            }
-            return .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object).y)))
+        table.add("gettop", 0) { runtime, call in
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).y)))
+        }
+        table.add("getguix", 0) { runtime, call in
+            .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x")
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).x)))
+        }
+        table.add("getguiy", 0) { runtime, call in
+            .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y")
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).y)))
         }
         table.add(["getwidth", "getguiw"], 0) { runtime, call in
             if call.method == "getguiw",
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "w") {
                 return .integer(markup)
             }
-            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object)?.width,
+            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.width,
                                               declared: runtime.declaredFrame(of: call.object).width))
         }
         table.add(["getheight", "getguih"], 0) { runtime, call in
@@ -619,7 +625,7 @@ extension WinampModernScriptRuntime {
                let markup = WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "h") {
                 return .integer(markup)
             }
-            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object)?.height,
+            return .integer(runtime.dimension(runtime.resolvedFrame(of: call.object, in: .parent)?.height,
                                               declared: runtime.declaredFrame(of: call.object).height))
         }
         // "is the pointer still on me?" — what a button asks in `onLeftButtonUp` to tell a click
@@ -650,7 +656,7 @@ extension WinampModernScriptRuntime {
         // ponytail: the frame only, not the object's region; add the region test when a skin needs it.
         table.add("ismouseover", 2) { runtime, call in
             let point = CGPoint(x: Int(call.arguments[0].integerValue), y: Int(call.arguments[1].integerValue))
-            return .boolean(runtime.resolvedFrame(of: call.object)?.contains(point) ?? false)
+            return .boolean(runtime.resolvedFrame(of: call.object, in: .parent)?.contains(point) ?? false)
         }
         table.add("refresh", 0) { runtime, call in
             runtime.notifyObjectDidMutate(call.object)

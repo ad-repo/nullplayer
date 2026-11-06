@@ -120,7 +120,7 @@ Optional env switches, all off by default:
 | `WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` | the A/B switch for B305: `WasabiSurfaceSynthesizer.usableFrame` takes the thinnest frame for every window, even one whose chrome draws the playlist's `PE_*` buttons. Under it LG_Free's synthesized library wears the Add/Rem/Sel/Misc/List bar. |
 | `WINAMP_MODERN_AUX_CLOCK=0` | **live only** A/B switch for B310: the playback clock and the spectrum no longer reach a skin's other windows (`WinampModernMainWindowController.updateTime`/`updateSpectrum` fan out to `auxiliaryContainers`). Under it Manchester_United_Red_Devils_Skin's `visual` window (a `<vis>` and a `display="time"` text) shows a frozen timer and a barely moving analyzer. |
 | `WINAMP_MODERN_CAPTION_AT_REST=1` | **live only** A/B switch for B314: the `<text display="componentbucket">` caption names the first on-screen icon at rest, as it did before. Under it The_Duk_Side_V3 prints `Playlist Editor` under its duck. |
-| `WINAMP_MODERN_PARENT_SPACE=1` | the A/B switch for B332: a hover's `onMouseMove` point and `clientToScreen`/`screenToClient` are measured from the immediate parent group again, sized or not, instead of the nearest sized ancestor ([rendering.md](rendering.md) → *A hover reaches `onMouseMove`*). Headless and live. Xenon's hover tray (`d2.onMouseMove`, `x` 250..330 in layout space) is the case it separates |
+| `WINAMP_MODERN_PARENT_SPACE=1` | the A/B switch for B332 and B365: a hover's `onMouseMove` point, a press's x/y, `getLeft`/`getTop` and `clientToScreen`/`screenToClient` are measured from the immediate parent group again, sized or not, instead of the nearest sized ancestor ([rendering.md](rendering.md) → *A hover reaches `onMouseMove`*). Headless and live. Xenon's hover tray (`d2.onMouseMove`, `x` 250..330 in layout space) and Official_Honda_Element_Skin's volume arc (`RENDER_CLICK main/normal@64,192` sets 24, not 255) are the cases it separates |
 | `WINAMP_MODERN_ASSUME_VISIBLE=1` | **live**, debug builds: every `.wal` window counts as on screen whatever its occlusion says. A locked screen or a screen saver occludes every window, which stops them painting by design (B119), so this is what lets an agent drive and capture the app with nobody at the machine. `winhelper capture` still works locked; clicks and `capture-region` do not — use `WINAMP_MODERN_LIVE_CLICKS`. It also makes `SkinWindowShadow` (every family) pull shapes whatever its parent's occlusion says; `capture-region` cannot photograph a locked screen, so capture the shadow child itself: `screencapture -l <id>` of the window titled `NullPlayer.SkinShadow`, 30 pt larger than its parent on every side, and composite the parent over it |
 | `WINAMP_MODERN_LIVE_CLICKS=<s>@<x>,<y>[;…]` | **live**, debug builds: click the main window at view point `x,y` (top-left, 1x points) `s` seconds after it first gets a window, through its own `sendEvent`, with a `mouseMoved` first so hover-revealed controls are there. `<s>@move:<dx>,<dy>` moves the window instead. Posted events never reach a locked session; these do. A background window that never becomes key never links its shadow child, so open with a `move:1,0;…@move:-1,0` pair before measuring a shadow |
 | `WINAMP_MODERN_PAINT_RATE=1` | **live, and release builds too** — the one `WINAMP_MODERN_*` probe that survives a release binary, because the question it answers is a release-profile question. Every 2 s, per window: `paints/s=` (frames shown), then `dirty=` (the mean share of the window covered by a frame's rects' bounding box) and `rects=` (the mean share of the rects themselves). A periodic update that repaints the whole window reads `dirty=100%` at the clock's rate. That is how B152 found WMP11-BlueVU's player at `paints/s=120 dirty=100%` and confirmed the fix at `88 / 25%`. Read it beside `sample`: it says *what* is repainting, and the profile says what that costs. `window=` is blank for a skin window with no title |
@@ -696,6 +696,26 @@ maxdelta than its noise. The interaction and motion sweeps have no `compare` and
 
 **Lifetime: one batch.** The run store is deleted when a batch closes (`skills/skin-intake`): the next admission changes the gold+silver set, so every stored key is dead, and the first `--fresh` compare of the new batch rebuilds the noise file.
 
+#### Which sweeps a fix needs: `wal_fix_check.sh`
+
+```sh
+scripts/wal_fix_check.sh <base-rev> <outdir> [--dry-run]
+```
+
+This picks the sweeps from the diff (base against the working tree), then runs each one once, base
+served from the store and after with `--allow-dirty`. **Every sweep is the default**: any change
+under `Sources/` outside `Windows/WinampModern/` runs **render, interaction and motion** (~25 s,
+~17 min and ~2 min). Only a change confined to the script's commented `render_only` list — engine
+files that only paint, read by no hit test, script or clock (`WasabiDrawList`, `WasabiRendererLayerFX`,
+`WasabiVisPainter`) — runs render alone. The list is the exception because a file list is not a call
+graph: text drawing carries the ticker's motion, metrics size autowidth boxes scripts read and presses
+land on, and sprites hold the region and animation-frame tests, so none of them is on it. A file that
+grows a helper one of those calls leaves the list in the same change. A change only in
+`Windows/WinampModern/` gets **none**, because no headless sweep loads the window layer; check it
+live with `window-census.sh --shots` and `wal_live_smoke.sh`. A base never captured stops it. Capture
+one per batch in a worktree and reuse it. Outputs are `render/compare.txt` and
+`interaction|motion/diff.txt`, classified by `skin-triage` Phase 8.
+
 #### Impact-selected and sharded sweeps
 
 ```sh
@@ -948,6 +968,32 @@ WINAMP_MODERN_DEBUG_CLICK="92,251;92,251" WINAMP_MODERN_CALL_TRACE=1 \
 
 Coordinates are **skin pixels** in the main window's active layout — take them from
 `RENDER_PROBE`'s `frame=` for the object you want.
+
+**`WINAMP_MODERN_DEBUG_CLICK=auto`** clicks every clickable object in the main window's current layout
+instead (`WinampModernDebugClickSweep.swift`): a markup `action=` or a script left-press hook, so plain
+buttons are in it, unlike the interaction sweep's script-hooked list. Each is hit at its centre or the
+first point of a 5x5 grid the hit test returns for it (else `unreachable`), aimed when its turn
+comes, not when the run starts: an earlier click can move it or cover it (Fantana's drawer slide
+carries its transport 70 px down, B370; zechitoplayer's vis button lays an `alpha="1"` click
+blocker over its volume, B371); `CLOSE`, `MINIMIZE`,
+`EXIT`, `QUIT` and `EJECT` are skipped. A `slider` takes its value on press and drag, which
+`debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
+released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5; 1.2 s after each click it logs a
+`WM-SMOKE|key=value|…` row (keys in the sweep's `fields` order, the TSV's columns, read by name), then restores the starting layout and resumes playback if the click changed them,
+and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
+
+```sh
+scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch per skin, music playing
+```
+
+`<out>/smoke.tsv` columns: `skin idx object action point volume play position track eq layout
+windows main note changed` — the state ones as `before>after`, `point` as `x,y` (a slider's `x,y>x,y`), `track` the
+playing file's name, `eq` as `e<on>a<auto>p<preamp dB>b<band checksum>`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
+whether the main window is on screen, `note` as `menu`/`modal`/`restored-layout`/`resumed`/`skip`/`unreachable`,
+and `changed` the sweep's own verdict, the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
+**cannot see** drags other than a slider's (knobs, scrollbars), right-click and double-click commands, the skin's *other*
+windows' controls, or a change that is only pixels (a lamp, a readout): `nochange` means none of the
+measured state moved, not that nothing happened.
 
 ### Playing a video — or a track — in the *running app*
 

@@ -35,6 +35,25 @@
   glowing crest; Ultra is dense rounded bars with a glow, floating peaks and a reflection in the
   Spectrum Analyzer window.
 
+### Winamp Modern (`.wal`) skins
+
+- **25 more skins checked** (corpus intake six): Canister 01, Corpse Bride, Enya, Fanta,
+  GrayZ, Hellemium, Herbie, Java Duke, LexAmp, MFD by Tikvach Alexander aka unl0K, MiniModern, Minus,
+  Offical Honda Element Skin, Psonidelic Skin, Rammstein, Rectangular, SpoonoAmp Modern, The Sims,
+  Triton, uDesignIT, Vex, Warp, WeeAmp, WinPlain All Res, Zectichoplayer.
+- **Text shadows are drawn.** A skin's outlined or shadowed titles (LexAmp's purple frame titles)
+  were plain, and light titles could vanish on light bars.
+- **5-second rewind and forward buttons seek** (Vex, Rammstein), and a skin's Preferences button
+  opens the main menu.
+- **A skin that hides its own player window can** (GrayZ's shade shows its stick bar and hides the
+  player; the stick brings it back).
+- **Volume arcs and knobs set the volume where you click** (Honda Element), instead of jumping to full.
+- **A slider can be grabbed anywhere on its knob** (Enya's EQ faders).
+- **The Media Library shows its content** in skins that use Winamp's stock library frame without
+  defining it (WinPlain).
+- **A window whose background art is missing from the skin is sized to its content** (Psonidelic's
+  EQ shade is a thin strip, not a black box), and **a mini layout returns to normal** (WinPlain).
+
 ## 0.34.2
 
 ### Playback

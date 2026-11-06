@@ -205,6 +205,38 @@ waits on it), B327 (GoldenBeauty's floating text below the main window, not repr
 `scripts/wal_intake_status.sh` over its ledger (`docs/winamp-modern/intakes/`), never this file.
 B212 needs a second display; B216's `.wmz` census waits on a go-ahead.
 
+### Done: intake #6, promoted to gold (2026-11-06)
+
+The 25 skins admitted for batch 6 were worked by `skills/skin-intake` on `feat/wal-intake-6`, all
+accepted by the user in the app, and promoted to gold on 2026-11-06 (manifest tier, files moved to
+`WinampModernCorpus/gold/`), with rows on `skin-compatibility.md` (22 B, 3 C, graded from the ledger
+notes and backlog rows). The per-skin record is `intakes/intake-6.tsv`. Each fix is general, named
+after the skin that showed it; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Psonidelic | EQ shade opened as a 275x116 opaque black box (B362) | A layout naming a missing background and no box is sized from its content's own extent |
+| The_Official_Lex_Luthor_Winamp5_Skin | Frame titles drawn plain, without the skin's shadow outline (B363) | A `<text>` declaring `shadowx`/`shadowy` is drawn first in `shadowcolor` at that offset |
+| Metaskins_net_-_GrayZ | Shade button left the main window on screen (B364) | A script's `show()`/`hide()` on the player's own container shows or hides the main window |
+| Official_Honda_Element_Skin | Volume arc set maximum wherever clicked (B365) | A press's x/y and `getLeft`/`getTop` are measured from the nearest sized ancestor |
+| WinPlain_ALLRES_V1_4b | Media Library an empty grey window (B369); stuck in its mini layout (B376) | The stock `library.content.group` is supplied when a frame names it and the skin leaves it undefined; `SWITCH default` with no such layout goes to the container's first |
+| Vex, Rammstein_Reise_Reise | 5-second rewind/forward did nothing (B374); Vex's prefs button did nothing | `REWIND_5S`/`FFWD_5S` seek 5 s inside the track; the Preferences GUID opens the main menu |
+| Enya_Winamp_3_Skin | EQ faders hard to grab (B378) | A slider's drawn thumb is clickable, even past the slider's box |
+
+Closed as the skin's or not defects (class H/D): B361 (Herbie's volume knob handler), B368, B370, B371,
+B377, B379, B380. The other 14 skins were accepted as they were.
+
+Left open: B366 (Playlist and Media Library in NullPlayer's plain chrome, not the skin's frame: The
+Sims, Java Duke), B367 (uDesignIT's 21-container composite placed by `default_x`/`default_y`, which
+the tiler ignores), B372 (uDesignIT's `relatx=40` puts the list outside its window), B373 (The Sims:
+the fallback playlist guard erases the skin's marks), B375 (warp: timer ~30 ms holds, VU volatility),
+B381 (GrayZ: the skin's `onVolumeChanged` stores 0 during its own mute), B382 (Official_Fantana_Skin:
+declared boxes overlap; B290 fontsize).
+
+This batch changed the process: scans run by `window-census.sh --shots` and `wal_live_smoke.sh` with
+no worker, one fix pass fixes every open row of the batch, and `wal_fix_check.sh` picks the sweeps a
+fix needs (`skills/skin-intake/SKILL.md` § *The live round*).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
@@ -582,6 +614,9 @@ so a corpus run can't lose lines, not *what* is measured.
   MD_-_Iwakura_Lain_the_Fourth_v1 (`.wal` each); copied into `WinampModernSkins/`. i-Skin (rank 323,
   gain 0) added to the batch by the user the same day: **26 silver, 780 bronze**. iPlay (rank 58, gain 2)
   added by the user the same day for GitHub #643 (B320): **27 silver, 779 bronze**.
+- **Intake #6 admitted 2026-11-05** (`feat/wal-intake-6`, rev `039b1d2d`). Run over the 779 bronze:
+  **25 silver, 754 bronze, 0 quarantine**, ~45 min. **Gain curve** (first 60): `2` through rank 45, then
+  `1 1 2 1 1 1 1 1 1 1 1 1 1 1 1`; the 25 silver are all gain 2. Post-admission sweep: not run.
 
 ### Decisions (fixed — re-open only with a measurement)
 

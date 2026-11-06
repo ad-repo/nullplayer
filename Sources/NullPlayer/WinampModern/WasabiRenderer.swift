@@ -808,8 +808,11 @@ final class WasabiSceneRenderer {
         return storedCanvasSize
     }
 
-    /// `canvasSize` without the fit — for the fit itself, and for the reads inside it.
-    private var storedCanvasSize: CGSize
+    /// `canvasSize` without the fit — for the fit itself, and for the reads inside it. Written only
+    /// here: by `resize(to:)`, a layout switch and `commitAutoFit`.
+    private(set) var storedCanvasSize: CGSize
+    /// The fits' bookkeeping (`WasabiRendererLayoutSizing.swift`).
+    var autoFit: WasabiLayoutAutoFit
     let clock: () -> TimeInterval
 
     /// Optional sandboxed seam supplying playlist/EQ/library content for embedded component holders.
@@ -903,6 +906,7 @@ final class WasabiSceneRenderer {
         self.container = container
         self.layout = layout
         self.storedCanvasSize = Self.defaultSize(for: layout, resources: self.resources)
+        self.autoFit = WasabiLayoutAutoFit(canvas: storedCanvasSize)
         let resources = self.resources
         self.declaredLayoutHeights = Dictionary(
             container.children
@@ -911,7 +915,6 @@ final class WasabiSceneRenderer {
             uniquingKeysWith: { first, _ in first })
         // Whichever window switches the theme, every renderer of this skin drops its themed bitmaps.
         themeCoordinator.addObserver(self) { [weak self] in self?.themeDidChange() }
-        self.autoFittedCanvas = self.storedCanvasSize
     }
 
     var paletteCache: WasabiPalette?
@@ -926,10 +929,13 @@ final class WasabiSceneRenderer {
         // A switch may name the *container* rather than a layout (American Rag's shade layout
         // returns with `action="switch" param="main"`, and `main` is the container's id; its layouts
         // are `normal` and `shade`). That asks for the container's default layout, its first (B348).
+        // So does `default` where no layout has that id: WinPlain's mini layout returns to its normal
+        // one with `action="SWITCH" param="default"` and nothing else (B376).
         let layouts = container.children.filter { $0.tag.is(.layout) }
         let named = layouts.first { $0.xmlID?.caseInsensitiveCompare(id) == .orderedSame }
-        let ownContainer = container.xmlID?.caseInsensitiveCompare(id) == .orderedSame
-        guard let next = named ?? (ownContainer ? layouts.first : nil) else {
+        let asksForDefaultLayout = container.xmlID?.caseInsensitiveCompare(id) == .orderedSame
+            || id.caseInsensitiveCompare("default") == .orderedSame
+        guard let next = named ?? (asksForDefaultLayout ? layouts.first : nil) else {
             throw WalFailure(WalDiagnostic(.malformedXML,
                                            "Container '\(container.xmlID ?? "Main")' has no layout '\(id)'.",
                                            location: container.source))
@@ -952,12 +958,10 @@ final class WasabiSceneRenderer {
         // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
         // which is what turns a remembered 691x541 into shade's 691x23 rather than a canvas its own
         // `maximum_h="23"` forbids.
-        autoFittedCanvas = storedCanvasSize
-        hasFittedContent = false
-        contentFitCache = nil
+        autoFit.enterLayout(canvas: storedCanvasSize)
         if let restored {
             _ = resize(to: restored)
-            autoFittedCanvas = nil
+            autoFit.canvas = nil
         }
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
@@ -1010,53 +1014,15 @@ final class WasabiSceneRenderer {
         return CGSize(width: max(width, hostedComponentFloorWidth ?? 0), height: height)
     }
 
-    /// The content fit's measurements for the active layout: `fitted` from the content and frame-content
-    /// fits, `titleWidth` the width its title needs on top of that (never less than `fitted.width`).
-    private struct ContentFit {
-        let declared: CGSize
-        let fitted: CGSize
-        let titleWidth: CGFloat
-    }
-
-    private var contentFitCache: ContentFit?
-
-    /// Measured once per layout and shared by the auto-fit and the floor. Every step resolves the
-    /// scene at hypothetical canvases — the title fit alone up to five times — over the object graph
-    /// the scripts own on the main thread, so it cannot move off it; it can only run less.
-    /// Callers set `isFittingContent` around it, so `layoutMaximumSize` reads the skin's own value.
-    private func contentFit() -> ContentFit {
-        if let contentFitCache { return contentFitCache }
-        let declared = defaultSize(for: layout)
-        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
-        let fit = ContentFit(declared: declared, fitted: fitted, titleWidth: titleFittedSize(fitted).width)
-        contentFitCache = fit
-        return fit
-    }
-
-    /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout
-    /// the skin sized itself, which is nearly all of them.
-    ///
-    /// `fitCanvasToContentIfNeeded` only applies while the canvas is still the one this renderer
-    /// chose, so it cannot help a window whose size arrives from somewhere else first — restored
-    /// state, above all. ClassicPro's Widgets Manager is the case: a frame saved before the fit
-    /// existed puts the canvas at its useless 100x400 *before* the scripts run, the fit then declines
-    /// to touch a canvas it did not set, and the window comes back the wrong size every launch.
-    ///
-    /// Making it a minimum settles that without second-guessing the user: below this width the
-    /// content is genuinely clipped (a 305px header in a 92px pane), so it is not a size anyone can
-    /// have meant, and the existing `contentMinSize` plumbing carries it to the window.
-    var contentFittedFloor: CGSize? {
-        // Same gate as the fit: before the scripts run, a `Wasabi:StandardFrame`'s content does not
-        // exist yet and the measurement would be of an empty frame.
-        guard loadedSkin.runtime.hasStartedScripts, !isFittingContent else { return nil }
-        isFittingContent = true
-        defer { isFittingContent = false }
-        let fit = contentFit()
-        let content: CGSize? = fit.fitted == fit.declared ? nil : fit.fitted
-        // The title floors the width alone: Silverskin_3's playlist states `default_h="154"` over a
-        // `minimum_h="116"`, and a floor of the whole fitted size took that minimum to 154.
-        guard fit.titleWidth > fit.fitted.width else { return content }
-        return CGSize(width: fit.titleWidth, height: content?.height ?? 0)
+    /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
+    /// *opens* at that floor rather than being grown to it after the tiler has already placed it.
+    func commitAutoFit(_ fitted: CGSize) {
+        let size = CGSize(width: max(fitted.width, hostedComponentFloorWidth ?? 0), height: fitted.height)
+        guard size != storedCanvasSize else { return }
+        storedCanvasSize = size
+        autoFit.canvas = size
+        invalidateSceneCache()
+        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
     }
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
@@ -1098,8 +1064,7 @@ final class WasabiSceneRenderer {
     /// `minimum_h`/`default_h` — a hosted window whose borrowed chrome dropped a strip.
     func layoutBoundsDidChange() {
         protectiveMinimumCache.removeAll()
-        contentFitCache = nil
-        hostedComponentFloorCache.removeAll()
+        autoFit.forgetMeasurements()
     }
 
     /// The smallest canvas at which the scene still lays itself out the way its author drew it.
@@ -3363,33 +3328,37 @@ final class WasabiSceneRenderer {
 
     private func drawSlider(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList,
                             pressed: Bool, hovered: Bool) {
-        guard frame.width > 0, frame.height > 0 else { return }
-        // `hoverthumb` on the same footing as `downthumb`: a slider's knob lights under the pointer
-        // exactly as a button's artwork does, and it is markup, not script — cPro2 declares
-        // `thumb="playback.volume.big.1" hoverthumb=".2" downthumb=".3"` and ships a visibly lit
-        // knob for the middle one. Drawing only `thumb` left the volume slider's hover half-done
-        // next to the buttons around it: the bar behind it brightened and the knob did not (B129).
-        let thumbID = pressed ? (object.attributes["downthumb"] ?? object.attributes["thumb"])
-                              : (hovered ? (object.attributes["hoverthumb"] ?? object.attributes["thumb"])
-                                         : object.attributes["thumb"])
-        guard let thumb = resources.bitmap(identifier: thumbID) else { return }
+        guard frame.width > 0, frame.height > 0,
+              let thumb = sliderThumb(object, pressed: pressed, hovered: hovered) else { return }
+        drawImage(thumb.image, in: sliderThumbFrame(object, thumb: thumb, in: frame), context: context)
+    }
+
+    /// A slider's thumb artwork in a state, for drawing it and for hit testing it.
+    ///
+    /// `hoverthumb` on the same footing as `downthumb`: a slider's knob lights under the pointer
+    /// exactly as a button's artwork does, and it is markup, not script — cPro2 declares
+    /// `thumb="playback.volume.big.1" hoverthumb=".2" downthumb=".3"` and ships a visibly lit
+    /// knob for the middle one. Drawing only `thumb` left the volume slider's hover half-done
+    /// next to the buttons around it: the bar behind it brightened and the knob did not (B129).
+    func sliderThumb(_ object: WasabiObject, pressed: Bool, hovered: Bool) -> WasabiBitmap? {
+        let thumb = object.attributes["thumb"]
+        let stateThumb = pressed ? object.attributes["downthumb"] : hovered ? object.attributes["hoverthumb"] : nil
+        return resources.bitmap(identifier: stateThumb) ?? resources.bitmap(identifier: thumb)
+    }
+
+    /// Where a slider's thumb is drawn: centred across the slider's axis, placed along it by the value.
+    func sliderThumbFrame(_ object: WasabiObject, thumb: WasabiBitmap, in frame: CGRect) -> CGRect {
         let clamped = normalizedValue(of: object)
-        let vertical = Self.isVerticalOrientation(object)
         let thumbWidth = CGFloat(thumb.width)
         let thumbHeight = CGFloat(thumb.height)
-        let thumbFrame: CGRect
-        if vertical {
+        if Self.isVerticalOrientation(object) {
             let travel = max(CGFloat.zero, frame.height - thumbHeight)
-            thumbFrame = CGRect(x: frame.midX - thumbWidth / 2,
-                                y: frame.minY + (1 - clamped) * travel,
-                                width: thumbWidth, height: thumbHeight)
-        } else {
-            let travel = max(CGFloat.zero, frame.width - thumbWidth)
-            thumbFrame = CGRect(x: frame.minX + clamped * travel,
-                                y: frame.midY - thumbHeight / 2,
-                                width: thumbWidth, height: thumbHeight)
+            return CGRect(x: frame.midX - thumbWidth / 2, y: frame.minY + (1 - clamped) * travel,
+                          width: thumbWidth, height: thumbHeight)
         }
-        drawImage(thumb.image, in: thumbFrame, context: context)
+        let travel = max(CGFloat.zero, frame.width - thumbWidth)
+        return CGRect(x: frame.minX + clamped * travel, y: frame.midY - thumbHeight / 2,
+                      width: thumbWidth, height: thumbHeight)
     }
 
     // MARK: - Embedded component drawing
@@ -4630,333 +4599,6 @@ final class WasabiSceneRenderer {
         // Exactly two is what makes it a splitter at all; real skins use a `<Wasabi:Frame>` naming
         // neither pair as a plain group, and that one keeps the inherited clip.
         return panes.count == 2 && panes.contains { $0.caseInsensitiveCompare(id) == .orderedSame }
-    }
-
-    private static func dimension(_ attributes: [String: String], keys: [String], fallback: CGFloat) -> CGFloat {
-        for key in keys {
-            // Trimmed, as `WasabiGeometrySpec` trims an object's: wTunes' player is `w=" 300"`.
-            if let raw = attributes[key], let value = Double(raw.trimmingCharacters(in: .whitespaces)),
-               value > 0 { return CGFloat(value) }
-        }
-        return fallback
-    }
-
-    private func defaultSize(for layout: WasabiObject) -> CGSize {
-        Self.defaultSize(for: layout, resources: resources)
-    }
-
-    /// The canvas this renderer last chose *for itself*. While `canvasSize` still equals it the fit
-    /// below may replace it; the moment anything else sets a size — a drag, a script, restored state
-    /// — the two diverge and the fit never touches the canvas again.
-    private var autoFittedCanvas: CGSize?
-    private var hasFittedContent = false
-    private var isFittingContent = false
-
-    /// Size a layout that describes no size of its own to the content it turns out to hold.
-    ///
-    /// Runs **once**, on the first scene resolved after `runtime.start()`, because that is when the
-    /// content exists: a `Wasabi:StandardFrame`'s client group is instantiated by the skin's own
-    /// `standardframe.maki`, not by the markup, so a fit measured in `init` reads an empty frame and
-    /// settles on the wrong number. (Measured: ClassicPro's Widgets Manager is 19 nodes at `init`
-    /// and 30 after — and a first attempt that fitted in `init` left it at 100x400, its whole
-    /// defect, while growing four *other* skins that happened to be complete by then.)
-    private func fitCanvasToContentIfNeeded() {
-        guard !hasFittedContent, !isFittingContent,
-              loadedSkin.runtime.hasStartedScripts,
-              storedCanvasSize == autoFittedCanvas else { return }
-        isFittingContent = true
-        defer { isFittingContent = false; hasFittedContent = true }
-        let fit = contentFit()
-        commitAutoFit(componentRoomFittedSize(CGSize(width: fit.titleWidth, height: fit.fitted.height),
-                                              for: layout))
-    }
-
-    /// Adopt a canvas one of the fits chose, raised to the hosted component's floor so the window
-    /// *opens* at that floor rather than being grown to it after the tiler has already placed it.
-    private func commitAutoFit(_ fitted: CGSize) {
-        let size = CGSize(width: max(fitted.width, hostedComponentFloorWidth ?? 0), height: fitted.height)
-        guard size != storedCanvasSize else { return }
-        storedCanvasSize = size
-        autoFittedCanvas = size
-        invalidateSceneCache()
-        loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
-    }
-
-    /// A component window narrower than this on an axis its skin never sized has no window in it.
-    /// The trigger is the *degenerate* case only — see `componentRoomFittedSize`. Two 12px playlist rows:
-    /// _Mercury's playlist is a 116px frame around a 31px list, a size its author chose (B325); at the
-    /// old 32 the fit grew its canvas to 335 under a 116px window and the user saw half of it.
-    private static let degenerateComponentExtent: CGFloat = 24
-    /// What such an axis is grown to give the component. Winamp's own stock Modern skin opens the
-    /// same visualization window at `354x280`, whose client area under the standard frame is a little
-    /// over 250px tall; this reproduces that rather than inventing a number.
-    private static let componentRoomExtent: CGFloat = 250
-
-    private var hasFittedComponentRoom = false
-    private var isFittingComponentRoom = false
-
-    /// The component-room fit, applied **before the skin's scripts run**.
-    ///
-    /// `fitCanvasToContentIfNeeded` deliberately waits for `runtime.start()`, because the content it
-    /// measures is instantiated by the skin's own MAKI. This one must not wait, and the app is where
-    /// that showed: every auxiliary window is placed while the skin is still loading, so the tiler
-    /// asked for the visualizer's size before any script had run and got the unfitted box —
-    /// `[place/tile] AVS {{0, 0}, {354, 30}}` with `WINAMP_MODERN_PLACE_TRACE=1`, against the
-    /// 354x278 the headless dump reports *after* start. The dump reads the size late and the app
-    /// reads it early, which is exactly the gap a render dump cannot show.
-    ///
-    /// Waiting buys nothing here anyway: the `<component>` this measures is plain markup inside the
-    /// layout, in the graph from the moment it is built, and its box is relative to the canvas alone.
-    private func fitCanvasToComponentRoomIfNeeded() {
-        guard !hasFittedComponentRoom, !isFittingComponentRoom,
-              storedCanvasSize == autoFittedCanvas else { return }
-        isFittingComponentRoom = true
-        defer { isFittingComponentRoom = false; hasFittedComponentRoom = true }
-        commitAutoFit(componentRoomFittedSize(storedCanvasSize, for: layout))
-    }
-
-    /// Grow an axis a layout never states when the component it exists to host has no room on it.
-    ///
-    /// Nullsoft Winamp 2000 SP4's `AVS/normal` states no height at all — only `minimum_h="30"`, a
-    /// floor barely taller than the standard frame's own titlebar — so its visualization holder
-    /// resolved to **346x2** and the window opened as a black sliver the user had to drag open by
-    /// hand (B136). A floor is not a size, but demoting `minimum_*` in `defaultSize` is not the fix:
-    /// it would take micro's deliberate 150x110 player to 275x116 as collateral.
-    ///
-    /// So the rule is as narrow as the measurement that justifies it. Across the whole installed
-    /// corpus — 69 skins, 590 rendered layouts — **exactly one** component holder resolves under
-    /// `degenerateComponentExtent`, and it is this one. An axis is grown only when the skin states no
-    /// size for it *anywhere* (neither on the layout nor on its container) and the holder it feeds is
-    /// degenerate; a layout whose author sized it, and one whose component already has room, is
-    /// untouched. The corpus sweep is what has to keep proving that.
-    private func componentRoomFittedSize(_ declared: CGSize, for layout: WasabiObject) -> CGSize {
-        let attributes = layout.attributes
-        let container = layout.parent?.attributes ?? [:]
-        // Only a window that exists *to* host a component. A player window parks holders it is not
-        // showing — Lobe keeps two 25px ones in `main/normal` and `main/switch` — and growing a
-        // player around a parked holder is exactly the collateral this rule must not cause.
-        guard container["component"] != nil else { return declared }
-        let statesWidth = attributes["w"] != nil || attributes["default_w"] != nil
-            || container["default_w"] != nil
-        let statesHeight = attributes["h"] != nil || attributes["default_h"] != nil
-            || container["default_h"] != nil
-        guard !statesWidth || !statesHeight, let holder = holderExtent(atCanvas: declared) else {
-            return declared
-        }
-        var size = declared
-        if !statesWidth, holder.width < Self.degenerateComponentExtent {
-            size.width = min(Self.optionalDimension(attributes["maximum_w"]) ?? .greatestFiniteMagnitude,
-                             size.width + Self.componentRoomExtent - holder.width)
-        }
-        if !statesHeight, holder.height < Self.degenerateComponentExtent {
-            size.height = min(Self.optionalDimension(attributes["maximum_h"]) ?? .greatestFiniteMagnitude,
-                              size.height + Self.componentRoomExtent - holder.height)
-        }
-        return size
-    }
-
-    /// The widest and the tallest component holder the active layout resolves at `canvas`, or `nil`
-    /// when it has none — what both the component-room fit and the hosted component's floor measure
-    /// the window's shortfall from. `visibleOnly` is the component-room fit's: a player parks holders
-    /// it is not showing. The floor counts hidden ones too, because a holder's visibility is a skin
-    /// script's moment, not its markup, and the floor must not depend on when it was first asked.
-    private func holderExtent(atCanvas canvas: CGSize, visibleOnly: Bool = true) -> CGSize? {
-        let holders = sceneNodes(canvas: canvas, includingHidden: !visibleOnly).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag)
-        }
-        guard !holders.isEmpty else { return nil }
-        return holders.reduce(CGSize.zero) {
-            CGSize(width: max($0.width, $1.frame.width), height: max($0.height, $1.frame.height))
-        }
-    }
-
-    private var hostedComponentFloorCache: [String: CGFloat?] = [:]
-
-    /// The window width at which the holder gets the room its component asks for
-    /// (`WinampModernComponentRegistry.minimumHolderWidth`) — `nil` for a container that hosts no such
-    /// component. Anaheim Player 01 declares its `MLibrary` 260 wide with a 40px frame, so the library
-    /// browser opened in a 220px hole; the skin's size is overruled because what fills the hole is
-    /// NullPlayer's, not the skin's.
-    ///
-    /// It is a floor even where the declared size already clears it, because a script or a restored
-    /// frame can take the window below its declared size: Itemskin declares its library 660 wide and
-    /// its own script shrinks it to the 330 minimum on open.
-    ///
-    /// Cached only once the scripts have started: a `Wasabi:*Frame`'s client group — where the holder
-    /// lives — is instantiated by the skin's MAKI, so an answer taken earlier (the component-room fit
-    /// asks before start) reads no holder, and caching it left EMP2's library without its floor.
-    private var hostedComponentFloorWidth: CGFloat? {
-        let key = activeLayoutID
-        if let cached = hostedComponentFloorCache[key] { return cached }
-        let computed = computeHostedComponentFloorWidth()
-        if loadedSkin.runtime.hasStartedScripts { hostedComponentFloorCache[key] = computed }
-        return computed
-    }
-
-    private func computeHostedComponentFloorWidth() -> CGFloat? {
-        guard let kind = WinampModernComponentRegistry.kind(for: container.attributes["component"]),
-              let room = WinampModernComponentRegistry.minimumHolderWidth(for: kind) else { return nil }
-        let declared = defaultSize(for: layout)
-        // The arithmetic below assumes the holder stretches with the canvas (`relatw`). Checked rather
-        // than assumed: around a fixed-width holder, widening the window only widens the frame.
-        guard let holder = holderExtent(atCanvas: declared, visibleOnly: false),
-              let wider = holderExtent(atCanvas: CGSize(width: declared.width + room, height: declared.height),
-                                       visibleOnly: false),
-              wider.width > holder.width else { return nil }
-        return min(layoutMaximumSize.width, declared.width + room - holder.width)
-    }
-
-    /// Grow a layout that describes **no** size of its own to the extent of the content it lays out.
-    ///
-    /// The third fallback in the chain `defaultSize` walks. A layout that declares `w`/`default_w`
-    /// is sized by its author, and one with a `background` bitmap is sized by that artwork (ZDL's
-    /// Reel-To-Reel); a layout with neither has been sized, until now, by its **`minimum_w`** — the
-    /// floor it is allowed to shrink to, which is not a size anybody drew. ClassicPro's Widgets
-    /// Manager is the measured case: `<layout id="normal" minimum_h="400" minimum_w="100" …>` and
-    /// nothing else, so it opened 100x400 — a tall empty sliver — on all five cPro skins, cPro-Bento
-    /// included. Its content group's header layer is a 305x57 bitmap, clipped to 92 wide and
-    /// invisible along with everything the list draws.
-    ///
-    /// Measured, never inferred: the layout is resolved at the candidate size and any node that
-    /// escapes **its own parent's box** is content the canvas is too small to hold, so the canvas
-    /// grows by the largest such escape and the layout is resolved again. Relative children track the
-    /// canvas and never overflow, so the only thing that moves the number is intrinsic artwork, and
-    /// the loop reaches its fixed point in one or two passes. It is bounded to four regardless, and
-    /// clamped by any `maximum_w`/`maximum_h` the layout declares.
-    ///
-    /// The gate is per axis and deliberately narrow. A skin that sized its window is left exactly
-    /// where it was — which is what the corpus sweep diff has to keep proving, because a slider thumb
-    /// that overhangs its track on purpose looks identical to content that does not fit.
-    private func contentFittedSize(_ declared: CGSize, for layout: WasabiObject) -> CGSize {
-        let key = layout.xmlID ?? "-"
-        let attributes = layout.attributes
-        let unsized: (String, String) -> Bool = { own, fallback in
-            attributes[own] == nil && attributes[fallback] == nil && attributes["background"] == nil
-        }
-        var fitsWidth = unsized("w", "default_w"), fitsHeight = unsized("h", "default_h")
-        guard fitsWidth || fitsHeight else { return declared }
-        let ceiling = CGSize(
-            width: Self.optionalDimension(attributes["maximum_w"]) ?? 16384,
-            height: Self.optionalDimension(attributes["maximum_h"]) ?? 16384)
-        let trace = Self.tracesContentFit
-        var size = declared
-        var previousSize = declared
-        var previous: CGSize?
-        for _ in 0..<4 {
-            var growth = CGSize.zero
-            let nodes = sceneNodes(canvas: size)
-            // An axis the object sized with an absolute number is its author's box, and one that
-            // overhangs its parent does so on purpose: CopperdeckII's frames run a `w="2136"` bottom
-            // strip under every window and let the window clip it, and fitting to it opened the
-            // video window 2147 wide. What the fit is for is artwork with no box of its own.
-            func authored(_ object: WasabiObject, _ axis: String, _ relative: String) -> Bool {
-                object.attributes[axis] != nil && object.attributes[relative] != "1"
-            }
-            for node in nodes where node.object !== layout {
-                if !authored(node.object, "w", "relatw") {
-                    growth.width = max(growth.width, node.frame.maxX - node.parentFrame.maxX)
-                }
-                if !authored(node.object, "h", "relath") {
-                    growth.height = max(growth.height, node.frame.maxY - node.parentFrame.maxY)
-                }
-            }
-            if trace { print("FIT \(key) at \(size) growth=\(growth) nodes=\(nodes.count)") }
-            // Overflow that does not shrink when the canvas grows is not content the window is too
-            // small for — it is artwork drawn deliberately past its box, and no size will ever
-            // satisfy it. Stop and **step back one**, to the last size that was not chosen to chase
-            // this residual. Two measured cases, and the step-back is what serves both:
-            //
-            // * BLAKK's video window stretches `component.bottom.middle-video`, a 407px sheet,
-            //   across a 204px frame and reports the same 51px overhang at *every* canvas. It stalls
-            //   on the first comparison, so the step back is to its declared 204 — which is right,
-            //   its `minimum_w="204"` is the window its author drew.
-            // * ClassicPro's Widgets Manager overflows by 213 (the header), then by a standing 3
-            //   from a list item's artwork. It stalls on the second comparison, so the step back is
-            //   to the 313 the header asked for rather than all the way to the useless 100.
-            if let previous {
-                if growth.width > 0, growth.width >= previous.width {
-                    if trace { print("FIT \(key) width stalled at \(growth.width) — stepping back to \(previousSize.width)") }
-                    size.width = previousSize.width
-                    fitsWidth = false
-                }
-                if growth.height > 0, growth.height >= previous.height {
-                    if trace { print("FIT \(key) height stalled at \(growth.height) — stepping back to \(previousSize.height)") }
-                    size.height = previousSize.height
-                    fitsHeight = false
-                }
-                if !fitsWidth && !fitsHeight { return size }
-            }
-            previous = growth
-            previousSize = size
-            let next = CGSize(
-                width: fitsWidth ? min(ceiling.width, size.width + max(0, growth.width)) : size.width,
-                height: fitsHeight ? min(ceiling.height, size.height + max(0, growth.height)) : size.height)
-            if next == size { break }
-            size = next
-        }
-        return size
-    }
-
-    /// A layout's canvas size.
-    ///
-    /// `w`/`h` are **optional** on a layout: Wasabi sizes one that declares none to its `background`
-    /// bitmap, exactly as it sizes every other object with artwork and no box. ZDL's Reel-To-Reel
-    /// declares every one of its layouts that way, so falling straight through to the 275×116 classic
-    /// default gave its 275×348 player a canvas a third of its height — everything below the reels
-    /// landed outside the canvas, where `append` drops it, and what was left stacked on top of the
-    /// reels. The declared box still wins where a skin gives one.
-    /// The size a layout opens at: its own `default_w`/`default_h`, **never below the minimum it
-    /// declares for itself**.
-    ///
-    /// Four layouts in the 31-skin corpus declare a default smaller than their own minimum, and two
-    /// of them are the visualization windows this was found on: Anaheim_Player_01's `avs_window` is
-    /// `default_w="120"` against `minimum_w="180"`, and Styx's `AVS` is 300×300 against 400×230. The
-    /// window opened at the default, so the standard frame's corner and edge art was laid out for a
-    /// window 60pt wider than the one drawing it and the chrome came out cut off down the right-hand
-    /// side — reported as "a misformed rectangle box". Winamp cannot show a window below its declared
-    /// minimum either; this is the same clamp `resize(to:)` already applies to every later size.
-    ///
-    /// Only the **declared** minimum clamps here, not `layoutMinimumSize` — that one folds in the
-    /// computed protective minimum, which is a defence against a *shrunk* window and has no business
-    /// enlarging one the skin's author sized deliberately.
-    ///
-    /// **`default_w`/`default_h` are container attributes too** (B136). `default_x`/`default_y` were
-    /// already read off the container (`WinampModernContainerTopology.defaultOrigin`) and the size
-    /// pair was not, so a skin that sizes its windows there — 29 declarations across the installed
-    /// corpus — got nothing, and every one of those windows opened at its own `minimum_*` floor
-    /// instead. Nullsoft Winamp 2000 SP4 sizes *every* auxiliary window that way: measured on that
-    /// skin, its playlist opened 276×242 against the author's `PLEdit default_w="550"`, its library
-    /// 275×484 against `550×484`, and its visualizer 96×30 against `AVS default_w="354"`. A layout's
-    /// own box still wins; the container only answers for an axis the layout never states.
-    private static func defaultSize(for layout: WasabiObject, resources: WasabiResourceCache) -> CGSize {
-        let attributes = layout.attributes
-        let minimum = CGSize(width: dimension(attributes, keys: ["minimum_w"], fallback: 1),
-                             height: dimension(attributes, keys: ["minimum_h"], fallback: 1))
-        let background = resources.bitmap(identifier: attributes["background"])
-        /// A layout shaped by its `alphabackground` ends where that artwork does, so the container's
-        /// default cannot resize it (B254: Ganbare's 408-wide player under `default_w="816"`, M3's
-        /// 222-tall one cut off by `default_h="164"`).
-        let container = attributes["alphabackground"] != nil && background != nil
-            ? [:] : layout.parent?.attributes ?? [:]
-        /// The layout's own box, then the container's default, then the floor, then the artwork.
-        func extent(_ own: String, _ box: String, _ floor: String, artwork: CGFloat?,
-                    classic: CGFloat) -> CGFloat {
-            dimension(attributes, keys: [own, box],
-                      fallback: dimension(container, keys: [own],
-                                          fallback: dimension(attributes, keys: [floor],
-                                                              fallback: artwork ?? classic)))
-        }
-        let size = CGSize(
-            width: extent("default_w", "w", "minimum_w",
-                          artwork: background.map { CGFloat($0.width) }, classic: 275),
-            height: extent("default_h", "h", "minimum_h",
-                           artwork: background.map { CGFloat($0.height) }, classic: 116))
-        return CGSize(width: max(size.width, minimum.width), height: max(size.height, minimum.height))
-    }
-
-    private static func optionalDimension(_ raw: String?) -> CGFloat? {
-        guard let raw, let value = Double(raw), value > 0 else { return nil }
-        return CGFloat(value)
     }
 
     /// Every colour this file hands out is component-readable RGB — never `.white`/`.black`, which

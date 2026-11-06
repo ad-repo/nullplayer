@@ -68,7 +68,7 @@ enum WasabiSurfaceSynthesizer {
     /// The reference a synthetic `<component>`/`<container component=…>` names. Winamp defines no
     /// equalizer component GUID — no measured skin contains one — so the equalizer uses the `guid:eq`
     /// short form the registry already understands.
-    private static func componentReference(for kind: WinampModernComponentKind) -> String? {
+    static func componentReference(for kind: WinampModernComponentKind) -> String? {
         switch kind {
         case .playlist: return "guid:{45F3F7C1-A6F3-4EE6-A15E-125E92FC3F8D}"
         case .library: return "guid:{6B0EDF80-C9A5-11D3-9F26-00C04F39FFC6}"
@@ -118,6 +118,21 @@ enum WasabiSurfaceSynthesizer {
             }
         }
         diagnostics.append(contentsOf: about.diagnostics)
+
+        if let stockLibrary = stockLibraryContentGroup(document: document, definitions: definitions) {
+            let cost = countNodes([stockLibrary])
+            if cost <= budget {
+                budget -= cost
+                appended.append(stockLibrary)
+            } else {
+                diagnostics.append(WalDiagnostic(
+                    .expandedNodeLimitExceeded,
+                    "Synthesizing the stock library content would exceed the "
+                    + "\(limits.maximumExpandedNodeCount)-node budget; the skin's library window "
+                    + "stays empty.",
+                    severity: .warning, location: WalSourceLocation(path: sourcePath)))
+            }
+        }
 
         for kind in kinds {
             guard let reference = componentReference(for: kind) else { continue }
@@ -223,7 +238,7 @@ enum WasabiSurfaceSynthesizer {
     }
 
     /// The id of a skin-declared container whose layout hands `group` to a frame as its `content`.
-    private static func containerHosting(group: String, in nodes: [WalXMLNode]) -> String? {
+    static func containerHosting(group: String, in nodes: [WalXMLNode]) -> String? {
         let wanted = fold(group)
         func hostsGroup(_ node: WalXMLNode) -> Bool {
             if let content = node.attribute("content"), fold(content) == wanted { return true }
@@ -1006,7 +1021,7 @@ enum WasabiSurfaceSynthesizer {
         nodes.reduce(0) { $0 + 1 + countNodes($1.children) }
     }
 
-    private static func fold(_ value: String) -> String {
+    static func fold(_ value: String) -> String {
         value.folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 }

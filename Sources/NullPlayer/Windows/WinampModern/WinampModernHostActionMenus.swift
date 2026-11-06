@@ -36,8 +36,29 @@ extension WinampModernMainView {
             // repaint whichever one this button lives in either way.
             renderer.scrollComponentBucket(by: delta, page: page)
             needsDisplay = true
+        case .seek(let seconds):
+            host.seek(by: seconds)
+            updatePlaybackState()
+        case .colorThemePreferences:
+            // We have no preferences dialog; the popup is the same list its Colour Themes page shows.
+            showColorThemeMenu()
+        case .preferences: showMainMenu(from: object)
+        case .aboutWinamp: showAboutWinamp()
         case .inert(let action, let reason): recordInertHostAction(action, reason: reason)
         }
+    }
+
+    /// Winamp's **About Winamp** window. ClassicPro's corner bolt asks for it by default, so with
+    /// nothing answering it the logo did nothing at all until the user picked one of the other five
+    /// commands from its right-click menu.
+    ///
+    /// Most skins draw this page themselves — twenty of the measured seventy define
+    /// `skin.about.group`, the artwork Winamp instantiates on the "Skin" page of its own About box —
+    /// so the skin's window is the answer wherever it exists, in the skin's own frame with the skin's
+    /// own artwork. NullPlayer's AppKit panel is the fallback for a skin that draws none.
+    private func showAboutWinamp() {
+        if let id = skinAboutContainerID, containerWindowToggleRequested?(id) == true { return }
+        NSApp.sendAction(#selector(AppDelegate.showAbout), to: nil, from: nil)
     }
 
     /// A declared action we deliberately answer with nothing, recorded **once** in the skin's own

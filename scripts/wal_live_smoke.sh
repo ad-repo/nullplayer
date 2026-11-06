@@ -1,0 +1,60 @@
+#!/bin/bash
+#
+# Live smoke over Winamp Modern (`.wal`) skins: click every main-window control in the running debug
+# build and record what each click changed:
+#
+#   scripts/wal_live_smoke.sh <skin>... [--out <dir>] [--timeout <seconds>]
+#   -> <out>/smoke.tsv, <out>/<skin>.log, and one summary line per skin
+#
+# One launch per skin (skills/app-control/scripts/launch.sh, music playing) with
+# WINAMP_MODERN_DEBUG_CLICK=auto (WinampModernDebugClickSweep.swift). A skin is a path or a name
+# launch.sh resolves. The sweep logs `WM-SMOKE|key=value|…` rows; their keys, in the sweep's order,
+# are the TSV's columns after `skin`. The last, `changed`, is the sweep's verdict: what moved
+# (volume, play, position jump, track, eq, layout, windows, main, menu, modal), or `nochange`; a row
+# the sweep did not click reads `-` there and says why in `note` (skip, unreachable).
+# Why: a live pass clicked each control by hand, ~50 tool calls a skin.
+
+set -u -o pipefail
+cd "$(dirname "$0")/.."
+
+OUT=""; TIMEOUT=300; SKINS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --out) OUT="$2"; shift 2 ;;
+        --timeout) TIMEOUT="$2"; shift 2 ;;
+        *) SKINS+=("$1"); shift ;;
+    esac
+done
+[ ${#SKINS[@]} -gt 0 ] || { echo "usage: wal_live_smoke.sh <skin>... [--out <dir>] [--timeout <s>]" >&2; exit 2; }
+OUT="${OUT:-$(mktemp -d)}"
+mkdir -p "$OUT"
+TSV="$OUT/smoke.tsv"
+: >"$TSV"
+
+for SKIN in "${SKINS[@]}"; do
+    NAME=$(basename "${SKIN%.*}")
+    LOG="$OUT/$NAME.log"
+    if ! WINAMP_MODERN_DEBUG_CLICK=auto skills/app-control/scripts/launch.sh "$SKIN" --log "$LOG" >/dev/null; then
+        echo "$NAME: LAUNCH FAIL (see $LOG.build)"; continue
+    fi
+    for _ in $(seq "$TIMEOUT"); do
+        grep -q "WM-SMOKE done" "$LOG" && break
+        pgrep -x NullPlayer >/dev/null || break
+        sleep 1
+    done
+    STATUS=done; grep -q "WM-SMOKE done" "$LOG" || STATUS="INCOMPLETE (timeout or app exit)"
+    # The sweep's row is already the TSV row: its keys, in order, are the columns after `skin`.
+    HEADER=1; [ -s "$TSV" ] && HEADER=0
+    grep -o 'WM-SMOKE|.*' "$LOG" | awk -F'|' -v skin="$NAME" -v header="$HEADER" 'BEGIN { OFS = "\t" }
+        {
+            line = skin; keys = "skin"
+            for (i = 2; i <= NF; i++) { eq = index($i, "="); keys = keys OFS substr($i, 1, eq - 1); line = line OFS substr($i, eq + 1) }
+            if (header) { print keys; header = 0 }
+            print line
+        }' >>"$TSV"
+    awk -F'\t' -v skin="$NAME" -v status="$STATUS" '$1 == skin {
+            if ($NF == "-") other++; else { clicked++; if ($NF == "nochange") same++ }
+        } END { printf "%s: %s, %d clicked, %d nochange, %d not clicked\n", skin, status, clicked, same, other }' "$TSV"
+done
+pkill -x NullPlayer 2>/dev/null || true
+echo "tsv: $TSV"

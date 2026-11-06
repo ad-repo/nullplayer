@@ -35,8 +35,40 @@ enum WinampModernHostAction: Equatable {
     /// `CB_NEXT` / `CB_PREV` (`page: false`) and `CB_NEXTPAGE` / `CB_PREVPAGE` — scroll the thinger
     /// by one icon or by a whole screenful.
     case componentBucketScroll(delta: Int, page: Bool)
+    // Transport
+    /// `REWIND_5S` / `FFWD_5S` — `seekStep` back or on, held inside the track (B374: Vex, Rammstein
+    /// and WinPlain).
+    case seek(by: TimeInterval)
+    // Winamp windows a `TOGGLE` names by GUID (`init(toggling:)`)
+    /// The Preferences dialog's Colour Themes page, answered with the theme popup.
+    case colorThemePreferences
+    /// The Preferences dialog, answered with NullPlayer's main menu, where its settings live.
+    case preferences
+    /// The About Winamp window: the skin's own About page where it draws one, else the app's panel.
+    case aboutWinamp
     /// Declared by the corpus and answered by nothing here, with the reason a triage pass needs.
     case inert(action: String, reason: String)
+
+    static let seekStep: TimeInterval = 5
+
+    /// The windows a `TOGGLE` parameter names by GUID rather than by component or container id,
+    /// matched anywhere in the parameter (skins write `guid:{…}` as often as the bare GUID).
+    private static let toggleGUIDs: [(guid: String, action: WinampModernHostAction)] = [
+        // multipass's "open in preferences" button.
+        ("53DE6284-7E88-4C62-9F93-22ED68E6A024", .colorThemePreferences),
+        // The button skins label `pref`, `cfg` or `config` (B374: Vex, warp and about twenty others).
+        ("B397A4CE-455A-4D62-8BF6-D0F91ACB70E6", .preferences),
+        // ClassicPro's corner bolt is a multi-button whose default command is this one (`player.m`'s
+        // `bolt.onLeftClick`, branch 0).
+        ("D6201408-476A-4308-BF1B-7BACA1124B12", .aboutWinamp),
+    ]
+
+    /// Decode a `TOGGLE` parameter that names one of `toggleGUIDs`' windows.
+    init?(toggling parameter: String?) {
+        guard let upper = parameter?.uppercased(),
+              let match = Self.toggleGUIDs.first(where: { upper.contains($0.guid) }) else { return nil }
+        self = match.action
+    }
 
     /// Decode one of the four families. Case-insensitive: skins spell these `VIS_Prev`, `vis_prev`
     /// and `VIS_PREV` in the same file.
@@ -80,6 +112,8 @@ enum WinampModernHostAction: Equatable {
         case "CB_PREV": self = .componentBucketScroll(delta: -1, page: false)
         case "CB_NEXTPAGE": self = .componentBucketScroll(delta: 1, page: true)
         case "CB_PREVPAGE": self = .componentBucketScroll(delta: -1, page: true)
+        case "REWIND_5S": self = .seek(by: -Self.seekStep)
+        case "FFWD_5S": self = .seek(by: Self.seekStep)
         default: return nil
         }
     }
