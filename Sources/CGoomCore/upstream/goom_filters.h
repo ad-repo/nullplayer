@@ -1,3 +1,8 @@
+/*
+ * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
+ * defines SPIRAL_MODE..PENTAGRAM_MODE and NB_ZOOM_MODES.
+ * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
+ */
 #ifndef FILTERS_H
 #define FILTERS_H
 

@@ -1,3 +1,8 @@
+/*
+ * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
+ * adds update.holdMode.
+ * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
+ */
 #ifndef _PLUGIN_INFO_H
 #define _PLUGIN_INFO_H
 

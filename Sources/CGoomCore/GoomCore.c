@@ -2,25 +2,33 @@
 
 #include <stdlib.h>
 #include "goom.h"
+#include "goom_filters.h"
 
 struct GoomCore {
     PluginInfo *info;
     int pendingMode; /* upstream forceMode: 0 none, 1..NB_FX */
 };
 
-/* Order of the *_MODE constants in goom_filters.h. */
+/* Indexed by the *_MODE constants, so each name stays on its mode whatever their order. */
 static const char *const effectNames[GOOM_CORE_EFFECT_COUNT] = {
-    "Normal", "Wave", "Crystal Ball", "Scrunch", "Amulette",
-    "Water", "Hypercos 1", "Hypercos 2", "Y Only", "Speedway",
+    [NORMAL_MODE] = "Normal", [WAVE_MODE] = "Wave", [CRYSTAL_BALL_MODE] = "Crystal Ball",
+    [SCRUNCH_MODE] = "Scrunch", [AMULETTE_MODE] = "Amulette", [WATER_MODE] = "Water",
+    [HYPERCOS1_MODE] = "Hypercos 1", [HYPERCOS2_MODE] = "Hypercos 2", [YONLY_MODE] = "Y Only",
+    [SPEEDWAY_MODE] = "Speedway",
     /* NullPlayer port additions */
-    "Spiral", "Vortex", "Flower", "Heart", "Pentagram",
+    [SPIRAL_MODE] = "Spiral", [VORTEX_MODE] = "Vortex", [FLOWER_MODE] = "Flower",
+    [HEART_MODE] = "Heart", [PENTAGRAM_MODE] = "Pentagram",
 };
-_Static_assert(GOOM_CORE_EFFECT_COUNT == NB_FX, "one name per Goom effect");
+_Static_assert(GOOM_CORE_EFFECT_COUNT == NB_FX && NB_FX == NB_ZOOM_MODES, "one name per Goom effect");
 
 GoomCore *GoomCore_create(int width, int height) {
     GoomCore *core = calloc(1, sizeof *core);
     if (core == NULL) return NULL;
     core->info = goom_init((guint32)width, (guint32)height);
+    if (core->info == NULL) {
+        free(core);
+        return NULL;
+    }
     return core;
 }
 

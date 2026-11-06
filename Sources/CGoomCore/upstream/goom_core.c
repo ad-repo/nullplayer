@@ -1,3 +1,9 @@
+/*
+ * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
+ * adds the new zoom modes to the random mode roll, settle_port_mode, the heart and
+ * star scopes, and the holdMode check that skips the roll.
+ * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
+ */
 /**
 * file: goom_core.c
  * author: Jean-Christophe Hoelt (which is not so proud of it)

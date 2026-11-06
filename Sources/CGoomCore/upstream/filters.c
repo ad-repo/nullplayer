@@ -1,3 +1,9 @@
+/*
+ * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
+ * adds the Spiral, Vortex, Flower, Heart and Pentagram zoom modes to zoomVector and
+ * raises the "Zoom Mode" parameter maximum to match.
+ * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
+ */
 // --- CHUI EN TRAIN DE SUPPRIMER LES EXTERN RESOLX ET C_RESOLY ---
 
 /* filter.c version 0.7

@@ -1,4 +1,10 @@
 /*
+ * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
+ * adds the GML_HEART and GML_PENTAGRAM scope shapes and the GML_ROSE and GML_CRIMSON
+ * colours.
+ * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
+ */
+/*
  *  lines.c
  */
 

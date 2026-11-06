@@ -21,23 +21,32 @@ list) has no Goom entry, so no skin family sees it.
 |------|------|
 | `Sources/CGoomCore/upstream/` | Upstream `Goom/*.c` and `*.h` with the port edits below, plus `LICENSE` and `COPYING.README` (excluded from the build). `goom_core.c`, `sound_tester.c` and `goom_filters.h` are ISO-8859-1, not UTF-8 — grep them with `LC_ALL=C grep -a`, or matches are silently missed. |
 | `Sources/CGoomCore/include/GoomCore.h` | The C ABI Swift imports. Upstream's headers stay private: `goom_config.h` `#define`s `guint32` and friends, which would leak into Swift. |
-| `Sources/CGoomCore/GoomCore.c` | The shim: owns a `PluginInfo *` and a pending forced mode; the effect-name table. |
+| `Sources/CGoomCore/GoomCore.c` | The shim: owns a `PluginInfo *` and a pending forced mode (create returns NULL when `goom_init` fails); the effect-name table. |
 | `Sources/NullPlayer/Visualization/GoomEngine.swift` | `VisualizationEngine` conformance, GL upload + blit, effect selection, its context-menu section. |
-| `Tests/NullPlayerAppTests/GoomCoreSmokeTests.swift` | Lit frames, a forced effect landing (an upstream one and the last of the port's), a second core after the first, and a held effect surviving 1,500 cycles of loud beats (unheld, the same input changes effect five times). |
+| `Tests/NullPlayerAppTests/GoomCoreSmokeTests.swift` | Lit frames, a forced effect landing (an upstream one and the last of the port's), a second core after the first, and a held effect surviving 1,500 cycles of loud beats, against a control run in which the same input must change effect. |
 
 `Package.swift` builds `CGoomCore` as C with `-O2` (debug too — it is a software renderer, like
-libavs) and `-w`. `zoom_filter_neon.c` is `#if defined(__aarch64__)` upstream, and
+libavs; a 1024-wide frame takes about 1.5 ms) and silences only the two warning kinds upstream
+raises, `-Wno-gnu-designator` and `-Wno-absolute-value` (`abs()` on a float in `tentacle3d.c`,
+which upstream's look depends on), so a warning in the port's own code still shows. `zoom_filter_neon.c` is `#if defined(__aarch64__)` upstream, and
 `plugin_info.c` selects it on arm64 and the C `zoom_filter_c` elsewhere.
 
 ### Upstream edits
+
+Nine upstream files are edited: `filters.c`, `gfontlib.c`, `goom_core.c`, `goom_filters.h`,
+`goom_plugin_info.h`, `goom.h`, `lines.c`, `lines.h`, `plugin_info.c`. Each opens with a dated
+"Modified for NullPlayer" notice summarising its change, as LGPL-2.1 §2(a) requires; a further
+edit to any upstream file adds or extends that notice. `diff -r` against a checkout of the pinned
+commit's `Goom/` shows exactly what changed.
 
 1. `gfontlib.c` `gfont_load` returns early once the font is built. Upstream calls it from every
    `goom_init` and allocates fresh process-wide arrays each time, leaking the previous ones; the
    port recreates the core on every resize and engine switch.
 2. **Five effects of the port's own** — Spiral, Vortex, Flower, Heart, Pentagram (modes 10–14,
    every edit marked `NullPlayer port`). They are original work, not upstream's:
-   - `goom_filters.h` defines them and `NB_ZOOM_MODES`; `goom.h` raises `NB_FX` to 15 (the shim's
-     `_Static_assert` keeps its name table in step); the "Zoom Mode" feedback param's max follows.
+   - `goom_filters.h` defines them and `NB_ZOOM_MODES`; `goom.h` raises `NB_FX` to 15; the
+     "Zoom Mode" feedback param's max follows. The shim's name table is indexed by the `*_MODE`
+     constants, and a `_Static_assert` ties its size, `NB_FX` and `NB_ZOOM_MODES` together.
    - `filters.c` `zoomVector`: each bends the radial zoom. Spiral and Vortex add a `spin` (a
      rotation, constant for Spiral, strongest at the eye for Vortex); Flower modulates the speed
      with `sin(5θ)`; Heart ripples it with `sin(12h)`, where `h = sqrt(x² + (-y - |x|)²)` has
@@ -107,7 +116,9 @@ feed as `AvsEngine` does.
 
 One `NSLock` in `GoomEngine` guards the core, the PCM buffer and the held effect: the audio
 thread writes PCM, the render thread updates (and recreates) the core, main's menu forces, holds
-and reads effects. GL objects are render-thread only.
+and reads effects. A choice computed from the running effect (step, random, hold) reads and writes
+in one locked section (`select`). The render thread holds the lock through a whole frame, about
+1.5 ms at the 1024-wide cap, which is all a menu action can wait. GL objects are render-thread only.
 
 Cores are independent `PluginInfo`s, so — unlike Geiss — two hosts may each run one. The only
 shared mutable state is the font (built once, then read-only, and never read since no text is

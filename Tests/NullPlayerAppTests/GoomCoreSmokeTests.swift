@@ -25,19 +25,29 @@ final class GoomCoreSmokeTests: XCTestCase {
         }
     }
 
-    /// Held, Goom keeps the chosen effect through beats that would otherwise change it.
+    /// Held, Goom keeps the chosen effect through the beats that, unheld, make it change.
     func testHeldEffectSurvivesGoomsOwnChanges() throws {
+        XCTAssertGreaterThan(try effectChanges(holding: false), 0, "the input never made Goom change effect")
+        XCTAssertEqual(try effectChanges(holding: true), 0)
+    }
+
+    /// How often the effect changes over 1,500 cycles with loud bursts every 15, starting forced
+    /// to Crystal Ball.
+    private func effectChanges(holding: Bool) throws -> Int {
         let core = try XCTUnwrap(GoomCore_create(160, 120))
         defer { GoomCore_destroy(core) }
         GoomCore_forceEffect(core, 2)
-        GoomCore_setHold(core, 1)
+        GoomCore_setHold(core, holding ? 1 : 0)
+        var changes = 0
+        var previous: Int32?
         for n in 0..<1500 {
-            // Loud bursts every 15 cycles: the sound events Goom picks a new effect on.
             let loud = n % 15 < 2
             let pcm = (0..<1024).map { Int16((loud ? 30000 : 3000) * sin(Double($0) * 0.3 + Double(n))) }
             _ = pcm.withUnsafeBufferPointer { GoomCore_update(core, $0.baseAddress) }
-            XCTAssertEqual(GoomCore_currentEffect(core), 2, "cycle \(n)")
-            if GoomCore_currentEffect(core) != 2 { break }
+            let effect = GoomCore_currentEffect(core)
+            if let previous, previous != effect { changes += 1 }
+            previous = effect
         }
+        return changes
     }
 }

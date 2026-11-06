@@ -111,7 +111,8 @@ final class GoomEngine: NSObject, VisualizationEngine {
                 glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGB8, GLsizei(width), GLsizei(height), 0,
                              GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil)
             }
-            guard let core, let frame = pcm.withUnsafeBufferPointer({ GoomCore_update(core, $0.baseAddress) }) else { return }
+            guard let core,
+                  let frame = pcm.withUnsafeBufferPointer({ GoomCore_update(core, $0.baseAddress) }) else { return }
             glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0, GLsizei(width), GLsizei(height),
                             GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), frame)
         }
@@ -124,42 +125,43 @@ final class GoomEngine: NSObject, VisualizationEngine {
 
     static func effectName(at index: Int) -> String { String(cString: GoomCore_effectName(Int32(index))) }
 
-    var currentEffect: Int {
-        lock.withLock { core.map { Int(GoomCore_currentEffect($0)) } ?? 0 }
+    var currentEffect: Int { lock.withLock { runningEffect } }
+    var isHolding: Bool { lock.withLock { heldEffect != nil } }
+
+    func selectEffect(at index: Int) { select { _ in index } }
+    func step(by offset: Int) { select { ($0 + offset + Self.effectCount) % Self.effectCount } }
+
+    func selectRandomEffect() {
+        select { current in
+            var index = current
+            while index == current { index = Int.random(in: 0..<Self.effectCount) }
+            return index
+        }
     }
 
-    /// While held, the chosen effect becomes the held one.
-    func selectEffect(at index: Int) {
+    /// Holds the running effect, or lets Goom pick its own again.
+    func setHolding(_ on: Bool) {
+        lock.withLock { hold(on ? runningEffect : nil) }
+    }
+
+    /// Forces the effect `pick` chooses from the running one, read and applied under one lock so
+    /// the render thread cannot change it in between. While held, it becomes the held effect.
+    private func select(_ pick: (_ running: Int) -> Int) {
         lock.withLock {
+            let index = pick(runningEffect)
             if let core { GoomCore_forceEffect(core, Int32(index)) }
             if heldEffect != nil { hold(index) }
         }
     }
 
-    var isHolding: Bool { lock.withLock { heldEffect != nil } }
-
-    /// Holds the running effect, or lets Goom pick its own again.
-    func setHolding(_ on: Bool) {
-        let current = currentEffect
-        lock.withLock { hold(on ? current : nil) }
-    }
+    /// Called with `lock` held.
+    private var runningEffect: Int { core.map { Int(GoomCore_currentEffect($0)) } ?? 0 }
 
     /// Called with `lock` held.
     private func hold(_ index: Int?) {
         heldEffect = index
         if let core { GoomCore_setHold(core, index == nil ? 0 : 1) }
         UserDefaults.standard.set(index, forKey: Self.heldEffectKey)
-    }
-
-    func step(by offset: Int) {
-        selectEffect(at: (currentEffect + offset + Self.effectCount) % Self.effectCount)
-    }
-
-    func selectRandomEffect() {
-        let current = currentEffect
-        var index = current
-        while index == current { index = Int.random(in: 0..<Self.effectCount) }
-        selectEffect(at: index)
     }
 
     // MARK: - Menu
