@@ -2721,13 +2721,15 @@ class AudioEngine {
         }
         if fadesOut {
             // A resume replaces the ramp, so this never runs; a seek, stop or track change bumps
-            // the generation and has already set the players up itself. The gain stays at 0 until
-            // the resume ramps it back up: a player pause lands a render cycle or more later (a
-            // stream's later still), and restoring it here played that tail at full level (#699).
+            // the generation and has already set the players up itself. Either way the gain is
+            // left where the ramp put it: a seek stays paused at 0 until the resume ramps it up,
+            // and a stop or load resets it. A player pause lands a render cycle or more later (a
+            // stream's later still), and restoring the gain here played that tail at full level (#699).
             let generation = playbackGeneration
             outputFades.transport.ramp(to: 0) { [weak self] in
                 guard let self, self.state == .paused, self.playbackGeneration == generation else { return }
-                pausePlayers()            }
+                pausePlayers()
+            }
         } else {
             pausePlayers()
         }
