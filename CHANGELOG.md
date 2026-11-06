@@ -54,6 +54,12 @@
 - **A window whose background art is missing from the skin is sized to its content** (Psonidelic's
   EQ shade is a thin strip, not a black box), and **a mini layout returns to normal** (WinPlain).
 
+### Playback
+
+- **A faded pause no longer ends in a burst of sound** (#699). With Fade on Pause/Resume on, the
+  volume came back to full a moment before the music actually stopped, so a short blip played after
+  the fade.
+
 ## 0.34.2
 
 ### Playback

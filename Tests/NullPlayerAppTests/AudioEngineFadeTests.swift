@@ -67,6 +67,38 @@ final class AudioEngineFadeTests: XCTestCase {
         XCTAssertEqual(fade.gain, 1)
     }
 
+    /// #699: restoring the gain when the ramp ended played the players' tail, still rendering
+    /// after their pause, at full level. A resume ramps it back up; a stop resets it through
+    /// `resetLocalCrossfadeStateForDirectPlayback()`, the same reset every track load runs.
+    func testAFadedPauseStaysSilentUntilAResumeOrStopRestoresTheGain() throws {
+        let url = try TestAudioFile.temporaryWAV(seconds: 10)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let engine = AudioEngine()
+        defer { engine.stop() }
+        engine.pauseFadeEnabled = true
+        engine.playNow([Track(url: url, title: "Tone")])
+        XCTAssertEqual(engine.state, .playing)
+        func pastTheRamp() {
+            let past = expectation(description: "past the ramp")
+            DispatchQueue.main.asyncAfter(deadline: .now() + TransportFade.duration * 2) { past.fulfill() }
+            wait(for: [past], timeout: 2)
+        }
+
+        engine.pause()
+        pastTheRamp()
+        XCTAssertEqual(engine.outputFadeGainForTesting, 0)
+
+        engine.play()
+        pastTheRamp()
+        XCTAssertEqual(engine.outputFadeGainForTesting, 1)
+
+        engine.pause()
+        pastTheRamp()
+        XCTAssertEqual(engine.outputFadeGainForTesting, 0)
+        engine.stop()
+        XCTAssertEqual(engine.outputFadeGainForTesting, 1)
+    }
+
     func testSetCancelsARunningRamp() {
         let fade = TransportFade {}
         fade.ramp(to: 0) { XCTFail("set must cancel the ramp") }
