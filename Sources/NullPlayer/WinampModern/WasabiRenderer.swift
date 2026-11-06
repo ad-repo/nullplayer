@@ -3343,7 +3343,7 @@ final class WasabiSceneRenderer {
     func sliderThumb(_ object: WasabiObject, pressed: Bool, hovered: Bool) -> WasabiBitmap? {
         let thumb = object.attributes["thumb"]
         let stateThumb = pressed ? object.attributes["downthumb"] : hovered ? object.attributes["hoverthumb"] : nil
-        return resources.bitmap(identifier: stateThumb ?? thumb)
+        return resources.bitmap(identifier: stateThumb) ?? resources.bitmap(identifier: thumb)
     }
 
     /// Where a slider's thumb is drawn: centred across the slider's axis, placed along it by the value.

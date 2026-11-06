@@ -37,7 +37,7 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **25 more skins checked and fixed** (corpus intake six): Canister 01, Corpse Bride, Enya, Fanta,
+- **25 more skins checked** (corpus intake six): Canister 01, Corpse Bride, Enya, Fanta,
   GrayZ, Hellemium, Herbie, Java Duke, LexAmp, MFD by Tikvach Alexander aka unl0K, MiniModern, Minus,
   Offical Honda Element Skin, Psonidelic Skin, Rammstein, Rectangular, SpoonoAmp Modern, The Sims,
   Triton, uDesignIT, Vex, Warp, WeeAmp, WinPlain All Res, Zectichoplayer.

@@ -183,9 +183,12 @@ final class WinampModernDebugClickSweep {
         }
     }
 
-    /// One `WM-SMOKE|` row: every key in `fields` order, `-` for one the row does not carry.
+    /// One `WM-SMOKE|` row: every key in `fields` order, `-` for one the row does not carry. A `|` in
+    /// a value (a skin's XML id can hold one) becomes `/` so it cannot split the row.
     private static func log(_ values: [String: String]) {
-        NSLog("%@", "WM-SMOKE|" + fields.map { "\($0)=\(values[$0] ?? "-")" }.joined(separator: "|"))
+        NSLog("%@", "WM-SMOKE|" + fields.map {
+            "\($0)=\((values[$0] ?? "-").replacingOccurrences(of: "|", with: "/"))"
+        }.joined(separator: "|"))
     }
 
     private static func quarterPoint(along frame: CGRect) -> CGPoint {

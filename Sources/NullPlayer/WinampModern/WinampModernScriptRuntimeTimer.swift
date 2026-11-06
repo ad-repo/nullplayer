@@ -314,13 +314,21 @@ extension WinampModernScriptRuntime {
             return
         }
 
+        // Armed before the state is stored: a timer the budget refuses would leave the object
+        // `goingtotarget` forever, with no tick to clear it.
+        let timerID = TimerNamespace.targetAnimation.id(for: id)
+        do {
+            try timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
+                self?.tickTargetAnimation(objectID: id)
+            }
+        } catch let failure as WalFailure {
+            recordScriptFailure(failure)
+            return
+        } catch {
+            return
+        }
         _ = object.setAttribute("goingtotarget", value: "1")
         activeTargetAnimations[id] = state
-
-        let timerID = TimerNamespace.targetAnimation.id(for: id)
-        _ = try? timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
-            self?.tickTargetAnimation(objectID: id)
-        }
     }
 
     private func tickTargetAnimation(objectID: WasabiObjectID) {

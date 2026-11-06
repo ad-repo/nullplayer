@@ -120,8 +120,18 @@ enum WasabiSurfaceSynthesizer {
         diagnostics.append(contentsOf: about.diagnostics)
 
         if let stockLibrary = stockLibraryContentGroup(document: document, definitions: definitions) {
-            budget -= countNodes([stockLibrary])
-            appended.append(stockLibrary)
+            let cost = countNodes([stockLibrary])
+            if cost <= budget {
+                budget -= cost
+                appended.append(stockLibrary)
+            } else {
+                diagnostics.append(WalDiagnostic(
+                    .expandedNodeLimitExceeded,
+                    "Synthesizing the stock library content would exceed the "
+                    + "\(limits.maximumExpandedNodeCount)-node budget; the skin's library window "
+                    + "stays empty.",
+                    severity: .warning, location: WalSourceLocation(path: sourcePath)))
+            }
         }
 
         for kind in kinds {

@@ -107,8 +107,8 @@ window is still judged, and every control is still clicked.
    - `scripts/wal_live_smoke.sh <skin>… --out <dir>`, which clicks and drags every main-window
      control in the running app and writes one row per control (volume, play, position, track, EQ,
      layout, windows, main on screen). It reads the table, not the app. What the smoke cannot see
-     (right-click menus, controls in other windows, drags on non-slider layers) goes to the
-     user's round.
+     (right-click menus, controls in other windows, drags on non-slider layers, and the close,
+     minimize, quit and eject controls it skips) goes to the user's round.
    It files every defect as a row and fixes nothing. A skin with no defect moves to `live` in the
    same commit, with its visual note.
 2. **One fix pass for the whole batch.** One worker, every open row, never split into groups: a
@@ -119,7 +119,9 @@ window is still judged, and every control is still clicked.
    serves the baseline from the run store. The batch's first fix pass captures that baseline once,
    in a worktree; every later pass in the batch reuses it.
 3. **Re-check only what a fix touched**, with the same tools on only those skins: the census for
-   a window or drawing fix, the smoke for a control fix.
+   a window or drawing fix, the smoke for a control fix. A window-layer fix, which no headless
+   sweep sees, also runs the census on every batch skin that has the window it changed, clean or
+   not: nothing else would catch it regressing a skin that read clean.
 
 **What "never split" protects is the sweeps, not the worker.** A split is wrong only when each part
 pays for its own sweeps. When the work is wide, split it by file area across small Sonnet workers
@@ -196,7 +198,7 @@ naturally stops:
 |---|---|
 | no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
 | `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless` | **The scan** is the orchestrator's own, no worker (§ *The live round*). **The fix pass**: one worker over every open row of the batch, sweeps by `wal_fix_check.sh`. The rest of this cell is how a defect is judged and re-checked. A live pass files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the group filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again, and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
+| `headless` | **The scan** is the orchestrator's own, no worker (§ *The live round*). **The fix pass**: one worker over every open row of the batch, sweeps by `wal_fix_check.sh`. The rest of this cell is how a defect is judged and re-checked. A live pass files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the batch filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again (except by a window-layer fix's census, step 3 of § *The live round*), and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
 | `accepted` | Promote · the code-quality review · the PR |
 
 **The loop:**
@@ -230,7 +232,8 @@ naturally stops:
      CPro_Winamp_for_Mac_Sync, WinampAzenis2, 4-dreliction, cPro_T2T, Winamp_Single_GUI,
      LG_Free's clock frame; Symplicipod's `tLayer`, whose click only shows on `TimerMain.m`'s 1 s
      tick; hatsune_miku_5's `visual.trigger` aim point (443 or 441); HALOAMP's `cont.clear.*` and `PLEdit` sizes, which follow the random `onresize` seed order; Official_Honda_Element_Skin's seek dial, whose `seek.maki` picks `player.seek.bg.night` by `getTimeOfDay`, so a day and an evening render capture differ; B296) is noise unless it is in that
-     phase's skin. A `--rev` baseline missing from the store is the one full run a phase may
+     phase's skin. Where the list names a field, only that field is noise; any other difference in
+     that skin is classified like any skin's. A `--rev` baseline missing from the store is the one full run a phase may
      take.
    - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
      visual-review verdicts where they ran, the sheet's path, and the `next:` line.
