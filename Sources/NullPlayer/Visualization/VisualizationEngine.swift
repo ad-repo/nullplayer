@@ -102,6 +102,9 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Advanced Visualization Studio (vendored libavs; the `avs-port` skill)
     case avs = "AVS"
 
+    /// Goom (j3k0/goom's Goom2k26 C core; the `goom-port` skill)
+    case goom = "Goom"
+
     /// Human-readable display name
     var displayName: String {
         switch self {

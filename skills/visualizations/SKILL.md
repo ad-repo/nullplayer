@@ -1,6 +1,6 @@
 ---
 name: visualizations
-description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, vis_classic, Metal mode internals).
+description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, Goom, vis_classic, Metal mode internals).
 ---
 
 # NullPlayer Visualization Systems — Index
@@ -40,6 +40,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [geiss-port](../geiss-port/SKILL.md) | Geiss engine — port architecture, ABI, configuration |
 | [tripex-port](../tripex-port/SKILL.md) | Tripex (ben-marsh/tripex) port — D3D9→OpenGL, C ABI |
 | [avs-port](../avs-port/SKILL.md) | AVS (grandchild/vis_avs libavs) — CAvsCore, EEL2 JIT, stereo feed, presets, every host |
+| [goom-port](../goom-port/SKILL.md) | Goom (j3k0/goom Goom2k26 C core) — CGoomCore shim, RGBA blit, 30/s cadence, forced effects, the port's own effects (Heart, Pentagram etc.) |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
 | [metal-gotchas](../metal-gotchas/SKILL.md) | Metal command-encoder pitfalls, render-to-texture y-flip, spectrum jitter |
 
@@ -60,6 +61,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **Geiss** — classic Geiss look, low-level palette effects
 - **Tripex** — Winamp-era 3D, no preset files needed
 - **AVS** — Winamp's Advanced Visualization Studio presets (`.avs`), scripted effects included
+- **Goom** — the XMMS-era zoom/tentacle/star-field effect that picks its own look from the music
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
 - **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window

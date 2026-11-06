@@ -39,6 +39,7 @@ vis_classic	vis_classic (Winamp AVS classic)	MIT	Copyright (c) 1998-2018 Mike Ly
 geiss	Geiss	BSD-3-Clause	Copyright (c) 1998-2022 Ryan Geiss	https://www.geisswerks.com/about_geiss.html	bundled source	ThirdPartyLicenses/GEISS_LICENSE.txt	-
 tripex	Tripex	MIT	Copyright (c) 2025 Ben Marsh	https://github.com/ben-marsh/tripex	bundled source	ThirdPartyLicenses/TRIPEX_LICENSE.txt	-
 avs	Advanced Visualization Studio (libavs)	BSD-3-Clause	Copyright 2005 Nullsoft, Inc.	https://github.com/grandchild/vis_avs	1cee1f3d4f783b830538c3e4d2082a2c59521dee (adapted source)	ThirdPartyLicenses/AVS_LICENSE.txt	-
+goom	Goom (Goom2k26)	LGPL-2.1-only	Copyright (c) 2000-2003 Jean-Christophe Hoelt, Guillaume Borios; (c) 2026 the Goom2k26 contributors	https://github.com/j3k0/goom	e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7 (adapted source)	ThirdPartyLicenses/licenses/LGPL-2.1.txt	-
 eel2	EEL2 (WDL, used by AVS)	Zlib	Copyright (C) 2005 and later Cockos Incorporated; NS-EEL (C) 1999-2003 Nullsoft, Inc.	https://www.cockos.com/wdl/	vendored by vis_avs 1cee1f3 (adapted source)	ThirdPartyLicenses/EEL2_LICENSE.txt	-
 nlohmann-json	JSON for Modern C++ (used by AVS)	MIT	Copyright (c) 2013-2022 Niels Lohmann	https://github.com/nlohmann/json	vendored by vis_avs 1cee1f3	ThirdPartyLicenses/nlohmann_json_LICENSE.txt	-
 stb_image	stb_image (used by AVS)	MIT OR Unlicense	Copyright (c) 2017 Sean Barrett	https://github.com/nothings/stb	vendored by vis_avs 1cee1f3	ThirdPartyLicenses/stb_image_LICENSE.txt	-

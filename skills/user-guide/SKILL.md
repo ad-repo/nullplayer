@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex and AVS (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS and Goom (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -502,7 +502,7 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Met visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
@@ -529,6 +529,16 @@ setting persist across launches and are cleared by Reset All Visualization Prefe
 - **Settings** of the selected effect on the right: checkboxes, sliders, colours, pop-ups, and code boxes for scripted effects (applied when you click away).
 - **Edits show immediately.** Auto-cycle waits while the editor is open.
 - **New**, **Open…** (`.avs` or JSON), **Save…** (Winamp `.avs`, which then appears in the preset list) and **Export JSON…**.
+
+### Goom
+The classic XMMS-era Goom visualizer, from the right-click **Visualization Engine** submenu. Goom
+chooses its own effects as the music changes; right-click for Next/Previous/Random Effect and an
+Effects list of its fifteen zoom modes to jump to one. Goom moves on again at its next change
+unless **Hold Effect** is on: then it stays on the effect (and on any you pick while holding),
+across launches, while everything else keeps moving with the music.
+Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (five petals),
+**Heart**, whose ripples are heart-shaped and whose audio scope becomes a pair of pink hearts, and
+**Pentagram**, whose ripples are star-shaped and whose scope becomes a star inside a circle.
 
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
@@ -654,6 +664,13 @@ setting persist across launches and are cleared by Reset All Visualization Prefe
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
 - The preset list, cycling and the preset folder are right-click context-menu only.
+
+### Goom
+- **→ / ←**: Next / Previous effect
+- **R**: Random effect
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- The effect list is in the right-click context menu.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

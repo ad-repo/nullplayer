@@ -113,6 +113,7 @@ enum VisualizationPreferences {
             "geiss.paletteLocked",
             "geiss.autoSwitchSeconds",
             "geiss.visMode",
+            GoomEngine.heldEffectKey,
             "viz.legacyMigrationV1",
             "projectMPCMGain",
             "projectMLowPowerMode",

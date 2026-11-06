@@ -424,6 +424,9 @@ class VisualizationGLView: NSOpenGLView {
         case .avs:
             let avs = AvsEngine(width: width, height: height)
             return avs.isAvailable ? avs : nil
+
+        case .goom:
+            return GoomEngine(width: width, height: height)
         }
     }
 

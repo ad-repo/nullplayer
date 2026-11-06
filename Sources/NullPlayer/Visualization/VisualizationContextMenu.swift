@@ -223,6 +223,8 @@ enum VisualizationContextMenu {
             addTripexEffects(to: menu, target: target, options: options)
         } else if let avs = glView?.currentEngine as? AvsEngine {
             avs.addMenuItems(to: menu)
+        } else if let goom = glView?.currentEngine as? GoomEngine {
+            goom.addMenuItems(to: menu)
         }
 
         // Visualization Engine selector
