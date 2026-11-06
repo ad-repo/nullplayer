@@ -904,11 +904,12 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         super.keyUp(with: event)
     }
 
-    /// The skin has refused the key: offer it to a film parked in the skin's video box, which never
-    /// becomes key itself (M18), then to a hosted `<EFFECTS>` surface, which answers the same
-    /// visualization keys as NullPlayer's own window. The film goes first: it shares those keys while
-    /// the engine feeding the visualization is paused. A skin's focused control always goes first —
-    /// a slider's arrows are the slider's.
+    /// The skin has refused the key, and it is not a plain arrow (`arrowHandled` takes those, so a
+    /// parked film's ←/→ skip is the main window's 5 s seek, as in every mode): offer it to a film
+    /// parked in the skin's video box, which never becomes key itself (M18), then to a hosted
+    /// `<EFFECTS>` surface, which answers the standard ⌘-arrow visualization keys. The film goes
+    /// first: it is what is on screen while the engine feeding the visualization is paused. A skin's
+    /// focused control always goes first — a slider's arrows are the slider's.
     private func hostedSurfaceHandled(_ event: NSEvent) -> Bool {
         videoSurface?.handleKeyDown(event) == true
             || widgetViews.values.compactMap { $0 as? SkinEffectsSurfaceView }.contains { $0.handleKeyDown(event) }

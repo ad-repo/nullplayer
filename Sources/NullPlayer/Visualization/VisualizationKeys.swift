@@ -59,23 +59,21 @@ extension SpectrumQualityMode {
 }
 
 /// ⌘← / ⌘→ on a Classic or Original main window: the current mode's own list — Fire's flame style,
-/// Lightning's style, Matrix's colour, EKG's style, Cava's colour preset — stored in the keys the
-/// mode's right-click menu writes. vis_classic's profiles live in the window's overlay, so the
-/// window steps those itself.
+/// Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, stored in the keys the
+/// mode's right-click menu writes, and vis_classic's profile, which lives in the window's overlay.
 @MainActor
 enum MainWindowVisStyle {
     /// Steps the mode's list, or answers false for a mode that has none.
-    static func step(_ mode: MainWindowVisMode, by delta: Int) -> Bool {
+    static func step(_ mode: MainWindowVisMode, by delta: Int, overlay: SpectrumAnalyzerView?) -> Bool {
         switch mode {
+        case .visClassicExact:
+            guard let overlay else { return false }
+            return delta > 0 ? overlay.loadNextVisClassicProfile() : overlay.loadPreviousVisClassicProfile()
         case .fire: step(FlameStyle.self, key: "mainWindowFlameStyle", fallback: .inferno, by: delta)
         case .electricity: step(LightningStyle.self, key: "mainWindowLightningStyle", fallback: .classic, by: delta)
         case .matrix: step(MatrixColorScheme.self, key: "mainWindowMatrixColorScheme", fallback: .classic, by: delta)
         case .ekg: step(EKGStyle.self, key: "mainWindowEKGStyle", fallback: .clinical, by: delta)
-        case .cava:
-            let scope = CavaSettings.Scope.mainWindow
-            let choices = Array(-1..<CavaSettings.colorSchemes.count)
-            CavaSettings.applyColorSchemeChoice(
-                choices.stepping(from: CavaSettings.colorSchemeChoice(for: scope), by: delta), for: scope)
+        case .cava: CavaSettings.stepColorScheme(by: delta, for: .mainWindow)
         default:
             return false
         }

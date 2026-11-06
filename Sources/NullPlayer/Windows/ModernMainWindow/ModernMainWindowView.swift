@@ -1135,12 +1135,6 @@ class ModernMainWindowView: NSView {
     
     // MARK: - Visualization Mode
     
-    /// Cycle through visualization modes on the mini spectrum area
-    private func cycleMainVisMode(by delta: Int = 1) {
-        mainVisMode = mainVisMode.advanced(by: delta)
-        NSLog("ModernMainWindow: Vis mode changed to %@", mainVisMode.rawValue)
-    }
-    
     /// Set up or update the Metal overlay for GPU-rendered modes
     private func updateMetalOverlay() {
         if mainVisMode.usesMetal {
@@ -1473,7 +1467,7 @@ class ModernMainWindowView: NSView {
                     visClickTimer?.invalidate()
                     visClickTimer = nil
                     // Double-click: cycle visualization mode
-                    cycleMainVisMode()
+                    mainVisMode = mainVisMode.advanced(by: 1)
                 } else {
                     // Delayed single-click: toggle spectrum window
                     visClickTimer?.invalidate()
@@ -1657,10 +1651,8 @@ class ModernMainWindowView: NSView {
         // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the mode, ⌘→/⌘← its style.
         if let key = VisualizationKey(event) {
             switch key {
-            case .engine(let delta): cycleMainVisMode(by: delta)
-            case .preset(let delta) where mainVisMode == .visClassicExact:
-                _ = delta > 0 ? metalOverlay?.loadNextVisClassicProfile() : metalOverlay?.loadPreviousVisClassicProfile()
-            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta)
+            case .engine(let delta): mainVisMode = mainVisMode.advanced(by: delta)
+            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta, overlay: metalOverlay)
             }
             return
         }

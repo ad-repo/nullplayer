@@ -50,10 +50,7 @@ final class CavaPresenter: NSObject {
     /// Apply one of the named gradient presets by index (marks colors as user-customized).
     func applyColorScheme(_ index: Int) {
         guard CavaSettings.colorSchemes.indices.contains(index) else { return }
-        let scheme = CavaSettings.colorSchemes[index]
-        CavaSettings.setLowGradientColor(scheme.low, for: scope)
-        CavaSettings.setHighGradientColor(scheme.high, for: scope)
-        CavaSettings.setHasCustomColors(true, for: scope)
+        CavaSettings.applyColorSchemeChoice(index, for: scope)
         onNeedsDisplay?()
     }
 

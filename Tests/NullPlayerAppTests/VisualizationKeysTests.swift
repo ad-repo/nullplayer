@@ -95,30 +95,30 @@ final class VisualizationKeysTests: XCTestCase {
     }
 
     func testMainWindowStyleStepsTheModesOwnList() {
-        XCTAssertTrue(MainWindowVisStyle.step(.fire, by: 1))
+        XCTAssertTrue(MainWindowVisStyle.step(.fire, by: 1, overlay: nil))
         XCTAssertEqual(UserDefaults.standard.string(forKey: "mainWindowFlameStyle"), FlameStyle.allCases[1].rawValue)
-        XCTAssertTrue(MainWindowVisStyle.step(.fire, by: -2))
+        XCTAssertTrue(MainWindowVisStyle.step(.fire, by: -2, overlay: nil))
         XCTAssertEqual(UserDefaults.standard.string(forKey: "mainWindowFlameStyle"), FlameStyle.allCases.last?.rawValue)
 
-        XCTAssertTrue(MainWindowVisStyle.step(.ekg, by: 1))
+        XCTAssertTrue(MainWindowVisStyle.step(.ekg, by: 1, overlay: nil))
         XCTAssertNotNil(UserDefaults.standard.string(forKey: "mainWindowEKGStyle"))
     }
 
     func testModesWithoutAListRefuseTheStyleKeys() {
         for mode: MainWindowVisMode in [.none, .spectrum, .enhanced, .ultra, .cosmic, .snow, .visClassicExact] {
-            XCTAssertFalse(MainWindowVisStyle.step(mode, by: 1), "\(mode)")
+            XCTAssertFalse(MainWindowVisStyle.step(mode, by: 1, overlay: nil), "\(mode)")
         }
     }
 
     func testCavaStepsFromTheSkinsColoursThroughThePresetsAndBack() {
         XCTAssertEqual(CavaSettings.colorSchemeChoice(for: .mainWindow), -1)
-        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: 1))
+        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: 1, overlay: nil))
         XCTAssertEqual(CavaSettings.colorSchemeChoice(for: .mainWindow), 0)
         XCTAssertTrue(CavaSettings.hasCustomColors(for: .mainWindow))
-        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: -1))
+        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: -1, overlay: nil))
         XCTAssertEqual(CavaSettings.colorSchemeChoice(for: .mainWindow), -1)
         XCTAssertFalse(CavaSettings.hasCustomColors(for: .mainWindow))
-        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: -1))
+        XCTAssertTrue(MainWindowVisStyle.step(.cava, by: -1, overlay: nil))
         XCTAssertEqual(CavaSettings.colorSchemeChoice(for: .mainWindow), CavaSettings.colorSchemes.count - 1)
     }
 }

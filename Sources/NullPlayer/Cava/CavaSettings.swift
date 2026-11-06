@@ -383,6 +383,12 @@ enum CavaSettings {
         setHasCustomColors(true, for: scope)
     }
 
+    /// Steps the Color Preset choice `delta` places, the skin's own colours first, wrapping.
+    static func stepColorScheme(by delta: Int, for scope: Scope) {
+        applyColorSchemeChoice(Array(-1..<colorSchemes.count).stepping(from: colorSchemeChoice(for: scope), by: delta),
+                               for: scope)
+    }
+
     /// Reset appearance choices owned by the outgoing skin after an explicit skin change.
     ///
     /// Tuning and mode remain durable user preferences, but colors and standalone-window

@@ -548,11 +548,6 @@ class MainWindowView: NSView {
         }
     }
     
-    /// Cycle the main window visualization mode through all available modes
-    private func cycleMainVisMode(by delta: Int = 1) {
-        mainVisMode = mainVisMode.advanced(by: delta)
-    }
-    
     @objc private func mainVisSettingsChanged() {
         // Reload vis mode from UserDefaults
         if let savedMode = UserDefaults.standard.string(forKey: MainWindowVisMode.classicDefaultsKey),
@@ -1532,7 +1527,7 @@ class MainWindowView: NSView {
                 // Double-click: cancel pending single-click and cycle vis mode
                 visClickTimer?.invalidate()
                 visClickTimer = nil
-                cycleMainVisMode()
+                mainVisMode = mainVisMode.advanced(by: 1)
             } else if event.clickCount == 1 {
                 // Single-click: delay to check if double-click follows
                 visClickTimer?.invalidate()
@@ -1609,7 +1604,7 @@ class MainWindowView: NSView {
             let rect = exactViewRect(forSkinRect: button.rect)
             clutterbar.press(button, menuAnchor: NSPoint(x: rect.maxX, y: rect.maxY), in: self)
 
-        // Note: cycleMainVisMode is handled via single-click in mouseDown()
+        // Note: mode cycling is handled via double-click in mouseDown()
             
         // Slider interactions
         case .seekPosition(let value):
@@ -1917,10 +1912,8 @@ class MainWindowView: NSView {
         // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the mode, ⌘→/⌘← its style.
         if let key = VisualizationKey(event) {
             switch key {
-            case .engine(let delta): cycleMainVisMode(by: delta)
-            case .preset(let delta) where mainVisMode == .visClassicExact:
-                _ = delta > 0 ? metalOverlay?.loadNextVisClassicProfile() : metalOverlay?.loadPreviousVisClassicProfile()
-            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta)
+            case .engine(let delta): mainVisMode = mainVisMode.advanced(by: delta)
+            case .preset(let delta): _ = MainWindowVisStyle.step(mainVisMode, by: delta, overlay: metalOverlay)
             }
             return
         }

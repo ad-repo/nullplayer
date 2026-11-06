@@ -90,11 +90,11 @@ enum VisualizationContextMenu {
             
             menu.addItem(NSMenuItem.separator())
             
-            let nextPresetItem = NSMenuItem(title: "Next Preset", action: #selector(VisualizationMenuTarget.nextPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+            let nextPresetItem = NSMenuItem(title: "Next Preset", action: #selector(VisualizationMenuTarget.nextPresetAction(_:)), keyEquivalent: "")
             nextPresetItem.target = target
             menu.addItem(nextPresetItem)
             
-            let prevPresetItem = NSMenuItem(title: "Previous Preset", action: #selector(VisualizationMenuTarget.previousPresetAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+            let prevPresetItem = NSMenuItem(title: "Previous Preset", action: #selector(VisualizationMenuTarget.previousPresetAction(_:)), keyEquivalent: "")
             prevPresetItem.target = target
             menu.addItem(prevPresetItem)
             
@@ -321,11 +321,11 @@ enum VisualizationContextMenu {
         menu.addItem(currentEffectItem)
         menu.addItem(NSMenuItem.separator())
 
-        let nextEffectItem = NSMenuItem(title: "Next Effect", action: #selector(VisualizationMenuTarget.nextGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSRightArrowFunctionKey)!))
+        let nextEffectItem = NSMenuItem(title: "Next Effect", action: #selector(VisualizationMenuTarget.nextGeissEffectAction(_:)), keyEquivalent: "")
         nextEffectItem.target = target
         menu.addItem(nextEffectItem)
 
-        let prevEffectItem = NSMenuItem(title: "Previous Effect", action: #selector(VisualizationMenuTarget.previousGeissEffectAction(_:)), keyEquivalent: String(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        let prevEffectItem = NSMenuItem(title: "Previous Effect", action: #selector(VisualizationMenuTarget.previousGeissEffectAction(_:)), keyEquivalent: "")
         prevEffectItem.target = target
         menu.addItem(prevEffectItem)
 

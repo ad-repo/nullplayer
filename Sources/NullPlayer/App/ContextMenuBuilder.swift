@@ -891,15 +891,6 @@ class ContextMenuBuilder {
 
     // MARK: - Visualizations Submenu
     
-    private static func releaseArrowKeyEquivalents(in menu: NSMenu) {
-        let arrows = [NSLeftArrowFunctionKey, NSRightArrowFunctionKey, NSUpArrowFunctionKey, NSDownArrowFunctionKey]
-            .compactMap(UnicodeScalar.init).map(String.init)
-        for item in menu.items {
-            if arrows.contains(item.keyEquivalent) { item.keyEquivalent = "" }
-            if let submenu = item.submenu { releaseArrowKeyEquivalents(in: submenu) }
-        }
-    }
-
     private static func buildVisualizationsMenuItem() -> NSMenuItem {
         let visItem = NSMenuItem(title: "Visualizations", action: nil, keyEquivalent: "")
         visItem.submenu = buildVisualizationsMenu()
@@ -925,10 +916,6 @@ class ContextMenuBuilder {
         visMenu.addItem(NSMenuItem.separator())
 
         if let liveMenu = wm.buildVisualizationMenu() {
-            // The live window's ⌘←/⌘→ are the standard visualization keys of whichever window is key
-            // (`VisualizationKey`). Left on this menu-bar copy they would step this window's preset
-            // from every other window, and from a stale copy after it closed.
-            releaseArrowKeyEquivalents(in: liveMenu)
             moveMenuItems(from: liveMenu, to: visMenu)
             visMenu.addItem(NSMenuItem.separator())
         } else {

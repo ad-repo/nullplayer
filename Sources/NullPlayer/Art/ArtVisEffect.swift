@@ -23,11 +23,7 @@ enum ArtVisEffect: String, CaseIterable {
     ]
 
     /// The effect `offset` places away in `allCases`, wrapping at both ends.
-    func advanced(by offset: Int) -> ArtVisEffect {
-        let all = Self.allCases
-        let index = all.firstIndex(of: self) ?? 0
-        return all[(index + offset % all.count + all.count) % all.count]
-    }
+    func advanced(by offset: Int) -> ArtVisEffect { Array(Self.allCases).stepping(from: self, by: offset) }
 
     /// The first effect of the group `offset` groups from this one's, wrapping.
     func advancedGroup(by offset: Int) -> ArtVisEffect {

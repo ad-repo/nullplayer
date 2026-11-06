@@ -38,11 +38,14 @@ Visualizations and Spectrum windows, effect and intensity in Art.
 
 - **A ⌘-arrow is never seek or volume**, even in a main window with nothing to visualize:
   `MainWindowKeys.performArrow` refuses it.
-- **No menu-bar item may own an arrow key equivalent.** The menu bar's Visuals → Visualizations
-  copies the live Visualizations window's context menu, whose Next / Previous Preset items show
-  ⌘→ / ⌘←; `ContextMenuBuilder.releaseArrowKeyEquivalents` strips them from that copy. Left on, key
-  equivalent routing gave every ⌘→ in the app to the Visualizations window — and a stale copy kept
-  eating it after that window closed — so the key window never saw it.
+- **No visualization menu item carries an arrow key equivalent.** The menu bar's Visuals →
+  Visualizations copies the live Visualizations window's context menu, so an arrow equivalent on
+  any item `VisualizationContextMenu` / `TripexMenuBuilder` build becomes app-wide: key equivalent
+  routing gave every ⌘→ in the app to the Visualizations window — and a stale copy kept eating it
+  after that window closed — so the key window never saw it. The Next / Previous items therefore
+  show no shortcut.
+- **The effects surface (`.wmz`, Sonique) takes only ⌘-arrows** (`SkinEffectsSurfaceView.handleKeyDown`
+  parses `VisualizationKey`), so its host offers it every key after its own plain arrows.
 - Tests: `Tests/NullPlayerAppTests/VisualizationKeysTests.swift`.
 
 ## Persistence and Reset Policy
