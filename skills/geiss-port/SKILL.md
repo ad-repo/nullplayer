@@ -217,21 +217,20 @@ geiss.autoSwitchSeconds (Int)
 geiss.visMode           (Int)
 ```
 
-Read with `object(forKey:)` in `VisualizationGLView.loadGeissConfigFromDefaults()` so missing keys ≠ zero. Applied to `GeissEngine` immediately after construction in `.geiss` case of `createEngine(type:width:height:)`.
+Read with `object(forKey:)` in `VisualizationGLView.loadGeissConfigFromDefaults()` so missing keys ≠ zero. Applied to `GeissEngine` immediately after construction in `.geiss` case of `createEngine(type:width:height:)`, **with `modeLocked` forced on**: Geiss never picks its own next mode, the shared `VisualizationPresetCycler` does (`visualizations` skill § *Context menu and auto-cycle*). `geiss.modeLocked` and `geiss.autoSwitchSeconds` are still persisted but no longer have a menu; Geiss's own cycle is `geiss.cycleMode` / `geiss.cycleInterval` (`VisualizationCycleSettings`, default Auto-Random, 30 s).
 
 ### Menu surface
 
-Context-menu items (right-click in visualization window) added via `GeissMenuBuilder.addGeissConfigMenuItems(to:target:visualizationView:)`:
+The current mode, Next / Previous / Random, the mode list and Manual Only / Auto-Cycle / Auto-Random / Cycle Interval are the shared block every engine gets. Geiss's own items, below it, come from `GeissMenuBuilder.addGeissConfigMenuItems(to:target:visualizationView:)`:
 
-- **Toggles** (checkmark on click): Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock
+- **Toggles** (checkmark on click): Beat Detection, Sync Color to Sound, Slide Shift, Palette Lock
 - **Submenus**:
   - "Geiss Sensitivity": 0.25×, 0.5×, 1.0×, 2.0×, 3.0×, 4.0× (checkmark on current closest value)
   - "Gamma": 1.00×, 1.25×, 1.50×, 2.00×, 2.50×, 3.00× (0, 25, 50, 100, 150, 200)
-  - "Auto-Switch": 5s, 15s, 30s, 60s, 120s (no "Off" — use Mode Lock to stop)
   - "Waveform Mode": Wave, Spectrum
 - **Action**: "Randomize Palette" (triggers `GeissCore_randomizePalette`)
 
-Both `ProjectMView` (classic) and `ModernProjectMView` (modern) conform to `GeissMenuTarget` protocol and invoke the builder from `addGeissEffectsMenuItems(to:)` (after the Effects submenu). Menu state reflects `VisualizationGLView.getGeissConfig()` at render time.
+Every host conforms to `GeissMenuTarget`; `VisualizationContextMenu` invokes the builder. Menu state reflects `VisualizationGLView.getGeissConfig()` at render time.
 
 ### Deferred to future phases
 

@@ -24,7 +24,7 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 | `Sources/CAvsCore/upstream_port/simd/` | `immintrin.h`, `emmintrin.h`… shims searched before clang's. On arm64 they include sse2neon (v1.8.0, MIT); on x86_64 they `#include_next` the real header. `mmintrin.h` adds the two MMX helpers sse2neon lacks. |
 | `Sources/CAvsCore/include/CAvsCore.h` | The module header: `avs.h` and `avs_editor.h`. |
 | `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, and `AvsBeatDetector`. |
-| `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets, auto-cycle. |
+| `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets. |
 | `Sources/NullPlayer/Visualization/AvsEngine+Menu.swift` | The engine's section of the shared visualization menu and its actions. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsEditorWindowController.swift` | **Edit Preset…**: the component tree, add / duplicate / delete / drag-move, the file buttons. |
@@ -93,7 +93,7 @@ libavs is not thread-safe. `AvsCore` serialises the render and every `avs_editor
   - `init` (render thread) scans the preset list and loads the saved preset before the engine is shared, so a `.wmz` host can apply a preset number at once. It posts nothing and saves nothing.
   - `reloadPresets` (folder change, editor save) scans on a background queue and publishes the list on main. `selectPreset` and `reloadPresets` assert main with `dispatchPrecondition`.
   - GL objects are freed only in `cleanup()`, which every host calls with its context current. `deinit` removes the audio observer and never touches GL.
-  - Auto-cycle is checked once a second from the render thread, and the switch is dispatched to main.
+  - Auto-cycle is the shared `VisualizationPresetCycler` on main (`visualizations` skill § *Context menu and auto-cycle*), not the engine's.
 
 More than one `AvsEngine` can exist at once (the Visualizations window and a skin slot); each owns its own instance.
 
@@ -129,15 +129,15 @@ The engine takes the full-rate stereo feed itself:
 |-----|---------|
 | `avs.presetPath` | The preset showing, by path; the first preset when it is missing. |
 | `avs.customPresetsFolder` | The user folder from **Choose AVS Preset Folder…**, a plain path (M84: security-scoped bookmarks). |
-| `avs.cycleMode` / `avs.cycleInterval` | Hold / Auto-Cycle / Auto-Random and its interval. One setting for every host. Tripex and ProjectM keep a separate setting per host. |
+| `avs.cycleMode` / `avs.cycleInterval` | Manual Only / Auto-Cycle / Auto-Random and its interval, through `VisualizationCycleSettings` like every engine's. One setting for every host. |
 
-All four are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preferenceKeys`). The engine choice itself is the shared `visualizationEngineType`.
+The first two are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preferenceKeys`); the cycle keys are in the Visualizations window's reset with every engine's. The engine choice itself is the shared `visualizationEngineType`.
 
 ## Hosts
 
 - **Engine list:** the `.avs` case of `VisualizationType` puts AVS in every engine list. That is `VisualizationContextMenu` (all hosts) and **Visuals → Visualizations → Visualization Engine**.
 - **Factory:** `VisualizationGLView.createEngine` builds `AvsEngine`.
-- **Menu section:** `VisualizationContextMenu` calls `AvsEngine.addMenuItems`. The items target the engine, so a host needs no AVS actions of its own.
+- **Menu section:** the presets and cycle are the shared block every engine gets; `VisualizationContextMenu` then calls `AvsEngine.addMenuItems` for AVS's own Edit Preset… and folder items. They target the engine, so a host needs no AVS actions of its own.
 - **Preset stepping:** no host names AVS. Keys (→ / ← / R in `ProjectMView` and `ModernProjectMView`), the `.wal` `stepPreset` and the `.wmz`/Sonique `applyPreset` all call `VisualizationGLView+Presets.swift`, which maps count, name, select, step and random onto `AvsEngine.presets` / `selectPreset` / `step` / `selectRandomPreset`.
 - **`.wmz`:**
   - `SkinEffectSelection` has an `avs` style and catalogue entry.
@@ -173,7 +173,7 @@ The read-only arrays are effect output and are not shown.
 **Threading:** every call goes through `AvsCore.withHandle` on main, so an EEL recompile stalls at most one frame.
 
 **Engine coordination:**
-- While the editor is open, `AvsEngine.isBeingEdited` holds auto-cycle, which would throw the edit away.
+- While the editor is open, `AvsEngine.isBeingEdited` holds auto-cycle (`VisualizationPresetCycler` skips its tick), which would throw the edit away.
 - The engine posts `presetDidLoad` when a preset change replaces the tree, and the editor reloads.
 - The engine posts `didStop`, with its `ObjectIdentifier`, when it stops; the editor closes.
 

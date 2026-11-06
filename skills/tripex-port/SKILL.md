@@ -128,8 +128,8 @@ to hide Tripex's internal "Blank" fade helper. It jumps directly through
 UserDefaults keys, persisted via `UserDefaults.standard`:
 
 - `tripex.lastEffectIndex` (Int) — restores last selected effect.
-- `tripex.cycleMode` (String) — `off`, `cycle`, or `random`.
-- `tripex.cycleInterval` (Double) — seconds between Swift-driven effect changes.
+- `tripex.cycleMode` / `tripex.cycleInterval` — Tripex's auto-cycle, read and written only through
+  `VisualizationCycleSettings` (default Auto-Cycle, 30 s).
 - `tripex.intensityScale` (Float) — engine-level audio/intensity multiplier.
 
 The Tripex `_setOption` / `_getOption` store is currently unused by any UI
@@ -139,24 +139,25 @@ but not currently read or written.
 
 ## Menu surface
 
-`TripexMenuBuilder.addTripexConfigMenuItems(to:target:visualizationView:)` produces the per-engine submenu when Tripex is the active engine. Surface:
+The current effect, Next / Previous / Random, the Effects (Presets) list and Manual Only /
+Auto-Cycle / Auto-Random / Cycle Interval are the shared block every engine gets
+(`visualizations` skill § *Context menu and auto-cycle*). Tripex is held (`setHold(true)`) when
+`createEngine` builds it, so the shared `VisualizationPresetCycler` is the only thing that changes
+its effect.
 
-- Current effect name (disabled label).
-- Next / Previous / Random / Randomize Effect Settings.
-- Hold Current Effect.
-- Auto-Cycle / Auto-Random + Cycle Interval. Clicking the checked auto
-  mode unchecks it and disables cycling; there is no separate "Manual Only"
-  item.
+`TripexMenuBuilder.addTripexConfigMenuItems(to:target:visualizationView:)` adds only Tripex's own
+items below that block:
+
+- Randomize Effect Settings.
 - Intensity submenu (`0.25x` through `4.0x`).
 - Show Audio Info / Show Help Overlay (toggle actions).
-- Effects submenu listing all enabled effects with a checkmark on `currentTripexEffectIndex`.
 
-`TripexMenuTarget` is the @objc protocol the host view conforms to. `ModernProjectMView` implements it and forwards each action to the corresponding `VisualizationGLView.*Tripex*` helper.
+`TripexMenuTarget` is the @objc protocol every host conforms to, forwarding each action to the
+corresponding `VisualizationGLView.*Tripex*` helper.
 
 Tripex does not expose native per-effect sliders. The exposed "levers" are
-the native engine-level controls that make sense in NullPlayer: hold,
-cycle mode, cycle interval, intensity, randomize current effect settings,
-and overlays.
+the native engine-level controls that make sense in NullPlayer: intensity,
+randomize current effect settings, and overlays.
 
 ## Mode-specific guards (per CLAUDE.md gotcha)
 
@@ -211,7 +212,7 @@ After modifying any of the touched files, run:
 
 1. `swift build` — green, including all upstream `.cpp` files compiling without error.
 2. Launch app → right-click visualizer → **Visualization Engine** → **Tripex** → confirm the window switches and a frame renders.
-3. Use the per-engine submenu items (Next / Previous / Random / Randomize Effect Settings / Hold / Auto-Cycle / Auto-Random / Intensity / Show Audio Info / Show Help / Effects submenu entries) → confirm each takes effect.
+3. Use the per-engine submenu items (Next / Previous / Random / Presets entries / Manual Only / Auto-Cycle / Auto-Random / Randomize Effect Settings / Intensity / Show Audio Info / Show Help) → confirm each takes effect.
 4. Switch back to ProjectM → confirm no GL state corruption.
 5. Close + relaunch app with Tripex saved as last-engine + non-zero `tripex.lastEffectIndex` → confirm the same effect restores.
 6. Run with a long-playing track (>10 min) → Activity Monitor should show steady-state memory, no growth.

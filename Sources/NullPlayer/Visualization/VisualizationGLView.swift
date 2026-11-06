@@ -41,6 +41,10 @@ class VisualizationGLView: NSOpenGLView {
     /// Current engine type
     private(set) var currentEngineType: VisualizationType = .projectM
 
+    /// Auto-advances the running engine's presets. Attached in each `init`, not lazy: `deinit`
+    /// reaches it through `stopRendering`, where a first weak reference to `self` would trap.
+    let presetCycler = VisualizationPresetCycler()
+
     /// Lock for thread-safe engine access during rendering
     /// Protects engine reference and ensures render completes before engine destruction
     private let engineLock = NSLock()
@@ -208,7 +212,8 @@ class VisualizationGLView: NSOpenGLView {
         }
         
         super.init(frame: frameRect, pixelFormat: pixelFormat)
-        
+        presetCycler.view = self
+
         wantsBestResolutionOpenGLSurface = true
 
         // Load saved engine type preference (defaults to ProjectM)
@@ -238,6 +243,7 @@ class VisualizationGLView: NSOpenGLView {
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
+        presetCycler.view = self
 
         // Load saved engine type preference (defaults to ProjectM)
         if let savedType = UserDefaults.standard.string(forKey: "visualizationEngineType"),
@@ -389,8 +395,10 @@ class VisualizationGLView: NSOpenGLView {
             let geiss = GeissEngine(width: width, height: height)
             if geiss.isAvailable {
                 NSLog("VisualizationGLView: Geiss engine initialized")
-                // Apply persisted configuration before first render
-                if let cfg = geissConfigCache {
+                // Apply persisted configuration before first render. Mode Lock stays on: the
+                // preset cycler, not Geiss's own auto-switch, changes its mode.
+                if var cfg = geissConfigCache {
+                    cfg.modeLocked = true
                     geiss.setConfig(cfg)
                     NSLog("VisualizationGLView: Applied cached Geiss config to engine")
                 }
@@ -415,6 +423,8 @@ class VisualizationGLView: NSOpenGLView {
                    stored < tripex.effectCount {
                     tripex.selectEffect(at: stored)
                 }
+                // The preset cycler, not Tripex's own timer, changes its effect.
+                tripex.setHold(true)
                 return tripex
             } else {
                 NSLog("VisualizationGLView: Tripex engine not available")
@@ -510,6 +520,8 @@ class VisualizationGLView: NSOpenGLView {
 
         // Clean up old engine (will be replaced on next render)
         cleanupEngineWithCurrentContext()
+
+        presetCycler.restart()
 
         NSLog("VisualizationGLView: Engine switch queued, will initialize on next render")
     }
@@ -639,9 +651,11 @@ class VisualizationGLView: NSOpenGLView {
         
         CVDisplayLinkStart(displayLink)
         isRendering = true
+        presetCycler.restart()
     }
     
     func stopRendering() {
+        presetCycler.stop()
         guard let displayLink = displayLink, isRendering else { return }
         
         // Stop the display link
@@ -1445,13 +1459,6 @@ class VisualizationGLView: NSOpenGLView {
         return t.currentEffectIndex
     }
 
-    var isTripexHolding: Bool {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return false }
-        return t.isHolding
-    }
-
     var tripexIntensityScale: Float {
         get {
             engineLock.lock()
@@ -1492,8 +1499,6 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
     func reconfigureTripex()    { withTripex { $0.reconfigure() } }
-    func toggleTripexHold()     { withTripex { $0.toggleHold() } }
-    func setTripexHold(_ on: Bool) { withTripex { $0.setHold(on) } }
     func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
     func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
 

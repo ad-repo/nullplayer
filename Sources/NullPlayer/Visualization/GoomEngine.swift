@@ -5,15 +5,15 @@ import CGoomCore
 /// Goom (the `goom-port` skill) as a `VisualizationEngine`: the C core renders an RGBA frame on
 /// the CPU, which is uploaded and blitted, scaled to fill, into the host's bound framebuffer.
 ///
-/// Goom picks its own effects from the music; the menu's choices force one, and Goom moves on
-/// from it at its next change, as upstream's forced switch does.
+/// Goom is held on the chosen effect: it never picks its own, so the host's preset cycler
+/// (`VisualizationPresetCycler`) and the user are the only things that change it.
 final class GoomEngine: NSObject, VisualizationEngine {
     /// Upstream's desktop canvas: half the drawable, at most this wide (`GoomWidget.cpp`).
     private static let maxRenderWidth = 1024
     /// Goom advances one cycle per update and its motion is tuned to upstream's 30 per second.
     private static let updateInterval = 1.0 / 30.0
 
-    /// The held effect's index; absent while Goom picks its own.
+    /// The held effect's index.
     static let heldEffectKey = "goom.heldEffect"
 
     let displayName = "Goom"
@@ -24,7 +24,7 @@ final class GoomEngine: NSObject, VisualizationEngine {
     private let lock = NSLock()
     private var core: OpaquePointer?
     /// The effect Goom is held on, applied again to every new core (a resize makes one).
-    private var heldEffect: Int? = UserDefaults.standard.object(forKey: GoomEngine.heldEffectKey) as? Int
+    private var heldEffect = UserDefaults.standard.object(forKey: GoomEngine.heldEffectKey) as? Int ?? 0
     /// 512 left then 512 right frames, as `GoomCore_update` reads them.
     private var pcm = [Int16](repeating: 0, count: 1024)
 
@@ -103,7 +103,7 @@ final class GoomEngine: NSObject, VisualizationEngine {
                 GoomCore_destroy(core)
                 core = GoomCore_create(Int32(width), Int32(height))
                 coreSize = (width, height)
-                if let core, let heldEffect {
+                if let core {
                     GoomCore_forceEffect(core, Int32(heldEffect))
                     GoomCore_setHold(core, 1)
                 }
@@ -125,8 +125,7 @@ final class GoomEngine: NSObject, VisualizationEngine {
 
     static func effectName(at index: Int) -> String { String(cString: GoomCore_effectName(Int32(index))) }
 
-    var currentEffect: Int { lock.withLock { runningEffect } }
-    var isHolding: Bool { lock.withLock { heldEffect != nil } }
+    var currentEffect: Int { lock.withLock { heldEffect } }
 
     func selectEffect(at index: Int) { select { _ in index } }
     func step(by offset: Int) { select { ($0 + offset + Self.effectCount) % Self.effectCount } }
@@ -139,69 +138,16 @@ final class GoomEngine: NSObject, VisualizationEngine {
         }
     }
 
-    /// Holds the running effect, or lets Goom pick its own again.
-    func setHolding(_ on: Bool) {
-        lock.withLock { hold(on ? runningEffect : nil) }
-    }
-
-    /// Forces the effect `pick` chooses from the running one, read and applied under one lock so
-    /// the render thread cannot change it in between. While held, it becomes the held effect.
-    private func select(_ pick: (_ running: Int) -> Int) {
+    /// Holds the effect `pick` chooses from the held one, read and applied under one lock so the
+    /// render thread cannot change it in between.
+    private func select(_ pick: (_ held: Int) -> Int) {
         lock.withLock {
-            let index = pick(runningEffect)
-            if let core { GoomCore_forceEffect(core, Int32(index)) }
-            if heldEffect != nil { hold(index) }
+            heldEffect = pick(heldEffect)
+            if let core {
+                GoomCore_forceEffect(core, Int32(heldEffect))
+                GoomCore_setHold(core, 1)
+            }
+            UserDefaults.standard.set(heldEffect, forKey: Self.heldEffectKey)
         }
     }
-
-    /// Called with `lock` held.
-    private var runningEffect: Int { core.map { Int(GoomCore_currentEffect($0)) } ?? 0 }
-
-    /// Called with `lock` held.
-    private func hold(_ index: Int?) {
-        heldEffect = index
-        if let core { GoomCore_setHold(core, index == nil ? 0 : 1) }
-        UserDefaults.standard.set(index, forKey: Self.heldEffectKey)
-    }
-
-    // MARK: - Menu
-
-    /// The engine's section of the shared visualization menu (`VisualizationContextMenu`). The
-    /// items target the engine, so a host needs no Goom-specific actions.
-    func addMenuItems(to menu: NSMenu) {
-        let current = NSMenuItem(title: "Effect: \(Self.effectName(at: currentEffect))", action: nil, keyEquivalent: "")
-        current.isEnabled = false
-        menu.addItem(current)
-        menu.addItem(.separator())
-        menu.addItem(item("Next Effect", #selector(nextEffectAction)))
-        menu.addItem(item("Previous Effect", #selector(previousEffectAction)))
-        menu.addItem(item("Random Effect", #selector(randomEffectAction)))
-
-        let list = NSMenu()
-        for index in 0..<Self.effectCount {
-            let entry = item(Self.effectName(at: index), #selector(chooseEffectAction(_:)))
-            entry.tag = index
-            entry.state = index == currentEffect ? .on : .off
-            list.addItem(entry)
-        }
-        let listItem = NSMenuItem(title: "Effects", action: nil, keyEquivalent: "")
-        listItem.submenu = list
-        menu.addItem(listItem)
-        let holdItem = item("Hold Effect", #selector(toggleHoldAction))
-        holdItem.state = isHolding ? .on : .off
-        menu.addItem(holdItem)
-        menu.addItem(.separator())
-    }
-
-    private func item(_ title: String, _ action: Selector) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.target = self
-        return item
-    }
-
-    @objc private func nextEffectAction() { step(by: 1) }
-    @objc private func previousEffectAction() { step(by: -1) }
-    @objc private func randomEffectAction() { selectRandomEffect() }
-    @objc private func chooseEffectAction(_ sender: NSMenuItem) { selectEffect(at: sender.tag) }
-    @objc private func toggleHoldAction() { setHolding(!isHolding) }
 }

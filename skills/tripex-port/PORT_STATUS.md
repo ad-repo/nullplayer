@@ -27,15 +27,14 @@ for Tube and WaterGlobe on lower-power machines.
 
 ## Menu / Control Surface
 
-- Right-click Tripex menu has ProjectM-style parity:
-  - Next / Previous / Random / Randomize Effect Settings.
-  - Hold Current Effect.
-  - Auto-Cycle / Auto-Random + Cycle Interval.
+- Right-click menu is the shared one every engine has (`visualizations` skill §
+  *Context menu and auto-cycle*): presets, Next / Previous / Random, Manual Only /
+  Auto-Cycle / Auto-Random + Cycle Interval. Tripex's own items below it:
+  - Randomize Effect Settings.
   - Intensity submenu from `0.25x` to `4.0x`.
   - Show Audio Info / Show Help.
-  - Effects submenu with checked current effect.
-- There is no "Manual Only" item. Clicking a checked Auto-Cycle or Auto-Random
-  item unchecks it and disables cycling.
+- Tripex is held (`setHold(true)`) when created; the shared preset cycler is the
+  only thing that changes its effect.
 - Tripex's transient effect-name overlay is disabled; state is surfaced through
   native menus instead.
 
@@ -44,8 +43,7 @@ for Tube and WaterGlobe on lower-power machines.
 UserDefaults keys currently used:
 
 - `tripex.lastEffectIndex`
-- `tripex.cycleMode`
-- `tripex.cycleInterval`
+- `tripex.cycleMode` / `tripex.cycleInterval` (through `VisualizationCycleSettings`)
 - `tripex.intensityScale`
 
 ## Rendering / Timing Fixes

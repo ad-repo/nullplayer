@@ -15,6 +15,21 @@ extension VisualizationGLView {
         }
     }
 
+    /// The running preset's index, nil when there is none yet.
+    var currentEnginePresetIndex: Int? {
+        let index: Int?
+        switch currentEngineType {
+        case .projectM: index = currentPresetIndex
+        case .geiss:
+            let name = currentGeissEffectName
+            index = (0..<geissEffectCount).first { geissEffectName(at: $0) == name }
+        case .tripex: index = currentTripexEffectIndex
+        case .avs: index = (currentEngine as? AvsEngine)?.currentIndex
+        case .goom: index = (currentEngine as? GoomEngine)?.currentEffect
+        }
+        return index.flatMap { (0..<enginePresetCount).contains($0) ? $0 : nil }
+    }
+
     func enginePresetName(at index: Int) -> String {
         switch currentEngineType {
         case .projectM: return presetName(at: index)

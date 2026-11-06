@@ -1,18 +1,15 @@
 import Foundation
 
 /// The AVS engine's preset list and the choices it remembers: the bundled upstream presets, then a
-/// user folder's, the preset showing, and the auto-cycle mode.
+/// user folder's, and the preset showing. Its auto-cycle choice is `VisualizationCycleSettings`'s.
 enum AvsPresets {
     private enum Key {
         static let customFolder = "avs.customPresetsFolder"
         static let currentPreset = "avs.presetPath"
-        static let cycleMode = "avs.cycleMode"
-        static let cycleInterval = "avs.cycleInterval"
     }
 
     /// Cleared by "Reset All Visualization Preferences".
-    static let preferenceKeys = [Key.customFolder, Key.currentPreset, Key.cycleMode, Key.cycleInterval]
-    static let cycleIntervals: [TimeInterval] = [10, 20, 30, 60, 120]
+    static let preferenceKeys = [Key.customFolder, Key.currentPreset]
 
     /// A plain path, like `ProjectMWrapper.customPresetsFolder` (tasks/MISC_TASKS.md has the
     /// security-scoped bookmark row both need for a sandboxed build).
@@ -24,16 +21,6 @@ enum AvsPresets {
     static var currentPreset: String? {
         get { UserDefaults.standard.string(forKey: Key.currentPreset) }
         set { UserDefaults.standard.set(newValue, forKey: Key.currentPreset) }
-    }
-
-    static var cycleMode: VisualizationCycleMode {
-        get { UserDefaults.standard.string(forKey: Key.cycleMode).flatMap(VisualizationCycleMode.init) ?? .off }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: Key.cycleMode) }
-    }
-
-    static var cycleInterval: TimeInterval {
-        get { UserDefaults.standard.object(forKey: Key.cycleInterval) as? TimeInterval ?? 30 }
-        set { UserDefaults.standard.set(newValue, forKey: Key.cycleInterval) }
     }
 
     static var bundledFolder: URL? { BundleHelper.url(forResource: "AVSPresets", withExtension: nil) }

@@ -213,10 +213,9 @@ identically, in the two window views, and this surface first shipped with a shor
 (engine, next/previous/random, the host's Visualizations submenu). The first live report against it
 was that it was "truncated" beside the real one — which is what a third, drifting copy of a menu looks
 like from the outside. The shared builder takes a `VisualizationMenuTarget` (the engine plus every
-action) and an `Options` value for what it only displays: the preset cycle mode and interval, and
-whether **Fullscreen** and **Close** make sense at all. The embedded surface passes `false` for both —
-a box inside the skin's window has neither — and keeps its own cycle timer against the same
-`ProjectMPresetCycleSettings` keys, so a cycle set in one place is the cycle in the other.
+action) and an `Options` value saying whether **Fullscreen** and **Close** make sense at all. Auto-cycle
+is the GL view's own `VisualizationPresetCycler` against per-engine keys every host shares, so a cycle
+set in one place is the cycle in the other (`visualizations` skill § *Context menu and auto-cycle*).
 
 ### The engine will not start in a window nobody has shown yet
 

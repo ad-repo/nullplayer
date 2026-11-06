@@ -95,15 +95,11 @@ enum VisualizationPreferences {
     private static var visualizationWindowKeys: [String] {
         var keys = [
             "visualizationEngineType",
-            "projectM.cycleMode",
-            "projectM.cycleInterval",
             "projectMDefaultPresetPath",
             "projectMDefaultPresetName",
             TripexEngine.DefaultsKey.lastEffectIndex,
             TripexEngine.DefaultsKey.lockedEffectIndex,
             TripexEngine.DefaultsKey.intensityScale,
-            TripexEngine.DefaultsKey.cycleMode,
-            TripexEngine.DefaultsKey.cycleInterval,
             "geiss.sensitivity",
             "geiss.gamma",
             "geiss.beatDetection",
@@ -118,7 +114,7 @@ enum VisualizationPreferences {
             "projectMPCMGain",
             "projectMLowPowerMode",
             "projectMBeatSensitivity"
-        ]
+        ] + VisualizationCycleSettings.preferenceKeys
 
         for type in VisualizationType.allCases {
             keys.append("viz.\(type.rawValue).pcmGain")
