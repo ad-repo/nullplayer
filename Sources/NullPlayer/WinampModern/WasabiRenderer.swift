@@ -3376,23 +3376,22 @@ final class WasabiSceneRenderer {
                               : (hovered ? (object.attributes["hoverthumb"] ?? object.attributes["thumb"])
                                          : object.attributes["thumb"])
         guard let thumb = resources.bitmap(identifier: thumbID) else { return }
+        drawImage(thumb.image, in: sliderThumbFrame(object, thumb: thumb, in: frame), context: context)
+    }
+
+    /// Where a slider's thumb is drawn: centred across the slider's axis, placed along it by the value.
+    func sliderThumbFrame(_ object: WasabiObject, thumb: WasabiBitmap, in frame: CGRect) -> CGRect {
         let clamped = normalizedValue(of: object)
-        let vertical = Self.isVerticalOrientation(object)
         let thumbWidth = CGFloat(thumb.width)
         let thumbHeight = CGFloat(thumb.height)
-        let thumbFrame: CGRect
-        if vertical {
+        if Self.isVerticalOrientation(object) {
             let travel = max(CGFloat.zero, frame.height - thumbHeight)
-            thumbFrame = CGRect(x: frame.midX - thumbWidth / 2,
-                                y: frame.minY + (1 - clamped) * travel,
-                                width: thumbWidth, height: thumbHeight)
-        } else {
-            let travel = max(CGFloat.zero, frame.width - thumbWidth)
-            thumbFrame = CGRect(x: frame.minX + clamped * travel,
-                                y: frame.midY - thumbHeight / 2,
-                                width: thumbWidth, height: thumbHeight)
+            return CGRect(x: frame.midX - thumbWidth / 2, y: frame.minY + (1 - clamped) * travel,
+                          width: thumbWidth, height: thumbHeight)
         }
-        drawImage(thumb.image, in: thumbFrame, context: context)
+        let travel = max(CGFloat.zero, frame.width - thumbWidth)
+        return CGRect(x: frame.minX + clamped * travel, y: frame.midY - thumbHeight / 2,
+                      width: thumbWidth, height: thumbHeight)
     }
 
     // MARK: - Embedded component drawing

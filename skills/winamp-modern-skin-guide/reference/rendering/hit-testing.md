@@ -78,6 +78,11 @@ Two rules about *which* objects may claim a point:
   point, worked. That reads as "two of my buttons are broken", not as a hit test disagreeing with a
   declared region. Only objects that *have* a bitmap are affected; a bare `rectrgn` layer never had an
   alpha test to skip.
+- **A slider's drawn thumb is the slider's, even past the slider's box** (B378, 2026-11-05, the user's
+  ruling). `object(at:)` claims a point inside `sliderThumbFrame` (the `thumb` bitmap where
+  `drawSlider` places it) for the slider before anything under it. Enya_Winamp_3_Skin's EQ bands are
+  `w="3"` sliders under a 5-px thumb, and a press on either outer column of the knob landed on the
+  bar layer behind it. The value still maps from the slider's own box, clamped.
 - **A wholly clear layer a script hooks a press on is its rect** (2026-10-25). An empty region is no
   region. Official Trapt's volume and seek are `customvol.m`/`customseek.m` surfaces on
   `volume.png`/`seek.png`, transparent in every pixel, shaped by a `Map` the script reads at the

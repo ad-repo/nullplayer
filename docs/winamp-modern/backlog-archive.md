@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B378 — Enya_Winamp_3_Skin's EQ faders are hard to move — closed 2026-11-05
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B378 | **Enya_Winamp_3_Skin's EQ faders are hard to move.** Found in the intake #6 user UI round (2026-11-05, reporter driving). Dragging an EQ fader barely moves it or needs repeated tries. Find whether the hit area, the drag mapping or the thumb size is off. Done when a fader follows the drag **Fix pass 2026-11-05, left open: the skin's hit box against its art.** Each band is `<slider w="3" h="30">` (bands 9 and 10 `w="5"`) over a 5x39 `player.eq.bar`, with a 5x5 thumb drawn centred on the 3-px box. `RENDER_CLICK eqmain/normal`: 68,70 hits `slider#pre` (67,54, 3x30); 71,70 and 70,60 hit `layer#eqpre`, the bar, so two of the five visible columns and the bar's lower 9 px do nothing. Making the drawn thumb part of a slider's hit area would add about 2 px; whether Winamp does is not in the corpus: the user decides | Enya_Winamp_3_Skin | ? | 1 |
+
+**Closed 2026-11-05, fixed (the user's ruling: a slider's drawn thumb is clickable).** `WasabiSceneRenderer.object(at:)` now claims a point inside the slider's thumb, placed by the same `sliderThumbFrame` `drawSlider` draws it with, for the slider before anything beneath it, even where the thumb hangs past the slider's box. `RENDER_CLICK eqmain/normal` with the preamp thumb at the bottom: 66,83 and 70,83 (the knob's outer columns) now hit `slider#pre`, where 70,y hit `layer#eqpre` before; 71,69 off the thumb still hits the bar. The bar's lower 9 px below the slider's travel stay the bar's. `WinampModernB378Tests`.
+
 ## B374 — Vex: no close control in the top-right area, the 5-second rewind/forward buttons do nothing, and the cfg button does nothing — closed 2026-11-05
 
 | Id | Item | Reach | Effort | Tier |

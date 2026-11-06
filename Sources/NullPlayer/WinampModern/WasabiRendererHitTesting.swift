@@ -25,8 +25,10 @@ extension WasabiSceneRenderer {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
-        for node in sceneNodes().reversed() where node.clipping.contains(point) && node.frame.contains(point) {
+        for node in sceneNodes().reversed() where node.clipping.contains(point) {
             let object = node.object
+            let inFrame = node.frame.contains(point)
+            guard inFrame || isOnSliderThumb(object, frame: node.frame, point: point) else { continue }
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
@@ -41,7 +43,7 @@ extension WasabiSceneRenderer {
             // A group's artwork is its `background`, and its region is that artwork's alpha like any
             // layer's. RODE 3 Lite lays `player.main.sliders` (343x212, 97% transparent mask) over the
             // whole player; tested as a solid box it covered 24 of the controls beneath it.
-            if object.attributes["rectrgn"] != "1",
+            if inFrame, object.attributes["rectrgn"] != "1",
                let bitmap = node.bitmapID.map({ resources.bitmap(identifier: $0) }) ?? groupHitArtwork(object),
                !scriptRegionContains(object, frame: node.frame, point: point) {
                 // An animated layer's artwork is a *strip*, and mapping the point across the whole
@@ -67,6 +69,15 @@ extension WasabiSceneRenderer {
             return object
         }
         return nil
+    }
+
+    /// A slider's drawn thumb is part of the slider even where it hangs past the slider's box (B378).
+    /// Enya_Winamp_3_Skin's EQ bands are 3-px `<slider>`s under a 5-px thumb: a press on either outer
+    /// column of the knob the user is aiming at fell through to the bar behind it.
+    private func isOnSliderThumb(_ object: WasabiObject, frame: CGRect, point: CGPoint) -> Bool {
+        guard object.tag.is(.slider), let thumb = resources.bitmap(identifier: object.attributes["thumb"])
+        else { return false }
+        return sliderThumbFrame(object, thumb: thumb, in: frame).contains(point)
     }
 
     /// A layer whose artwork is clear in every pixel, with a press a script hooks on it: an empty

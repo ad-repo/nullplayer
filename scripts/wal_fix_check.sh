@@ -7,7 +7,7 @@
 #
 # The change is <base-rev> against the working tree, uncommitted and untracked files included.
 #   render                  any change under Sources/ outside Windows/WinampModern/ (~25 s sharded)
-#   + interaction, motion   only when it touches script runtime, MAKI, the object graph, loading,
+#   + interaction, motion   only when it touches hit testing, script runtime, MAKI, the object graph, loading,
 #                           click/host/EQ actions, key accelerators, or code outside the .wal engine
 #                           (~17 and ~10 min over gold+silver)
 #   none                    a change only in Sources/NullPlayer/Windows/WinampModern/ (the live window
@@ -36,7 +36,7 @@ mkdir -p "$out"
 changed=$( { git diff --name-only "$base"; git ls-files --others --exclude-standard; } | sort -u | grep '^Sources/' || true)
 engine='^Sources/NullPlayer/WinampModern/'
 window='^Sources/NullPlayer/Windows/WinampModern/'
-behaviour='WinampModern/(WinampModernScriptRuntime|WinampModernScriptHooks|MakiBytecode|WasabiObjectGraph|WasabiSkinInitializer|WinampModernSkinLoader|WinampModernClickActions|WinampModernHostActions|WinampModernEQActions|WinampModernKeyAccelerator|WinampModernConfig)'
+behaviour='WinampModern/(WasabiRendererHitTesting|WinampModernScriptRuntime|WinampModernScriptHooks|MakiBytecode|WasabiObjectGraph|WasabiSkinInitializer|WinampModernSkinLoader|WinampModernClickActions|WinampModernHostActions|WinampModernEQActions|WinampModernKeyAccelerator|WinampModernConfig)'
 
 render=0; behave=0
 while IFS= read -r f; do
