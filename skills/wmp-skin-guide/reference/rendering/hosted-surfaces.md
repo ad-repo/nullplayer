@@ -115,7 +115,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   testing; and **the skin's selector is not the app's preference** — cycling from the rect, its menu,
   or the arrow keys never writes `visualizationEngineType`, which the visualization window and
   menu bar share.
-  **The keys are two-level, because the catalogue is.** Eight effects, and most carry a list of
+  **The keys are two-level, because the catalogue is.** Ten effects, and most carry a list of
   their own, so **⌘↓/⌘↑ pick the effect and ⌘→/⌘← step inside it** — ProjectM's presets,
   Geiss's and Tripex's effects, vis_classic's profiles, Cava's mono/stereo. An effect with no
   inside (Spikes, Bars, Ambience) *refuses* ⌘→/⌘← rather than swallowing them, so the key
@@ -127,7 +127,10 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   `currentPresetTitle` bindings 144 archives read would show a preset that is not on screen; and
   `applySelection` must tell a preset change from an effect change, because `setPreset` posts the
   same notification as `select` and rebuilding the engine for it reinitializes ProjectM on every
-  key press.
+  key press. The other direction holds too: the menu and the auto-cycle move the engine directly, and
+  `enginePresetDidChange` writes the preset it landed on back to the selection. `applyPreset` waits
+  for the engine to have a running preset (`currentEnginePresetIndex`), retrying every frame: applied
+  before that, the request was dropped and the engine kept its own last preset under the skin's number.
   **Do not fill the widget's rectangle.** The effect is composited over the scene, and its untouched
   pixels must stay transparent: every renderer draws into the full authored rect and the skin's own
   artwork is what shapes it, through the z-order split above. **A suite renderer needs two extra

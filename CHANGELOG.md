@@ -104,11 +104,15 @@
   Goom each named, ordered and cycled their presets differently. Now every one shows the current
   preset, Next / Previous / Random Preset, a Presets list, and Manual Only / Auto-Cycle /
   Auto-Random with a Cycle Interval, then its own options — in the Visualizations window, a `.wal`
-  skin's visualization box and a `.wmz` / Sonique effects area (every engine but Goom) alike. Each engine remembers its own
+  skin's visualization box and a `.wmz` / Sonique effects area alike. Each engine remembers its own
   cycle setting, and **C** steps it in any engine. Geiss and Goom no longer switch effects on
   their own outside Auto-Cycle / Auto-Random, so their Mode Lock, Auto-Switch and Hold Effect items,
   and Tripex's Hold Current Effect, are gone: Manual Only does that now. In a `.wal` skin, **R**
   picks a random preset for every engine, not only ProjectM.
+- **Goom in `.wmz` and Sonique skins.** A Windows Media Player skin's or Sonique's effects area now
+  offers Goom beside ProjectM, Geiss, Tripex and AVS; picking it from the area's Visualization
+  Engine menu used to do nothing. Switching the area to an engine now starts on the skin's preset
+  instead of the engine's own last one, so ⌘→ steps from the preset on screen.
 
 ## 0.34.2
 
