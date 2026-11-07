@@ -228,20 +228,21 @@ class PlaylistView: NSView {
     }
 
     @objc private func handleTrackDidChange(_ notification: Notification) {
-        let engine = WindowManager.shared.audioEngine
-        let currentIndex = engine.currentIndex
-
-        // Update selection to highlight the current playing track
-        guard currentIndex >= 0 && currentIndex < engine.playlist.count else { return }
-
-        selectedIndices = [currentIndex]
-        selectionAnchor = currentIndex
+        guard followPlayingRow() else { return }
         refreshTextBitmapCacheIfNeeded()
-
-        // Scroll to keep the current track visible; a shuffled track can land anywhere, so centre it
-        scrollToSelection(centred: engine.shuffleEnabled)
-
         needsDisplay = true
+    }
+
+    /// Select the playing row and scroll to it — edge or centred, `PlayingRowPlacement`'s rule.
+    /// False when nothing is playing.
+    @discardableResult
+    private func followPlayingRow() -> Bool {
+        let engine = WindowManager.shared.audioEngine
+        guard engine.playlist.indices.contains(engine.currentIndex) else { return false }
+        selectedIndices = [engine.currentIndex]
+        selectionAnchor = engine.currentIndex
+        scrollToSelection(PlayingRowPlacement(shuffle: engine.shuffleEnabled))
+        return true
     }
 
     // MARK: - Display Timer Management
@@ -1052,13 +1053,7 @@ class PlaylistView: NSView {
         // Re-center on the currently-playing track so a skin change (which recreates
         // this window) keeps the now-playing row selected and visible instead of
         // snapping back to slot 0 while audio continues from currentIndex.
-        // Under shuffle it is centred, as a track change centres it.
-        let engine = WindowManager.shared.audioEngine
-        if engine.currentIndex >= 0 && engine.currentIndex < engine.playlist.count {
-            selectedIndices = [engine.currentIndex]
-            selectionAnchor = engine.currentIndex
-            scrollToSelection(centred: engine.shuffleEnabled)
-        }
+        followPlayingRow()
         updateCurrentTrackTextWidth()
         needsDisplay = true
     }
@@ -1550,37 +1545,14 @@ class PlaylistView: NSView {
         // Keep anchor unchanged so user can continue extending
     }
 
-    /// Scroll to ensure the current selection is visible, or put it mid-list when `centred`.
-    private func scrollToSelection(centred: Bool = false) {
+    /// Scroll the current selection on screen.
+    private func scrollToSelection(_ placement: PlayingRowPlacement = .edge) {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
-
-        let effectiveSize = effectiveWindowSize
-        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
-        let tracks = WindowManager.shared.audioEngine.playlist
-
-        // Calculate the top and bottom of the selected item
-        let itemTop = CGFloat(focusIndex) * itemHeight
-        let itemBottom = itemTop + itemHeight
-
-        // Calculate visible range
-        let visibleTop = scrollOffset
-        let visibleBottom = scrollOffset + listHeight
-
-        // Scroll to keep selection visible
-        if centred {
-            scrollOffset = itemTop - (listHeight - itemHeight) / 2
-        } else if itemTop < visibleTop {
-            // Item is above visible area - scroll up
-            scrollOffset = itemTop
-        } else if itemBottom > visibleBottom {
-            // Item is below visible area - scroll down
-            scrollOffset = itemBottom - listHeight
-        }
-
-        // Clamp scroll offset to valid range
-        let totalContentHeight = CGFloat(tracks.count) * itemHeight
-        let maxScroll = max(0, totalContentHeight - listHeight)
-        scrollOffset = max(0, min(maxScroll, scrollOffset))
+        let listHeight = effectiveWindowSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let rowCount = WindowManager.shared.audioEngine.playlist.count
+        scrollOffset = placement.offset(itemTop: CGFloat(focusIndex) * itemHeight, itemHeight: itemHeight,
+                                       viewport: listHeight, current: scrollOffset,
+                                       contentHeight: CGFloat(rowCount) * itemHeight)
     }
 
     // MARK: - Drag and Drop

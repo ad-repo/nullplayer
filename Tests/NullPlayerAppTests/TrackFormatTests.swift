@@ -126,12 +126,19 @@ final class TrackFormatTests: XCTestCase {
         engine.playTrack(at: 0)
         let recorder = PlaylistRecorder()
         engine.delegate = recorder
+        var trackChanges = 0
+        let observer = NotificationCenter.default.addObserver(
+            forName: .audioTrackDidChange, object: engine, queue: nil) { _ in trackChanges += 1 }
+        defer { NotificationCenter.default.removeObserver(observer) }
 
         engine.streamingPlayerDidDetectFormat(sampleRate: 12_345, channels: 1)
 
         XCTAssertEqual(engine.playlist.first?.sampleRate, 12_345)
         XCTAssertEqual(recorder.reloads, 0)
         XCTAssertEqual(recorder.repaints, 1)
+        // A `.wal` playlist follows the playing track from this notification: posting it here would
+        // reset that playlist's selection and scroll on every stream's format.
+        XCTAssertEqual(trackChanges, 0)
     }
 
     private final class PlaylistRecorder: AudioEngineDelegate {

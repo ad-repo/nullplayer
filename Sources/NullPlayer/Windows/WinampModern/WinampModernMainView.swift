@@ -930,11 +930,11 @@ final class WinampModernMainView: NSView {
 
     /// Scroll the drawn playlist so a row is on screen — `PlEdit.showTrack(n)`. A no-op in a window
     /// whose skin embeds no playlist holder, which is most of them: the script still runs.
-    func revealPlaylistRow(_ row: Int, centred: Bool = false) {
+    func revealPlaylistRow(_ row: Int, placement: PlayingRowPlacement = .edge) {
         guard let host = componentHost,
               let holder = renderer.componentHolders().first(where: { $0.kind == .playlist }) else { return }
         renderer.revealPlaylistRow(row, rowCount: host.playlistSnapshot().rows.count, in: holder.frame,
-                                   holder: holder.object, centred: centred)
+                                   holder: holder.object, placement: placement)
         needsDisplay = true
     }
 

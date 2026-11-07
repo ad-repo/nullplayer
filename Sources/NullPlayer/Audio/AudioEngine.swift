@@ -1024,10 +1024,12 @@ class AudioEngine {
         fftSetup = nil
     }
 
-    private func playlistDidChange() {
+    /// The queue changed. `rowsOnly`: the same tracks in the same order with details filled in, which
+    /// the playlists repaint rather than reload, so none loses its scroll position or selection.
+    private func playlistDidChange(rowsOnly: Bool = false) {
         refreshLocalGaplessSuccessor()
         prepareNextLocalCrossfade()
-        delegate?.audioEngineDidChangePlaylist()
+        if rowsOnly { delegate?.audioEngineDidUpdatePlaylistRows() } else { delegate?.audioEngineDidChangePlaylist() }
     }
 
     private func notifyPlaybackOptionsChanged() {
@@ -4251,12 +4253,9 @@ class AudioEngine {
                 delegate?.audioEngineDidChangeTrack(filled)
             }
         }
-        // Same queue, details filled in: a reload here snapped every playlist back to the playing
-        // row — undoing shuffle's centring — each time a server stream reported its format.
-        guard changed else { return }
-        refreshLocalGaplessSuccessor()
-        prepareNextLocalCrossfade()
-        delegate?.audioEngineDidUpdatePlaylistRows()
+        // A reload here snapped every playlist back to the playing row each time a server stream
+        // reported its format.
+        if changed { playlistDidChange(rowsOnly: true) }
     }
 
     /// Append tracks to the playlist without starting playback

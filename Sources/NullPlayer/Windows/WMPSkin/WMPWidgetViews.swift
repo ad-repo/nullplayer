@@ -30,8 +30,8 @@ final class WMPPlaylistSurfaceView: NSView {
     /// can read the position back: the alternative is asserting on rendered text, which measures
     /// the font rather than the scroll.
     private(set) var firstVisibleIndex = 0
-    /// A track-change scroll that arrived before the surface had a height, and whether it centres.
-    private var pendingScrollCentred: Bool?
+    /// A track-change scroll that arrived before the surface had a height (`followPlayingRow`).
+    private var needsTrackReveal = false
     /// Points of precise scrolling delta not yet worth a whole row.
     private var scrollRemainder: CGFloat = 0
     private let rowHeight: CGFloat = 18
@@ -85,7 +85,7 @@ final class WMPPlaylistSurfaceView: NSView {
         // an 11-row window. The list could not be scrolled at all beyond one page around the
         // current track. A refresh that changes nothing now only *clamps* the scroll position into
         // the list; the track change is what still scrolls it, the way WMP's own playlist does.
-        if trackChanged { scrollSelectionIntoView(centred: snapshot.shuffle) } else { clampScroll() }
+        if trackChanged { followPlayingRow() } else { clampScroll() }
         if drawnItems != rows || drawnPlaying != playing
             || drawnSelection != selectedRows || drawnScroll != firstVisibleIndex {
             needsDisplay = true
@@ -128,26 +128,25 @@ final class WMPPlaylistSurfaceView: NSView {
         needsDisplay = true
     }
 
-    /// Pull `firstVisibleIndex` the shortest distance that puts `selectedIndex` on screen — or put it
-    /// mid-list when `centred`, for a shuffled track that can land anywhere — and clamp it when the
-    /// playlist shrinks under it.
-    private func scrollSelectionIntoView(centred: Bool = false) {
+    /// Scroll to the playing row on a track change, by `PlayingRowPlacement`'s rule (centred under
+    /// shuffle). A new skin's — or a newly opened pane's — surface takes its first snapshot at 0x0,
+    /// before its frame: scrolled then, it reads as one row and pins the playing row to the top, so
+    /// the scroll waits for the frame (`setFrameSize`).
+    private func followPlayingRow() {
+        needsTrackReveal = bounds.height < rowHeight
+        guard !needsTrackReveal else { return }
         #if DEBUG
-        wmpWidgetTrace("playlist scroll centred=\(centred) bounds=\(bounds.size) selected=\(selectedIndex) rows=\(rows.count) first=\(firstVisibleIndex)")
+        wmpWidgetTrace("playlist scroll shuffle=\(snapshot.shuffle) bounds=\(bounds.size) selected=\(selectedIndex) rows=\(rows.count) first=\(firstVisibleIndex)")
         #endif
-        // A new skin's (or a newly opened pane's) surface takes its first snapshot at 0x0, before
-        // its frame: scrolled then, it reads as one row and pins the playing row to the top. Wait for
-        // the frame (`setFrameSize`).
-        guard bounds.height >= rowHeight else { pendingScrollCentred = centred; return }
-        pendingScrollCentred = nil
+        scrollSelectionIntoView(PlayingRowPlacement(shuffle: snapshot.shuffle))
+    }
+
+    /// Put `selectedIndex` on screen, and clamp the position when the playlist shrinks under it.
+    private func scrollSelectionIntoView(_ placement: PlayingRowPlacement = .edge) {
         let visibleRows = max(1, Int(bounds.height / rowHeight))
-        if centred, selectedIndex >= 0 {
-            firstVisibleIndex = selectedIndex - visibleRows / 2
-        } else if selectedIndex >= 0 {
-            firstVisibleIndex = max(firstVisibleIndex, selectedIndex - visibleRows + 1)
-            firstVisibleIndex = min(firstVisibleIndex, selectedIndex)
-        }
-        clampScroll()
+        guard selectedIndex >= 0 else { clampScroll(); return }
+        firstVisibleIndex = placement.firstRow(showing: selectedIndex, visibleRows: visibleRows,
+                                               firstRow: firstVisibleIndex, rowCount: rows.count)
     }
 
     /// Keep the scroll position inside the list without moving it otherwise — the half of
@@ -242,8 +241,8 @@ final class WMPPlaylistSurfaceView: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if let centred = pendingScrollCentred {
-            scrollSelectionIntoView(centred: centred)
+        if needsTrackReveal {
+            followPlayingRow()
             needsDisplay = true
         }
     }

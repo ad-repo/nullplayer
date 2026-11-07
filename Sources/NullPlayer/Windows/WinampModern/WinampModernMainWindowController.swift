@@ -17,6 +17,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// Tells the skin when shuffle, repeat or crossfade moved from outside it.
     private var playbackOptionsObserver: NSObjectProtocol?
     private var trackLoadFailureObserver: NSObjectProtocol?
+    private var trackChangeObserver: NSObjectProtocol?
     /// The skin's script-glued window pairs: moved, stacked and dragged as one (B162).
     /// Not lazy: `tearDownSkin` runs from `deinit`, where creating it would form a weak reference to
     /// an object being deallocated. Its sources are wired in `init`.
@@ -121,6 +122,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 self?.skinView?.scripts.refreshBridgedConfigState()
                 self?.skinView?.needsDisplay = true
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
+            }
+        // Only a real track change posts this; a stream's format filled in later reaches
+        // `updateTrackInfo` alone, and must not reset the playlist selection or re-show the notifier.
+        trackChangeObserver = NotificationCenter.default.addObserver(
+            forName: .audioTrackDidChange, object: nil, queue: .main) { [weak self] note in
+                self?.followCurrentTrackInPlaylist()
+                if let track = note.userInfo?["track"] as? Track { self?.showNotifier(for: track) }
             }
         // A file that will not open stops playback, so no clock and no state transition follows to
         // repaint the scene — without this the songticker keeps printing the previous title and the
@@ -2502,11 +2510,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         resizeWindow(to: size, reason: "placeholder")
     }
 
+    /// The readouts. Also called when a playing stream's format is filled in, which is not a track
+    /// change, so following the playlist and the notifier hang off `.audioTrackDidChange` instead.
     func updateTrackInfo(_ track: Track?) {
         skinView?.updateTrackInfo()
-        followCurrentTrackInPlaylist()
         refreshBoundText()
-        if let track { showNotifier(for: track) }
     }
 
     func playlistContentDidChange() {
@@ -2524,10 +2532,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// is usually an auxiliary `pledit` window rather than the player, so this goes to every view.
     private func followCurrentTrackInPlaylist() {
         guard let row = componentBridge?.playlistFollowCurrentTrack() else { return }
-        // A shuffled track can land anywhere, so it is centred rather than pulled to an edge.
-        let centred = WindowManager.shared.audioEngine.shuffleEnabled
+        let placement = PlayingRowPlacement(shuffle: WindowManager.shared.audioEngine.shuffleEnabled)
         for view in viewsByContainer.values where !view.isTornDown {
-            view.revealPlaylistRow(row, centred: centred)
+            view.revealPlaylistRow(row, placement: placement)
         }
     }
 
@@ -2804,6 +2811,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         if let artworkObserver { NotificationCenter.default.removeObserver(artworkObserver) }
         if let playbackOptionsObserver { NotificationCenter.default.removeObserver(playbackOptionsObserver) }
         if let trackLoadFailureObserver { NotificationCenter.default.removeObserver(trackLoadFailureObserver) }
+        if let trackChangeObserver { NotificationCenter.default.removeObserver(trackChangeObserver) }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         tearDownSkin()
     }

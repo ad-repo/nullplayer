@@ -264,13 +264,13 @@ final class WinampModernPhase42Tests: XCTestCase {
         let renderer = try makeRenderer()
         let frame = CGRect(x: 0, y: 0, width: 100, height: renderer.playlistRowHeight() * 5)
 
-        renderer.revealPlaylistRow(9, rowCount: 20, in: frame, centred: true)
+        renderer.revealPlaylistRow(9, rowCount: 20, in: frame, placement: .centre)
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 7, "9 is the middle of rows 7…11")
 
-        renderer.revealPlaylistRow(10, rowCount: 20, in: frame, centred: true)
+        renderer.revealPlaylistRow(10, rowCount: 20, in: frame, placement: .centre)
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 8, "visible, and still centred")
 
-        renderer.revealPlaylistRow(19, rowCount: 20, in: frame, centred: true)
+        renderer.revealPlaylistRow(19, rowCount: 20, in: frame, placement: .centre)
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 15, "clamped at the bottom")
     }
 

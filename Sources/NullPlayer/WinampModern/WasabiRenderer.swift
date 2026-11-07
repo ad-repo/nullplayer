@@ -1966,20 +1966,16 @@ final class WasabiSceneRenderer {
         playlistScrollOffset = max(0, min(maxOffset, playlistScrollOffset + delta))
     }
 
-    /// Scroll the least that brings a row on screen — what `PlEdit.showTrack(n)` and
-    /// `showCurrentlyPlayingTrack()` mean. A row already visible does not move the list, so a skin
-    /// that calls this from a timer does not fight the user's own scrolling. `centred` puts the row
-    /// mid-list whether or not it was visible — the playing track under shuffle, which can land anywhere.
+    /// Scroll a row on screen. `.edge` — what `PlEdit.showTrack(n)` and `showCurrentlyPlayingTrack()`
+    /// mean — moves the least it can, and not at all for a row already visible, so a skin that calls
+    /// it from a timer does not fight the user's own scrolling. `.centre` is the playing track under
+    /// shuffle (`PlayingRowPlacement`).
     func revealPlaylistRow(_ row: Int, rowCount: Int, in frame: CGRect, holder: WasabiObject? = nil,
-                           centred: Bool = false) {
+                           placement: PlayingRowPlacement = .edge) {
         let visible = playlistVisibleRowCount(in: frame, holder: holder)
         guard visible > 0, rowCount > 0, row >= 0, row < rowCount else { return }
-        let maxOffset = max(0, rowCount - visible)
-        var offset = max(0, min(maxOffset, playlistScrollOffset))
-        if centred { offset = row - visible / 2 }
-        if row < offset { offset = row }
-        if row >= offset + visible { offset = row - visible + 1 }
-        playlistScrollOffset = max(0, min(maxOffset, offset))
+        playlistScrollOffset = placement.firstRow(showing: row, visibleRows: visible,
+                                                  firstRow: playlistScrollOffset, rowCount: rowCount)
     }
 
     // MARK: - Colour theme list (Phase 32)
