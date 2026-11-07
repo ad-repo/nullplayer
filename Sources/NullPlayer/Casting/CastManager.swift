@@ -275,6 +275,8 @@ class CastManager {
             return session
         }
         #endif
+        // A visualization cast holds a manager's session but the local engine stays the source.
+        if VisualizationCast.ownsCastManagers { return nil }
         if let session = chromecastManager.activeSession, session.state != .idle {
             return session
         }
@@ -852,6 +854,9 @@ class CastManager {
 
     /// Core cast implementation. Call only from inside an already serialized inflight operation.
     private func _castCore(to device: CastDevice, url: URL, metadata: CastMetadata, startPosition: TimeInterval = 0) async throws {
+        // Seam: a normal cast takes the managers back from a visualization cast (`VisualizationCast`);
+        // a no-op when none is running.
+        await VisualizationCast.shared.stop()
         let supersededVideoCast: Bool
 
         // If media type changed (audio to video or vice versa), do clean teardown
@@ -1936,6 +1941,8 @@ class CastManager {
 
     /// Stop casting and disconnect. Call directly only from an already-serialized inflight operation.
     private func _stopCastingCore() async {
+        // The managers' session is the visualization cast's; it stops itself (`VisualizationCast`).
+        guard !VisualizationCast.ownsCastManagers else { return }
         NSLog("CastManager: stopCasting — currentCast=%@ chromecastSession=%@ upnpSession=%@",
               String(describing: currentCast),
               chromecastManager.activeSession.map { $0.device.name } ?? "nil",

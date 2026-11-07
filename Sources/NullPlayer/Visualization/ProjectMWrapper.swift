@@ -230,13 +230,13 @@ class ProjectMWrapper: VisualizationEngine {
         
         // Check inside the lock to avoid race conditions
         guard width != viewportWidth || height != viewportHeight else { return }
-        
+
+        // Don't resize during preset loading or before preset is ready. The size is recorded only
+        // once applied, so a resize that lands mid-load is retried on a later frame, not lost.
+        guard !_presetLoadInProgress && _presetLoaded && _framesAfterLoad >= framesRequiredAfterLoad else { return }
+
         viewportWidth = width
         viewportHeight = height
-        
-        // Don't resize during preset loading or before preset is ready
-        guard !_presetLoadInProgress && _presetLoaded && _framesAfterLoad >= framesRequiredAfterLoad else { return }
-        
         projectm_set_window_size(h, size_t(width), size_t(height))
         #else
         viewportWidth = width

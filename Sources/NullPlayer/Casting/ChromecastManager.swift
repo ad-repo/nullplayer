@@ -418,7 +418,8 @@ class ChromecastManager: CastSessionControllerDelegate {
                 contentType: metadata.contentType,
                 title: metadata.title,
                 artist: metadata.artist,
-                textTrackURL: metadata.textTrackURL
+                textTrackURL: metadata.textTrackURL,
+                isLive: metadata.isLive
             ) { result in
                 switch result {
                 case .success:

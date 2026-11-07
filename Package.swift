@@ -191,6 +191,13 @@ let package = Package(
             dependencies: [],
             path: "Sources/NullPlayerCore"
         ),
+        // The visualization cast's lock-free audio ring (C11 atomics; Swift's need macOS 15)
+        .target(
+            name: "CAudioTapRing",
+            dependencies: [],
+            path: "Sources/CAudioTapRing",
+            publicHeadersPath: "include"
+        ),
         .target(
             name: "ObjCExceptionCatcher",
             dependencies: [],
@@ -219,6 +226,7 @@ let package = Package(
             dependencies: [
                 "NullPlayerCore",
                 "ObjCExceptionCatcher",
+                "CAudioTapRing",
                 "CVisClassicCore",
                 "CGeissCore",
                 "CTripexCore",

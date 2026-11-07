@@ -298,6 +298,14 @@ class LocalMediaServer {
             )
         }
         
+        // The live visualization cast (`VisualizationCast`)
+        await server.appendRoute("GET /viscast/*") { request in
+            VisualizationCast.httpResponse(for: request, includeBody: true)
+        }
+        await server.appendRoute("HEAD /viscast/*") { request in
+            VisualizationCast.httpResponse(for: request, includeBody: false)
+        }
+
         // Add route handler for stream proxy (Subsonic/remote URLs)
         await server.appendRoute("GET /stream/*") { [weak self] request in
             guard let self = self else {
@@ -746,6 +754,12 @@ class LocalMediaServer {
         }
     }
     
+    /// The live stream's DLNA flags (`/viscast/live.ts`, and its DIDL): no seek (`OP=00`), streaming.
+    /// The `/media/` answer below claims byte seek, which sent a Samsung Range-seeking an endless body
+    /// into a black screen (measured).
+    static let dlnaLiveContentFeatures =
+        "DLNA.ORG_PN=MPEG_TS_HD_NA_ISO;DLNA.ORG_OP=00;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=01700000000000000000000000000000"
+
     /// A DLNA renderer asks with `getcontentFeatures.dlna.org: 1`; left unanswered, a Samsung TV
     /// (measured) never sends a Range request, so an MP4 with its index at the end is "format not
     /// supported". `DLNA.ORG_OP=01` declares byte seek, which every /media/ response honours.

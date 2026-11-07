@@ -35,6 +35,17 @@ class VisualizationGLView: NSOpenGLView {
     /// Track if rendering was stopped due to window occlusion (vs. idle)
     private var stoppedDueToOcclusion: Bool = false
 
+    /// The visualization cast reading this view's frames (`VisualizationGLView+Cast`). While it is
+    /// set the view keeps rendering even when its window is hidden. Read on the render thread.
+    private var castEncoderStorage: VisualizationCastEncoder?
+    var castEncoder: VisualizationCastEncoder? {
+        get { dataLock.withLock { castEncoderStorage } }
+        set {
+            dataLock.withLock { castEncoderStorage = newValue }
+            updateCastOverlay()
+        }
+    }
+
     /// Current visualization engine
     private var engine: VisualizationEngine?
 
@@ -265,7 +276,9 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     deinit {
-        // Stop rendering first and wait for any in-flight render to complete
+        // Stop rendering first and wait for any in-flight render to complete. The encoder goes first:
+        // `stopRendering` refuses while casting, and the session holds this view only weakly.
+        castEncoderStorage = nil
         stopRendering()
         
         // Acquire engine lock to ensure no render is in progress. The offscreen targets are deleted
@@ -648,6 +661,8 @@ class VisualizationGLView: NSOpenGLView {
     }
     
     func stopRendering() {
+        // A cast keeps drawing behind a covered, minimized or hidden window; it stops it itself.
+        guard castEncoder == nil else { return }
         presetCycler.stop()
         guard let displayLink = displayLink, isRendering else { return }
         
@@ -888,14 +903,16 @@ class VisualizationGLView: NSOpenGLView {
         // Get data snapshots (thread-safe)
         let (pcm, spectrum) = dataLock.withLock { (localPCM, localSpectrum) }
 
-        // Get viewport dimensions
+        // Get viewport dimensions; a cast draws at its own size (`VisualizationGLView+Cast`)
+        let encoder = castEncoder
         let backingBounds = convertToBacking(bounds)
-        let viewportWidth = Int(backingBounds.width)
-        let viewportHeight = Int(backingBounds.height)
+        let (viewportWidth, viewportHeight) = applyCastSurfaceSize(encoder, to: cglCtx)
+            ?? (Int(backingBounds.width), Int(backingBounds.height))
 
         // Render with the current engine (safe because we hold engineLock)
         if let eng = engine, eng.isAvailable {
             renderEngine(engine: eng, pcm: pcm, spectrum: spectrum, width: viewportWidth, height: viewportHeight)
+            if let encoder { readBackForCast(encoder) }
         } else {
             // Engine not available - just clear to black
             glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))

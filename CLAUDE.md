@@ -28,7 +28,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `audion-face-guide`: Panic Audion faces — a FaceKit port with a FaceKit oracle, so a diff against the oracle is a defect
 - `sonique-skin-guide`: Sonique `.sgf` skins — the decoded format, the corpus, and real Sonique under Wine as the oracle
 - `plex-integration`, `jellyfin-integration`, `subsonic-integration`, `emby-integration`: media servers
-- `sonos-casting`, `chromecast-casting`: casting protocols and debugging; `cast-testing`: live CLI casting checks against the LAN's TVs
+- `sonos-casting`, `chromecast-casting`: casting protocols and debugging; `cast-testing`: live CLI casting checks against the LAN's TVs; `visualization-cast`: casting the Visualizations window live
 - `stream-ripper`: URL ripping; `youtube-source`: YouTube audio; `cue-sheets`: cue playback/splitting; `radio-streaming`: radio; `video-playback`: the shared video path and window
 - `visualizations`: visualizer router; `main-window-visualization`: inline vis; `spectrum-analyzer-window`: analyzer; `audio-analysis-window`: analysis panes
 - `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: Art window

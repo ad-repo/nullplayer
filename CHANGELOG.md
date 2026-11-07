@@ -40,6 +40,11 @@
   through them. **Hold Effect** stops it changing effect by itself and is remembered across launches. Five are new to NullPlayer: **Spiral**, **Vortex**, **Flower**, **Heart**, where
   the waveform becomes a pair of pink hearts that echo outward in heart-shaped ripples, and
   **Pentagram**, where it becomes a crimson star inside a circle with star-shaped ripples.
+- **Cast Visualization** (right-click the Visualizations window ▸ Cast Visualization): plays the
+  running engine and preset live on a Chromecast or a DLNA TV, with the music, at 720p, 1080p or 4K
+  and 30 or 60 fps (4K at 30). The Mac's speakers go quiet and the window goes black under a note;
+  its right-click menu still changes the engine, preset and cast. Changes take 15–30 seconds to show on the TV.
+  Needs macOS 14.2 or later, and asks once for System Audio Recording permission.
 
 ### Winamp Modern (`.wal`) skins
 

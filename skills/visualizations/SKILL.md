@@ -102,6 +102,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [goom-port](../goom-port/SKILL.md) | Goom (j3k0/goom Goom2k26 C core) — CGoomCore shim, RGBA blit, 30/s cadence, forced effects, the port's own effects (Heart, Pentagram etc.) |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
 | [metal-gotchas](../metal-gotchas/SKILL.md) | Metal command-encoder pitfalls, render-to-texture y-flip, spectrum jitter |
+| [visualization-cast](../visualization-cast/SKILL.md) | **Cast Visualization ▸** — the Visualizations window's picture and the app's audio live to a Chromecast or DLNA TV; the GL readback seam, encoder, playlist, quality limits |
 
 ## Comparison
 

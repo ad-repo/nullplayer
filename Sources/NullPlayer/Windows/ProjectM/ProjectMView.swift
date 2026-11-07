@@ -641,7 +641,7 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     /// its own identical copy of — as did `ModernProjectMView`, and as did the `.wal` skin's
     /// embedded AVS surface, with a shorter one that immediately read as truncated beside it.
     func buildVisualizationMenu() -> NSMenu {
-        VisualizationContextMenu.build(target: self, options: .init())
+        VisualizationContextMenu.build(target: self, options: .init(showsCast: true))
     }
     
     @objc func reconfigureTripexAction(_ sender: NSMenuItem)    { visualizationGLView?.reconfigureTripex() }
