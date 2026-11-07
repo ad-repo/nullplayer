@@ -61,10 +61,17 @@ enum WinampModernWebNavigationPolicy {
         }
         guard let url = URL(string: candidate),
               let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = url.host, !host.isEmpty else {
+              let host = url.host, isHostname(host) else {
             return .blocked("The skin requested a malformed web address.")
         }
         return .allow(url)
+    }
+
+    /// A dotted DNS name or IPv4 address. Winamp-2006 hands `navigateUrl` a Windows program path
+    /// (`Plugins\MSPP\rating\getCurrentRating.exe`), which the bare-host promotion above turned into
+    /// `https://Plugins%5CMSPP…` and offered to open; no web host has a backslash or no dot.
+    private static func isHostname(_ host: String) -> Bool {
+        host.range(of: #"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$"#, options: .regularExpression) != nil
     }
 
     // MARK: - A search, rather than an address
