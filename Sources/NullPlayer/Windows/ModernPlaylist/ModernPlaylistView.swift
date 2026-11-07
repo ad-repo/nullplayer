@@ -346,7 +346,8 @@ class ModernPlaylistView: NSView {
         if currentIndex >= 0 {
             selectedIndices = [currentIndex]
             selectionAnchor = currentIndex
-            scrollToSelection()
+            // A shuffled track can land anywhere, so centre it
+            scrollToSelection(centred: engine.shuffleEnabled)
         }
 
         // Update artwork
@@ -775,11 +776,12 @@ class ModernPlaylistView: NSView {
         // Re-center on the currently-playing track so a skin change (which recreates
         // this window) keeps the now-playing row selected and visible instead of
         // snapping back to slot 0 while audio continues from currentIndex.
-        let currentIndex = WindowManager.shared.audioEngine.currentIndex
-        if currentIndex >= 0 && currentIndex < WindowManager.shared.audioEngine.playlist.count {
-            selectedIndices = [currentIndex]
-            selectionAnchor = currentIndex
-            scrollToSelection()
+        // Under shuffle it is centred, as a track change centres it.
+        let engine = WindowManager.shared.audioEngine
+        if engine.currentIndex >= 0 && engine.currentIndex < engine.playlist.count {
+            selectedIndices = [engine.currentIndex]
+            selectionAnchor = engine.currentIndex
+            scrollToSelection(centred: engine.shuffleEnabled)
         }
         updateMarqueeLayerPosition()
         needsDisplay = true
@@ -1087,18 +1089,21 @@ class ModernPlaylistView: NSView {
         navigateSelection(direction: pages * visibleTrackCount, extend: extend)
     }
 
-    private func scrollToSelection() {
+    /// Scroll the selection on screen, or put it mid-list when `centred`.
+    private func scrollToSelection(centred: Bool = false) {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
-        
+
         let listRect = calculateListArea()
         let tracks = WindowManager.shared.audioEngine.playlist
-        
+
         let itemTop = CGFloat(focusIndex) * itemHeight
         let itemBottom = itemTop + itemHeight
         let visibleTop = scrollOffset
         let visibleBottom = scrollOffset + listRect.height
-        
-        if itemTop < visibleTop {
+
+        if centred {
+            scrollOffset = itemTop - (listRect.height - itemHeight) / 2
+        } else if itemTop < visibleTop {
             scrollOffset = itemTop
         } else if itemBottom > visibleBottom {
             scrollOffset = itemBottom - listRect.height

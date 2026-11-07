@@ -111,4 +111,38 @@ final class TrackFormatTests: XCTestCase {
         XCTAssertFalse(PlaylistRowFields.current.showArtist)
         XCTAssertTrue(PlaylistRowFields.current.showAlbum)
     }
+
+    /// A filled-in format is the same queue, so the playlists repaint rather than reload. A reload
+    /// snapped every playlist back to the playing row each time a server stream reported its sample
+    /// rate, undoing shuffle's centring and the user's own scroll position.
+    func testAFilledInFormatRepaintsThePlaylistsRatherThanReloadingThem() throws {
+        let engine = AudioEngine()
+        let oldHeadless = AudioEngine.isHeadless
+        AudioEngine.isHeadless = true
+        defer { engine.clearPlaylist(); AudioEngine.isHeadless = oldHeadless }
+        let wav = try TestAudioFile.temporaryWAV()
+        defer { try? FileManager.default.removeItem(at: wav) }
+        engine.setPlaylistTracks([Track(lightweightURL: wav)])
+        engine.playTrack(at: 0)
+        let recorder = PlaylistRecorder()
+        engine.delegate = recorder
+
+        engine.streamingPlayerDidDetectFormat(sampleRate: 12_345, channels: 1)
+
+        XCTAssertEqual(engine.playlist.first?.sampleRate, 12_345)
+        XCTAssertEqual(recorder.reloads, 0)
+        XCTAssertEqual(recorder.repaints, 1)
+    }
+
+    private final class PlaylistRecorder: AudioEngineDelegate {
+        var reloads = 0
+        var repaints = 0
+        func audioEngineDidChangeState(_ state: PlaybackState) {}
+        func audioEngineDidUpdateTime(current: TimeInterval, duration: TimeInterval) {}
+        func audioEngineDidChangeTrack(_ track: Track?) {}
+        func audioEngineDidUpdateSpectrum(_ levels: [Float]) {}
+        func audioEngineDidChangePlaylist() { reloads += 1 }
+        func audioEngineDidUpdatePlaylistRows() { repaints += 1 }
+        func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {}
+    }
 }

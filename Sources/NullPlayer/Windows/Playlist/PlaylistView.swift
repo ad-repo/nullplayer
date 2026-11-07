@@ -238,8 +238,8 @@ class PlaylistView: NSView {
         selectionAnchor = currentIndex
         refreshTextBitmapCacheIfNeeded()
 
-        // Scroll to keep the current track visible
-        scrollToSelection()
+        // Scroll to keep the current track visible; a shuffled track can land anywhere, so centre it
+        scrollToSelection(centred: engine.shuffleEnabled)
 
         needsDisplay = true
     }
@@ -1052,11 +1052,12 @@ class PlaylistView: NSView {
         // Re-center on the currently-playing track so a skin change (which recreates
         // this window) keeps the now-playing row selected and visible instead of
         // snapping back to slot 0 while audio continues from currentIndex.
-        let currentIndex = WindowManager.shared.audioEngine.currentIndex
-        if currentIndex >= 0 && currentIndex < WindowManager.shared.audioEngine.playlist.count {
-            selectedIndices = [currentIndex]
-            selectionAnchor = currentIndex
-            scrollToSelection()
+        // Under shuffle it is centred, as a track change centres it.
+        let engine = WindowManager.shared.audioEngine
+        if engine.currentIndex >= 0 && engine.currentIndex < engine.playlist.count {
+            selectedIndices = [engine.currentIndex]
+            selectionAnchor = engine.currentIndex
+            scrollToSelection(centred: engine.shuffleEnabled)
         }
         updateCurrentTrackTextWidth()
         needsDisplay = true
@@ -1549,8 +1550,8 @@ class PlaylistView: NSView {
         // Keep anchor unchanged so user can continue extending
     }
 
-    /// Scroll to ensure the current selection is visible
-    private func scrollToSelection() {
+    /// Scroll to ensure the current selection is visible, or put it mid-list when `centred`.
+    private func scrollToSelection(centred: Bool = false) {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
 
         let effectiveSize = effectiveWindowSize
@@ -1566,7 +1567,9 @@ class PlaylistView: NSView {
         let visibleBottom = scrollOffset + listHeight
 
         // Scroll to keep selection visible
-        if itemTop < visibleTop {
+        if centred {
+            scrollOffset = itemTop - (listHeight - itemHeight) / 2
+        } else if itemTop < visibleTop {
             // Item is above visible area - scroll up
             scrollOffset = itemTop
         } else if itemBottom > visibleBottom {

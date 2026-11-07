@@ -337,6 +337,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // The host-bound readouts get their opening value here — the queue is usually already
             // populated by now — and a slow poll keeps them honest through playlist edits.
             refreshBoundText()
+            // A skin switch reuses this controller, so no track change follows it: the new playlist
+            // opens on the playing row (centred under shuffle) rather than at the top.
+            followCurrentTrackInPlaylist()
             startBoundTextPolling()
             scheduleFramePositionReassert()
             // After the materializer exists, so `handlesHostedWindow` answers for *this* skin.
@@ -2521,8 +2524,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// is usually an auxiliary `pledit` window rather than the player, so this goes to every view.
     private func followCurrentTrackInPlaylist() {
         guard let row = componentBridge?.playlistFollowCurrentTrack() else { return }
+        // A shuffled track can land anywhere, so it is centred rather than pulled to an edge.
+        let centred = WindowManager.shared.audioEngine.shuffleEnabled
         for view in viewsByContainer.values where !view.isTornDown {
-            view.revealPlaylistRow(row)
+            view.revealPlaylistRow(row, centred: centred)
         }
     }
 

@@ -272,6 +272,9 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
   overlays are created only after a completed scene arrives and are replaced with the scene.
 - Playlist snapshots are capped at 4,096 rows. Selection, scrolling, play, removal, and movement use
   typed host actions; scripts receive plain copied item values, never `Track` objects.
+- The `<PLAYLIST>` surface scrolls to the playing row on a track change only (centred under
+  shuffle), and its first snapshot arrives at **0x0**, before its frame: a scroll then reads as one
+  visible row, so `WMPPlaylistSurfaceView` holds it until `setFrameSize` (`WMPPlaylistScrollTests`).
 - WMP exposes ten EQ gains. `WMPAudioEngineHost` uses `EQBandRemapper` at the boundary when the live
   engine is in its 21-band layout; every write remains clamped to ±12 dB.
 - `EFFECTS`/`WMPEFFECTS` hosts the visualization surface. Its single ref-counted spectrum consumer

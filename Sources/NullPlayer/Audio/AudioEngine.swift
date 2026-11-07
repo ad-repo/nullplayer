@@ -193,6 +193,9 @@ protocol AudioEngineDelegate: AnyObject {
     func audioEngineDidChangeTrack(_ track: Track?)
     func audioEngineDidUpdateSpectrum(_ levels: [Float])
     func audioEngineDidChangePlaylist()
+    /// The queue is the same tracks in the same order, but some rows' details were filled in: a
+    /// repaint, not a reload, so no playlist loses its scroll position or selection.
+    func audioEngineDidUpdatePlaylistRows()
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error)
     /// Fired when the streaming player enters an error state, immediately before
     /// `state` is set to `.stopped`. Lets observers distinguish an error-induced
@@ -204,6 +207,8 @@ protocol AudioEngineDelegate: AnyObject {
 }
 
 extension AudioEngineDelegate {
+    // Default no-op: only a delegate that draws a playlist repaints one.
+    func audioEngineDidUpdatePlaylistRows() {}
     // Default no-op: only observers that care about error-vs-natural stops
     // (e.g. the headless CLI) need to implement this.
     func audioEngineDidEncounterPlaybackError() {}
@@ -4246,7 +4251,12 @@ class AudioEngine {
                 delegate?.audioEngineDidChangeTrack(filled)
             }
         }
-        if changed { playlistDidChange() }
+        // Same queue, details filled in: a reload here snapped every playlist back to the playing
+        // row — undoing shuffle's centring — each time a server stream reported its format.
+        guard changed else { return }
+        refreshLocalGaplessSuccessor()
+        prepareNextLocalCrossfade()
+        delegate?.audioEngineDidUpdatePlaylistRows()
     }
 
     /// Append tracks to the playlist without starting playback
