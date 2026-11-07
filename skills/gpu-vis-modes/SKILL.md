@@ -9,7 +9,11 @@ Internals of the shader modes shared between [main-window-visualization](../main
 
 ## Fire Mode
 
-**Flame Styles**: Inferno (orange/red), Aurora (green/cyan/purple), Electric (blue/white/purple), Ocean (deep blue/teal/white)
+**Flame Styles**: Inferno, Aurora, Electric, Ocean, Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle, Synthwave.
+
+- **Colours**: `kFlamePalettes` in the shader, one row per `FlameStyle` in case order (`colorScheme` is the `allCases` index), all on the shared heat stops `kFlameStops` (0, .15, .4, .65, .85, 1). A palette must already be clearly visible at 0.15 — tongue tails and wisps live in low heat, and a palette dark there makes the flame look short. `VisPaletteTableTests` checks the rows' `// <Style>` comments against `allCases`.
+- **Motion**: only Aurora, Electric and Ocean have their own cooling/turbulence/diffusion/wind; every other style burns like Inferno (`default:` in `FlameStyle`).
+- **Wisp height**: edge erosion (what thins tongues to points) tapers with height, `0.15 * (1 - 0.6 * uv_y)`. At full strength it kills a lone 1-px tip in about 6 rows, so this taper, not `cooling`, sets how high wisps reach; summed over the grid, cooling removes only about `0.7 × cooling` of heat.
 
 **Fire Intensity**:
 - **Mellow** — gentle ambient flame, smooth transitions
@@ -104,7 +108,8 @@ Oscilloscope-style electrocardiogram monitor — pure peak-driven, no BPM or tem
 - Per-beat amplitude (the prominence of the detected peak) drives that specific QRS's height — quiet peaks read as small blips, loud peaks tower
 - Persistent ping-pong trace texture preserves already-drawn history; only the scan-head region is redrawn
 - Wide vertical clamp `[0.020, 0.980]` plus loudness range `mix(0.08, 3.40, sqrt(amp))` gives oscilloscope-like headroom
-- Selectable styles: Clinical, Cyan, Amber, Neon, Crimson, Ice
+- Selectable styles: Clinical, Cyan, Amber, Neon, Crimson, Ice, Inferno, Aurora, Ocean, Toxic, Plasma, Sunset, Gold, Ghost, Cobalt, Violet, Synthwave, Emerald
+- Colours: `kEKGPalettes` in the shader, one row per `EKGStyle` in case order, columns trace / hot trace (scan head) / minor grid / major grid / background; `VisPaletteTableTests` checks the row order
 
 **Audio Reactivity**:
 - Pure peak detector driven directly from `.audioPCMDataUpdated`. **Does not use BPM, aubio tempo, or spectrum energy.**

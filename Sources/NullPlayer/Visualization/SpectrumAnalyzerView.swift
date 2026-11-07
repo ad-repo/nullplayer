@@ -82,27 +82,39 @@ enum FlameStyle: String, CaseIterable {
     case aurora = "Aurora"
     case electric = "Electric"
     case ocean = "Ocean"
+    case emerald = "Emerald"
+    case toxic = "Toxic"
+    case plasma = "Plasma"
+    case sunset = "Sunset"
+    case ice = "Ice"
+    case gold = "Gold"
+    case blood = "Blood"
+    case ghost = "Ghost"
+    case spectrum = "Spectrum"
+    case cobalt = "Cobalt"
+    case candle = "Candle"
+    case synthwave = "Synthwave"
     var displayName: String { rawValue }
-    var colorScheme: Int32 {
-        switch self { case .inferno: return 0; case .aurora: return 1; case .electric: return 2; case .ocean: return 3 }
-    }
+    /// Row in `kFlamePalettes` (FlameShaders.metal), which lists the palettes in this case order.
+    var colorScheme: Int32 { Int32(Self.allCases.firstIndex(of: self)!) }
+    // Styles past Ocean are colour variants and burn like Inferno.
     var buoyancy: Float {
-        switch self { case .inferno: return 6.0; case .aurora: return 3.5; case .electric: return 8.0; case .ocean: return 4.0 }
+        switch self { case .aurora: return 3.5; case .electric: return 8.0; case .ocean: return 4.0; default: return 6.0 }
     }
     var cooling: Float {
-        switch self { case .inferno: return 0.28; case .aurora: return 0.17; case .electric: return 0.38; case .ocean: return 0.14 }
+        switch self { case .aurora: return 0.17; case .ocean: return 0.14; default: return 0.28 }
     }
     var turbulence: Float {
-        switch self { case .inferno: return 2.0; case .aurora: return 1.2; case .electric: return 3.0; case .ocean: return 0.8 }
+        switch self { case .aurora: return 1.2; case .electric: return 3.0; case .ocean: return 0.8; default: return 2.0 }
     }
     var diffusion: Float {
-        switch self { case .inferno: return 0.04; case .aurora: return 0.08; case .electric: return 0.02; case .ocean: return 0.1 }
+        switch self { case .aurora: return 0.08; case .electric: return 0.02; case .ocean: return 0.1; default: return 0.04 }
     }
     var windStrength: Float {
-        switch self { case .inferno: return 1.2; case .aurora: return 2.5; case .electric: return 1.8; case .ocean: return 1.0 }
+        switch self { case .aurora: return 2.5; case .electric: return 1.8; case .ocean: return 1.0; default: return 1.2 }
     }
     var emberRate: Float {
-        switch self { case .inferno: return 0.002; case .aurora: return 0.001; case .electric: return 0.004; case .ocean: return 0.001 }
+        switch self { case .aurora, .ocean: return 0.001; case .electric: return 0.004; default: return 0.002 }
     }
 }
 
@@ -242,18 +254,22 @@ enum EKGStyle: String, CaseIterable {
     case neon = "Neon"
     case crimson = "Crimson"
     case ice = "Ice"
+    case inferno = "Inferno"
+    case aurora = "Aurora"
+    case ocean = "Ocean"
+    case toxic = "Toxic"
+    case plasma = "Plasma"
+    case sunset = "Sunset"
+    case gold = "Gold"
+    case ghost = "Ghost"
+    case cobalt = "Cobalt"
+    case violet = "Violet"
+    case synthwave = "Synthwave"
+    case emerald = "Emerald"
 
     var displayName: String { rawValue }
-    var colorScheme: Int32 {
-        switch self {
-        case .clinical: return 0
-        case .cyan: return 1
-        case .amber: return 2
-        case .neon: return 3
-        case .crimson: return 4
-        case .ice: return 5
-        }
-    }
+    /// Row in `kEKGPalettes` (EKGShaders.metal), which lists the palettes in this case order.
+    var colorScheme: Int32 { Int32(Self.allCases.firstIndex(of: self)!) }
 }
 
 /// Parameters for Matrix Metal shaders (must match Metal MatrixParams struct)

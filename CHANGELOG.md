@@ -109,6 +109,12 @@
   their own outside Auto-Cycle / Auto-Random, so their Mode Lock, Auto-Switch and Hold Effect items,
   and Tripex's Hold Current Effect, are gone: Manual Only does that now. In a `.wal` skin, **R**
   picks a random preset for every engine, not only ProjectM.
+- **Fire's wisps rise higher, and Fire has 16 color styles.** Thin flame tips used to burn out a few
+  rows above their tongue; now they keep rising as wisps. Aurora, Electric and Ocean looked short
+  because their low heat was nearly black, and now show the whole flame as Inferno does. New styles:
+  Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle and Synthwave.
+- **EKG has 18 color styles.** Beside Clinical, Cyan, Amber, Neon, Crimson and Ice: Inferno, Aurora,
+  Ocean, Toxic, Plasma, Sunset, Gold, Ghost, Cobalt, Violet, Synthwave and Emerald.
 
 ## 0.34.2
 
