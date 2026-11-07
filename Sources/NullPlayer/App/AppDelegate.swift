@@ -543,6 +543,10 @@ extension AppDelegate: AudioEngineDelegate {
     func audioEngineDidChangePlaylist() {
         windowManager.reloadPlaylistViews()
     }
+
+    func audioEngineDidUpdatePlaylistRows() {
+        windowManager.redrawPlaylistViews()
+    }
     
     func audioEngineDidFailToLoadTrack(_ track: Track, error: Error) {
         // Log the failure - UI notification is handled via NotificationCenter

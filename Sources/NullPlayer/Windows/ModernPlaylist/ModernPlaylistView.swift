@@ -342,12 +342,7 @@ class ModernPlaylistView: NSView {
         // Update tracking state
         lastCurrentIndex = currentIndex
 
-        // Auto-select and scroll to current track
-        if currentIndex >= 0 {
-            selectedIndices = [currentIndex]
-            selectionAnchor = currentIndex
-            scrollToSelection()
-        }
+        followPlayingRow()
 
         // Update artwork
         loadArtwork(for: engine.currentTrack)
@@ -775,12 +770,7 @@ class ModernPlaylistView: NSView {
         // Re-center on the currently-playing track so a skin change (which recreates
         // this window) keeps the now-playing row selected and visible instead of
         // snapping back to slot 0 while audio continues from currentIndex.
-        let currentIndex = WindowManager.shared.audioEngine.currentIndex
-        if currentIndex >= 0 && currentIndex < WindowManager.shared.audioEngine.playlist.count {
-            selectedIndices = [currentIndex]
-            selectionAnchor = currentIndex
-            scrollToSelection()
-        }
+        followPlayingRow()
         updateMarqueeLayerPosition()
         needsDisplay = true
     }
@@ -1087,29 +1077,26 @@ class ModernPlaylistView: NSView {
         navigateSelection(direction: pages * visibleTrackCount, extend: extend)
     }
 
-    private func scrollToSelection() {
+    /// Select the playing row and scroll to it — edge or centred, `PlayingRowPlacement`'s rule.
+    private func followPlayingRow() {
+        let engine = WindowManager.shared.audioEngine
+        guard engine.playlist.indices.contains(engine.currentIndex) else { return }
+        selectedIndices = [engine.currentIndex]
+        selectionAnchor = engine.currentIndex
+        scrollToSelection(PlayingRowPlacement(shuffle: engine.shuffleEnabled))
+    }
+
+    /// Scroll the current selection on screen.
+    private func scrollToSelection(_ placement: PlayingRowPlacement = .edge) {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
-        
-        let listRect = calculateListArea()
-        let tracks = WindowManager.shared.audioEngine.playlist
-        
-        let itemTop = CGFloat(focusIndex) * itemHeight
-        let itemBottom = itemTop + itemHeight
-        let visibleTop = scrollOffset
-        let visibleBottom = scrollOffset + listRect.height
-        
-        if itemTop < visibleTop {
-            scrollOffset = itemTop
-        } else if itemBottom > visibleBottom {
-            scrollOffset = itemBottom - listRect.height
-        }
-        
-        let totalContentHeight = CGFloat(tracks.count) * itemHeight
-        let maxScroll = max(0, totalContentHeight - listRect.height)
-        scrollOffset = max(0, min(maxScroll, scrollOffset))
+        let listHeight = calculateListArea().height
+        let rowCount = WindowManager.shared.audioEngine.playlist.count
+        scrollOffset = placement.offset(itemTop: CGFloat(focusIndex) * itemHeight, itemHeight: itemHeight,
+                                       viewport: listHeight, current: scrollOffset,
+                                       contentHeight: CGFloat(rowCount) * itemHeight)
         updateMarqueeLayerPosition()
     }
-    
+
     // MARK: - Menu Actions
     
     @objc func addURL(_ sender: Any?) {

@@ -130,8 +130,10 @@ WMP_SEEK_TRACE=1 skills/app-control/scripts/launch.sh "Plus! Pulsar"     # log: 
 `WMP_WIDGET_TRACE=1` is read by **the app** (`WMPMainView`, `WMPWidgetViews`, `#if DEBUG`, stderr)
 and prints the lifetime of every AppKit-hosted widget against the presents that carry it: one
 `present src=<initial|load|interaction|transaction|timer|animation> canvas=<W>x<H> bounds=<W>x<H>
-widgets=[<kind>:<stableID>,…]` line per present, a `create`/`drop` line per hosted view, and a `playlist draw rows=…` line per
-redraw of a playlist surface.
+widgets=[<kind>:<stableID>,…]` line per present, a `create`/`drop` line per hosted view, a `playlist draw rows=… selected=… first=…` line per
+redraw of a playlist surface (`first` is the top visible row), and a `playlist scroll shuffle=…
+bounds=…` line per scroll to the playing row — none prints while the surface is still 0x0, because
+that scroll is held for the frame.
 
 **It exists because a pane that opens and then closes itself is invisible to every other
 instrument.** `WMP_RENDER_CLICK` rebuilds one scene from one event and says the switch was

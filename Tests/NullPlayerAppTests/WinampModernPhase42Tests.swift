@@ -259,6 +259,21 @@ final class WinampModernPhase42Tests: XCTestCase {
         XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 2, "an index off the end moves nothing")
     }
 
+    /// Under shuffle the playing track is centred, visible or not, and clamped at the list's ends.
+    func testACentredRevealPutsTheRowMidList() throws {
+        let renderer = try makeRenderer()
+        let frame = CGRect(x: 0, y: 0, width: 100, height: renderer.playlistRowHeight() * 5)
+
+        renderer.revealPlaylistRow(9, rowCount: 20, in: frame, placement: .centre)
+        XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 7, "9 is the middle of rows 7…11")
+
+        renderer.revealPlaylistRow(10, rowCount: 20, in: frame, placement: .centre)
+        XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 8, "visible, and still centred")
+
+        renderer.revealPlaylistRow(19, rowCount: 20, in: frame, placement: .centre)
+        XCTAssertEqual(renderer.playlistScrollOffsetForTesting, 15, "clamped at the bottom")
+    }
+
     // MARK: - 6. A repeated handler runs once; two different handlers both run
 
     /// A live defect found while verifying this phase, and not a playlist one: Defix's

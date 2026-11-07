@@ -181,4 +181,38 @@ final class WMPPlaylistScrollTests: XCTestCase {
         for _ in 0..<10 { view.scrollWheel(with: try wheel(deltaY: -1, precise: false)) }
         XCTAssertEqual(view.firstVisibleIndex, 0)
     }
+
+    // MARK: - Shuffle centres the playing track
+
+    private func shuffled(count: Int, playing: Int) -> WMPHostSnapshot {
+        var shuffled = snapshot(count: count, playing: playing)
+        shuffled.shuffle = true
+        return shuffled
+    }
+
+    /// A shuffled track can land anywhere, so it is put mid-list rather than on an edge — even
+    /// when it was already on screen.
+    @MainActor
+    func testAShuffledTrackChangeCentresThePlayingRow() throws {
+        let view = surface()
+        view.update(shuffled(count: 200, playing: 150))
+        XCTAssertEqual(view.firstVisibleIndex, 150 - visibleRows / 2)
+
+        view.update(shuffled(count: 200, playing: 146))
+        XCTAssertEqual(view.firstVisibleIndex, 146 - visibleRows / 2, "visible, and still centred")
+
+        view.update(shuffled(count: 200, playing: 1))
+        XCTAssertEqual(view.firstVisibleIndex, 0, "clamped at the top of the list")
+    }
+
+    /// A new skin's surface takes its first snapshot at 0x0, before its frame. Scrolled then it
+    /// reads as one row and pins the playing row to the top; measured live on `9SeriesDefault`,
+    /// switched to under shuffle. The scroll waits for the frame.
+    @MainActor
+    func testATrackChangeBeforeTheFrameScrollsOnceTheFrameArrives() throws {
+        let view = WMPPlaylistSurfaceView(frame: .zero)
+        view.update(shuffled(count: 200, playing: 82))
+        view.setFrameSize(NSSize(width: 312, height: 198))
+        XCTAssertEqual(view.firstVisibleIndex, 82 - visibleRows / 2)
+    }
 }

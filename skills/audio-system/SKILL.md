@@ -119,7 +119,10 @@ the BPM reset and `.audioTrackDidChange` (playlists jump to the playing row, art
 Playing updates). A format learned after the track started is not a track change. It goes through
 `applyFormatUpdates([id: Track.Format])`, which fills each unknown field (`Track.filling`) in the
 playlist rows and on the playing track, writes the latter through `currentTrackStorage`, and calls
-only the delegate, so the readouts redraw. Two sources feed it. One is
+only the delegate, so the readouts redraw. The rows changed but the queue did not, so it sends
+`audioEngineDidUpdatePlaylistRows` (a repaint, `WindowManager.redrawPlaylistViews`), never
+`audioEngineDidChangePlaylist` — a reload reset every playlist's scroll and selection a moment after
+each server track started. Two sources feed it. One is
 `enrichPlaylistFormatsAsync`, run after any load or append: for rows still `lacksFormat`, it takes
 the `MediaLibrary` index when that has all four fields, and otherwise reads the file off main with
 `Track.Format.read`. The other is `streamingPlayerDidDetectFormat` (a stream's sample rate and

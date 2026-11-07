@@ -115,6 +115,14 @@
   Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle and Synthwave.
 - **EKG has 18 color styles.** Beside Clinical, Cyan, Amber, Neon, Crimson and Ice: Inferno, Aurora,
   Ocean, Toxic, Plasma, Sunset, Gold, Ghost, Cobalt, Violet, Synthwave and Emerald.
+- **With shuffle on, the playlist centres the playing track** in every skin family, instead of
+  leaving it on the top or bottom row — on each track change and after a skin change.
+- **A server track starting no longer snaps the playlist back to the playing track.** Plex,
+  Jellyfin, Emby and Subsonic tracks used to reload the playlist a moment after they started,
+  throwing away your scroll position and selection.
+- **Switching `.wal` skins opens the playlist on the playing track**, not at the top of the list.
+- **A `.wmz` playlist opens on the playing track**, rather than with it pinned to the top row, after
+  a skin change or when its pane is opened.
 
 ## 0.34.2
 
