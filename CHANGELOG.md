@@ -104,7 +104,7 @@
   Goom each named, ordered and cycled their presets differently. Now every one shows the current
   preset, Next / Previous / Random Preset, a Presets list, and Manual Only / Auto-Cycle /
   Auto-Random with a Cycle Interval, then its own options — in the Visualizations window, a `.wal`
-  skin's visualization box and a `.wmz` / Sonique effects area alike. Each engine remembers its own
+  skin's visualization box and a `.wmz` / Sonique effects area (every engine but Goom) alike. Each engine remembers its own
   cycle setting, and **C** steps it in any engine. Geiss and Goom no longer switch effects on
   their own outside Auto-Cycle / Auto-Random, so their Mode Lock, Auto-Switch and Hold Effect items,
   and Tripex's Hold Current Effect, are gone: Manual Only does that now. In a `.wal` skin, **R**

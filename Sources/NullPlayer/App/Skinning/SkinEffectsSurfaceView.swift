@@ -265,6 +265,16 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // context and an engine, and its picture reaches the skin through `renderOffscreenImage`.
         engineView = view
         appliedPreset = -1
+        // The cycler and the menu move the engine without the selection; the skin's
+        // `currentPreset` / `currentPresetTitle` bindings, and the next key step, read the selection.
+        view.enginePresetDidChange = { [weak self, weak view] in
+            MainActor.assumeIsolated {
+                guard let self, let view, let index = view.currentEnginePresetIndex else { return }
+                self.appliedPreset = index
+                self.selection.presetTitle = view.enginePresetName(at: index)
+                self.selection.setPreset(index)
+            }
+        }
         // **PCM arrives on the audio thread, and the observer must not hop to the main actor to
         // deliver it.** `.audioPCMDataUpdated` is posted from `AudioEngine.processAudioBuffer`
         // inside the tap; `MainActor.assumeIsolated` there is a `dispatch_assert_queue` failure and

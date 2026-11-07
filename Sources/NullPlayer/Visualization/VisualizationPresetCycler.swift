@@ -57,7 +57,8 @@ final class VisualizationPresetCycler {
     }
 
     private func advance() {
-        guard let view else { return }
+        // A preferences reset can clear the mode under a running timer.
+        guard let view, mode != .off else { return }
         // The editor's preset would be thrown away under it.
         if (view.currentEngine as? AvsEngine)?.isBeingEdited == true { return }
         mode == .random ? view.randomEnginePreset() : view.stepEnginePreset(by: 1)

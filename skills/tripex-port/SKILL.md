@@ -212,7 +212,7 @@ After modifying any of the touched files, run:
 
 1. `swift build` — green, including all upstream `.cpp` files compiling without error.
 2. Launch app → right-click visualizer → **Visualization Engine** → **Tripex** → confirm the window switches and a frame renders.
-3. Use the per-engine submenu items (Next / Previous / Random / Presets entries / Manual Only / Auto-Cycle / Auto-Random / Randomize Effect Settings / Intensity / Show Audio Info / Show Help) → confirm each takes effect.
+3. Use the right-click menu items (Next / Previous / Random / Presets entries / Manual Only / Auto-Cycle / Auto-Random / Randomize Effect Settings / Intensity / Show Audio Info / Show Help) → confirm each takes effect.
 4. Switch back to ProjectM → confirm no GL state corruption.
 5. Close + relaunch app with Tripex saved as last-engine + non-zero `tripex.lastEffectIndex` → confirm the same effect restores.
 6. Run with a long-playing track (>10 min) → Activity Monitor should show steady-state memory, no growth.

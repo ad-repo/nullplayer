@@ -24,7 +24,8 @@ final class GoomEngine: NSObject, VisualizationEngine {
     private let lock = NSLock()
     private var core: OpaquePointer?
     /// The effect Goom is held on, applied again to every new core (a resize makes one).
-    private var heldEffect = UserDefaults.standard.object(forKey: GoomEngine.heldEffectKey) as? Int ?? 0
+    private var heldEffect = (UserDefaults.standard.object(forKey: GoomEngine.heldEffectKey) as? Int)
+        .flatMap { (0..<GoomEngine.effectCount).contains($0) ? $0 : nil } ?? 0
     /// 512 left then 512 right frames, as `GoomCore_update` reads them.
     private var pcm = [Int16](repeating: 0, count: 1024)
 
