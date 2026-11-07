@@ -95,7 +95,7 @@ extension Array where Element == WMPPlaylistItemSnapshot {
 /// `visEffects.currentEffectTitle` is read by 61 archives and `currentPresetTitle` by 42 — so they
 /// answer what is actually being drawn rather than a constant. See `SkinEffectSelection`.
 struct WMPEffectsSnapshot: Hashable, Codable {
-    /// The stable id of the selected effect: `bars`, `projectm`, `geiss`, `tripex`.
+    /// The stable id of the selected effect: one of the `SkinEffectSelection.catalogue` ids.
     var type = ""
     var title = ""
     var preset = 0

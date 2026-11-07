@@ -219,7 +219,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-            case .projectM, .geiss, .tripex, .avs, .goom:
+            case .engine:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
@@ -326,7 +326,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard isActive else { return }
         switch effect.style {
         case .bars, .spikes, .ambience: if levels.isEmpty { return }
-        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs, .goom: break
+        case .cava, .visClassic, .engine: break
         }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
@@ -372,7 +372,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
-        case .projectM, .geiss, .tripex, .avs, .goom: drawOffscreenEngine()
+        case .engine: drawOffscreenEngine()
         }
     }
 
@@ -580,7 +580,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func stepWithinEffect(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
         switch effect.style {
-        case .projectM, .geiss, .tripex, .avs, .goom:
+        case .engine:
             guard let count = presetCount(), count > 0 else { return false }
             let current = selection.preset % count
             selection.setPreset(((current + delta) % count + count) % count)
@@ -635,7 +635,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
-        case .projectM, .geiss, .tripex, .avs, .goom:
+        case .engine:
             // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
             // view already conforms to — the same presets, cycling and sensitivity items the
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's

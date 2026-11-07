@@ -68,6 +68,36 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(image.height, 150)
     }
 
+    /// **The skin's preset reaches an engine that is still starting.** Switching the rect to an
+    /// engine asks for the selection's preset before the engine exists; that request used to be
+    /// marked done and dropped, so Goom kept its own last effect under the skin's number.
+    @MainActor
+    func testSwitchingToAnEngineAppliesTheSkinsPresetOnceItRuns() throws {
+        guard VisualizationGLView(frame: NSRect(x: 0, y: 0, width: 8, height: 8), pixelFormat: nil) != nil else {
+            throw XCTSkip("no OpenGL pixel format on this machine")
+        }
+        let defaults = UserDefaults.standard
+        let savedEffect = defaults.object(forKey: GoomEngine.heldEffectKey)
+        defer { defaults.set(savedEffect, forKey: GoomEngine.heldEffectKey) }
+        defaults.set(4, forKey: GoomEngine.heldEffectKey)
+
+        let effects = SkinEffectsSurfaceView(frame: NSRect(x: 0, y: 0, width: 206, height: 150), selection: .wmp)
+        defer { effects.removeFromSuperview(); _ = SkinEffectSelection.wmp.select("spikes") }
+        effects.setActive(true)
+        XCTAssertTrue(SkinEffectSelection.wmp.select("goom"))
+        XCTAssertEqual(SkinEffectSelection.wmp.preset, 0)
+
+        // The surface's frame timer creates the engine and then applies the preset.
+        let deadline = Date().addingTimeInterval(3)
+        while defaults.integer(forKey: GoomEngine.heldEffectKey) != 0, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertEqual(defaults.integer(forKey: GoomEngine.heldEffectKey), 0,
+                       "Goom kept its own last effect instead of the skin's preset")
+        XCTAssertEqual(SkinEffectSelection.wmp.preset, 0)
+        XCTAssertEqual(SkinEffectSelection.wmp.presetTitle, GoomEngine.effectName(at: 0))
+    }
+
     @MainActor
     func testWMPEffectSuiteOptionsUseTheirRealContextMenus() {
         let effects = SkinEffectsSurfaceView(frame: NSRect(x: 0, y: 0, width: 120, height: 80), selection: .wmp)
