@@ -617,6 +617,9 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #6 admitted 2026-11-05** (`feat/wal-intake-6`, rev `039b1d2d`). Run over the 779 bronze:
   **25 silver, 754 bronze, 0 quarantine**, ~45 min. **Gain curve** (first 60): `2` through rank 45, then
   `1 1 2 1 1 1 1 1 1 1 1 1 1 1 1`; the 25 silver are all gain 2. Post-admission sweep: not run.
+- **Intake #7 picked 2026-11-07** (`feat/wal-intake-7`, rev `4f167819`) by `wal_intake_pick.sh`, no
+  crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 729 bronze, 0 quarantine.** Batch:
+  shark5final2, Battlefield_Vietnam, Winamp-2006, Hitchhikers_Guide, Underscore, EW, Software, Kyoko_Fukada, Chronabie, AniTransformers, Project_DU_Television, Blue_and_Silver_Pro, Star_Wars_Player, Shark_by_HH, W%C3%83%C2%BCrlitzer_V3_1, Official_Powerade_Skin, UltraBM_v1, CC_Red_Aler_2, Compact, EMP, Tuneup_v1, Echo, NightWing_II, Big_Red_House_, Winamp_Skin_Yuki_Morikawa (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
