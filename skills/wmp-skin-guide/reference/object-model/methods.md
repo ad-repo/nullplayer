@@ -295,7 +295,7 @@ so the table below is the whole object. A tenth name stays `unrecognised` and ra
 | `videoZoom` | `100` | WMP's own 100%. Nothing is scaled; the number is what a skin's zoom readout prints |
 | `videoStretchToFit` | `false` | nothing is fitted to anything |
 | `videoShrinkToFit` | `false` | as above. Corpus use is write-only |
-| `effectType` | live | the id of the effect the rect is drawing: `bars`, `projectm`, `geiss`, `tripex`. Writable |
+| `effectType` | live | the id of the effect the rect is drawing: `bars`, `projectm`, `geiss`, `tripex`, `avs`, `goom`. Writable |
 | `effectPreset` | live | the preset within that effect — ProjectM's preset, Geiss's and Tripex's effect. Writable |
 | `showTitles` | `false` | no titles are drawn over a video that does not exist |
 | `showEffects` | `true` | the effects surface *is* always drawn, so `myeffect.visible = mediacenter.showEffects` is right |

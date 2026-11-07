@@ -52,13 +52,8 @@ final class SkinEffectSelection {
         /// `visualizationEngineType`: that preference belongs to the standalone Visualizations
         /// window and the menu bar, and a skin cycling `visEffects` is not entitled to rewrite it.
         var engine: VisualizationType? {
-            switch style {
-            case .projectM: return .projectM
-            case .geiss: return .geiss
-            case .tripex: return .tripex
-            case .avs: return .avs
-            case .bars, .spikes, .ambience, .cava, .visClassic: return nil
-            }
+            if case .engine(let type) = style { return type }
+            return nil
         }
 
         /// A GL engine renders offscreen and is presented as a `CGImage`; the rest draw themselves
@@ -67,27 +62,31 @@ final class SkinEffectSelection {
         var isOffscreenEngine: Bool { engine != nil }
     }
 
-    enum NativeStyle: String {
-        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex, avs
+    /// What draws the rect: one of the surface's own renderers, or a suite engine. A new engine
+    /// needs only its catalogue entry.
+    enum NativeStyle: Equatable {
+        case bars, spikes, ambience, cava, visClassic
+        case engine(VisualizationType)
     }
 
     /// Posted, with the selection as its object, when the selected effect or preset changes, so
     /// every surface on that selection follows one choice.
     static let didChange = Notification.Name("SkinEffectSelectionDidChange")
 
-    /// **Nine effects, all rendering the same way in the rect** (W140). The first five are drawn
-    /// by the surface itself; ProjectM, Geiss, Tripex and AVS render offscreen and are presented as an
-    /// image. Spikes stays first because it is what a skin that selects nothing shows.
+    /// **Ten effects, all rendering the same way in the rect** (W140). The first five are drawn
+    /// by the surface itself; ProjectM, Geiss, Tripex, AVS and Goom render offscreen and are presented
+    /// as an image. Spikes stays first because it is what a skin that selects nothing shows.
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
         Effect(id: "bars", title: "Bars", style: .bars),
         Effect(id: "ambience", title: "Ambience", style: .ambience),
         Effect(id: "cava", title: "Cava", style: .cava),
         Effect(id: "vis_classic", title: "vis_classic", style: .visClassic),
-        Effect(id: "projectm", title: "projectM", style: .projectM),
-        Effect(id: "geiss", title: "Geiss", style: .geiss),
-        Effect(id: "tripex", title: "Tripex", style: .tripex),
-        Effect(id: "avs", title: "AVS", style: .avs)
+        Effect(id: "projectm", title: "projectM", style: .engine(.projectM)),
+        Effect(id: "geiss", title: "Geiss", style: .engine(.geiss)),
+        Effect(id: "tripex", title: "Tripex", style: .engine(.tripex)),
+        Effect(id: "avs", title: "AVS", style: .engine(.avs)),
+        Effect(id: "goom", title: "Goom", style: .engine(.goom))
     ]
 
     private(set) var index: Int
