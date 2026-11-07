@@ -32,13 +32,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// The occlusion watch on whichever window this surface is in — see `viewDidMoveToWindow`.
     private var windowVisibilityObserver: NSObjectProtocol?
     private var isTornDown = false
-    /// Preset/effect auto-cycling, persisted through the same keys NullPlayer's own visualization
-    /// window uses, so a cycle set in one place is the cycle in the other.
-    private var presetCycleMode = ProjectMPresetCycleSettings.loadMode()
-    private var presetCycleInterval = ProjectMPresetCycleSettings.loadInterval()
-    private var tripexCycleMode: VisualizationCycleMode = .cycle
-    private var tripexCycleInterval: TimeInterval = 30
-    private var cycleTimer: Timer?
     /// The screen-filling window the engine moves into for `VIS_FS`, or nil when it is in the box.
     private var fullscreenWindow: VisualizationFullscreenWindow?
 
@@ -71,15 +64,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         let engine = WindowManager.shared.visualizationEngineType
         if engine != engineView.currentEngineType { engineView.switchEngine(to: engine) }
         subscribeToAudio()
-        loadTripexCycleState()
-        applyPresetCycleMode()
-    }
-
-    private func loadTripexCycleState() {
-        let raw = UserDefaults.standard.string(forKey: TripexEngine.DefaultsKey.cycleMode) ?? "cycle"
-        tripexCycleMode = VisualizationCycleMode(rawValue: raw) ?? .cycle
-        let stored = UserDefaults.standard.double(forKey: TripexEngine.DefaultsKey.cycleInterval)
-        tripexCycleInterval = stored > 0 ? stored : 30
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -135,8 +119,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     func switchEngine(to type: VisualizationType) {
         guard !isTornDown, type != engineView.currentEngineType else { return }
         engineView.switchEngine(to: type)
-        // Each engine cycles on its own terms, so the timer is re-armed for the one now running.
-        applyPresetCycleMode()
     }
 
     /// `VIS_NEXT` / `VIS_PREV`. Each engine's own idea of "the next one": ProjectM steps its preset
@@ -161,10 +143,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// callers build one menu.
     func buildMenu() -> NSMenu {
         VisualizationContextMenu.build(target: self, options: .init(
-            cycleMode: presetCycleMode,
-            cycleInterval: presetCycleInterval,
-            tripexCycleMode: tripexCycleMode,
-            tripexCycleInterval: tripexCycleInterval,
             // Both apply here: Fullscreen moves the engine to a screen-filling window of its own,
             // and Close puts the skin's AVS window away through the surface catalog.
             showsFullscreen: true,
@@ -183,12 +161,8 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     //
     // Every action is the same one-liner against the engine the visualization window's view makes —
     // the engine API is where the behaviour lives, and both views were already thin wrappers over it.
-    // The preset-cycle state is this surface's own, persisted through the same
-    // `ProjectMPresetCycleSettings` keys, so a cycle set in one place is the cycle in the other.
+    // The presets and auto-cycle every engine shares target the engine view itself.
 
-    @objc func nextPresetAction(_ sender: NSMenuItem?) { engineView.nextPreset() }
-    @objc func previousPresetAction(_ sender: NSMenuItem?) { engineView.previousPreset() }
-    @objc func randomPresetAction(_ sender: NSMenuItem?) { engineView.randomPreset() }
     @objc func setCurrentPresetAsDefault(_ sender: NSMenuItem?) { engineView.setCurrentPresetAsDefault() }
 
     @objc func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem) {
@@ -211,26 +185,11 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         engineView.selectPreset(at: index, hardCut: false)
     }
 
-    @objc func selectPresetFromMenu(_ sender: NSMenuItem) {
-        engineView.selectPreset(at: sender.tag, hardCut: false)
-    }
-
-    @objc func setCycleModeOff(_ sender: NSMenuItem?) { setPresetCycleMode(.off) }
-    @objc func setCycleModeCycle(_ sender: NSMenuItem?) { setPresetCycleMode(.cycle) }
-    @objc func setCycleModeRandom(_ sender: NSMenuItem?) { setPresetCycleMode(.random) }
-
-    @objc func setCycleInterval(_ sender: NSMenuItem) {
-        presetCycleInterval = TimeInterval(sender.tag)
-        ProjectMPresetCycleSettings.save(mode: presetCycleMode, interval: presetCycleInterval)
-        applyPresetCycleMode()
-    }
-
     @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
         guard let type = sender.representedObject as? VisualizationType else { return }
         // Through the window manager, not straight into the engine: the choice is a preference the
         // menu bar and NullPlayer's own visualization window share.
         WindowManager.shared.switchVisualizationEngine(to: type)
-        applyPresetCycleMode()
     }
 
     @objc func setAudioSensitivity(_ sender: NSMenuItem) {
@@ -249,65 +208,36 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// so every menu stays in agreement about what is open.
     @objc func closeWindow(_ sender: NSMenuItem?) { WindowManager.shared.toggleProjectM() }
 
-    @objc func nextGeissEffectAction(_ sender: NSMenuItem?) { engineView.nextGeissEffect() }
-    @objc func previousGeissEffectAction(_ sender: NSMenuItem?) { engineView.previousGeissEffect() }
-    @objc func randomGeissEffectAction(_ sender: NSMenuItem?) { engineView.randomGeissEffect() }
-    @objc func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
-        engineView.selectGeissEffect(at: sender.tag)
-    }
-
     // MARK: - GeissMenuTarget
 
     @objc func toggleBeatDetection(_ sender: NSMenuItem) { editGeissConfig { $0.beatDetection.toggle() } }
     @objc func toggleSyncColorToSound(_ sender: NSMenuItem) { editGeissConfig { $0.syncColorToSound.toggle() } }
     @objc func toggleSlideShift(_ sender: NSMenuItem) { editGeissConfig { $0.slideShift.toggle() } }
-    @objc func toggleModeLock(_ sender: NSMenuItem) { editGeissConfig { $0.modeLocked.toggle() } }
     @objc func togglePaletteLock(_ sender: NSMenuItem) { editGeissConfig { $0.paletteLocked.toggle() } }
     @objc func setSensitivity(_ sender: NSMenuItem) {
         editGeissConfig { $0.sensitivity = Float(sender.tag) / 100.0 }
     }
     @objc func setGamma(_ sender: NSMenuItem) { editGeissConfig { $0.gamma = sender.tag } }
-    @objc func setAutoSwitch(_ sender: NSMenuItem) { editGeissConfig { $0.autoSwitchSeconds = sender.tag } }
     @objc func setVisMode(_ sender: NSMenuItem) { editGeissConfig { $0.visMode = sender.tag } }
     @objc func randomizePalette(_ sender: NSMenuItem) { engineView.randomizeGeissPalette() }
 
     private func editGeissConfig(_ edit: (inout GeissEngine.Config) -> Void) {
-        guard var config = engineView.getGeissConfig() else { return }
+        var config = engineView.getGeissConfig()
         edit(&config)
         engineView.setGeissConfig(config)
     }
 
     // MARK: - TripexMenuTarget
 
-    @objc func nextTripexEffectAction(_ sender: NSMenuItem) { engineView.nextTripexEffect() }
-    @objc func previousTripexEffectAction(_ sender: NSMenuItem) { engineView.previousTripexEffect() }
-    @objc func randomTripexEffectAction(_ sender: NSMenuItem) { engineView.randomTripexEffect() }
     @objc func reconfigureTripexAction(_ sender: NSMenuItem) { engineView.reconfigureTripex() }
-    @objc func toggleTripexHoldAction(_ sender: NSMenuItem) { engineView.toggleTripexHold() }
     @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem) { engineView.toggleTripexAudioInfo() }
     @objc func toggleTripexHelpAction(_ sender: NSMenuItem) { engineView.toggleTripexHelp() }
-    @objc func selectTripexEffectFromMenu(_ sender: NSMenuItem) {
-        engineView.selectTripexEffect(at: sender.tag)
-    }
     @objc func setTripexIntensity(_ sender: NSMenuItem) {
         let value = Float(sender.tag) / 100.0
         engineView.tripexIntensityScale = value
         UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
     }
-    /// The toggle-on-state pattern the Tripex menu uses: the item that is already on turns itself off.
-    @objc func setTripexCycleModeCycle(_ sender: Any?) {
-        setTripexCycleMode((sender as? NSMenuItem)?.state == .on ? .off : .cycle)
-    }
-    @objc func setTripexCycleModeRandom(_ sender: Any?) {
-        setTripexCycleMode((sender as? NSMenuItem)?.state == .on ? .off : .random)
-    }
-    @objc func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem) {
-        tripexCycleInterval = TimeInterval(sender.tag)
-        UserDefaults.standard.set(tripexCycleInterval, forKey: TripexEngine.DefaultsKey.cycleInterval)
-        applyTripexCycleMode()
-    }
-
-    // MARK: - Preset cycling
+    // MARK: - ProjectM ratings
 
     private func currentPresetIdentity() -> (name: String, path: String)? {
         guard engineView.isProjectMAvailable else { return nil }
@@ -321,47 +251,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         guard !wanted.isEmpty else { return nil }
         return (0..<engineView.presetCount).first {
             (engineView.presetPath(at: $0) as NSString).standardizingPath == wanted
-        }
-    }
-
-    private func setPresetCycleMode(_ mode: VisualizationCycleMode) {
-        presetCycleMode = mode
-        ProjectMPresetCycleSettings.save(mode: mode, interval: presetCycleInterval)
-        applyPresetCycleMode()
-    }
-
-    private func setTripexCycleMode(_ mode: VisualizationCycleMode) {
-        tripexCycleMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: TripexEngine.DefaultsKey.cycleMode)
-        applyTripexCycleMode()
-    }
-
-    /// One timer for whichever engine is running: ProjectM steps presets, Tripex steps effects, and
-    /// Geiss cycles inside its own engine (`autoSwitchSeconds`), so it needs none here.
-    private func applyPresetCycleMode() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-        guard engineView.currentEngineType == .projectM, presetCycleMode != .off else {
-            if engineView.currentEngineType == .tripex { applyTripexCycleMode() }
-            return
-        }
-        cycleTimer = Timer.scheduledTimer(withTimeInterval: presetCycleInterval, repeats: true) {
-            [weak self] _ in
-            guard let self else { return }
-            self.presetCycleMode == .random ? self.engineView.randomPreset(hardCut: false)
-                                            : self.engineView.nextPreset(hardCut: false)
-        }
-    }
-
-    private func applyTripexCycleMode() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-        guard engineView.currentEngineType == .tripex, tripexCycleMode != .off else { return }
-        cycleTimer = Timer.scheduledTimer(withTimeInterval: tripexCycleInterval, repeats: true) {
-            [weak self] _ in
-            guard let self else { return }
-            self.tripexCycleMode == .random ? self.engineView.randomTripexEffect()
-                                            : self.engineView.nextTripexEffect()
         }
     }
 
@@ -426,7 +315,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
             switch key {
             case .engine(let delta):
                 WindowManager.shared.switchVisualizationEngine(to: engineType.advanced(by: delta))
-                applyPresetCycleMode()
             case .preset(let delta): stepPreset(by: delta, hardCut: hard)
             }
             return true
@@ -449,15 +337,10 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
             stepPreset(by: -1, hardCut: hard)
             return true
         case 15: // R
-            randomPresetAction(nil)
+            engineView.randomEnginePreset(hardCut: hard)
             return true
         case 8: // C — Manual → Auto-Cycle → Auto-Random → Manual
-            guard engineView.currentEngineType == .projectM else { return false }
-            switch presetCycleMode {
-            case .off: setPresetCycleMode(.cycle)
-            case .cycle: setPresetCycleMode(.random)
-            case .random: setPresetCycleMode(.off)
-            }
+            engineView.presetCycler.mode = engineView.presetCycler.mode.next
             return true
         default:
             return false
@@ -536,8 +419,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         guard !isTornDown else { return }
         exitFullscreen()
         isTornDown = true
-        cycleTimer?.invalidate()
-        cycleTimer = nil
         removeObservers()
         if let observer = windowVisibilityObserver {
             NotificationCenter.default.removeObserver(observer)

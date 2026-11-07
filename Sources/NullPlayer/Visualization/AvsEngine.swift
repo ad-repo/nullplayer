@@ -7,7 +7,7 @@ import OpenGL.GL3
 /// offscreen one.
 ///
 /// AVS is stereo, so the engine takes the full-rate stereo feed itself rather than the host's
-/// mono `addPCMMono`. Its preset menu items target the engine (`addMenuItems`), so a host needs
+/// mono `addPCMMono`. Its own menu items target the engine (`addMenuItems`), so a host needs
 /// no AVS-specific actions; preset state is main-thread only, and the render thread reaches
 /// libavs only through `AvsCore`'s lock.
 final class AvsEngine: NSObject, VisualizationEngine {
@@ -29,12 +29,10 @@ final class AvsEngine: NSObject, VisualizationEngine {
     private var texture: GLuint = 0
     private var framebuffer: GLuint = 0
     private var textureSize = (width: 0, height: 0)
-    private var lastCycleCheck = Date()
 
     // Main thread only, once `init` returns.
     private(set) var presets: [URL] = []
     private(set) var currentIndex: Int?
-    private var lastPresetChange = Date()
     /// Set while the editor has this engine open: auto-cycle would throw the edit away.
     var isBeingEdited = false
 
@@ -147,11 +145,6 @@ final class AvsEngine: NSObject, VisualizationEngine {
                           0, GLint(viewport.height), GLint(viewport.width), 0,
                           GLbitfield(GL_COLOR_BUFFER_BIT), GLenum(GL_LINEAR))
         glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), GLuint(previousRead))
-
-        if Date().timeIntervalSince(lastCycleCheck) >= 1 {
-            lastCycleCheck = Date()
-            DispatchQueue.main.async { [weak self] in self?.cycleIfDue() }
-        }
     }
 
     // MARK: - Presets (main thread)
@@ -185,7 +178,6 @@ final class AvsEngine: NSObject, VisualizationEngine {
         dispatchPrecondition(condition: .onQueue(.main))
         guard presets.indices.contains(index), let core else { return }
         currentIndex = index
-        lastPresetChange = Date()
         let url = presets[index]
         if core.loadPreset(at: url) {
             AvsPresets.currentPreset = url.path
@@ -205,17 +197,5 @@ final class AvsEngine: NSObject, VisualizationEngine {
         var index = currentIndex ?? 0
         while index == currentIndex { index = Int.random(in: presets.indices) }
         selectPreset(at: index)
-    }
-
-    /// Restarts the cycle timer, so a mode change waits a full interval.
-    func setCycleMode(_ mode: VisualizationCycleMode) {
-        AvsPresets.cycleMode = mode
-        lastPresetChange = Date()
-    }
-
-    private func cycleIfDue() {
-        let mode = AvsPresets.cycleMode
-        guard mode != .off, !isBeingEdited, Date().timeIntervalSince(lastPresetChange) >= AvsPresets.cycleInterval else { return }
-        mode == .random ? selectRandomPreset() : step(by: 1)
     }
 }

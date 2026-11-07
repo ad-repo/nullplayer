@@ -130,18 +130,14 @@ Goom chooses its own zoom-filter effect from the music. The fifteen modes (`*_MO
 `goom_filters.h`: upstream's Normal, Wave, Crystal Ball, Scrunch, Amulette, Water, Hypercos 1,
 Hypercos 2, Y Only, Speedway, and the port's Spiral, Vortex, Flower, Heart, Pentagram) are the
 engine's "presets" in `VisualizationGLView+Presets.swift`, so → / ← / R and the hosts' preset
-steps work. Choosing one sets upstream's `forceMode` for the next update; unless held, Goom moves
-on at its next change of its own, as upstream does. `GoomCore_currentEffect` reads
-`update.zoomFilterData.mode`, so it reflects a forced choice only after the next update.
+steps work. **Goom is always held**: it never picks its own effect. `GoomEngine` keeps the chosen
+index in `goom.heldEffect` (default 0; cleared by the Visualizations window's preference reset),
+forces and holds it on every new core (a resize makes one), and `currentEffect` answers that index.
+The shared `VisualizationPresetCycler` is what changes it over time (`goom.cycleMode` /
+`goom.cycleInterval`, default Auto-Random, 30 s).
 
-**Hold Effect** keeps the running effect: `GoomEngine` remembers the held index in
-`goom.heldEffect` (absent = not held; cleared by the Visualizations window's preference reset),
-applies it to every new core (a resize makes one), and a choice made while held becomes the held
-effect.
-
-`GoomEngine.addMenuItems(to:)` adds the section (current effect, Next / Previous / Random, an
-Effects submenu, Hold Effect) with items targeting the engine, so hosts need no Goom actions — the
-AVS pattern.
+Goom's menu is only the shared block every engine gets (`visualizations` skill § *Context menu and
+auto-cycle*); it has no items of its own.
 
 ## Licensing
 

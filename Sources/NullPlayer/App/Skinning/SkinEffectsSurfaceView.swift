@@ -31,13 +31,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private var selectionObserver: NSObjectProtocol?
     private var surfaceStyleObserver: NSObjectProtocol?
     private var isTornDown = false
-    /// Preset/effect auto-cycling, through the same stored keys NullPlayer's own visualization
-    /// window and the `.wal` surface use, so a cycle set in one place is the cycle in all of them.
-    private var presetCycleMode = ProjectMPresetCycleSettings.loadMode()
-    private var presetCycleInterval = ProjectMPresetCycleSettings.loadInterval()
-    private var tripexCycleMode: VisualizationCycleMode = .cycle
-    private var tripexCycleInterval: TimeInterval = 30
-    private var cycleTimer: Timer?
     /// These are the actual suite renderers, not visual approximations. Their scopes keep a WMP
     /// skin's right-click choices separate from the standalone and `.wal` surfaces.
     private let cavaPresenter: CavaPresenter
@@ -169,7 +162,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
             NotificationCenter.default.removeObserver(observer)
         }
         pcmObserver = nil; selectionObserver = nil; surfaceStyleObserver = nil
-        cycleTimer?.invalidate(); cycleTimer = nil
         engineFrameTimer?.invalidate(); engineFrameTimer = nil
         cavaPresenter.stop()
         visClassicWaveform.stop()
@@ -244,7 +236,8 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard let engine = effect.engine, let view = makeEngineView() else { return }
         view.switchEngine(to: engine, persistPreference: false)
         applyPreset(to: view)
-        applyPresetCycleMode()
+        // No display link starts it: this host drives the engine.
+        view.presetCycler.start()
         engineFrameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
                                                 repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pullOffscreenFrame() }
@@ -272,6 +265,16 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         // context and an engine, and its picture reaches the skin through `renderOffscreenImage`.
         engineView = view
         appliedPreset = -1
+        // The cycler and the menu move the engine without the selection; the skin's
+        // `currentPreset` / `currentPresetTitle` bindings, and the next key step, read the selection.
+        view.enginePresetDidChange = { [weak self, weak view] in
+            MainActor.assumeIsolated {
+                guard let self, let view, let index = view.currentEnginePresetIndex else { return }
+                self.appliedPreset = index
+                self.selection.presetTitle = view.enginePresetName(at: index)
+                self.selection.setPreset(index)
+            }
+        }
         // **PCM arrives on the audio thread, and the observer must not hop to the main actor to
         // deliver it.** `.audioPCMDataUpdated` is posted from `AudioEngine.processAudioBuffer`
         // inside the tap; `MainActor.assumeIsolated` there is a `dispatch_assert_queue` failure and
@@ -291,7 +294,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func releaseEngine() {
         if let observer = pcmObserver { NotificationCenter.default.removeObserver(observer) }
         pcmObserver = nil
-        cycleTimer?.invalidate(); cycleTimer = nil
         engineFrameTimer?.invalidate(); engineFrameTimer = nil
         engineImage = nil
         guard let view = engineView else { return }
@@ -638,10 +640,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's
             // window has nowhere to go with.
             menu.addItem(.separator())
-            let options = VisualizationContextMenu.Options(
-                cycleMode: presetCycleMode, cycleInterval: presetCycleInterval,
-                tripexCycleMode: tripexCycleMode, tripexCycleInterval: tripexCycleInterval,
-                showsFullscreen: false, showsClose: false)
+            let options = VisualizationContextMenu.Options(showsFullscreen: false, showsClose: false)
             VisualizationContextMenu.build(target: self, options: options).items.forEach(menu.addItem)
         case .bars, .spikes, .ambience:
             break
@@ -707,9 +706,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     // MARK: - VisualizationMenuTarget
 
-    @objc func nextPresetAction(_ sender: NSMenuItem?) { engineView?.nextPreset() }
-    @objc func previousPresetAction(_ sender: NSMenuItem?) { engineView?.previousPreset() }
-    @objc func randomPresetAction(_ sender: NSMenuItem?) { engineView?.randomPreset() }
     @objc func setCurrentPresetAsDefault(_ sender: NSMenuItem?) { engineView?.setCurrentPresetAsDefault() }
 
     @objc func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem) {
@@ -732,20 +728,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         engineView?.selectPreset(at: index, hardCut: false)
     }
 
-    @objc func selectPresetFromMenu(_ sender: NSMenuItem) {
-        engineView?.selectPreset(at: sender.tag, hardCut: false)
-    }
-
-    @objc func setCycleModeOff(_ sender: NSMenuItem?) { setPresetCycleMode(.off) }
-    @objc func setCycleModeCycle(_ sender: NSMenuItem?) { setPresetCycleMode(.cycle) }
-    @objc func setCycleModeRandom(_ sender: NSMenuItem?) { setPresetCycleMode(.random) }
-
-    @objc func setCycleInterval(_ sender: NSMenuItem) {
-        presetCycleInterval = TimeInterval(sender.tag)
-        ProjectMPresetCycleSettings.save(mode: presetCycleMode, interval: presetCycleInterval)
-        applyPresetCycleMode()
-    }
-
     /// **Through the skin's own selector, not the app's preference.** The engine a `.wmz` draws is
     /// `mediacenter.effectType`, which 96 archives bind their rect's `currentEffectType` to, so a
     /// choice made in this menu is one the skin can read back and put on screen beside the picture.
@@ -755,7 +737,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard let type = sender.representedObject as? VisualizationType,
               let effect = SkinEffectSelection.catalogue.first(where: { $0.engine == type }) else { return }
         selection.select(effect.id)
-        applyPresetCycleMode()
     }
 
     @objc func setAudioSensitivity(_ sender: NSMenuItem) {
@@ -772,25 +753,16 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     @objc func toggleFullscreenAction(_ sender: NSMenuItem?) {}
     @objc func closeWindow(_ sender: NSMenuItem?) {}
 
-    @objc func nextGeissEffectAction(_ sender: NSMenuItem?) { engineView?.nextGeissEffect() }
-    @objc func previousGeissEffectAction(_ sender: NSMenuItem?) { engineView?.previousGeissEffect() }
-    @objc func randomGeissEffectAction(_ sender: NSMenuItem?) { engineView?.randomGeissEffect() }
-    @objc func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
-        engineView?.selectGeissEffect(at: sender.tag)
-    }
-
     // MARK: - GeissMenuTarget
 
     @objc func toggleBeatDetection(_ sender: NSMenuItem) { editGeissConfig { $0.beatDetection.toggle() } }
     @objc func toggleSyncColorToSound(_ sender: NSMenuItem) { editGeissConfig { $0.syncColorToSound.toggle() } }
     @objc func toggleSlideShift(_ sender: NSMenuItem) { editGeissConfig { $0.slideShift.toggle() } }
-    @objc func toggleModeLock(_ sender: NSMenuItem) { editGeissConfig { $0.modeLocked.toggle() } }
     @objc func togglePaletteLock(_ sender: NSMenuItem) { editGeissConfig { $0.paletteLocked.toggle() } }
     @objc func setSensitivity(_ sender: NSMenuItem) {
         editGeissConfig { $0.sensitivity = Float(sender.tag) / 100.0 }
     }
     @objc func setGamma(_ sender: NSMenuItem) { editGeissConfig { $0.gamma = sender.tag } }
-    @objc func setAutoSwitch(_ sender: NSMenuItem) { editGeissConfig { $0.autoSwitchSeconds = sender.tag } }
     @objc func setVisMode(_ sender: NSMenuItem) { editGeissConfig { $0.visMode = sender.tag } }
     @objc func randomizePalette(_ sender: NSMenuItem) { engineView?.randomizeGeissPalette() }
 
@@ -802,35 +774,15 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     // MARK: - TripexMenuTarget
 
-    @objc func nextTripexEffectAction(_ sender: NSMenuItem) { engineView?.nextTripexEffect() }
-    @objc func previousTripexEffectAction(_ sender: NSMenuItem) { engineView?.previousTripexEffect() }
-    @objc func randomTripexEffectAction(_ sender: NSMenuItem) { engineView?.randomTripexEffect() }
     @objc func reconfigureTripexAction(_ sender: NSMenuItem) { engineView?.reconfigureTripex() }
-    @objc func toggleTripexHoldAction(_ sender: NSMenuItem) { engineView?.toggleTripexHold() }
     @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem) { engineView?.toggleTripexAudioInfo() }
     @objc func toggleTripexHelpAction(_ sender: NSMenuItem) { engineView?.toggleTripexHelp() }
-    @objc func selectTripexEffectFromMenu(_ sender: NSMenuItem) {
-        engineView?.selectTripexEffect(at: sender.tag)
-    }
     @objc func setTripexIntensity(_ sender: NSMenuItem) {
         let value = Float(sender.tag) / 100.0
         engineView?.tripexIntensityScale = value
         UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
     }
-    /// The toggle-on-state pattern the Tripex menu uses: the item that is already on turns itself off.
-    @objc func setTripexCycleModeCycle(_ sender: Any?) {
-        setTripexCycleMode((sender as? NSMenuItem)?.state == .on ? .off : .cycle)
-    }
-    @objc func setTripexCycleModeRandom(_ sender: Any?) {
-        setTripexCycleMode((sender as? NSMenuItem)?.state == .on ? .off : .random)
-    }
-    @objc func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem) {
-        tripexCycleInterval = TimeInterval(sender.tag)
-        UserDefaults.standard.set(tripexCycleInterval, forKey: TripexEngine.DefaultsKey.cycleInterval)
-        applyTripexCycleMode()
-    }
-
-    // MARK: - Preset cycling
+    // MARK: - ProjectM ratings
 
     private func currentPresetIdentity() -> (name: String, path: String)? {
         guard let engineView, engineView.isProjectMAvailable else { return nil }
@@ -845,47 +797,6 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard !wanted.isEmpty else { return nil }
         return (0..<engineView.presetCount).first {
             (engineView.presetPath(at: $0) as NSString).standardizingPath == wanted
-        }
-    }
-
-    private func setPresetCycleMode(_ mode: VisualizationCycleMode) {
-        presetCycleMode = mode
-        ProjectMPresetCycleSettings.save(mode: mode, interval: presetCycleInterval)
-        applyPresetCycleMode()
-    }
-
-    private func setTripexCycleMode(_ mode: VisualizationCycleMode) {
-        tripexCycleMode = mode
-        UserDefaults.standard.set(mode.rawValue, forKey: TripexEngine.DefaultsKey.cycleMode)
-        applyTripexCycleMode()
-    }
-
-    /// One timer for whichever engine is running: ProjectM steps presets, Tripex steps effects, and
-    /// Geiss cycles inside its own engine (`autoSwitchSeconds`), so it needs none here.
-    private func applyPresetCycleMode() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-        guard let engineView else { return }
-        guard engineView.currentEngineType == .projectM, presetCycleMode != .off else {
-            if engineView.currentEngineType == .tripex { applyTripexCycleMode() }
-            return
-        }
-        cycleTimer = Timer.scheduledTimer(withTimeInterval: presetCycleInterval, repeats: true) {
-            [weak self] _ in
-            guard let self, let engine = self.engineView else { return }
-            self.presetCycleMode == .random ? engine.randomPreset(hardCut: false)
-                                            : engine.nextPreset(hardCut: false)
-        }
-    }
-
-    private func applyTripexCycleMode() {
-        cycleTimer?.invalidate()
-        cycleTimer = nil
-        guard let engineView, engineView.currentEngineType == .tripex, tripexCycleMode != .off else { return }
-        cycleTimer = Timer.scheduledTimer(withTimeInterval: tripexCycleInterval, repeats: true) {
-            [weak self] _ in
-            guard let self, let engine = self.engineView else { return }
-            self.tripexCycleMode == .random ? engine.randomTripexEffect() : engine.nextTripexEffect()
         }
     }
 }

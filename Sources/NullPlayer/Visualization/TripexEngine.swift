@@ -129,13 +129,7 @@ final class TripexEngine: VisualizationEngine {
     func previousEffect()  { withCore { TripexCore_prevEffect($0) } }
     func randomEffect()    { withCore { TripexCore_changeEffect($0) } }
     func reconfigure()     { withCore { TripexCore_reconfigureEffect($0) } }
-    func toggleHold()      { withCore { TripexCore_toggleHoldingEffect($0) } }
     func setHold(_ on: Bool) { withCore { TripexCore_setHold($0, on ? 1 : 0) } }
-    var isHolding: Bool {
-        coreLock.lock(); defer { coreLock.unlock() }
-        guard let core else { return false }
-        return TripexCore_isHolding(core) != 0
-    }
     func toggleAudioInfo() { withCore { TripexCore_toggleAudioInfo($0) } }
     func toggleHelp()      { withCore { TripexCore_toggleHelp($0) } }
 
@@ -169,9 +163,5 @@ extension TripexEngine {
         static let lastEffectIndex   = "tripex.lastEffectIndex"
         static let lockedEffectIndex = "tripex.lockedEffectIndex"
         static let intensityScale    = "tripex.intensityScale"
-        // Cycle controls — shared by classic ProjectMView and ModernProjectMView
-        // so both windows read/write the same canonical Tripex cycling state.
-        static let cycleMode         = "tripex.cycleMode"
-        static let cycleInterval     = "tripex.cycleInterval"
     }
 }

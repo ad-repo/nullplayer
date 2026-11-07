@@ -63,7 +63,9 @@ Place `.milk` files there and use "Reload Presets" from the context menu.
 
 Auto-switching modes are disabled by default for stability — some presets may glitch during transitions.
 
-Cycle mode and interval are persistent user preferences:
+Cycle mode and interval are persistent user preferences, shared by every host, read and written
+through `VisualizationCycleSettings` and run by the shared `VisualizationPresetCycler` (the
+`visualizations` skill § *Context menu and auto-cycle*: every engine has the same block):
 - Mode: `projectM.cycleMode` (`off`, `cycle`, `random`)
 - Interval: `projectM.cycleInterval` (seconds, default 30)
 
@@ -120,7 +122,7 @@ libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-t
 - `Windows/ModernProjectM/ModernProjectMWindowController.swift` — window controller (modern)
 - `Windows/ModernProjectM/ModernProjectMView.swift` — container with modern chrome
 - `Visualization/VisualizationGLView.swift` — OpenGL rendering (shared)
-- `Visualization/VisualizationContextMenu.swift` — the one context menu all three hosts build (`VisualizationMenuTarget` supplies the engine and the actions; `Options` the cycle state and whether Fullscreen/Close apply)
+- `Visualization/VisualizationContextMenu.swift` — the one context menu all three hosts build (`VisualizationMenuTarget` supplies the engine and the actions; `Options` whether Fullscreen/Close apply)
 - `Windows/WinampModern/WinampModernVisualizationSurfaceView.swift` — the third host: the engine inside a `.wal` skin's own AVS window ([winamp-modern-skin-guide](../winamp-modern-skin-guide/reference/components.md))
 - `Visualization/ProjectMWrapper.swift` — ProjectM library wrapper
 - `App/ProjectMWindowProviding.swift` — protocol abstracting classic/modern

@@ -12,9 +12,36 @@ The standalone waveform window is **not** a Metal visualization mode. It reuses 
 ## Engine presets: one seam
 
 `VisualizationGLView+Presets.swift` is the only place that knows each engine's preset calls (count,
-name, select, step, random). Every host (the Visualizations window's keys, the `.wal` slot, the
-`.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine adds its
-cases there. Each engine's context-menu section stays its own (`VisualizationContextMenu`).
+name, current index, select, step, random). Every host (the Visualizations window's keys, the `.wal`
+slot, the `.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine
+adds its cases there.
+
+## Context menu and auto-cycle: one menu, one timer
+
+`VisualizationContextMenu.build` gives every engine in every host the same menu: `Preset: name
+(i/n)`, Next / Previous / Random (R) and the Presets list (built from the seam above), then Manual
+Only / Auto-Cycle (C) / Auto-Random / Cycle Interval, then **that engine's own items**, then
+Visualization Engine, Audio Sensitivity, Quality, Fullscreen, Close. An engine's own items are only
+what no other engine has: ProjectM's default / rating / favorites (its preset titles carry stars),
+Geiss's config (`GeissMenuBuilder`), Tripex's settings (`TripexMenuBuilder`), AVS's editor and
+folder (`AvsEngine.addMenuItems`), nothing for Goom. A new engine needs no menu code for the shared
+block.
+
+- **The shared block targets the `VisualizationGLView`** (`nextPresetMenuAction` etc., in
+  `VisualizationGLView+Presets.swift`), so no host repeats preset or cycle actions. Every preset
+  change made through the seam (keys, menu, cycler) calls `enginePresetDidChange`; the ProjectM
+  windows close their rating overlay there.
+- **`VisualizationPresetCycler` is the only thing that auto-advances an engine.** It is owned by the
+  GL view; the mode and interval are per engine (`VisualizationCycleSettings`, keys
+  `<engine>.cycleMode` / `.cycleInterval`) and shared by every host. Whoever drives the engine
+  calls `start()` / `stop()` (`startRendering` / `stopRendering`); `switchEngine` and a new mode or
+  interval only re-read the settings (`restart()`), so they never start a stopped cycler. The
+  `.wmz` / Sonique surface never starts a display link, so it calls `presetCycler.start()` itself.
+- **Every engine's own switching is held at creation** (`VisualizationGLView.createEngine`): Tripex
+  `setHold(true)`, Geiss `modeLocked = true`, Goom always held on its chosen effect. Manual Only
+  therefore means the engine stays put; there are no per-engine Hold / Mode Lock / Auto-Switch items.
+- Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss and Goom Auto-Random (they used
+  to switch on their own); 30 s. Tests: `VisualizationCycleSettingsTests`.
 
 ## Standard keys: one seam
 

@@ -1,15 +1,13 @@
 import AppKit
 
-/// Shared menu builder for Geiss-specific configuration UI.
-/// Used by both classic ProjectMView and modern ModernProjectMView to avoid duplication.
-final class GeissMenuBuilder {
+/// Geiss's own items in the shared visualization menu (`VisualizationContextMenu`), below the
+/// presets and cycle every engine shares: toggles, sensitivity/gamma/waveform submenus, and
+/// randomize palette. Mode Lock and Auto-Switch are not here: Geiss's mode is always locked and
+/// the shared preset cycler changes it.
+enum GeissMenuBuilder {
 
-    /// Add Geiss configuration menu items to a context menu.
-    /// Appends after the Effects submenu: toggles, sensitivity/gamma/auto-switch submenus, and randomize action.
     static func addGeissConfigMenuItems(to menu: NSMenu, target: AnyObject, visualizationView: VisualizationGLView) {
-        menu.addItem(NSMenuItem.separator())
-
-        // Toggles: Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock
+        // Toggles: Beat Detection, Sync Color to Sound, Slide Shift, Palette Lock
         let currentConfig = visualizationView.getGeissConfig()
 
         let beatDetectionItem = NSMenuItem(
@@ -18,7 +16,7 @@ final class GeissMenuBuilder {
             keyEquivalent: ""
         )
         beatDetectionItem.target = target
-        beatDetectionItem.state = (currentConfig?.beatDetection ?? true) ? .on : .off
+        beatDetectionItem.state = currentConfig.beatDetection ? .on : .off
         menu.addItem(beatDetectionItem)
 
         let syncColorItem = NSMenuItem(
@@ -27,7 +25,7 @@ final class GeissMenuBuilder {
             keyEquivalent: ""
         )
         syncColorItem.target = target
-        syncColorItem.state = (currentConfig?.syncColorToSound ?? false) ? .on : .off
+        syncColorItem.state = currentConfig.syncColorToSound ? .on : .off
         menu.addItem(syncColorItem)
 
         let slideShiftItem = NSMenuItem(
@@ -36,17 +34,8 @@ final class GeissMenuBuilder {
             keyEquivalent: ""
         )
         slideShiftItem.target = target
-        slideShiftItem.state = (currentConfig?.slideShift ?? true) ? .on : .off
+        slideShiftItem.state = currentConfig.slideShift ? .on : .off
         menu.addItem(slideShiftItem)
-
-        let modeLockItem = NSMenuItem(
-            title: "Mode Lock",
-            action: #selector(GeissMenuTarget.toggleModeLock(_:)),
-            keyEquivalent: ""
-        )
-        modeLockItem.target = target
-        modeLockItem.state = (currentConfig?.modeLocked ?? false) ? .on : .off
-        menu.addItem(modeLockItem)
 
         let paletteLockItem = NSMenuItem(
             title: "Palette Lock",
@@ -54,13 +43,13 @@ final class GeissMenuBuilder {
             keyEquivalent: ""
         )
         paletteLockItem.target = target
-        paletteLockItem.state = (currentConfig?.paletteLocked ?? false) ? .on : .off
+        paletteLockItem.state = currentConfig.paletteLocked ? .on : .off
         menu.addItem(paletteLockItem)
 
         // Submenu: Geiss Sensitivity
         let sensitivityValues: [Float] = [0.25, 0.5, 1.0, 2.0, 3.0, 4.0]
         let sensitivityMenu = NSMenu()
-        let currentSensitivity = currentConfig?.sensitivity ?? 0.20
+        let currentSensitivity = currentConfig.sensitivity
         for val in sensitivityValues {
             let item = NSMenuItem(
                 title: String(format: "%.2f×", val),
@@ -80,7 +69,7 @@ final class GeissMenuBuilder {
         let gammaValues = [0, 25, 50, 100, 150, 200]
         let gammaFactors = ["1.00×", "1.25×", "1.50×", "2.00×", "2.50×", "3.00×"]
         let gammaMenu = NSMenu()
-        let currentGamma = currentConfig?.gamma ?? 10
+        let currentGamma = currentConfig.gamma
         for (i, val) in gammaValues.enumerated() {
             let item = NSMenuItem(
                 title: gammaFactors[i],
@@ -96,29 +85,10 @@ final class GeissMenuBuilder {
         gammaMenuItem.submenu = gammaMenu
         menu.addItem(gammaMenuItem)
 
-        // Submenu: Auto-Switch
-        let autoSwitchValues = [5, 15, 30, 60, 120]
-        let autoSwitchMenu = NSMenu()
-        let currentAutoSwitch = currentConfig?.autoSwitchSeconds ?? 15
-        for val in autoSwitchValues {
-            let item = NSMenuItem(
-                title: String(format: "%ds", val),
-                action: #selector(GeissMenuTarget.setAutoSwitch(_:)),
-                keyEquivalent: ""
-            )
-            item.target = target
-            item.tag = val
-            item.state = (currentAutoSwitch == val) ? .on : .off
-            autoSwitchMenu.addItem(item)
-        }
-        let autoSwitchMenuItem = NSMenuItem(title: "Auto-Switch", action: nil, keyEquivalent: "")
-        autoSwitchMenuItem.submenu = autoSwitchMenu
-        menu.addItem(autoSwitchMenuItem)
-
         // Submenu: visMode
         let visModeTitles = ["Wave", "Spectrum"]
         let visModeMenu = NSMenu()
-        let currentVisMode = currentConfig?.visMode ?? 0
+        let currentVisMode = currentConfig.visMode
         for (i, title) in visModeTitles.enumerated() {
             let item = NSMenuItem(
                 title: title,
@@ -152,11 +122,9 @@ final class GeissMenuBuilder {
     func toggleBeatDetection(_ sender: NSMenuItem)
     func toggleSyncColorToSound(_ sender: NSMenuItem)
     func toggleSlideShift(_ sender: NSMenuItem)
-    func toggleModeLock(_ sender: NSMenuItem)
     func togglePaletteLock(_ sender: NSMenuItem)
     func setSensitivity(_ sender: NSMenuItem)
     func setGamma(_ sender: NSMenuItem)
-    func setAutoSwitch(_ sender: NSMenuItem)
     func setVisMode(_ sender: NSMenuItem)
     func randomizePalette(_ sender: NSMenuItem)
 }

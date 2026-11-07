@@ -508,21 +508,32 @@ the ProjectM/Geiss/Tripex/AVS/Goom/Met visualization host.
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
 (Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
+### Every engine's menu
+ProjectM, Geiss, Tripex, AVS and Goom share one right-click menu, in the Visualizations window, a
+`.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
+but Goom): the current preset,
+**Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
+with a **Cycle Interval** (5 s to 2 min), then that engine's own options, then **Visualization
+Engine**, **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
+own cycle setting; with Manual Only an engine stays on the preset you chose. **C** steps the cycle
+setting in any engine.
+
 ### ProjectM/MilkDrop
-100+ bundled presets, OpenGL rendering, fullscreen support.
+100+ bundled presets, OpenGL rendering, fullscreen support. Its own menu items: Set Current to
+Default, Rate Current Preset and Favorites.
 
 If a preset actually crashes the app while it's on screen — at any point, whether during load or long after — it is automatically disabled so it can't crash the app again on the next launch. Normal quits, force quits, and app kills never disable a preset; only a genuine crash does. To bring disabled presets back, use **Visuals → Visualizations → Restore Disabled ProjectM Presets** — the item shows how many are currently disabled, and is greyed out when there are none.
 
 ### Geiss
-Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — selected from the same right-click **Visualization Engine** submenu. Right-click for runtime controls: effect navigation, Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Mode Lock, Palette Lock, Auto-Switch interval, visMode (Wave/Spectrum), and Randomize Palette. All settings persist across launches.
+Port of Ryan Geiss's classic Winamp visualization. ProjectM-peer engine — selected from the same right-click **Visualization Engine** submenu. Right-click for the same preset and auto-cycle controls every engine has (see *Every engine's menu* below), then Geiss's own: Geiss Sensitivity, Gamma, Beat Detection, Sync Color to Sound, Slide Shift, Palette Lock, visMode (Wave/Spectrum), and Randomize Palette. Geiss starts on Auto-Random; choose Manual Only to keep one mode. All settings persist across launches.
 
 ### AVS
 Winamp's Advanced Visualization Studio, from the right-click **Visualization Engine** submenu (also
 in a `.wal` skin's AVS slot and a `.wmz` skin's effects menu). 35 bundled presets; **Choose AVS
 Preset Folder…** adds a folder of your own `.avs` presets (searched with its subfolders), and **Use
-Bundled AVS Presets Only** drops it again. Right-click for the preset list, Next/Previous/Random,
-and Hold Preset / Auto-Cycle / Auto-Random with a Cycle Interval. The preset, folder and cycle
-setting persist across launches and are cleared by Reset All Visualization Preferences.
+Bundled AVS Presets Only** drops it again. Right-click for the same preset and auto-cycle controls
+every engine has. The preset, folder and cycle setting persist across launches and are cleared by
+Reset All Visualization Preferences.
 
 **Edit Preset…** opens the AVS Preset Editor on the preset that is playing:
 - **Effect tree** on the left. Each effect has an on/off checkbox; there is **Add Effect**, **Duplicate** and **Delete**, and dragging an effect moves it, including into an Effect List.
@@ -531,11 +542,10 @@ setting persist across launches and are cleared by Reset All Visualization Prefe
 - **New**, **Open…** (`.avs` or JSON), **Save…** (Winamp `.avs`, which then appears in the preset list) and **Export JSON…**.
 
 ### Goom
-The classic XMMS-era Goom visualizer, from the right-click **Visualization Engine** submenu. Goom
-chooses its own effects as the music changes; right-click for Next/Previous/Random Effect and an
-Effects list of its fifteen zoom modes to jump to one. Goom moves on again at its next change
-unless **Hold Effect** is on: then it stays on the effect (and on any you pick while holding),
-across launches, while everything else keeps moving with the music.
+The classic XMMS-era Goom visualizer, from the right-click **Visualization Engine** submenu. Its
+fifteen zoom modes are its presets: right-click for the same preset and auto-cycle controls every
+engine has. Goom starts on Auto-Random; with Manual Only it stays on the mode you pick, across
+launches, while everything else keeps moving with the music.
 Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (five petals),
 **Heart**, whose ripples are heart-shaped and whose audio scope becomes a pair of pink hearts, and
 **Pentagram**, whose ripples are star-shaped and whose scope becomes a star inside a circle.
@@ -664,27 +674,31 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 - **R**: Random effect
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
-- All other levers (sensitivity, gamma, locks, auto-switch, palette randomize, etc.) are right-click context-menu only — see the Visualizations section above.
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- All other levers (sensitivity, gamma, palette lock, palette randomize, etc.) are right-click context-menu only — see the Visualizations section above.
 
 ### Tripex
 - **→ / ←**: Next / Previous effect
 - **R**: Random effect
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
-- Hold, auto-cycle, auto-random, intensity, audio info, help overlay, and effect selection are right-click context-menu only.
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The effect list, cycle interval, intensity, audio info and help overlay are right-click context-menu only.
 
 ### AVS
 - **→ / ←**: Next / Previous preset
 - **R**: Random preset
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
-- The preset list, cycling and the preset folder are right-click context-menu only.
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The preset list, cycle interval and the preset folder are right-click context-menu only.
 
 ### Goom
 - **→ / ←**: Next / Previous effect
 - **R**: Random effect
 - **F**: Toggle fullscreen
 - **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
 - The effect list is in the right-click context menu.
 
 ### Windows

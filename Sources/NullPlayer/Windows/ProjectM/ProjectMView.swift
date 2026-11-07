@@ -41,21 +41,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     /// Observer for playback state changes
     private var playbackStateObserver: NSObjectProtocol?
     
-    /// Current preset cycle mode
-    private var presetCycleMode: VisualizationCycleMode = .off
-
-    /// Timer for preset cycling
-    private var presetCycleTimer: Timer?
-
-    /// Cycle interval in seconds
-    private var presetCycleInterval: TimeInterval = 30.0
-
-    /// Tripex cycle state — mirrors the ProjectM cycle controls for a
-    /// uniform UX across visualization engines.
-    private var tripexCycleMode: VisualizationCycleMode = .cycle
-    private var tripexCycleTimer: Timer?
-    private var tripexCycleInterval: TimeInterval = 30.0
-
     /// Store for persisted projectM preset ratings.
     private let presetRatingsStore = ProjectMPresetRatingsStore.shared
 
@@ -98,19 +83,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         // Create and add OpenGL visualization view
         setupVisualizationView()
 
-        loadProjectMPresetCycleStateFromDefaults()
-        applyProjectMPresetCycleModeIfActive()
-
-        // Restore Tripex cycle state from defaults; applied if/when Tripex
-        // becomes the active engine (handled in switchVisualizationEngine,
-        // and below for the case where Tripex is the engine at launch).
-        loadTripexCycleStateFromDefaults()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self = self,
-                  self.visualizationGLView?.currentEngineType == .tripex else { return }
-            self.applyTripexCycleMode()
-        }
-        
         // Subscribe to PCM data notifications (low-latency direct from audio tap)
         pcmObserver = NotificationCenter.default.addObserver(
             forName: .audioPCMDataUpdated,
@@ -158,6 +130,11 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             // Don't use autoresizingMask - we manually update frame in layout()
             visView.autoresizingMask = []
             addSubview(visView)
+            // The rating overlay rates the preset showing; any preset change closes it.
+            visView.enginePresetDidChange = { [weak self] in
+                guard let self, self.isPresetRatingOverlayVisible else { return }
+                self.hidePresetRatingOverlay()
+            }
         }
     }
 
@@ -212,8 +189,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             NotificationCenter.default.removeObserver(observer)
         }
         WindowManager.shared.audioEngine.removeSpectrumConsumer("projectMView")
-        stopPresetCycleTimer()
-        stopTripexCycleTimer()
         visualizationGLView?.stopRendering()
     }
     
@@ -646,27 +621,11 @@ class ProjectMView: NSView, VisualizationMenuTarget {
             visualizationGLView?.randomEnginePreset(hardCut: hasShift)
             return true
             
-        case 8: // C key - toggle cycle mode
-            guard visualizationGLView?.currentEngineType == .projectM else { return false }
-            switch presetCycleMode {
-            case .off:
-                presetCycleMode = .cycle
-                saveProjectMPresetCycleStateToDefaults()
-                applyProjectMPresetCycleMode()
-                NSLog("ProjectMView: Auto-cycle enabled")
-            case .cycle:
-                presetCycleMode = .random
-                saveProjectMPresetCycleStateToDefaults()
-                applyProjectMPresetCycleMode()
-                NSLog("ProjectMView: Auto-random enabled")
-            case .random:
-                presetCycleMode = .off
-                saveProjectMPresetCycleStateToDefaults()
-                applyProjectMPresetCycleMode()
-                NSLog("ProjectMView: Auto-cycle disabled")
-            }
+        case 8: // C key - step the auto-cycle mode
+            guard let cycler = visualizationGLView?.presetCycler else { return false }
+            cycler.mode = cycler.mode.next
             return true
-            
+
         default:
             return false
         }
@@ -682,62 +641,18 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     /// its own identical copy of — as did `ModernProjectMView`, and as did the `.wal` skin's
     /// embedded AVS surface, with a shorter one that immediately read as truncated beside it.
     func buildVisualizationMenu() -> NSMenu {
-        VisualizationContextMenu.build(target: self, options: .init(
-            cycleMode: presetCycleMode,
-            cycleInterval: presetCycleInterval,
-            tripexCycleMode: tripexCycleMode,
-            tripexCycleInterval: tripexCycleInterval))
+        VisualizationContextMenu.build(target: self, options: .init())
     }
     
-    @objc func nextPresetAction(_ sender: NSMenuItem?) {
-        hidePresetRatingOverlay()
-        visualizationGLView?.nextPreset()
-    }
-    
-    @objc func previousPresetAction(_ sender: NSMenuItem?) {
-        hidePresetRatingOverlay()
-        visualizationGLView?.previousPreset()
-    }
-    
-    @objc func randomPresetAction(_ sender: NSMenuItem?) {
-        hidePresetRatingOverlay()
-        visualizationGLView?.randomPreset()
-    }
-
-    // MARK: - TripexMenuTarget
-
-    @objc func nextTripexEffectAction(_ sender: NSMenuItem)     { visualizationGLView?.nextTripexEffect() }
-    @objc func previousTripexEffectAction(_ sender: NSMenuItem) { visualizationGLView?.previousTripexEffect() }
-    @objc func randomTripexEffectAction(_ sender: NSMenuItem)   { visualizationGLView?.randomTripexEffect() }
     @objc func reconfigureTripexAction(_ sender: NSMenuItem)    { visualizationGLView?.reconfigureTripex() }
-    @objc func toggleTripexHoldAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHold() }
     @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem){ visualizationGLView?.toggleTripexAudioInfo() }
     @objc func toggleTripexHelpAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHelp() }
-    @objc func selectTripexEffectFromMenu(_ sender: NSMenuItem) {
-        visualizationGLView?.selectTripexEffect(at: sender.tag)
-    }
     @objc func setTripexIntensity(_ sender: NSMenuItem) {
         let value = Float(sender.tag) / 100.0
         visualizationGLView?.tripexIntensityScale = value
         UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
     }
 
-    @objc func nextGeissEffectAction(_ sender: NSMenuItem?) {
-        visualizationGLView?.nextGeissEffect()
-    }
-
-    @objc func previousGeissEffectAction(_ sender: NSMenuItem?) {
-        visualizationGLView?.previousGeissEffect()
-    }
-
-    @objc func randomGeissEffectAction(_ sender: NSMenuItem?) {
-        visualizationGLView?.randomGeissEffect()
-    }
-
-    @objc func selectGeissEffectFromMenu(_ sender: NSMenuItem) {
-        visualizationGLView?.selectGeissEffect(at: sender.tag)
-    }
-    
     @objc func setCurrentPresetAsDefault(_ sender: NSMenuItem?) {
         visualizationGLView?.setCurrentPresetAsDefault()
     }
@@ -757,12 +672,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     @objc func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               let index = presetIndex(forPath: path) else { return }
-        hidePresetRatingOverlay()
-        visualizationGLView?.selectPreset(at: index, hardCut: false)
-    }
-    
-    @objc func selectPresetFromMenu(_ sender: NSMenuItem) {
-        let index = sender.tag
         hidePresetRatingOverlay()
         visualizationGLView?.selectPreset(at: index, hardCut: false)
     }
@@ -799,12 +708,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         visualizationGLView?.setGeissConfig(cfg)
     }
 
-    @objc func toggleModeLock(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.modeLocked.toggle()
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
     @objc func togglePaletteLock(_ sender: NSMenuItem) {
         guard var cfg = visualizationGLView?.getGeissConfig() else { return }
         cfg.paletteLocked.toggle()
@@ -821,12 +724,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     @objc func setGamma(_ sender: NSMenuItem) {
         guard var cfg = visualizationGLView?.getGeissConfig() else { return }
         cfg.gamma = sender.tag
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func setAutoSwitch(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.autoSwitchSeconds = sender.tag
         visualizationGLView?.setGeissConfig(cfg)
     }
 
@@ -850,57 +747,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         visualizationGLView?.setNormalBeatSensitivity(sensitivity)
     }
     
-    // MARK: - Preset Cycle Mode
-
-    private func loadProjectMPresetCycleStateFromDefaults() {
-        presetCycleMode = ProjectMPresetCycleSettings.loadMode()
-        presetCycleInterval = ProjectMPresetCycleSettings.loadInterval()
-    }
-
-    private func saveProjectMPresetCycleStateToDefaults() {
-        ProjectMPresetCycleSettings.save(mode: presetCycleMode, interval: presetCycleInterval)
-    }
-
-    private func applyProjectMPresetCycleModeIfActive() {
-        guard visualizationGLView?.currentEngineType == .projectM else {
-            stopPresetCycleTimer()
-            return
-        }
-        applyProjectMPresetCycleMode()
-    }
-
-    private func applyProjectMPresetCycleMode() {
-        if presetCycleMode == .off {
-            stopPresetCycleTimer()
-        } else {
-            startPresetCycleTimer()
-        }
-    }
-    
-    @objc func setCycleModeOff(_ sender: NSMenuItem?) {
-        presetCycleMode = .off
-        saveProjectMPresetCycleStateToDefaults()
-        applyProjectMPresetCycleMode()
-    }
-    
-    @objc func setCycleModeCycle(_ sender: NSMenuItem?) {
-        presetCycleMode = .cycle
-        saveProjectMPresetCycleStateToDefaults()
-        applyProjectMPresetCycleMode()
-    }
-    
-    @objc func setCycleModeRandom(_ sender: NSMenuItem?) {
-        presetCycleMode = .random
-        saveProjectMPresetCycleStateToDefaults()
-        applyProjectMPresetCycleMode()
-    }
-    
-    @objc func setCycleInterval(_ sender: NSMenuItem) {
-        presetCycleInterval = TimeInterval(sender.tag)
-        saveProjectMPresetCycleStateToDefaults()
-        applyProjectMPresetCycleMode()
-    }
-
     // MARK: - Visualization Engine Switching
 
     @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
@@ -911,130 +757,15 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     private func switchVisualizationEngine(to type: VisualizationType) {
         if type != .projectM {
             hidePresetRatingOverlay()
-            presetCycleMode = .off
-            stopPresetCycleTimer()
-        }
-        if type != .tripex {
-            stopTripexCycleTimer()
         }
         visualizationGLView?.switchEngine(to: type)
-        if type == .tripex {
-            loadTripexCycleStateFromDefaults()
-            applyTripexCycleMode()
-        } else if type == .projectM {
-            loadProjectMPresetCycleStateFromDefaults()
-            applyProjectMPresetCycleMode()
-        }
     }
 
     func resetVisualizationWindowPreferences() {
         hidePresetRatingOverlay()
-        stopPresetCycleTimer()
-        stopTripexCycleTimer()
-        loadProjectMPresetCycleStateFromDefaults()
-        loadTripexCycleStateFromDefaults()
         visualizationGLView?.switchEngine(to: .projectM, forceReload: true)
-        applyProjectMPresetCycleMode()
     }
 
-    // MARK: - Tripex cycle controls (uniform with ProjectM)
-
-    private func loadTripexCycleStateFromDefaults() {
-        let raw = UserDefaults.standard.string(forKey: TripexEngine.DefaultsKey.cycleMode) ?? "cycle"
-        switch raw {
-        case "off":    tripexCycleMode = .off
-        case "random": tripexCycleMode = .random
-        default:       tripexCycleMode = .cycle
-        }
-        let stored = UserDefaults.standard.double(forKey: TripexEngine.DefaultsKey.cycleInterval)
-        tripexCycleInterval = stored > 0 ? stored : 30.0
-    }
-
-    private func saveTripexCycleStateToDefaults() {
-        let raw: String
-        switch tripexCycleMode {
-        case .off:    raw = "off"
-        case .cycle:  raw = "cycle"
-        case .random: raw = "random"
-        }
-        UserDefaults.standard.set(raw, forKey: TripexEngine.DefaultsKey.cycleMode)
-        UserDefaults.standard.set(tripexCycleInterval, forKey: TripexEngine.DefaultsKey.cycleInterval)
-    }
-
-    /// Applies the current cycle mode to Tripex: Hold ON suppresses
-    /// upstream's internal cycle so the Swift timer is the sole driver.
-    private func applyTripexCycleMode() {
-        visualizationGLView?.setTripexHold(true)
-        if tripexCycleMode == .off {
-            stopTripexCycleTimer()
-        } else {
-            startTripexCycleTimer()
-        }
-    }
-
-    private func startTripexCycleTimer() {
-        stopTripexCycleTimer()
-        tripexCycleTimer = Timer.scheduledTimer(withTimeInterval: tripexCycleInterval, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            switch self.tripexCycleMode {
-            case .cycle:  self.visualizationGLView?.nextTripexEffect()
-            case .random: self.visualizationGLView?.randomTripexEffect()
-            case .off:    break
-            }
-        }
-    }
-
-    private func stopTripexCycleTimer() {
-        tripexCycleTimer?.invalidate()
-        tripexCycleTimer = nil
-    }
-
-    @objc func setTripexCycleModeCycle(_ sender: Any?) {
-        if (sender as? NSMenuItem)?.state == .on {
-            tripexCycleMode = .off
-        } else {
-            tripexCycleMode = .cycle
-        }
-        saveTripexCycleStateToDefaults()
-        applyTripexCycleMode()
-    }
-
-    @objc func setTripexCycleModeRandom(_ sender: Any?) {
-        if (sender as? NSMenuItem)?.state == .on {
-            tripexCycleMode = .off
-        } else {
-            tripexCycleMode = .random
-        }
-        saveTripexCycleStateToDefaults()
-        applyTripexCycleMode()
-    }
-
-    @objc func setTripexCycleIntervalFromMenu(_ sender: NSMenuItem) {
-        tripexCycleInterval = TimeInterval(sender.tag)
-        saveTripexCycleStateToDefaults()
-        if tripexCycleMode != .off { startTripexCycleTimer() }
-    }
-
-    private func startPresetCycleTimer() {
-        stopPresetCycleTimer()
-        presetCycleTimer = Timer.scheduledTimer(withTimeInterval: presetCycleInterval, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            switch self.presetCycleMode {
-            case .cycle:
-                self.visualizationGLView?.nextPreset(hardCut: false)
-            case .random:
-                self.visualizationGLView?.randomPreset(hardCut: false)
-            case .off:
-                break
-            }
-        }
-    }
-    
-    private func stopPresetCycleTimer() {
-        presetCycleTimer?.invalidate()
-        presetCycleTimer = nil
-    }
-    
     // MARK: - Layout
     
     override func layout() {
