@@ -10,41 +10,68 @@
 
 ### Visualizations
 
+- **AVS, Winamp's Advanced Visualization Studio, is a visualization engine** (Visualization Engine ▸
+  AVS), beside ProjectM, Geiss and Tripex, and in a `.wal` skin's AVS slot and a `.wmz` skin's
+  effects menu. It plays `.avs` presets, scripted effects included: 35 come bundled, and **Choose
+  AVS Preset Folder…** adds your own. Right-click for the preset list and auto-cycle; → / ← / R step
+  through presets.
+- **AVS presets can be edited** (right-click ▸ Edit Preset…): the effect tree, with add, duplicate,
+  delete, drag to reorder and an on/off box per effect, and every setting of the selected effect,
+  scripted code included. Changes show as you make them; save as a Winamp `.avs` or export JSON.
+- **Goom is a visualization engine** (Visualization Engine ▸ Goom), beside ProjectM, Geiss, Tripex
+  and AVS: the classic XMMS-era visualizer, from the Goom2k26 revival. It picks its own effects as
+  the music changes; right-click to jump to one of its fifteen zoom effects, and → / ← / R step
+  through them. Five are new to NullPlayer: **Spiral**, **Vortex**, **Flower**, **Heart**, where the
+  waveform becomes a pair of pink hearts that echo outward in heart-shaped ripples, and
+  **Pentagram**, where it becomes a crimson star inside a circle with star-shaped ripples.
+- **Cast Visualization** (right-click the Visualizations window ▸ Cast Visualization): plays the
+  running engine and preset live on a Chromecast or a DLNA TV, with the music, at 720p, 1080p or 4K
+  and 30 or 60 fps (4K at 30). The Mac's speakers go quiet and the window goes black under a note;
+  its right-click menu still changes the engine, preset and cast. Changes take 15–30 seconds to show
+  on the TV. Needs macOS 14.2 or later, and asks once for System Audio Recording permission.
+- **Every visualization engine has the same right-click menu.** ProjectM, Geiss, Tripex, AVS and
+  Goom each named, ordered and cycled their presets differently. Now every one shows the current
+  preset, Next / Previous / Random Preset, a Presets list, and Manual Only / Auto-Cycle /
+  Auto-Random with a Cycle Interval, then its own options — in the Visualizations window, a `.wal`
+  skin's visualization box and a `.wmz` / Sonique effects area (every engine but Goom) alike. Each
+  engine remembers its own cycle setting, and **C** steps it in any engine. Geiss and Goom no longer
+  switch effects on their own outside Auto-Cycle / Auto-Random, so their Mode Lock, Auto-Switch and
+  Hold Effect items, and Tripex's Hold Current Effect, are gone: Manual Only does that now. In a
+  `.wal` skin, **R** picks a random preset for every engine, not only ProjectM.
+- **The Classic, Enhanced and Ultra analyzers are redrawn, and move smoothly.** They used to step
+  between fixed rows and LED cells; now heights glide and peak caps hold, then fall. Classic draws
+  soft bars in a smooth gradient of the skin's colours; Enhanced is a flowing filled curve with a
+  glowing crest; Ultra is dense rounded bars with a glow, floating peaks and a reflection in the
+  Spectrum Analyzer window.
 - **vis_classic's highs reach the right edge** (#682). On a wide analyzer the last bars were always
   empty and the rest mapped frequency in a straight line, so treble looked dead. The analyzer now
   sizes its FFT to the bar count and spreads bars logarithmically, as the original plugin does, and
   in stereo each half covers the whole spectrum instead of only the lower part.
-- **AVS, Winamp's Advanced Visualization Studio, is a visualization engine** (Visualization Engine
-  ▸ AVS), beside ProjectM, Geiss and Tripex, and in a `.wal` skin's AVS slot and a `.wmz` skin's
-  effects menu. It plays `.avs` presets, scripted effects included: 35 come bundled, and **Choose
-  AVS Preset Folder…** adds your own. Right-click for the preset list and auto-cycle; → / ← / R
-  step through presets.
-- **AVS presets can be edited** (right-click ▸ Edit Preset…): the effect tree, with add, duplicate,
-  delete, drag to reorder and an on/off box per effect, and every setting of the selected effect,
-  scripted code included. Changes show as you make them; save as a Winamp `.avs` or export JSON.
 - **vis_classic draws its profiles' effects, peaks and backgrounds as the original plugin did.**
   Mirror, Reflection, Shadow, Double Shadow, Smoke, Reflection Waves and Fade Shadow; peaks that
   snap back, fall, rise, rise-then-fall or spark, with their colour fading as they age; the Flash,
   Solid, Grid and Flash Grid backgrounds in each profile's own colours; and Y-Spacing's gaps between
   rows. Before, every profile drew plain bars with peaks that slid down, a dark-grey background, and
   Fade Shadow as a one-pixel edge.
-
-- **The Classic, Enhanced and Ultra analyzers are redrawn, and move smoothly.** They used to step
-  between fixed rows and LED cells; now heights glide and peak caps hold, then fall. Classic draws
-  soft bars in a smooth gradient of the skin's colours; Enhanced is a flowing filled curve with a
-  glowing crest; Ultra is dense rounded bars with a glow, floating peaks and a reflection in the
-  Spectrum Analyzer window.
-- **Goom is a visualization engine** (Visualization Engine ▸ Goom), beside ProjectM, Geiss, Tripex
-  and AVS: the classic XMMS-era visualizer, from the Goom2k26 revival. It picks its own effects as
-  the music changes; right-click to jump to one of its fifteen zoom effects, and → / ← / R step
-  through them. **Hold Effect** stops it changing effect by itself and is remembered across launches. Five are new to NullPlayer: **Spiral**, **Vortex**, **Flower**, **Heart**, where
-  the waveform becomes a pair of pink hearts that echo outward in heart-shaped ripples, and
-  **Pentagram**, where it becomes a crimson star inside a circle with star-shaped ripples.
-- **Cast Visualization** (right-click the Visualizations window ▸ Cast Visualization): plays the
-  running engine and preset live on a Chromecast or a DLNA TV, with the music, at 720p, 1080p or 4K
-  and 30 or 60 fps (4K at 30). The Mac's speakers go quiet and the window goes black under a note;
-  its right-click menu still changes the engine, preset and cast. Changes take 15–30 seconds to show on the TV.
-  Needs macOS 14.2 or later, and asks once for System Audio Recording permission.
+- **vis_classic's bars follow the music instead of spiking at random.** The Spectrum window and the
+  main window's analyzer saw only the newest 13 ms of every 100 ms of audio, so bars jumped on
+  whatever that slice caught and missed the beats in between, in every profile. They now see all of
+  it, as a `.wal` skin's scope already did; that scope, and a `.wmz` skin's vis_classic effects, no
+  longer drop part of every buffer either, and those effects place their bars by the track's real
+  sample rate instead of assuming 44.1 kHz.
+- **vis_classic is louder, with a Sensitivity setting.** The bars sat near the floor in the Spectrum
+  window, the main window and `.wmz` / Sonique effects; every vis_classic analyzer now takes the
+  boost a `.wal` skin's vis box already had, about 1.7× as tall, and right-click ▸ Sensitivity
+  (Lowest to Highest) sets it for all of them at once. The Spectrum window's right-click, the menu
+  bar's Spectrum Window submenu and the main window's visualization menu are grouped the same way in
+  vis_classic mode, into profiles, display and profile files, and none offers Responsiveness or
+  Normalization there, which vis_classic never used.
+- **Fire's wisps rise higher, and Fire has 16 color styles.** Thin flame tips used to burn out a few
+  rows above their tongue; now they keep rising as wisps. Aurora, Electric and Ocean looked short
+  because their low heat was nearly black, and now show the whole flame as Inferno does. New styles:
+  Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle and Synthwave.
+- **EKG has 18 color styles.** Beside Clinical, Cyan, Amber, Neon, Crimson and Ice: Inferno, Aurora,
+  Ocean, Toxic, Plasma, Sunset, Gold, Ghost, Cobalt, Violet, Synthwave and Emerald.
 
 ### Winamp Modern (`.wal`) skins
 
@@ -90,36 +117,9 @@
 - **⌘→ / ⌘← no longer jump to the Visualizations window** (#707). While it was open, ⌘→ in any other
   window stepped its preset instead, and kept doing so after it closed.
 
-### Visualizations
 
-- **vis_classic's bars follow the music instead of spiking at random.** The Spectrum window and the
-  main window's analyzer saw only the newest 13 ms of every 100 ms of audio, so bars jumped on
-  whatever that slice caught and missed the beats in between, in every profile. They now see all of
-  it, as a `.wal` skin's scope already did; that scope, and a `.wmz` skin's vis_classic effects, no
-  longer drop part of every buffer either, and those effects place their bars by the track's real
-  sample rate instead of assuming 44.1 kHz.
-- **vis_classic is louder, with a Sensitivity setting.** The bars sat near the floor in the
-  Spectrum window, the main window and `.wmz` / Sonique effects; every vis_classic analyzer now takes
-  the boost a `.wal` skin's vis box already had, about 1.7× as tall, and right-click ▸ Sensitivity
-  (Lowest to Highest) sets it for all of them at once. The Spectrum window's right-click, the
-  menu bar's Spectrum Window submenu and the main window's visualization menu are grouped the same
-  way in vis_classic mode, into profiles, display and profile files, and none offers
-  Responsiveness or Normalization there, which vis_classic never used.
-- **Every visualization engine has the same right-click menu.** ProjectM, Geiss, Tripex, AVS and
-  Goom each named, ordered and cycled their presets differently. Now every one shows the current
-  preset, Next / Previous / Random Preset, a Presets list, and Manual Only / Auto-Cycle /
-  Auto-Random with a Cycle Interval, then its own options — in the Visualizations window, a `.wal`
-  skin's visualization box and a `.wmz` / Sonique effects area (every engine but Goom) alike. Each engine remembers its own
-  cycle setting, and **C** steps it in any engine. Geiss and Goom no longer switch effects on
-  their own outside Auto-Cycle / Auto-Random, so their Mode Lock, Auto-Switch and Hold Effect items,
-  and Tripex's Hold Current Effect, are gone: Manual Only does that now. In a `.wal` skin, **R**
-  picks a random preset for every engine, not only ProjectM.
-- **Fire's wisps rise higher, and Fire has 16 color styles.** Thin flame tips used to burn out a few
-  rows above their tongue; now they keep rising as wisps. Aurora, Electric and Ocean looked short
-  because their low heat was nearly black, and now show the whole flame as Inferno does. New styles:
-  Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle and Synthwave.
-- **EKG has 18 color styles.** Beside Clinical, Cyan, Amber, Neon, Crimson and Ice: Inferno, Aurora,
-  Ocean, Toxic, Plasma, Sunset, Gold, Ghost, Cobalt, Violet, Synthwave and Emerald.
+### Playlist
+
 - **With shuffle on, the playlist centres the playing track** in every skin family, instead of
   leaving it on the top or bottom row — on each track change and after a skin change.
 - **A server track starting no longer snaps the playlist back to the playing track.** Plex,
@@ -128,6 +128,7 @@
 - **Switching `.wal` skins opens the playlist on the playing track**, not at the top of the list.
 - **A `.wmz` playlist opens on the playing track**, rather than with it pinned to the top row, after
   a skin change or when its pane is opened.
+
 
 ## 0.34.2
 
