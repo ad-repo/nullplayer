@@ -162,8 +162,9 @@ kernel void propagate_fire(
 // One row per FlameStyle, in that enum's case order (FlameStyle.colorScheme is the row).
 // Every palette shares the same heat stops, so low heat (tongue tails, wisps) is about as
 // visible in every style: dark at 0, a clearly visible colour by 0.15, white-hot at 1.
-constant float kFlameStops[6] = { 0.0, 0.15, 0.4, 0.65, 0.85, 1.0 };
-constant float3 kFlamePalettes[][6] = {
+constant int kFlameStopCount = 6;
+constant float kFlameStops[kFlameStopCount] = { 0.0, 0.15, 0.4, 0.65, 0.85, 1.0 };
+constant float3 kFlamePalettes[][kFlameStopCount] = {
     // Inferno
     { float3(0.01, 0.0, 0.0),  float3(0.4, 0.02, 0.0),  float3(0.9, 0.15, 0.0),  float3(1.0, 0.55, 0.0),  float3(1.0, 0.9, 0.3),   float3(1.0, 1.0, 0.85) },
     // Aurora
@@ -202,13 +203,13 @@ constant int kFlamePaletteCount = sizeof(kFlamePalettes) / sizeof(kFlamePalettes
 float3 flameColor(float t, int scheme) {
     t = clamp(t, 0.0, 1.0);
     int row = clamp(scheme, 0, kFlamePaletteCount - 1);
-    for (int i = 1; i < 6; i++) {
+    for (int i = 1; i < kFlameStopCount; i++) {
         if (t <= kFlameStops[i]) {
             float f = (t - kFlameStops[i - 1]) / (kFlameStops[i] - kFlameStops[i - 1]);
             return mix(kFlamePalettes[row][i - 1], kFlamePalettes[row][i], f);
         }
     }
-    return kFlamePalettes[row][5];
+    return kFlamePalettes[row][kFlameStopCount - 1];
 }
 
 // MARK: - Render

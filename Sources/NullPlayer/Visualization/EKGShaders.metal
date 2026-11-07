@@ -41,7 +41,8 @@ constant float EKG_SCAN_HEAD_X = 0.965;
 
 // One row per EKGStyle, in that enum's case order (EKGStyle.colorScheme is the row).
 // Columns are the colour roles: trace, hot trace (scan head), minor grid, major grid, background.
-constant float3 kEKGPalettes[][5] = {
+constant int kEKGRoleCount = 5;
+constant float3 kEKGPalettes[][kEKGRoleCount] = {
     // Clinical
     { float3(0.105, 0.900, 0.400), float3(0.780, 1.000, 0.720), float3(0.005, 0.115, 0.075), float3(0.020, 0.240, 0.145), float3(0.002, 0.026, 0.019) },
     // Cyan
@@ -82,7 +83,7 @@ constant float3 kEKGPalettes[][5] = {
 constant int kEKGPaletteCount = sizeof(kEKGPalettes) / sizeof(kEKGPalettes[0]);
 
 float3 ekg_style_color(int scheme, int role) {
-    return kEKGPalettes[clamp(scheme, 0, kEKGPaletteCount - 1)][clamp(role, 0, 4)];
+    return kEKGPalettes[clamp(scheme, 0, kEKGPaletteCount - 1)][clamp(role, 0, kEKGRoleCount - 1)];
 }
 
 float ekg_hash(float2 p) {

@@ -12,7 +12,7 @@ Internals of the shader modes shared between [main-window-visualization](../main
 **Flame Styles**: Inferno, Aurora, Electric, Ocean, Emerald, Toxic, Plasma, Sunset, Ice, Gold, Blood, Ghost, Spectrum, Cobalt, Candle, Synthwave.
 
 - **Colours**: `kFlamePalettes` in the shader, one row per `FlameStyle` in case order (`colorScheme` is the `allCases` index), all on the shared heat stops `kFlameStops` (0, .15, .4, .65, .85, 1). A palette must already be clearly visible at 0.15 — tongue tails and wisps live in low heat, and a palette dark there makes the flame look short. `VisPaletteTableTests` checks the rows' `// <Style>` comments against `allCases`.
-- **Motion**: only Aurora, Electric and Ocean have their own cooling/turbulence/diffusion/wind; every other style burns like Inferno (`default:` in `FlameStyle`).
+- **Motion**: only Aurora, Electric and Ocean have their own cooling/turbulence/diffusion/wind; every other style burns like Inferno (`FlameStyle.motion`'s `default:`, in `Visualization/SpectrumAnalyzerTypes.swift` with the other mode/style enums and Metal param structs).
 - **Wisp height**: edge erosion (what thins tongues to points) tapers with height, `0.15 * (1 - 0.6 * uv_y)`. At full strength it kills a lone 1-px tip in about 6 rows, so this taper, not `cooling`, sets how high wisps reach; summed over the grid, cooling removes only about `0.7 × cooling` of heat.
 
 **Fire Intensity**:
