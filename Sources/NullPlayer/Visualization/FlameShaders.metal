@@ -128,10 +128,13 @@ kernel void propagate_fire(
     float left  = (x > 0)     ? src.read(uint2(x - 1, y)).r : 0.0;
     float right = (x < W - 1) ? src.read(uint2(x + 1, y)).r : 0.0;
 
+    float uv_y = float(y) / float(H);
+
     // Edge erosion: cool faster where there's a temperature difference with neighbors
-    // This makes tongues thin to points as they rise
+    // This makes tongues thin to points as they rise. It tapers with height so the thin
+    // tips survive as wisps instead of dying a few rows above the tongue.
     float edgeness = abs(here - left) + abs(here - right);
-    float erosion = edgeness * 0.15;
+    float erosion = edgeness * 0.15 * (1.0 - 0.6 * uv_y);
 
     // Very light horizontal diffusion (just enough to prevent aliasing)
     float hAvg = (left + right) * 0.5;
@@ -141,7 +144,6 @@ kernel void propagate_fire(
     float result = below * 0.95 + blended * 0.05;
 
     // Cooling
-    float uv_y = float(y) / float(H);
     float coolRate = params.cooling / float(H) * (0.4 + uv_y * 0.6);
     float coolRng = hash21(float2(float(x) + params.time * 11.0, float(y) + params.time * 7.0));
     coolRate *= (0.6 + 0.8 * coolRng);
@@ -157,46 +159,57 @@ kernel void propagate_fire(
 
 // MARK: - Color Palettes
 
-float3 infernoColor(float t) {
-    t = clamp(t, 0.0, 1.0);
-    if (t < 0.15) return mix(float3(0.01, 0.0, 0.0), float3(0.4, 0.02, 0.0), t / 0.15);
-    if (t < 0.4)  return mix(float3(0.4, 0.02, 0.0), float3(0.9, 0.15, 0.0), (t - 0.15) / 0.25);
-    if (t < 0.65) return mix(float3(0.9, 0.15, 0.0), float3(1.0, 0.55, 0.0), (t - 0.4) / 0.25);
-    if (t < 0.85) return mix(float3(1.0, 0.55, 0.0), float3(1.0, 0.9, 0.3), (t - 0.65) / 0.2);
-    return mix(float3(1.0, 0.9, 0.3), float3(1.0, 1.0, 0.85), (t - 0.85) / 0.15);
-}
-
-float3 auroraColor(float t) {
-    t = clamp(t, 0.0, 1.0);
-    if (t < 0.25) return mix(float3(0.0), float3(0.0, 0.2, 0.1), t / 0.25);
-    if (t < 0.5)  return mix(float3(0.0, 0.2, 0.1), float3(0.0, 0.8, 0.5), (t - 0.25) / 0.25);
-    if (t < 0.75) return mix(float3(0.0, 0.8, 0.5), float3(0.3, 0.5, 1.0), (t - 0.5) / 0.25);
-    return mix(float3(0.3, 0.5, 1.0), float3(0.9, 0.8, 1.0), (t - 0.75) / 0.25);
-}
-
-float3 electricColor(float t) {
-    t = clamp(t, 0.0, 1.0);
-    if (t < 0.25) return mix(float3(0.0, 0.0, 0.03), float3(0.1, 0.0, 0.4), t / 0.25);
-    if (t < 0.5)  return mix(float3(0.1, 0.0, 0.4), float3(0.4, 0.15, 0.9), (t - 0.25) / 0.25);
-    if (t < 0.75) return mix(float3(0.4, 0.15, 0.9), float3(0.7, 0.5, 1.0), (t - 0.5) / 0.25);
-    return mix(float3(0.7, 0.5, 1.0), float3(1.0, 0.95, 1.0), (t - 0.75) / 0.25);
-}
-
-float3 oceanColor(float t) {
-    t = clamp(t, 0.0, 1.0);
-    if (t < 0.25) return mix(float3(0.0, 0.0, 0.03), float3(0.0, 0.08, 0.2), t / 0.25);
-    if (t < 0.5)  return mix(float3(0.0, 0.08, 0.2), float3(0.0, 0.3, 0.5), (t - 0.25) / 0.25);
-    if (t < 0.75) return mix(float3(0.0, 0.3, 0.5), float3(0.2, 0.7, 0.7), (t - 0.5) / 0.25);
-    return mix(float3(0.2, 0.7, 0.7), float3(0.85, 1.0, 0.95), (t - 0.75) / 0.25);
-}
+// One row per FlameStyle, in that enum's case order (FlameStyle.colorScheme is the row).
+// Every palette shares the same heat stops, so low heat (tongue tails, wisps) is about as
+// visible in every style: dark at 0, a clearly visible colour by 0.15, white-hot at 1.
+constant int kFlameStopCount = 6;
+constant float kFlameStops[kFlameStopCount] = { 0.0, 0.15, 0.4, 0.65, 0.85, 1.0 };
+constant float3 kFlamePalettes[][kFlameStopCount] = {
+    // Inferno
+    { float3(0.01, 0.0, 0.0),  float3(0.4, 0.02, 0.0),  float3(0.9, 0.15, 0.0),  float3(1.0, 0.55, 0.0),  float3(1.0, 0.9, 0.3),   float3(1.0, 1.0, 0.85) },
+    // Aurora
+    { float3(0.0, 0.02, 0.01), float3(0.0, 0.35, 0.2),  float3(0.0, 0.8, 0.5),   float3(0.3, 0.6, 1.0),   float3(0.6, 0.7, 1.0),   float3(0.9, 0.85, 1.0) },
+    // Electric
+    { float3(0.0, 0.0, 0.03),  float3(0.25, 0.05, 0.6), float3(0.5, 0.2, 1.0),   float3(0.7, 0.5, 1.0),   float3(0.85, 0.75, 1.0), float3(1.0, 0.95, 1.0) },
+    // Ocean
+    { float3(0.0, 0.0, 0.03),  float3(0.0, 0.22, 0.45), float3(0.0, 0.45, 0.7),  float3(0.2, 0.7, 0.8),   float3(0.5, 0.9, 0.9),   float3(0.85, 1.0, 0.95) },
+    // Emerald
+    { float3(0.0, 0.01, 0.0),  float3(0.02, 0.3, 0.05), float3(0.1, 0.75, 0.15), float3(0.45, 0.95, 0.3), float3(0.8, 1.0, 0.6),   float3(0.95, 1.0, 0.9) },
+    // Toxic
+    { float3(0.01, 0.01, 0.0), float3(0.25, 0.3, 0.0),  float3(0.55, 0.8, 0.0),  float3(0.8, 1.0, 0.1),   float3(0.95, 1.0, 0.5),  float3(1.0, 1.0, 0.9) },
+    // Plasma
+    { float3(0.02, 0.0, 0.02), float3(0.4, 0.0, 0.25),  float3(0.85, 0.05, 0.5), float3(1.0, 0.35, 0.7),  float3(1.0, 0.7, 0.9),   float3(1.0, 0.95, 1.0) },
+    // Sunset
+    { float3(0.02, 0.0, 0.03), float3(0.35, 0.02, 0.35), float3(0.85, 0.15, 0.35), float3(1.0, 0.5, 0.2), float3(1.0, 0.8, 0.4),   float3(1.0, 0.97, 0.85) },
+    // Ice
+    { float3(0.0, 0.01, 0.03), float3(0.15, 0.3, 0.5),  float3(0.4, 0.65, 0.85), float3(0.7, 0.88, 1.0), float3(0.88, 0.96, 1.0), float3(1.0, 1.0, 1.0) },
+    // Gold
+    { float3(0.01, 0.005, 0.0), float3(0.35, 0.2, 0.0), float3(0.75, 0.5, 0.05), float3(1.0, 0.8, 0.25),  float3(1.0, 0.93, 0.6),  float3(1.0, 1.0, 0.92) },
+    // Blood
+    { float3(0.01, 0.0, 0.0),  float3(0.35, 0.0, 0.02), float3(0.7, 0.02, 0.05), float3(0.9, 0.15, 0.1),  float3(1.0, 0.45, 0.35), float3(1.0, 0.85, 0.8) },
+    // Ghost
+    { float3(0.0, 0.0, 0.0),   float3(0.25, 0.25, 0.27), float3(0.55, 0.55, 0.6), float3(0.8, 0.8, 0.85), float3(0.93, 0.93, 0.96), float3(1.0, 1.0, 1.0) },
+    // Spectrum
+    { float3(0.02, 0.0, 0.04), float3(0.45, 0.0, 0.6),  float3(0.1, 0.35, 1.0),  float3(0.1, 0.9, 0.5),   float3(1.0, 0.9, 0.15),  float3(1.0, 1.0, 0.9) },
+    // Cobalt
+    { float3(0.0, 0.0, 0.02),  float3(0.05, 0.05, 0.5), float3(0.1, 0.3, 1.0),   float3(0.35, 0.65, 1.0), float3(0.7, 0.88, 1.0),  float3(0.95, 0.98, 1.0) },
+    // Candle
+    { float3(0.01, 0.005, 0.0), float3(0.3, 0.1, 0.02), float3(0.75, 0.35, 0.08), float3(0.98, 0.65, 0.25), float3(1.0, 0.85, 0.55), float3(1.0, 0.97, 0.88) },
+    // Synthwave
+    { float3(0.02, 0.0, 0.04), float3(0.3, 0.0, 0.4),   float3(0.8, 0.1, 0.7),   float3(1.0, 0.4, 0.85),  float3(0.4, 0.9, 1.0),   float3(0.9, 1.0, 1.0) },
+};
+constant int kFlamePaletteCount = sizeof(kFlamePalettes) / sizeof(kFlamePalettes[0]);
 
 float3 flameColor(float t, int scheme) {
-    switch (scheme) {
-        case 1: return auroraColor(t);
-        case 2: return electricColor(t);
-        case 3: return oceanColor(t);
-        default: return infernoColor(t);
+    t = clamp(t, 0.0, 1.0);
+    int row = clamp(scheme, 0, kFlamePaletteCount - 1);
+    for (int i = 1; i < kFlameStopCount; i++) {
+        if (t <= kFlameStops[i]) {
+            float f = (t - kFlameStops[i - 1]) / (kFlameStops[i] - kFlameStops[i - 1]);
+            return mix(kFlamePalettes[row][i - 1], kFlamePalettes[row][i], f);
+        }
     }
+    return kFlamePalettes[row][kFlameStopCount - 1];
 }
 
 // MARK: - Render

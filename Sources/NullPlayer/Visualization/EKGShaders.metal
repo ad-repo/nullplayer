@@ -39,45 +39,51 @@ inline float ekg_beat_amp(constant EKGParams& params, int i) {
 constant float EKG_SCREEN_SECONDS = 5.6;
 constant float EKG_SCAN_HEAD_X = 0.965;
 
+// One row per EKGStyle, in that enum's case order (EKGStyle.colorScheme is the row).
+// Columns are the colour roles: trace, hot trace (scan head), minor grid, major grid, background.
+constant int kEKGRoleCount = 5;
+constant float3 kEKGPalettes[][kEKGRoleCount] = {
+    // Clinical
+    { float3(0.105, 0.900, 0.400), float3(0.780, 1.000, 0.720), float3(0.005, 0.115, 0.075), float3(0.020, 0.240, 0.145), float3(0.002, 0.026, 0.019) },
+    // Cyan
+    { float3(0.080, 0.930, 0.980), float3(0.650, 1.000, 1.000), float3(0.010, 0.165, 0.175), float3(0.015, 0.300, 0.320), float3(0.002, 0.022, 0.026) },
+    // Amber
+    { float3(1.000, 0.650, 0.120), float3(1.000, 0.930, 0.530), float3(0.170, 0.105, 0.018), float3(0.330, 0.190, 0.030), float3(0.030, 0.017, 0.003) },
+    // Neon
+    { float3(0.980, 0.140, 0.760), float3(0.420, 1.000, 0.980), float3(0.150, 0.030, 0.130), float3(0.280, 0.060, 0.270), float3(0.026, 0.003, 0.024) },
+    // Crimson
+    { float3(1.000, 0.145, 0.120), float3(1.000, 0.760, 0.560), float3(0.170, 0.030, 0.025), float3(0.330, 0.060, 0.050), float3(0.030, 0.004, 0.003) },
+    // Ice
+    { float3(0.620, 0.940, 1.000), float3(0.930, 1.000, 1.000), float3(0.070, 0.130, 0.170), float3(0.120, 0.250, 0.330), float3(0.009, 0.018, 0.026) },
+    // Inferno
+    { float3(1.000, 0.420, 0.060), float3(1.000, 0.900, 0.450), float3(0.170, 0.060, 0.010), float3(0.330, 0.120, 0.020), float3(0.030, 0.010, 0.002) },
+    // Aurora
+    { float3(0.100, 0.950, 0.600), float3(0.650, 0.600, 1.000), float3(0.015, 0.150, 0.110), float3(0.030, 0.300, 0.220), float3(0.003, 0.022, 0.020) },
+    // Ocean
+    { float3(0.100, 0.550, 0.950), float3(0.600, 0.950, 0.950), float3(0.012, 0.080, 0.160), float3(0.025, 0.160, 0.310), float3(0.002, 0.012, 0.028) },
+    // Toxic
+    { float3(0.700, 1.000, 0.080), float3(0.950, 1.000, 0.600), float3(0.110, 0.170, 0.010), float3(0.220, 0.330, 0.020), float3(0.018, 0.028, 0.002) },
+    // Plasma
+    { float3(1.000, 0.300, 0.700), float3(1.000, 0.800, 0.950), float3(0.170, 0.040, 0.120), float3(0.330, 0.080, 0.230), float3(0.030, 0.005, 0.020) },
+    // Sunset
+    { float3(1.000, 0.450, 0.250), float3(1.000, 0.850, 0.450), float3(0.150, 0.040, 0.120), float3(0.300, 0.070, 0.220), float3(0.028, 0.006, 0.022) },
+    // Gold
+    { float3(1.000, 0.800, 0.250), float3(1.000, 0.970, 0.750), float3(0.170, 0.130, 0.030), float3(0.330, 0.250, 0.060), float3(0.030, 0.022, 0.005) },
+    // Ghost
+    { float3(0.850, 0.870, 0.900), float3(1.000, 1.000, 1.000), float3(0.130, 0.130, 0.140), float3(0.250, 0.250, 0.270), float3(0.018, 0.018, 0.020) },
+    // Cobalt
+    { float3(0.200, 0.450, 1.000), float3(0.750, 0.880, 1.000), float3(0.020, 0.050, 0.170), float3(0.040, 0.100, 0.330), float3(0.003, 0.006, 0.030) },
+    // Violet
+    { float3(0.650, 0.300, 1.000), float3(0.900, 0.800, 1.000), float3(0.100, 0.040, 0.170), float3(0.200, 0.080, 0.330), float3(0.016, 0.006, 0.030) },
+    // Synthwave
+    { float3(0.300, 0.900, 1.000), float3(1.000, 0.400, 0.850), float3(0.140, 0.020, 0.150), float3(0.270, 0.040, 0.300), float3(0.022, 0.003, 0.030) },
+    // Emerald
+    { float3(0.200, 1.000, 0.250), float3(0.850, 1.000, 0.600), float3(0.030, 0.170, 0.040), float3(0.060, 0.330, 0.080), float3(0.004, 0.028, 0.006) },
+};
+constant int kEKGPaletteCount = sizeof(kEKGPalettes) / sizeof(kEKGPalettes[0]);
+
 float3 ekg_style_color(int scheme, int role) {
-    switch (scheme) {
-        case 1: // Cyan
-            if (role == 0) return float3(0.080, 0.930, 0.980);
-            if (role == 1) return float3(0.650, 1.000, 1.000);
-            if (role == 2) return float3(0.010, 0.165, 0.175);
-            if (role == 3) return float3(0.015, 0.300, 0.320);
-            return float3(0.002, 0.022, 0.026);
-        case 2: // Amber
-            if (role == 0) return float3(1.000, 0.650, 0.120);
-            if (role == 1) return float3(1.000, 0.930, 0.530);
-            if (role == 2) return float3(0.170, 0.105, 0.018);
-            if (role == 3) return float3(0.330, 0.190, 0.030);
-            return float3(0.030, 0.017, 0.003);
-        case 3: // Neon
-            if (role == 0) return float3(0.980, 0.140, 0.760);
-            if (role == 1) return float3(0.420, 1.000, 0.980);
-            if (role == 2) return float3(0.150, 0.030, 0.130);
-            if (role == 3) return float3(0.280, 0.060, 0.270);
-            return float3(0.026, 0.003, 0.024);
-        case 4: // Crimson
-            if (role == 0) return float3(1.000, 0.145, 0.120);
-            if (role == 1) return float3(1.000, 0.760, 0.560);
-            if (role == 2) return float3(0.170, 0.030, 0.025);
-            if (role == 3) return float3(0.330, 0.060, 0.050);
-            return float3(0.030, 0.004, 0.003);
-        case 5: // Ice
-            if (role == 0) return float3(0.620, 0.940, 1.000);
-            if (role == 1) return float3(0.930, 1.000, 1.000);
-            if (role == 2) return float3(0.070, 0.130, 0.170);
-            if (role == 3) return float3(0.120, 0.250, 0.330);
-            return float3(0.009, 0.018, 0.026);
-        default: // Clinical
-            if (role == 0) return float3(0.105, 0.900, 0.400);
-            if (role == 1) return float3(0.780, 1.000, 0.720);
-            if (role == 2) return float3(0.005, 0.115, 0.075);
-            if (role == 3) return float3(0.020, 0.240, 0.145);
-            return float3(0.002, 0.026, 0.019);
-    }
+    return kEKGPalettes[clamp(scheme, 0, kEKGPaletteCount - 1)][clamp(role, 0, kEKGRoleCount - 1)];
 }
 
 float ekg_hash(float2 p) {
