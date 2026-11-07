@@ -309,6 +309,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - When video casting is active, the global Output/Cast menu remains available for stopping the session even if no local video window is open.
 - Position synchronization
 - Buffering state handling
+- The visualization itself, live, from the Visualizations window (see *Cast Visualization*; DLNA TVs too)
 
 ### DLNA
 - UPnP device discovery
@@ -517,6 +518,16 @@ with a **Cycle Interval** (5 s to 2 min), then that engine's own options, then *
 Engine**, **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
 own cycle setting; with Manual Only an engine stays on the preset you chose. **C** steps the cycle
 setting in any engine.
+
+### Cast Visualization
+In the Visualizations window (Classic and Original skins), right-click → **Cast Visualization ▸** and
+pick a Chromecast or a TV: whatever engine and preset is running plays on the TV with the music.
+**Resolution ▸** 720p, 1080p (default) or 4K and **Frame Rate ▸** 30 or 60 apply to the next cast and
+restart a running one; 4K is 30 fps only, and a Chromecast that cannot play 4K says so. While
+casting, the Mac's speakers are muted, and the window goes black under a note naming the TV and the
+engine and preset; the TV's picture and sound run behind, and changes can take 15–30 seconds to show there. The right-click menu still
+changes the engine, preset and cast; **Stop Casting Visualization** ends it, and so does closing the
+window. The first cast asks for *System Audio Recording* permission. Needs macOS 14.2 or later.
 
 ### ProjectM/MilkDrop
 100+ bundled presets, OpenGL rendering, fullscreen support. Its own menu items: Set Current to

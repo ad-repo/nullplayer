@@ -97,6 +97,10 @@ Persisted: `projectMBeatSensitivity` (UserDefaults)
 - **Audio Input**: PCM waveform data from AudioEngine
 - **Beat Detection**: built-in projectM beat sensitivity
 - **Rendering lifetime — the view must be in a *visible* window before it will start.** `startRendering()` requires `window.isVisible`, and the only thing that restarts a stopped link is an occlusion change resuming one that was stopped *because* of occlusion. A `VisualizationGLView` added to a window that has not been ordered in yet is refused once and never asks again: it renders black forever while everything around it draws. Any host that builds the view before showing its window must call `resumeRenderingAfterWindowTransition()` afterwards. The window views do this implicitly (their windows are on screen when the view is made); the `.wal` skin surface calls it from `setSceneVisible`/`setAuxiliaryWindow`, because a skin's AVS window is created hidden and opened later.
+- **A resize that lands mid preset load is retried, not lost.** `setViewportSize` records the size
+  only once `projectm_set_window_size` is applied; recording it first made the next frame's identical
+  call a no-op, so projectM kept drawing at its creation size (a cast after an engine switch filled
+  only the left of the frame).
 - **Drag suspend**: ProjectM rendering is suspended for the duration of any window drag (`.windowDragDidBegin` / `.windowDragDidEnd` from `WindowManager`). This prevents WindowServer stalls on Apple Silicon caused by simultaneous OpenGL compositing and window repositioning. If adding window-movement code that runs outside a drag, do NOT rely on ProjectM being suspended — the suspend is drag-scoped only.
 
 ## Crash Detection & Blacklist

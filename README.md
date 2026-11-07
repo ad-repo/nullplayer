@@ -51,6 +51,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 - Intelligent radio mix generation for all sources
 - Track Radio for the local library — right-click a track and choose **Start Track Radio** to queue tracks like it, scored from its tags (artist, genre, year, tempo, key, grouping) with no audio analysis
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio
+- Cast Visualization — send the running visualization and the music live to a Chromecast or DLNA TV at 720p, 1080p or 4K, 30 or 60 fps (macOS 14.2+)
 - Sonos content filtering for unsupported lossless formats and improved playlist support
 - Sonos Rooms window for picking cast rooms and setting each room's volume individually
 - Drag-and-drop, macOS Now Playing integration, and [Discord Music Presence](https://github.com/ungive/discord-music-presence)
@@ -106,6 +107,7 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **Tripex** — Winamp-era 3D visualization port
 - **AVS (Advanced Visualization Studio)** — Winamp's AVS engine (libavs) with 35 bundled presets, your own `.avs` preset folder, auto-cycle, and a preset editor (**Edit Preset…**) that changes the running preset live: add, remove, reorder and toggle effects, edit every parameter and EEL code, save as `.avs` or export JSON
 - **Goom** — the classic XMMS-era Goom visualizer (Goom2k26 core): fifteen zoom effects it picks from the music, or you pick from the right-click menu (→ / ← / R step) and keep with **Hold Effect**. Five are new to NullPlayer: Spiral, Vortex, Flower, Heart (pink heart scopes in heart-shaped ripples) and Pentagram (a star in a circle, in star-shaped ripples)
+- **Cast Visualization** — right-click the Visualizations window → **Cast Visualization** to play ProjectM, Geiss, Tripex, AVS or Goom on a Chromecast or DLNA TV, with the music; the window keeps its menu for switching engines and presets while the TV plays
 - **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Art window
 - **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
 - **Windows Media Player (`.wmz`) skins** — a skin's `<EFFECTS>` area renders native Spikes, Bars, Ambience, Cava, vis_classic, ProjectM, Geiss, Tripex, or AVS visuals inside the rectangle the skin draws for them

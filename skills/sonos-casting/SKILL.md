@@ -457,7 +457,9 @@ default without `+faststart`) showed *format not supported* although SetAVTransp
 returned 200 — DLNA has no status channel, so nothing in NullPlayer saw the failure. Answered, it
 reads `bytes=0-`, then jumps to the index (measured 2026-10-31). Only clients that ask get the
 headers; Sonos does not ask (measured, "Dining Room"), so its responses are unchanged. `/stream/` proxy responses do not answer
-it yet. The DIDL `protocolInfo` fourth field stays `*`: the headers alone were enough.
+it yet. The DIDL `protocolInfo` fourth field stays `*`: the headers alone were enough. The
+visualization cast's endless `live.ts` sends live flags instead (no seeking), in both places, and
+answers its HEAD with an empty chunked body (`skills/visualization-cast`).
 
 **Radio streams:** MP3 radio streams use `x-rincon-mp3radio://` URI scheme for better Sonos buffering.
 

@@ -343,7 +343,7 @@ class CastSessionController {
     }
 
     /// Load media to play
-    func loadMedia(url: URL, contentType: String, title: String?, artist: String?, textTrackURL: URL?, completion: @escaping (Result<Void, Error>) -> Void) {
+    func loadMedia(url: URL, contentType: String, title: String?, artist: String?, textTrackURL: URL?, isLive: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
         guard let tid = withLock({ transportId }) else {
             completion(.failure(CastError.playbackFailed("Not connected to app")))
             return
@@ -355,9 +355,9 @@ class CastSessionController {
         var media: [String: Any] = [
             "contentId": url.absoluteString,
             "contentType": contentType,
-            "streamType": "BUFFERED"
+            "streamType": isLive ? "LIVE" : "BUFFERED"
         ]
-        
+
         if let title = title {
             media["metadata"] = [
                 "type": 0,

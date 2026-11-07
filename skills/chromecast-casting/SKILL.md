@@ -236,6 +236,9 @@ Chromecast and other cast sessions can still trigger `AVAudioEngineConfiguration
 }
 ```
 
+`streamType` is `LIVE` only for `CastMetadata.isLive` — the visualization cast's HLS stream, whose
+playlist shape a Chromecast needs to play steadily is in `skills/visualization-cast`.
+
 ### Sidecar subtitles (`CastSubtitles`)
 
 A local video cast to a Chromecast (`CastManager._castVideoTrackCore`, which the CLI, the player

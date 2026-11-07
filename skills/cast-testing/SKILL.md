@@ -10,6 +10,9 @@ swift build --build-system native              # the script never builds
 skills/cast-testing/scripts/cast-test.sh       # [--chromecast <name>] [--dlna <name>] [--sonos <room>]
 ```
 
+The visualization cast has its own script, `scripts/viscast-test.sh` (GUI, relaunches the debug
+build; see `skills/visualization-cast` § *Testing*).
+
 One `PASS`/`FAIL` line per check, then a summary; exit 0 only if every check passed. Logs (raw
 and `\r`→newline `.txt`) land in `tmp/cast-test/`. About 3 minutes. It puts video on both TVs;
 `--sonos <room>` adds a 5 s tone in that room and is the only way the Sonos check runs.

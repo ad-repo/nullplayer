@@ -131,6 +131,9 @@ struct CastMetadata {
     let summary: String?
     /// A served sidecar subtitle file, sent to a Chromecast as the LOAD's one text track
     let textTrackURL: URL?
+    /// An endless live stream (the visualization cast): a Chromecast LOAD says `LIVE`, and the DIDL
+    /// carries no duration and the live DLNA flags.
+    let isLive: Bool
     
     init(
         title: String,
@@ -143,7 +146,8 @@ struct CastMetadata {
         resolution: String? = nil,
         year: Int? = nil,
         summary: String? = nil,
-        textTrackURL: URL? = nil
+        textTrackURL: URL? = nil,
+        isLive: Bool = false
     ) {
         self.title = title
         self.artist = artist
@@ -156,6 +160,7 @@ struct CastMetadata {
         self.year = year
         self.summary = summary
         self.textTrackURL = textTrackURL
+        self.isLive = isLive
     }
     
     /// Generate DIDL-Lite metadata for UPnP devices
@@ -190,12 +195,16 @@ struct CastMetadata {
             }
         }
         
+        let resAttributes = isLive
+            ? #"protocolInfo="http-get:*:\#(contentType):\#(LocalMediaServer.dlnaLiveContentFeatures)""#
+            : #"protocolInfo="http-get:*:\#(contentType):*" duration="\#(durationStr)""#
+
         var didl = """
         <DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/">
         <item id="1" parentID="0" restricted="1">
         <dc:title>\(escapedTitle)</dc:title>
         \(extraElements)<upnp:class>\(upnpClass)</upnp:class>
-        <res protocolInfo="http-get:*:\(contentType):*" duration="\(durationStr)">\(streamURL.absoluteString.xmlEscaped)</res>
+        <res \(resAttributes)>\(streamURL.absoluteString.xmlEscaped)</res>
         """
         
         if let artworkURL = artworkURL {

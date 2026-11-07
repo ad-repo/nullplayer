@@ -39,6 +39,8 @@ enum VisualizationContextMenu {
         /// with. The embedded skin surface has neither — its "window" is a box inside the skin's.
         var showsFullscreen = true
         var showsClose = true
+        /// Cast Visualization ▸ — only the Classic and Modern Visualizations windows opt in.
+        var showsCast = false
     }
 
     /// Winamp's own five-star string, used in the preset titles.
@@ -47,6 +49,7 @@ enum VisualizationContextMenu {
         return String(repeating: "⭐", count: clamped) + String(repeating: "☆", count: 5 - clamped)
     }
 
+    @MainActor
     static func build(target: VisualizationMenuTarget, options: Options) -> NSMenu {
         let menu = NSMenu()
         let glView = target.visualizationGLView
@@ -145,6 +148,8 @@ enum VisualizationContextMenu {
             fullscreenItem.target = target
             menu.addItem(fullscreenItem)
         }
+
+        if options.showsCast, let glView { menu.addItem(glView.castMenuItem()) }
 
         if options.showsClose {
             menu.addItem(NSMenuItem.separator())
