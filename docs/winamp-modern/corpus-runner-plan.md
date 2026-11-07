@@ -235,7 +235,7 @@ declared boxes overlap; B290 fontsize).
 
 This batch changed the process: scans run by `window-census.sh --shots` and `wal_live_smoke.sh` with
 no worker, one fix pass fixes every open row of the batch, and `wal_fix_check.sh` picks the sweeps a
-fix needs (`skills/skin-intake/SKILL.md` § *The live round*).
+fix needs (`skills/skin-intake/SKILL.md`; § *The live round* became § *The scan* on 2026-11-07).
 
 ### Intakes (2026-10-22)
 
@@ -641,6 +641,14 @@ so a corpus run can't lose lines, not *what* is measured.
   orders the batches. The budget is the sweep's cost. Bronze =
   the rest, census-only. Quarantine = does-not-load, crash or hang — a trap on real input is a security
   bug first (S1).
+- **A batch is picked, not crawled, and checked live, not phase by phase** (2026-11-07, rev
+  `c5fcc269`). Measured over intakes #5 and #6: the headless Phases 1–4 filed four rows (B317–B319,
+  B361) and none was a real defect, while every fix came from the live census, the live pass and
+  the user's round; the crawl's greedy gain was ≤ 2 for every remaining candidate and no crawl had
+  quarantined a skin. So `scripts/wal_intake_pick.sh` takes the next 25 bronze in the last
+  ranking's order, and a batch runs the click smoke (main window, then the Library opened, used and
+  closed) and the census visual review, one fix pass, and the user's go — not a per-skin UI round
+  (`skills/skin-intake`). A crawl of new candidates still ranks them with `wal_intake.sh`.
 - **Tier decides which actions run.** Pre-merge render sweep = gold+silver. Impact-selected sweep
   (`--touching <feature,…>`) = every tier, selected from the feature index. Full Bronze census = batch,
   after an intake or before a release. App-driven tools (`skin-screenshots`, `window-census`,

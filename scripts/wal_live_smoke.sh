@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # Live smoke over Winamp Modern (`.wal`) skins: click every main-window control in the running debug
-# build and record what each click changed:
+# build and record what each click changed, then open the Library, click its controls and press its
+# own close (the two checks of an intake, skills/skin-intake § The scan):
 #
 #   scripts/wal_live_smoke.sh <skin>... [--out <dir>] [--timeout <seconds>]
 #   -> <out>/smoke.tsv, <out>/<skin>.log, and one summary line per skin
@@ -52,9 +53,20 @@ for SKIN in "${SKINS[@]}"; do
             if (header) { print keys; header = 0 }
             print line
         }' >>"$TSV"
-    awk -F'\t' -v skin="$NAME" -v status="$STATUS" '$1 == skin {
-            if ($NF == "-") other++; else { clicked++; if ($NF == "nochange") same++ }
-        } END { printf "%s: %s, %d clicked, %d nochange, %d not clicked\n", skin, status, clicked, same, other }' "$TSV"
+    # Columns by name from the header: `window`, `idx`, `note`, `changed`.
+    awk -F'\t' -v skin="$NAME" -v status="$STATUS" '
+        NR == 1 { for (i = 1; i <= NF; i++) col[$i] = i; next }
+        $1 == skin {
+            w = $col["window"]; v = $col["changed"]
+            if ($col["idx"] == "open") { opened = $col["note"]; next }
+            if ($col["idx"] == "close") { shut = v == "-" ? $col["note"] : v; next }
+            if (v == "-") other[w]++; else { clicked[w]++; if (v == "nochange") same[w]++ }
+        } END {
+            printf "%s: %s, main %d clicked, %d nochange, %d not clicked; library %s", skin, status,
+                clicked["main"], same["main"], other["main"], (opened == "" ? "not reached" : opened)
+            if (opened == "skin-frame") printf ", %d clicked, %d nochange, close %s", clicked["library"], same["library"], shut
+            printf "\n"
+        }' "$TSV"
 done
 pkill -x NullPlayer 2>/dev/null || true
 echo "tsv: $TSV"

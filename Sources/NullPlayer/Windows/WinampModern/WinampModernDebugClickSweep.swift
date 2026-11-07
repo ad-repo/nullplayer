@@ -14,6 +14,12 @@ import AppKit
 /// pops up is dismissed and noted. Between clicks the sweep puts back the starting layout and resumes playback,
 /// and the run starts from volume 0.5 so a control that pins it to either end shows. (Not reset per
 /// click: a skin's mute re-asserts 0 on every volume change, which would mark every later row.)
+///
+/// Then the Library, the one other window an intake checks (`skills/skin-intake` § *The scan*): it is
+/// opened the way the Windows menu opens it, its `open` row says what came up (`skin-frame`, `embedded`
+/// in another skin window, NullPlayer's `plain-chrome`, or `not-opened`), a skin-frame Library's
+/// controls are swept like the main window's, and its `close` row presses its own `CLOSE` control
+/// and says whether the window went (`closed`) or stayed (`nochange`; `no-close-control` when it has none).
 final class WinampModernDebugClickSweep {
     private struct Target {
         let object: WasabiObject
@@ -34,7 +40,7 @@ final class WinampModernDebugClickSweep {
 
     /// The keys of a `WM-SMOKE|` row, in order. A row the sweep did not click carries the first three
     /// and `note`; the rest read `-`. `changed` is the verdict: what moved, or `nochange`.
-    private static let fields = ["idx", "object", "action", "point", "volume", "play", "position", "track",
+    private static let fields = ["window", "idx", "object", "action", "point", "volume", "play", "position", "track",
                                  "eq", "layout", "windows", "main", "note", "changed"]
     /// The playhead's own drift over one click's settle time (`step`'s 1.2 s), which is not a seek.
     private static let positionDrift: ClosedRange<TimeInterval> = -0.5...2.5
@@ -43,11 +49,14 @@ final class WinampModernDebugClickSweep {
     /// The sweep keeps itself alive until `done`.
     private static var running: WinampModernDebugClickSweep?
 
+    /// The window being swept: the main player, then the Library's.
     private weak var view: WinampModernMainView?
+    private weak var main: WinampModernMainView?
+    private var pass = "main"
     /// The skin's container id for one of its auxiliary windows, nil for any other window.
     private let containerID: (NSWindow) -> String?
-    private let targets: [Target]
-    private let startLayout: String
+    private var targets: [Target]
+    private var startLayout: String
     private let startVolume: Double
     /// Put back at the end, with the volume: the EQ sliders and switches write the user's settings.
     private let startEQ: WinampModernEQSnapshot?
@@ -66,6 +75,7 @@ final class WinampModernDebugClickSweep {
 
     private init(view: WinampModernMainView, startVolume: Double, containerID: @escaping (NSWindow) -> String?) {
         self.view = view
+        self.main = view
         self.startVolume = startVolume
         self.containerID = containerID
         startEQ = view.componentHost?.equalizerSnapshot()
@@ -114,11 +124,11 @@ final class WinampModernDebugClickSweep {
     }
 
     private func step(_ index: Int) {
-        guard let view, index < targets.count else { return finish() }
+        guard let view, index < targets.count else { return pass == "main" ? openLibrary() : closeLibrary() }
         let target = targets[index]
         let point = Self.point(on: target.object, in: view)
         let skip = Self.skippedActions.contains(target.action) ? "skip" : point == nil ? "unreachable" : nil
-        let identity = ["idx": "\(index + 1)", "object": target.label, "action": target.action]
+        let identity = ["window": pass, "idx": "\(index + 1)", "object": target.label, "action": target.action]
         guard let point, skip == nil else {
             Self.log(identity.merging(["note": skip ?? ""]) { $1 })
             return step(index + 1)
@@ -141,6 +151,7 @@ final class WinampModernDebugClickSweep {
         if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self, let view = self.view else { return self?.finish() ?? () }
+            let main = self.main ?? view
             let after = self.snapshot(view)
             var notes: [String] = []
             if self.menuOpened { notes.append("menu") }
@@ -150,7 +161,7 @@ final class WinampModernDebugClickSweep {
                 notes.append("restored-layout")
             }
             if before.play == "playing", after.play != "playing" {
-                view.host.play()
+                main.host.play()
                 notes.append("resumed")
             }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
@@ -196,16 +207,78 @@ final class WinampModernDebugClickSweep {
             : CGPoint(x: frame.midX, y: frame.minY + frame.height / 4)
     }
 
+    /// Open the Library from a closed start and say what opened; a skin-frame Library is swept next.
+    private func openLibrary() {
+        let manager = WindowManager.shared
+        if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self else { return }
+            let before = Set(Self.visibleWindows().map(ObjectIdentifier.init))
+            manager.showMediaLibrary()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let self else { return }
+                let opened = Self.visibleWindows().filter { !before.contains(ObjectIdentifier($0)) }
+                let skinView = opened.lazy.compactMap { Self.skinView(in: $0.contentView) }.first
+                let kind = skinView != nil ? "skin-frame"
+                    : !opened.isEmpty ? "plain-chrome"
+                    : manager.isMediaLibraryVisible ? "embedded" : "not-opened"
+                let names = opened.map { "+\(self.containerID($0) ?? ($0.title.isEmpty ? "\(type(of: $0))" : $0.title))"
+                    + "(\(Int($0.frame.width))x\(Int($0.frame.height)))" }
+                Self.log(["window": "library", "idx": "open", "windows": names.isEmpty ? "-" : names.joined(separator: ","),
+                          "note": kind, "changed": manager.isMediaLibraryVisible ? "windows" : "nochange"])
+                guard let skinView else {
+                    if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+                    return self.finish()
+                }
+                self.pass = "library"
+                self.view = skinView
+                self.startLayout = skinView.renderer.activeLayoutID
+                self.targets = Self.targets(in: skinView)
+                NSLog("WM-SMOKE library layout=%@ targets=%d", self.startLayout, self.targets.count)
+                self.step(0)
+            }
+        }
+    }
+
+    /// Press the Library's own close control and say whether its window went.
+    private func closeLibrary() {
+        let manager = WindowManager.shared
+        guard let view, let window = view.window,
+              let close = targets.first(where: { $0.action == "CLOSE" }),
+              let point = Self.point(on: close.object, in: view) else {
+            Self.log(["window": "library", "idx": "close", "note": "no-close-control", "changed": "-"])
+            if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+            return finish()
+        }
+        view.debugClick(atSkinPoint: point)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            let closed = !window.isVisible || window.alphaValue == 0
+            Self.log(["window": "library", "idx": "close", "object": close.label, "action": close.action,
+                      "point": "\(Int(point.x)),\(Int(point.y))", "changed": closed ? "closed" : "nochange"])
+            if !closed, manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+            self?.finish()
+        }
+    }
+
+    private static func visibleWindows() -> [NSWindow] {
+        NSApp.windows.filter { $0.isVisible && $0.alphaValue > 0 && !$0.ignoresMouseEvents }
+    }
+
+    private static func skinView(in view: NSView?) -> WinampModernMainView? {
+        guard let view else { return nil }
+        if let skin = view as? WinampModernMainView { return skin }
+        return view.subviews.lazy.compactMap { skinView(in: $0) }.first
+    }
+
     private func snapshot(_ view: WinampModernMainView) -> Snapshot {
         // A skin window is named by its container id (`stick`), anything else by title or class.
         var windows: [ObjectIdentifier: String] = [:]
-        for window in NSApp.windows where window.isVisible && window.alphaValue > 0
-            && !window.ignoresMouseEvents {  // not a skin's drop-shadow window
+        for window in Self.visibleWindows() {  // not a skin's drop-shadow window
             let name = containerID(window) ?? (window.title.isEmpty ? "\(type(of: window))" : window.title)
             windows[ObjectIdentifier(window)] = "\(name)(\(Int(window.frame.width))x\(Int(window.frame.height)))"
                 .replacingOccurrences(of: "|", with: "/")
         }
-        let main = view.window
+        let main = (self.main ?? view).window
         let track = String((view.host.trackPath as NSString).lastPathComponent.prefix(40))
             .replacingOccurrences(of: "|", with: "/")
         // On/off, auto, preamp, and a checksum of the bands: enough to say whether any of them moved.
@@ -222,15 +295,15 @@ final class WinampModernDebugClickSweep {
     }
 
     private func finish() {
-        view?.host.volume = startVolume
-        if let startEQ, let host = view?.componentHost {
+        main?.host.volume = startVolume
+        if let startEQ, let host = main?.componentHost {
             host.equalizerSetAuto(startEQ.auto)
             host.equalizerSetEnabled(startEQ.enabled)
             host.equalizerSetPreampDB(startEQ.preampDB)
             startEQ.bandGainsDB.enumerated().forEach { host.equalizerSetBandGainDB($0.offset, gainDB: $0.element) }
         }
         menuObserver.map(NotificationCenter.default.removeObserver)
-        NSLog("WM-SMOKE done targets=%d", targets.count)
+        NSLog("WM-SMOKE done")
         Self.running = nil
     }
 }

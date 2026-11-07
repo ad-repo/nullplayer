@@ -980,19 +980,22 @@ blocker over its volume, B371); `CLOSE`, `MINIMIZE`,
 `debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
 released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5; 1.2 s after each click it logs a
 `WM-SMOKE|key=value|…` row (keys in the sweep's `fields` order, the TSV's columns, read by name), then restores the starting layout and resumes playback if the click changed them,
-and dismisses any menu or modal alert the click popped. `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
+and dismisses any menu or modal alert the click popped. Then the Library: the sweep opens it the way the Windows menu does (from closed), logs an `open`
+row whose `note` says what came up (`skin-frame`, `embedded` in a skin window already open, `plain-chrome` for NullPlayer's own
+browser window, `not-opened`), sweeps a skin-frame Library's controls as `window=library` rows, then presses its own `CLOSE` and logs a
+`close` row, `changed` `closed` or `nochange` (`note` `no-close-control` when it has none). `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
 
 ```sh
 scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch per skin, music playing
 ```
 
-`<out>/smoke.tsv` columns: `skin idx object action point volume play position track eq layout
+`<out>/smoke.tsv` columns: `skin window idx object action point volume play position track eq layout
 windows main note changed` — the state ones as `before>after`, `point` as `x,y` (a slider's `x,y>x,y`), `track` the
 playing file's name, `eq` as `e<on>a<auto>p<preamp dB>b<band checksum>`, `windows` as `+name(WxH)`/`-name(WxH)` (a skin window by its container id), `main` as
 whether the main window is on screen, `note` as `menu`/`modal`/`restored-layout`/`resumed`/`skip`/`unreachable`,
 and `changed` the sweep's own verdict, the list of what moved (a position jump beyond the click's own 1.2 s) or `nochange`. It
 **cannot see** drags other than a slider's (knobs, scrollbars), right-click and double-click commands, the skin's *other*
-windows' controls, or a change that is only pixels (a lamp, a readout): `nochange` means none of the
+windows' controls (the Library's excepted), or a change that is only pixels (a lamp, a readout): `nochange` means none of the
 measured state moved, not that nothing happened.
 
 ### Playing a video — or a track — in the *running app*
