@@ -19,6 +19,7 @@ HN = "/System/Library/Fonts/HelveticaNeue.ttc"
 
 SWITCH, STORM0, STORM1, ALIVE, UP, UNPLUG, FINALE = 2.0, 2.6, 4.6, 4.6, 6.0, 6.3, 15.2   # seconds
 FLASHES = (2.7, 3.25, 3.9, 4.6)
+PLAY = ALIVE + 0.4                               # the clip holds its first frame until here, then plays with its sound
 BY, HZ, D = 832, 300, 1500                       # window's hinge (bottom edge) y, horizon y, camera distance
 CAPTION_Y = 560
 CLIPK = 0.78                                    # clip scale
@@ -274,9 +275,8 @@ for t0, n, (ox, oy), sp in ([(f, 60, BOLT_SCREEN[i % 2], 0.7) for i, f in enumer
 # --- finale caption
 cap = Image.new("RGBA", (1900, 330))
 cd = ImageDraw.Draw(cap)
-cd.text((950, 90), "It's alive!", font=ImageFont.truetype(HN, 120, index=1), fill=(28, 30, 38, 255), anchor="mm")
-cd.text((950, 215), "NullPlayer now has AVS", font=ImageFont.truetype(HN, 62, index=0), fill=(45, 48, 60, 255), anchor="mm")
-cd.text((950, 290), "version 0.35.0", font=ImageFont.truetype(HN, 46, index=0), fill=(70, 74, 88, 255), anchor="mm")
+cd.text((950, 90), "New in version 0.35.0", font=ImageFont.truetype(HN, 100, index=1), fill=(28, 30, 38, 255), anchor="mm")
+cd.text((950, 210), "AVS, Goom and visualizer UPnP casting", font=ImageFont.truetype(HN, 62, index=0), fill=(45, 48, 60, 255), anchor="mm")
 cap = ImageOps.expand(cap.crop(cap.getbbox()), 60)                                # a margin, and a more solid card than the piñata's:
 caption = plate(cap.size, 120, 100, 245, 30)                                       # it sits over the dark window
 caption.alpha_composite(cap, (120, 120))
@@ -295,7 +295,7 @@ zaps = "+".join(f"exp(-abs(t-{f})*22)" for f in FLASHES)
 clunk = f"between(t,{ON},{ON + 0.3})*sin(2*PI*70*t)*exp(-(t-{ON})*16)"
 elec = (f"aevalsrc=exprs='{env}*(0.12*{hum}+0.35*{crackle}*{noise})+0.8*({zaps})*{noise}+0.9*{clunk}':s=44100:d={SECS},"
         f"atrim=start={T0},asetpts=PTS-STARTPTS[e]")
-clip_a = f"[1:a]adelay={int(ALIVE * 1000)}:all=1,atrim=start={T0},asetpts=PTS-STARTPTS[c]"   # the clip's own sound, from the moment it lives
+clip_a = f"[1:a]adelay={int(PLAY * 1000)}:all=1,atrim=start={T0},asetpts=PTS-STARTPTS[c]"   # the clip's own sound, from the moment it lives
 ain, chains = ["-i", CLIP], [clip_a, elec]
 if AUDIO:                                                                         # the lab's ambience until then, ducking out as it lives
     ain += ["-ss", str(ASTART + T0), "-i", AUDIO]
@@ -309,7 +309,7 @@ ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fm
                          "-t", str(DUR), OUT], stdin=subprocess.PIPE)
 
 frame = first
-for _ in range(max(0, int((T0 - ALIVE) * FPS))):                                  # skip clip frames when starting late
+for _ in range(max(0, int((T0 - PLAY) * FPS))):                                  # skip clip frames when starting late
     frame = clip_frame()
 for n in range(NF):
     t = T0 + n / FPS
@@ -350,7 +350,8 @@ for n in range(NF):
     if t < ALIVE:
         sp = DEAD
     else:
-        frame = clip_frame()
+        if t >= PLAY:
+            frame = clip_frame()
         sp = sprite(frame, smooth((t - ALIVE) / 0.4))
     place(fr, sp, phi, cx, bob)
 
