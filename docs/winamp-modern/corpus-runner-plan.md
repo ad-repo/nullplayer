@@ -237,6 +237,32 @@ This batch changed the process: scans run by `window-census.sh --shots` and `wal
 no worker, one fix pass fixes every open row of the batch, and `wal_fix_check.sh` picks the sweeps a
 fix needs (`skills/skin-intake/SKILL.md`; § *The live round* became § *The scan* on 2026-11-07).
 
+### Done: intake #7, promoted to gold (2026-11-08)
+
+The 25 skins picked for batch 7 by `wal_intake_pick.sh` were scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-7`, accepted by the user, and promoted to
+gold on 2026-11-08, with rows on `skin-compatibility.md` (21 B, 4 C, graded from the ledger notes and
+backlog rows). The per-skin record is `intakes/intake-7.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Tuneup_v1 | Playlist button and Windows menu did not reveal its inline playlist (B385) | A reveal that finds no visible holder dispatches the skin's `onLookForComponent` |
+| Battlefield_Vietnam | The click sweep missed its drawer handle (B384) | The sweep scans a target's box for a hittable point |
+| Winamp-2006 | A navigate URL of a Windows path offered as a web link; bottom band clipped to its tile (B391) | A Windows path is never promoted to a web address; a painted-tile group with a width and no height is as tall as its content |
+| Hitchhikers_Guide | The robot played its frame range once and stopped | An animation played over a frame range replays unless `autoreplay="0"` |
+| CC_Red_Aler_2 | EQ sliders snapped back on every drag (B386) | A slider the skin's own script handles counts 0..255 |
+| Kyoko_Fukada | The eye visualizer ignored clicks (B387) | A click on a bare `<vis>` steps its mode |
+| Project_DU_Television | The face took no clicks (B388) | A markup intro animation gets `onFrame`, so its script hides it |
+| Würlitzer | Vis window over the player, left behind on shade, closed by its own toggle; cover ticker over the buttons (B390) | User layout switches raise `onSwitchToLayout`; `getObject` returns the nearest match; a hide of an inactive layout is dropped and a show switches to it; a glued host-surface window the leader's art is transparent over stacks under it, and a click on it never raises it |
+
+Closed as not defects: Project_DU's time position (the skin's markup), Winamp-2006's MSPP page text
+(clips only at the default window size). Left open: B366 (AniTransformers, Star_Wars_Player,
+Official_Powerade_Skin, NightWing_II: Media Library in NullPlayer's plain chrome), B389 (Software:
+the volume bar needs the window shaped by its background art's alpha).
+
+This batch made the intake lean (§8 *Decisions*, 2026-11-07): picked by rank, no headless crawl,
+the smoke and census as the scan, and the user's go accepts the batch without testing every skin.
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
