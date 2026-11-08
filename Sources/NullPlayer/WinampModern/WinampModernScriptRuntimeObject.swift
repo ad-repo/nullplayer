@@ -276,10 +276,7 @@ extension WinampModernScriptRuntime {
                       $0.tag.is(.layout) &&
                       $0.xmlID?.caseInsensitiveCompare(call.arguments[0].stringValue) == .orderedSame
                   }) else { return .null }
-            runtime.activeLayoutByContainer[call.object.stableID] = next.stableID
-            runtime.realizedLayouts.insert(next.stableID)
-            _ = runtime.hooks.layoutSwitchRequested?(call.object.stableID, call.arguments[0].stringValue)
-            try runtime.announceLayoutSwitch(to: next)
+            try runtime.switchContainer(call.object, to: next)
             return .null
         }
         // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.

@@ -10,11 +10,22 @@ final class WinampModernGluedWindows {
 
     /// The pairs the skin's scripts have glued, by container, leader first. Set by the owner.
     var pairIDs: () -> [(leader: WasabiObjectID, follower: WasabiObjectID)] = { [] }
+    /// Declared window pairs a script keeps on one origin, which count only if the follower is a backdrop.
+    var candidateIDs: () -> [(leader: WasabiObjectID, follower: WasabiObjectID)] = { [] }
     /// The window a container is shown in, if it has one. Set by the owner.
     var window: (WasabiObjectID) -> NSWindow? = { _ in nil }
+    /// The newest alpha a container's window drew, if it has drawn. Set by the owner.
+    var picture: (WasabiObjectID) -> CGImage? = { _ in nil }
+    /// Whether a container *is* a host surface (a visualization, a library): its `component=` or its id
+    /// names one. A frame's chrome window is not; its client may be. Set by the owner.
+    var hostsSurface: (WasabiObjectID) -> Bool = { _ in false }
+    /// The verdict for each pair, kept while neither window's picture has changed.
+    private var verdicts: [String: (leader: CGImage, follower: CGImage, isBackdrop: Bool)] = [:]
     private var dragObservers: [NSObjectProtocol] = []
     /// The (leader, follower) pairs `attachForDrag` linked, undone when the drag ends.
     private var dragAttached: [(leader: NSWindow, follower: NSWindow)] = []
+    /// Whether the drag carried a backdrop, which unlinking leaves in front of its leader.
+    private var dragCarriedBackdrop = false
 
     init() {
         dragObservers = [
@@ -34,17 +45,43 @@ final class WinampModernGluedWindows {
     }
 
     /// Every pair whose two windows exist and differ.
-    private var pairs: [(leader: NSWindow, follower: NSWindow)] {
-        pairIDs().compactMap { leaderID, followerID in
+    private var pairs: [(leader: NSWindow, follower: NSWindow, isBackdrop: Bool)] {
+        let resolved = pairIDs().map { ($0.leader, $0.follower, false) } + candidateIDs().map { ($0.leader, $0.follower, true) }
+        return resolved.compactMap { leaderID, followerID, isCandidate in
             guard let leader = window(leaderID), let follower = window(followerID),
                   leader !== follower else { return nil }
-            return (leader, follower)
+            let backdrop = isBackdrop(leaderID, followerID, leader, follower)
+            return isCandidate && !backdrop ? nil : (leader, follower, backdrop)
         }
+    }
+
+    /// Whether the follower is seen through the leader's holes and so belongs *under* it
+    /// (`WinampModernGlueBackdrop`). A frame, or a pair that has not drawn yet, stays above.
+    private func isBackdrop(_ leaderID: WasabiObjectID, _ followerID: WasabiObjectID,
+                            _ leader: NSWindow, _ follower: NSWindow) -> Bool {
+        guard hostsSurface(followerID), !hostsSurface(leaderID),
+              let leaderImage = picture(leaderID), let followerImage = picture(followerID) else { return false }
+        let key = "\(leaderID)/\(followerID)"
+        if let kept = verdicts[key], kept.leader === leaderImage, kept.follower === followerImage {
+            return kept.isBackdrop
+        }
+        let share = WinampModernGlueBackdrop.Plane(leaderImage, frame: leader.frame).flatMap { leaderPlane in
+            WinampModernGlueBackdrop.Plane(followerImage, frame: follower.frame).flatMap {
+                WinampModernGlueBackdrop.transparentShare(leader: leaderPlane, follower: $0)
+            }
+        }
+        let result = WinampModernGlueBackdrop.isBackdrop(transparentShare: share)
+        verdicts[key] = (leaderImage, followerImage, result)
+        if Self.traces {
+            NSLog("GLUE-TRACE %@ %@ leader transparent over follower's art %@", key,
+                  result ? "BACKDROP" : "frame", share.map { String(format: "%.3f", $0) } ?? "none")
+        }
+        return result
     }
 
     /// The window a script keeps glued to `window`, over it or under it. Snapping skips it.
     func partner(of window: NSWindow) -> NSWindow? {
-        for (leader, follower) in pairs {
+        for (leader, follower, _) in pairs {
             if leader === window { return follower }
             if follower === window { return leader }
         }
@@ -93,7 +130,7 @@ final class WinampModernGluedWindows {
     /// ordering that raised the window, and an `order(.above:)` issued inside it is undone by the rest
     /// of that pass. `WindowManager.bringAllWindowsToFront` calls it after every `.wal` raise.
     func restack() {
-        guard !pairIDs().isEmpty else {
+        guard !pairIDs().isEmpty || !candidateIDs().isEmpty else {
             if Self.traces { NSLog("GLUE-TRACE restack: no pairs recorded") }
             return
         }
@@ -110,10 +147,13 @@ final class WinampModernGluedWindows {
                           followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
                 }
             }
-            for (leader, follower) in pairs where leader.isVisible && follower.isVisible {
+            for (leader, follower, isBackdrop) in pairs where leader.isVisible && follower.isVisible {
+                // A backdrop goes under its leader whoever has the keyboard.
+                if isBackdrop {
+                    follower.order(.below, relativeTo: leader.windowNumber)
                 // Whichever of the pair the user is in stays where it is and the other joins it, so
                 // clicking the frame's title bar does not leave its client stranded behind something.
-                if follower.isKeyWindow {
+                } else if follower.isKeyWindow {
                     leader.order(.below, relativeTo: follower.windowNumber)
                 } else {
                     follower.order(.above, relativeTo: leader.windowNumber)
@@ -121,8 +161,9 @@ final class WinampModernGluedWindows {
                 if Self.traces {
                     let followerName: String = follower.accessibilityIdentifier() ?? "-"
                     let leaderName: String = leader.accessibilityIdentifier() ?? "-"
-                    NSLog("GLUE-TRACE restacked %@ over %@ (levels %ld/%ld)",
-                          followerName, leaderName, follower.level.rawValue, leader.level.rawValue)
+                    NSLog("GLUE-TRACE restacked %@ %@ %@ (levels %ld/%ld, order index %ld/%ld)",
+                          followerName, isBackdrop ? "under" : "over", leaderName, follower.level.rawValue,
+                          leader.level.rawValue, follower.orderedIndex, leader.orderedIndex)
                 }
             }
         }
@@ -144,10 +185,11 @@ final class WinampModernGluedWindows {
     /// frame onto the content itself, and a second carry would move the frame twice.
     private func attachForDrag(dragged: NSWindow?) {
         detachAfterDrag()
-        for (leader, follower) in pairs
+        for (leader, follower, isBackdrop) in pairs
         where follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {
-            leader.addChildWindow(follower, ordered: .above)
+            leader.addChildWindow(follower, ordered: isBackdrop ? .below : .above)
             dragAttached.append((leader, follower))
+            dragCarriedBackdrop = dragCarriedBackdrop || isBackdrop
             if Self.traces {
                 NSLog("GLUE-TRACE drag carries %@ with %@", follower.accessibilityIdentifier(),
                       leader.accessibilityIdentifier())
@@ -160,5 +202,9 @@ final class WinampModernGluedWindows {
             leader.removeChildWindow(follower)
         }
         dragAttached.removeAll()
+        if dragCarriedBackdrop {
+            dragCarriedBackdrop = false
+            restack()
+        }
     }
 }

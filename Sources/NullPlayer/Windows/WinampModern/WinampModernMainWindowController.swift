@@ -87,7 +87,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         glue.pairIDs = { [weak self] in
             self?.skinView?.scripts.windowsGluedOver.map { (leader: $0.key, follower: $0.value) } ?? []
         }
+        glue.candidateIDs = { [weak self] in
+            self?.skinView?.scripts.windowsGluedBehind.map { (leader: $0.key, follower: $0.value) } ?? []
+        }
         glue.window = { [weak self] id in self?.viewsByContainer[id]?.window }
+        glue.picture = { [weak self] id in self?.viewsByContainer[id]?.frames.outline }
+        glue.hostsSurface = { [weak self] id in self?.auxiliaryContainers.first { $0.view.containerID == id }?.kind != nil }
         setupWindow()
         // A transparent layer-backed window can lose its cached backing store while the display is
         // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display

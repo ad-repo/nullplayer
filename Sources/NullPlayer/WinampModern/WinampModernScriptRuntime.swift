@@ -380,6 +380,14 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    /// A script's `switchToLayout`: the container's window now shows `layout`.
+    func switchContainer(_ container: WasabiObject, to layout: WasabiObject) throws {
+        activeLayoutByContainer[container.stableID] = layout.stableID
+        realizedLayouts.insert(layout.stableID)
+        _ = hooks.layoutSwitchRequested?(container.stableID, layout.xmlID ?? "")
+        try announceLayoutSwitch(to: layout)
+    }
+
     /// `Container.onSwitchToLayout(layout)` — raised whoever switched: a script's own `switchToLayout`
     /// and the user's SWITCH button alike. Würlitzer's player closes its floating visualization
     /// window from this event when it shades; with only the script route raising it, a shade button
@@ -612,6 +620,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// follower is drawn *over* the leader (it is the leader's border and title), so the window layer
     /// re-raises it whenever the leader comes forward.
     var windowsGluedOver: [WasabiObjectID: WasabiObjectID] = [:]
+    /// Declared windows a script keeps on another declared window's origin, by leader (Würlitzer's
+    /// `avs` backdrop, B390). Only a candidate: the window layer pairs it when the follower turns out to
+    /// be seen through the leader's holes (`WinampModernGlueBackdrop`), and ignores it otherwise.
+    var windowsGluedBehind: [WasabiObjectID: WasabiObjectID] = [:]
 
     /// The last value each bridged attribute was seen at, so a refresh only tells the skin about a
     /// setting that actually moved. Four entries — one per `WinampModernConfigBridge.Attribute`.
