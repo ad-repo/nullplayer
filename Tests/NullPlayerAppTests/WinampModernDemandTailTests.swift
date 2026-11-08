@@ -245,11 +245,12 @@ final class WinampModernDemandTailTests: XCTestCase {
     }
 
     /// B194: a script-played AnimatedLayer raises `onFrame` for each frame its play head reaches and
-    /// `onStop` at the end of the range. mmd3's knobs set the EQ from `onFrame` alone.
+    /// `onStop` at the end of the range. mmd3's knobs, which declare `autoreplay="0"`, set the EQ from
+    /// `onFrame` alone.
     func testAPlayedAnimationRaisesFrameAndStopEvents() throws {
         let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML><container id="main"><layout id="normal" w="64" h="64">
-          <animatedlayer id="knob" w="10" h="10" frames="10"/><script id="s" file="s.maki"/>
+          <animatedlayer id="knob" w="10" h="10" frames="10" autoreplay="0"/><script id="s" file="s.maki"/>
         </layout></container></WasabiXML>
         """, files: ["s.maki": Self.handlerScript(["onframe", "onstop"])])
         let runtime = try WinampModernScriptRuntime(loadedSkin: loaded, host: WinampModernStubHost())

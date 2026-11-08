@@ -133,6 +133,11 @@
   skin's own window. Its script shows the playlist only when asked where the component goes
   (`onLookForComponent`), which NullPlayer now asks when the skin's other handler leaves none on screen.
 
+- **`.wal` animations that a skin plays over a frame range keep looping** until the skin stops them,
+  unless the layer says `autoreplay="0"`. Hitchhikers_Guide's robot dances for its 20 seconds after a
+  click or a Play instead of one pass, and the "animate while playing" layers of jvc.tape, Shield_Amp,
+  MBOS and eight more skins keep moving.
+
 
 ## 0.34.2
 

@@ -195,11 +195,12 @@ final class WinampModernPhase10Tests: XCTestCase {
     // MARK: - Animated layers
 
     /// Scripts drive a knob as a frame *range*: `setStartFrame` / `setEndFrame` / `setSpeed` / `play`,
-    /// then poll `isPlaying()`. The play head must walk from start to end at the set speed and stop
-    /// there — a looping modulo (the previous model) never finishes and spins the knob forever.
+    /// then poll `isPlaying()`. On a layer that says `autoreplay="0"`, as MMD3's knobs do, the play
+    /// head walks from start to end at the set speed and stops there.
     func testAnimatedLayerPlaysAFrameRangeAndStops() throws {
         let object = try makeAnimatedLayer(attributes: [
-            "startframe": "0", "endframe": "10", "speed": "100", "playing": "1", "animstart": "1000"
+            "startframe": "0", "endframe": "10", "speed": "100", "playing": "1", "animstart": "1000",
+            "autoreplay": "0"
         ])
         let mid = WasabiAnimation.state(of: object, frameCount: 23, clock: 1000.35)
         XCTAssertEqual(mid.frame, 3)
@@ -244,10 +245,22 @@ final class WinampModernPhase10Tests: XCTestCase {
     /// A knob turned down runs the range backwards.
     func testAnimatedLayerPlaysAFrameRangeBackwards() throws {
         let object = try makeAnimatedLayer(attributes: [
-            "startframe": "20", "endframe": "5", "speed": "100", "playing": "1", "animstart": "1000"
+            "startframe": "20", "endframe": "5", "speed": "100", "playing": "1", "animstart": "1000",
+            "autoreplay": "0"
         ])
         XCTAssertEqual(WasabiAnimation.state(of: object, frameCount: 23, clock: 1000.55).frame, 15)
         XCTAssertEqual(WasabiAnimation.state(of: object, frameCount: 23, clock: 1009).frame, 5)
+    }
+
+    /// Without `autoreplay="0"` a range replays: Hitchhikers_Guide sets its robot's whole sheet as the
+    /// range, `play()`s it on a click or in `onPlay`, and stops it from a 20 s timer and `onStop`.
+    func testAFrameRangeReplaysUnlessAutoreplayIsOff() throws {
+        let robot = try makeAnimatedLayer(attributes: [
+            "startframe": "0", "endframe": "11", "speed": "70", "playing": "1", "animstart": "1000"
+        ])
+        let wrapped = WasabiAnimation.state(of: robot, frameCount: 12, clock: 1000 + 0.07 * 14 + 0.01)
+        XCTAssertEqual(wrapped.frame, 2, "past the end frame it starts the range again")
+        XCTAssertTrue(wrapped.isPlaying)
     }
 
     /// `stop()` (an explicit `playing="0"`) wins over the XML's `autoplay`, so a script can freeze a

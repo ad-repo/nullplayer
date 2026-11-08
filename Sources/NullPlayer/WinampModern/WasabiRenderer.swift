@@ -670,12 +670,19 @@ enum WasabiAnimation {
             else if attributes["autoreplay"] == "0" { count - 1 }
             else { nil }
         guard let end else { return ((selected + steps) % count, true) }
+        // A range replays unless the layer says `autoreplay="0"`. The skins that sweep a knob to a
+        // value and wait for it to stop declare that (MMD3's knobs); the ones that set the whole sheet
+        // as the range, `play()` it in `onPlay` and `stop()` it in `onStop` mean "animate while the
+        // music plays" (Hitchhikers_Guide's robot, jvc.tape's reels), which a one-shot froze after
+        // one pass.
         let start = max(0, min(count - 1, Int(attributes["startframe"] ?? "") ?? selected))
         let target = max(0, min(count - 1, end))
         let distance = abs(target - start)
         guard distance > 0 else { return (target, false) }
-        if steps >= distance { return (target, false) }
-        return (start + (target > start ? steps : -steps), true)
+        let replays = attributes["autoreplay"] != "0"
+        if steps >= distance, !replays { return (target, false) }
+        let step = replays ? steps % (distance + 1) : steps
+        return (start + (target > start ? step : -step), true)
     }
 
     /// A layer that plays itself from markup (`autoplay`/`autoreplay`, no `play()` yet) starts when it
