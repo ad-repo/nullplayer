@@ -138,6 +138,11 @@
   click or a Play instead of one pass, and the "animate while playing" layers of jvc.tape, Shield_Amp,
   MBOS and eight more skins keep moving.
 
+- **CC_Red_Aler_2's equalizer sliders work.** A band slider a skin's own script handles reads its position as 0...255, as that script assumes, so a drag sets its band and moves its dynamite stick instead of being overwritten.
+- **Clicking Kyoko_Fukada's eye cycles its visualization**, and a click on any `.wal` `<vis>` box with no action of its own steps analyzer, oscilloscope and off.
+- **Project_DU_Television's TV face takes clicks** once its start-up animation ends: a once-only animation the skin plays from markup now reports its frames, so the skin hides the finished layer that was covering the face.
+- **Wurlitzer's shade button closes its floating visualization window**, and its cover window's title ticker sits in its own box beside the transport buttons instead of under them. A skin's `main.onSwitchToLayout` now hears the user's layout switch, and `getObject` answers the nearest object with an id before a nested one (Kepler_1.1's volume bar on its AVS and Video windows now follows the volume).
+
 
 ## 0.34.2
 

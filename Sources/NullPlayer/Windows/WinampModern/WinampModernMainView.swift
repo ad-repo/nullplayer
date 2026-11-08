@@ -2755,6 +2755,8 @@ final class WinampModernMainView: NSView {
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if object.tag.is(.layout) { return true }
+        // A `<vis>` is a click target (B387), but a drag that starts on it is still the window's.
+        if object.tag.is(.vis) { return true }
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
         // covers, and without `move="1"` above the skin has not offered it as a handle.
         if object.tag.is(.group) { return false }
@@ -3038,6 +3040,7 @@ final class WinampModernMainView: NSView {
         // a radio carries none.
         if flip != .none { needsDisplay = true }
         if flip == .radio { return }
+        if cycleVisualizationMode(of: object) { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
         // The object comes with the action now: `action_target=` is an attribute of the *button*, and
@@ -3142,7 +3145,10 @@ final class WinampModernMainView: NSView {
             // The user clicked a control that switches layout — a titlebar shade button, a
             // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this
             // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
-            if let parameter, activateLayout(id: parameter) { renderer.persistActiveLayout() }
+            if let parameter, activateLayout(id: parameter) {
+                renderer.persistActiveLayout()
+                try? scripts.announceLayoutSwitch(to: renderer.layout)
+            }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
         // shade-switch, close) as 4×5px buttons on the machine's chest. The minimize fallback is for
         // a view with no controller over it (tests), as `requestClose`'s is.

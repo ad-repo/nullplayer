@@ -112,6 +112,22 @@ extension WinampModernMainView {
         needsDisplay = true
     }
 
+    /// A left click on a `<vis>` box steps it through Winamp's own modes — analyzer, oscilloscope,
+    /// off — as it does in Winamp itself. Kyoko_Fukada's eye is a bare 15x15 `<vis>` with no action and
+    /// no script, so the click is the only control it has (B387). A box the skin binds a left-click
+    /// handler to (Defix's trigger, Love is War Miku's) keeps its own answer.
+    @discardableResult
+    func cycleVisualizationMode(of object: WasabiObject) -> Bool {
+        guard object.tag.is(.vis), object.attributes["action"] == nil,
+              !["onleftbuttondown", "onleftbuttonup", "onleftclick"].contains(where: {
+                  scripts.hasBinding(for: object, event: $0) }),
+              let mode = renderer.visualizationMode else { return false }
+        let all = WasabiVisualizationMode.allCases
+        let next = all[(all.firstIndex(of: mode)! + 1) % all.count]
+        applyVisualizationMode(next)
+        return true
+    }
+
     /// `VIS_MENU` — *which* visualization. The skin's own modes when it draws one, then the host's
     /// Visualizations menu, which is where the visualization window and the engine choice live.
     func showVisualizationMenu(from object: WasabiObject?) {

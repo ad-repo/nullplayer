@@ -88,11 +88,40 @@ extension WinampModernScriptRuntime {
         where object.tag.is(.slider) {
             guard WinampModernEQAction.decode(action: object.attributes["action"],
                                               parameter: object.attributes["param"]) == action else { continue }
+            declareScriptedRange(of: object)
             let position = String(Self.sliderPosition(normalized: normalized, of: object))
             guard object.attributes["value"] != position else { continue }
             _ = object.setAttribute("value", value: position)
             moved = true
         }
         return moved
+    }
+
+    /// An EQ slider that the skin's own script handles reads its position as Winamp's 0…255.
+    ///
+    /// CC_Red_Aler_2 hangs `setEqBand(n, newpos - 127)` on every band slider's `onSetPosition` and
+    /// cuts its dynamite-stick covers from a region map whose grey ramp runs 0…255, so on the −127…127
+    /// an undeclared EQ slider otherwise counts, the script overwrote each drag with a band 127 too
+    /// low and the covers never followed. Sliders no script handles (Tristania's, Rika's) keep
+    /// −127…127. Written once, as the `low`/`high` markup would have, after the scripts are bound.
+    private func declareScriptedRange(of object: WasabiObject) {
+        guard object.attributes["low"] == nil, object.attributes["high"] == nil,
+              ["onsetposition", "onpostedposition"].contains(where: { hasHandler(for: object, event: $0) })
+        else { return }
+        _ = object.setAttribute("low", value: "0")
+        _ = object.setAttribute("high", value: "255")
+    }
+
+    private func hasHandler(for object: WasabiObject, event: String) -> Bool {
+        let target = MakiObjectReference(.gui(object.stableID))
+        return programs.contains { program in
+            program.dispatchBindings.contains { binding in
+                guard program.methods[binding.methodIndex].name == event else { return false }
+                let variable = program.variables[binding.variableIndex]
+                return variable.isClass
+                    ? variable.classMembers.contains { self.object(program.variables[$0].value, equals: target) }
+                    : self.object(variable.value, equals: target)
+            }
+        }
     }
 }

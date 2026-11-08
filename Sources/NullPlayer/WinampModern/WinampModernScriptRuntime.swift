@@ -380,6 +380,15 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         }
     }
 
+    /// `Container.onSwitchToLayout(layout)` — raised whoever switched: a script's own `switchToLayout`
+    /// and the user's SWITCH button alike. Würlitzer's player closes its floating visualization
+    /// window from this event when it shades; with only the script route raising it, a shade button
+    /// press left that window standing over the desktop (B390).
+    func announceLayoutSwitch(to layout: WasabiObject) throws {
+        guard let container = layout.parent, container.tag.is(.container) else { return }
+        _ = try dispatch(object: container, event: "onswitchtolayout", arguments: [objectValue(layout)])
+    }
+
     /// Record that a layout has been created — the host switching a window to it, as against a
     /// script's own `switchToLayout`. See `realizedLayouts`.
     func markLayoutRealized(_ layout: WasabiObject) {
@@ -425,6 +434,7 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
         dispatchColorManagerLoaded()
         dispatchColdStartLayoutShown()
+        startMarkupFrameEvents()
     }
 
     /// `System.onShowLayout(<layout>)` for the window that comes up with the skin.

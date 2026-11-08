@@ -61,7 +61,7 @@ extension WinampModernScriptRuntime {
         return descendant(of: object, xmlID: id)
     }
 
-    /// The named object in `root`'s subtree — **the first one that came up**.
+    /// The named object in `root`'s subtree — **the nearest one that came up**.
     ///
     /// Ids are supposed to be unique inside a window and routinely are not: 304 duplicate ids inside
     /// one group/layout across the corpus, most of them harmless because nothing looks them up. The
@@ -80,14 +80,37 @@ extension WinampModernScriptRuntime {
     /// way it did before.
     func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
         var deadMatch: WasabiObject?
+        if Self.descendantFirstDeclared { return firstDeclaredDescendant(of: root, xmlID: xmlID) }
+        // Level by level, so the **shallowest** live match wins and declaration order only breaks a
+        // tie. Würlitzer's cover layout has its own `center` ticker window at the top level and a
+        // `frame` group, declared first, holding another; `getObject("center")` took the frame's, so
+        // the ticker text ran from x=27 under the transport buttons instead of from x=158 (B390).
+        var level = [root]
+        while !level.isEmpty {
+            for node in level where node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
+                // `image=""` names no bitmap at all: a placeholder box (Würlitzer's `center` ticker
+                // window), not a reference to one the skin never declared.
+                let placeholder = (node.attributes["image"] ?? node.attributes["bitmap"]) == ""
+                if placeholder || !isInvalid(node) { return node }
+                if deadMatch == nil { deadMatch = node }
+            }
+            level = level.flatMap(\.children)
+        }
+        return deadMatch
+    }
+
+    /// A/B switch for the nearest-first lookup above: `WINAMP_MODERN_DESCENDANT_FIRST_DECLARED=1` restores
+    /// the depth-first, first-declared answer `getObject`/`findObject` gave before B390.
+    static let descendantFirstDeclared = ProcessInfo.processInfo.environment["WINAMP_MODERN_DESCENDANT_FIRST_DECLARED"] == "1"
+
+    private func firstDeclaredDescendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
+        var deadMatch: WasabiObject?
         func walk(_ node: WasabiObject) -> WasabiObject? {
             if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
                 if !isInvalid(node) { return node }
                 if deadMatch == nil { deadMatch = node }
             }
-            for child in node.children {
-                if let match = walk(child) { return match }
-            }
+            for child in node.children { if let match = walk(child) { return match } }
             return nil
         }
         return walk(root) ?? deadMatch
@@ -256,8 +279,7 @@ extension WinampModernScriptRuntime {
             runtime.activeLayoutByContainer[call.object.stableID] = next.stableID
             runtime.realizedLayouts.insert(next.stableID)
             _ = runtime.hooks.layoutSwitchRequested?(call.object.stableID, call.arguments[0].stringValue)
-            _ = try runtime.dispatch(object: call.object, event: "onswitchtolayout",
-                                     arguments: [runtime.objectValue(next)])
+            try runtime.announceLayoutSwitch(to: next)
             return .null
         }
         // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.

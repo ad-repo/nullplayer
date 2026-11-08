@@ -2,6 +2,30 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B386 — CC_Red_Aler_2's EQ sliders do not work — closed 2026-11-07
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B386 | **CC_Red_Aler_2's EQ sliders do not work.** Found in the intake #7 user UI round (2026-11-07, reporter driving). Dragging the equalizer's band sliders does not move them or change the EQ. The click smoke reached none of them: they are in the skin's separate EQ window, which it does not drive. Done when each band slider follows a drag and sets its band | CC_Red_Aler_2 | ? | 1 |
+
+**Closed 2026-11-07, fixed.** Its band sliders' `onSetPosition` runs `setEqBand(n, newpos - 127)` and its covers cut a 0..255 grey-ramp map, but an undeclared EQ slider counted -127..127, so the script overwrote each drag with a band 127 too low (live: `seteqband(2,-108)` on a mid drag). A slider the skin's own script handles now counts 0..255 (live: +20, +39, +56, +57 and the stick lights)**
+
+## B387 — Kyoko_Fukada's eye visualizer area does nothing — closed 2026-11-07
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B387 | **Kyoko_Fukada's eye visualizer area does nothing.** Found in the intake #7 user UI round (2026-11-07, reporter driving). Clicking the eye-shaped visualization area on the main window has no effect. Find what the skin binds there (a vis mode cycle, a menu, a toggle) from its XML and scripts. Done when a click there does what the skin binds | Kyoko_Fukada | ? | 1 |
+
+**Closed 2026-11-07, fixed.** The eye is a bare 15x15 `<vis>` with no action or script; a left click on a `<vis>` was never a press target. It now is, and steps analyzer, oscilloscope and off (live: the click hits `vis`, the drawn mode changes frame to frame)**
+
+## B388 — Project_DU_Television's face is not clickable, and its time is badly aligned — closed 2026-11-07
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B388 | **Project_DU_Television's face is not clickable, and its time is badly aligned.** Found in the intake #7 user UI round (2026-11-07, reporter driving). The TV's face (the screen with the PROJECT DU logo) does nothing on a click, and the time readout (`0:16` at the top left of the screen in the census) sits off its place. Find what the skin binds to the face and where it puts the time. Done when the face does what the skin binds and the time sits where its markup puts it | Project_DU_Television | ? | 1 |
+
+**Closed 2026-11-07, click fixed; time is the skin's own design.** The intro layer `anim` (`autoplay=1 autoreplay=0`) is hidden by `anim.m`'s `onFrame` at the end frame, but nothing raised `onFrame` for a layer the markup starts itself, so the finished layer stayed topmost over the face and took every click (live: the click hit `animatedlayer#anim`, now `layer#click`, and the vis mode steps). The time readout sits where its markup puts it (`x=10,y=4,w=35,align=right` in the lcd group at 53,25, measured 69..95 x 32..45)**
+
 ## B385 — Tuneup_v1's Playlist never opens: not from the skin's own toggle, not from the Windows menu — closed 2026-11-07
 
 | Id | Item | Reach | Effort | Tier |
