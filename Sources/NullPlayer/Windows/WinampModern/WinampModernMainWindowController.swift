@@ -8,6 +8,23 @@ import AppKit
 final class WinampModernSkinWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    /// Whether this window is a glued backdrop seen through another's holes (B390). A click through
+    /// a hole must not bring it in front of the window it is seen through. Set by the owner.
+    var isBackdrop: () -> Bool = { false }
+    /// Puts every glued backdrop back under its leader. Set by the owner.
+    var restackGlue: () -> Void = {}
+
+    override func sendEvent(_ event: NSEvent) {
+        let isPress = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type)
+        let behind = isPress && isBackdrop()
+        if behind {
+            NSApp.preventWindowOrdering()
+            if WinampModernGluedWindows.traces { NSLog("GLUE-TRACE backdrop click held behind") }
+        }
+        super.sendEvent(event)
+        // Becoming key still raises it in some orders; the restack runs a turn late and wins.
+        if behind { restackGlue() }
+    }
 }
 
 final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
@@ -594,6 +611,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
         auxWindow.setAccessibilityLabel(WinampModernContainerTopology.displayName(of: info))
         auxWindow.delegate = self
+        auxWindow.isBackdrop = { [weak self, weak auxWindow] in
+            guard let self, let auxWindow else { return false }
+            return glue.isBackdrop(auxWindow)
+        }
+        auxWindow.restackGlue = { [weak self] in self?.glue.restack() }
         auxWindow.orderOut(nil)
         installWindowCommands(on: view, id: info.id)
         // A script resizing *this* container resizes this window, not the player's.

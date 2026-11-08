@@ -79,6 +79,11 @@ final class WinampModernGluedWindows {
         return result
     }
 
+    /// Whether `window` is glued *under* another as its backdrop.
+    func isBackdrop(_ window: NSWindow) -> Bool {
+        pairs.contains { $0.follower === window && $0.isBackdrop }
+    }
+
     /// The window a script keeps glued to `window`, over it or under it. Snapping skips it.
     func partner(of window: NSWindow) -> NSWindow? {
         for (leader, follower, _) in pairs {
