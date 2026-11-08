@@ -2,6 +2,22 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B385 — Tuneup_v1's Playlist never opens: not from the skin's own toggle, not from the Windows menu — closed 2026-11-07
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B385 | **Tuneup_v1's Playlist never opens: not from the skin's own toggle, not from the Windows menu.** Found in intake #7's scan (2026-11-07): `togglebutton#PLIcon` (`action="Toggle" param="guid:pl"`, `xml/player-normal-groups.xml:23`) and `#EQIcon` (`param="eq"`) read `nochange` in the click smoke, and the census's `Playlist Editor` item is `no-window`. The skin declares no playlist container; its windows are `main`, `colortheme`, `leg`, `rleg` and `Lazer`, and the log says `library=classic(the skin declares no library surface)`, yet the Library still opens in NullPlayer's window and the Playlist opens nowhere. Done when the Playlist opens from both, in the skin's frame if it has one for it, else in NullPlayer's own playlist window | Tuneup_v1 | ? | 1 |
+
+**Closed 2026-11-07, fixed.** Tuneup's `onGetCancelComponent` only hides its inline `PLedit` group; the group is shown by `onLookForComponent`, the event a skin answers with where it hosts the component, which a reveal never sent (log: `reveal playlist handlers=1 opened=0`). `revealEmbeddedSurface` now sends `onlookforcomponent(guid)` when the cancel handler left no holder visible and the reveal is not the startup one, then re-checks. A/B switch `WINAMP_MODERN_NO_LOOKFOR_REVEAL=1` (`harness.md`). Re-check (debug build): the `PLIcon` click and Windows ▸ Playlist Editor both open the inline playlist (captured); the census still lists the item `no-window` because the playlist is inline, not a window, and the smoke reads it `nochange` for the same reason.
+
+## B384 — Battlefield_Vietnam's whole control set is never drawn or clicked: its drawer never shows — closed 2026-11-07
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B384 | **Battlefield_Vietnam's whole control set is never drawn or clicked: its drawer never shows.** Found in intake #7's click smoke (2026-11-07, `wal_live_smoke.sh`, playing): all 14 main-window controls read `unreachable` (`layer#Drawer`, PREV, NEXT, STOP, PAUSE, the EQ/ML/PL toggles, `Slider#Volume`, `Slider#Seeker`), and the census shows the 640x480 `Normal` layout as its background art, the time and the scrolling title only. Every control lives in `groupdef DrawerGroup` (`xml/player-normal.xml:37`, placed `x="83" y="160" w="486" h="200"`), whose handle is `layer#Drawer` (`image="BtnDrawer"`, `sysregion="1"`) and which `scripts/Drawer.maki` slides. Find whether the group is never built, clipped by the layout region (`desktopalpha="1"`, `sysregion` on the handle), or parked off-layout by the script at rest. Done when the drawer handle shows and opening it gives working transport, volume and seek | Battlefield_Vietnam | ? | 1 |
+
+**Closed 2026-11-07, not a skin defect; the click sweep missed the handle.** The drawer works as the skin draws it: `layer#Drawer` (482x200 art) sits under the opaque background and only a chevron a few points wide shows through the transparent part, so the sweep's 5x5 sample never landed on it and the group read `unreachable`. A real click at the chevron runs `Drawer.maki` (`settargetx(80)`/`settargety(255)`/`gototarget` on `DrawerGroup`) and slides the transport, volume and seek out (captured live). `WinampModernDebugClickSweep.point(on:)` now scans the box every 3 points before giving up. Re-check smoke (debug build, playing): Battlefield_Vietnam main 11 clicked (was 0), Volume 0.50>0.25, Seeker 6.1>61.8.
+
 ## B378 — Enya_Winamp_3_Skin's EQ faders are hard to move — closed 2026-11-05
 
 | Id | Item | Reach | Effort | Tier |

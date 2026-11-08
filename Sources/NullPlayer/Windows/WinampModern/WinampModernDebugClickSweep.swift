@@ -120,7 +120,17 @@ final class WinampModernDebugClickSweep {
             candidates.append(CGPoint(x: box.minX + box.width * (CGFloat(column) + 0.5) / 5,
                                       y: box.minY + box.height * (CGFloat(row) + 0.5) / 5))
         } }
-        return candidates.first { renderer.object(at: $0) === object }
+        if let hit = candidates.first(where: { renderer.object(at: $0) === object }) { return hit }
+        // Battlefield_Vietnam's drawer handle is a 482x200 art whose only uncovered pixels are a
+        // chevron a few points wide under the transparent part of the background (B384): no coarse
+        // grid lands on it, so scan the box every 3 points before calling the object unreachable.
+        for y in stride(from: box.minY + 1, to: box.maxY, by: 3) {
+            for x in stride(from: box.minX + 1, to: box.maxX, by: 3) {
+                let probe = CGPoint(x: x, y: y)
+                if renderer.object(at: probe) === object { return probe }
+            }
+        }
+        return nil
     }
 
     private func step(_ index: Int) {

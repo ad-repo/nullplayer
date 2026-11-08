@@ -129,6 +129,10 @@
 - **A `.wmz` playlist opens on the playing track**, rather than with it pinned to the top row, after
   a skin change or when its pane is opened.
 
+- **Tuneup_v1's Playlist opens** from its playlist toggle and from the Windows menu, inline in the
+  skin's own window. Its script shows the playlist only when asked where the component goes
+  (`onLookForComponent`), which NullPlayer now asks when the skin's other handler leaves none on screen.
+
 
 ## 0.34.2
 

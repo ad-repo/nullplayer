@@ -1411,6 +1411,14 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             #endif
             return true
         }
+        // Tuneup_v1 (B385): its `onGetCancelComponent` only *hides* the inline playlist group; the
+        // group is shown by `onLookForComponent`, the event a skin answers with where it hosts the
+        // component. A skin whose cancel handler did not put a holder on screen is asked that next.
+        if allowAutoOpenFallback, !Self.lookForComponentRevealDisabled,
+           ((try? scripts.dispatchSystem(event: "onlookforcomponent", arguments: [.string(guid)])) ?? 0) > 0,
+           hasVisibleHolder(kind) {
+            return true
+        }
         guard allowAutoOpenFallback else {
             #if DEBUG
             NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",
@@ -1495,6 +1503,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     /// Whether the player's current scene already shows a holder for this surface.
+    /// `WINAMP_MODERN_NO_LOOKFOR_REVEAL=1`: the A/B switch for B385 (`harness.md`): a reveal no longer
+    /// asks the skin `onLookForComponent` after its `onGetCancelComponent` left no holder visible.
+    private static let lookForComponentRevealDisabled =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_NO_LOOKFOR_REVEAL"] == "1"
+
     func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
         skinView?.renderer.componentHolders().contains { $0.kind == kind } ?? false
     }

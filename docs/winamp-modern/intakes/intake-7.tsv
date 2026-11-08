@@ -1,6 +1,6 @@
 file	sha256	stage	updated	rows	note
 shark5final2.wal	a701d52b451914506feafb0d30cc202aef42e7d0e4ffb037c54616c7ae959dfa	live	2026-11-07	-	scan clean: main 10 clicked, library skin-frame closed, visual clean (5 windows)
-Battlefield_Vietnam.wal	a72da283bc861e55e931532b9da423f2802d373976b205fcc6250aaa89bf7ac5	filed	2026-11-07	B384	scan: every main control unreachable, drawer never shows (B384)
+Battlefield_Vietnam.wal	a72da283bc861e55e931532b9da423f2802d373976b205fcc6250aaa89bf7ac5	live	2026-11-07	B384	B384 closed (the sweep missed the chevron handle; drawer works): re-check smoke main 11 clicked, volume and seek move
 Winamp-2006.wal	add24107c4c3de186cbbaea958c66747606dea898d68945b2c356f975999a590	live	2026-11-07	-	scan clean: main 44 clicked, library plain-chrome, visual clean (3 windows); navigateUrl of a Windows path no longer offered as a link (9e510223)
 Hitchhikers_Guide.wal	b4faacf951de64c401124e62429a8216e966fcd1412ea578455e634a6576afb4	live	2026-11-07	-	scan clean: main 14 clicked, library skin-frame closed, visual clean (4 windows)
 Underscore.wal	bc99c7742c67c5375fc6a17f14749a4481a303923de4fe7aa337e929bdc5a524	live	2026-11-07	-	scan clean: main 12 clicked, library skin-frame closed, visual clean (5 windows)
@@ -19,7 +19,7 @@ UltraBM_v1.wal	ec14cdf4dc667507b5ac31ec28f1ec3626c1e41eadcfd768f75ee3111bd1a65c	
 CC_Red_Aler_2.wal	f78dbd93a02d33344d2df0f7796238e77cdc9542fc1f830250f5868c037e919a	live	2026-11-07	-	scan clean: main 11 clicked, library skin-frame closed, visual clean (6 windows)
 Compact.wal	f9224756f10bc3ea832656254f5bb19464edb95433dfb0719a8fd8c245ee835e	live	2026-11-07	-	scan clean: main 32 clicked, library plain-chrome, visual clean (3 windows)
 EMP.wal	fb8a12dc118852aeaf2823e352fff3c45e68d3185d09c6b375ddc50e637e6551	live	2026-11-07	-	scan clean: main 13 clicked, library skin-frame closed, visual clean (7 windows)
-Tuneup_v1.wal	003903ce8ea13630155e81c7c5f290e53f12c7f4d93f6d4fd00e396fc358e00f	filed	2026-11-07	B385	scan: Playlist opens from neither its toggle nor the Windows menu (B385)
+Tuneup_v1.wal	003903ce8ea13630155e81c7c5f290e53f12c7f4d93f6d4fd00e396fc358e00f	live	2026-11-07	B385	B385 closed: PLIcon and Windows menu open the inline playlist; re-check smoke main 22 clicked, census lists it no-window (inline)
 Echo.wal	0383b8573b1935b4e75c296b728e62c405f700e81bd5e6e5ff003fbef637050c	live	2026-11-07	-	scan clean: main 15 clicked, library skin-frame closed, visual clean (3 windows)
 NightWing_II.wal	6a033c89e03763f24ae7a8d2365c0293f33ca30a9bca18233021ac0c8fae69b0	live	2026-11-07	B366	scan clean: main 13 clicked, library plain-chrome (B366), visual clean (5 windows)
 Big_Red_House_.wal	039949e8aa35880cefd33816ced84cafe9c8d4ebf3dd6a771ea25dc0b8dcf60e	live	2026-11-07	-	scan clean: main 11 clicked, library skin-frame closed, visual clean (5 windows); shade SWITCH names an undeclared layout pinkmini (the skin's)
