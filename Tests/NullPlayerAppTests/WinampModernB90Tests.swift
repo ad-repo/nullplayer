@@ -111,6 +111,27 @@ final class WinampModernB90Tests: XCTestCase {
         XCTAssertEqual(Int(pixel.alpha), 0, "only a layout answers for the window's backing")
     }
 
+    /// B391 — Winamp-2006's bottom band is a `<group>` with no `h` on a painted 10x10 tile: the tile
+    /// is a backing to fill, not an aperture, so the group is as tall as its lowest child and that
+    /// child draws. Sized to the tile it clipped everything under the first 8px.
+    func testAPaintedBackgroundGroupWithNoHeightReachesItsLowestChild() throws {
+        let scene = try makeScene(
+            layoutAttributes: "",
+            resources: #"<bitmap id="tile" file="red.png"/><bitmap id="inner" file="green.png"/>"#,
+            markup: #"""
+            <group id="band" x="0" y="0" w="120" background="tile">
+              <layer id="low" x="0" y="20" w="20" h="20" image="inner"/>
+            </group>
+            """#,
+            art: ["red.png": Self.solidPNG(red: 255, green: 0, blue: 0),
+                  "green.png": Self.solidPNG(red: 0, green: 255, blue: 0)]
+        )
+        // `pixel(x:y:)` reads this fixture bottom-up, so row 10 is inside the layer at y 20-40.
+        let pixel = try XCTUnwrap(scene.pixel(x: 10, y: 10))
+        XCTAssertEqual(Int(pixel.green), 255, "the child below the tile's height is drawn")
+        XCTAssertEqual(Int(pixel.red), 0)
+    }
+
     // MARK: - Fixture
 
     private struct Scene {

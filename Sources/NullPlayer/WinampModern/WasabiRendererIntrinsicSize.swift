@@ -103,6 +103,18 @@ extension WasabiSceneRenderer {
             }
             if object.attributes["h"] == nil, intrinsic.height == 0 {
                 intrinsic.height = Double(background.height)
+                // A *painted* background is a tile meant to fill the box, not an aperture that states
+                // it (B391): Winamp-2006's whole bottom band (seek bar, transport, volume, bass and
+                // treble) is one `<group>` with no `h` on a 10x10 `background` tile, and sized to the
+                // tile it clipped everything but the seek row. It is at least as tall as the lowest
+                // child it declares. Only grows the box; a `drawbackground="0"` group (BLAKK) is untouched.
+                // ponytail: "states a `w` but no `h`" is the tell that the tile fills a width rather
+                // than sizing the box; a group that states neither stays the tile's size (golden
+                // `group-background-box`). Revisit if a skin shows a third shape.
+                if object.attributes["w"] != nil, paintedBackingID(of: object) != nil,
+                   let bottom = contentBottom(of: object) {
+                    intrinsic.height = max(intrinsic.height, Double(bottom))
+                }
             }
         }
         // A `<CustomObject>` that states no size is the size of the group it hosts, the way Wasabi
