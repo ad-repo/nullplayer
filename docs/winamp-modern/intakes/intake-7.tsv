@@ -1,26 +1,26 @@
 file	sha256	stage	updated	rows	note
-shark5final2.wal	a701d52b451914506feafb0d30cc202aef42e7d0e4ffb037c54616c7ae959dfa	admitted	2026-11-07	-	-
-Battlefield_Vietnam.wal	a72da283bc861e55e931532b9da423f2802d373976b205fcc6250aaa89bf7ac5	admitted	2026-11-07	-	-
-Winamp-2006.wal	add24107c4c3de186cbbaea958c66747606dea898d68945b2c356f975999a590	admitted	2026-11-07	-	-
-Hitchhikers_Guide.wal	b4faacf951de64c401124e62429a8216e966fcd1412ea578455e634a6576afb4	admitted	2026-11-07	-	-
-Underscore.wal	bc99c7742c67c5375fc6a17f14749a4481a303923de4fe7aa337e929bdc5a524	admitted	2026-11-07	-	-
-EW.wal	beb8e3f82d10347e4ffb1512c68dd8fa7cf5fc1f3d60efe57e286d45fe3de0e8	admitted	2026-11-07	-	-
-Software.wal	ca6c42d5a674aaca3613f8da7bc02d696d34c02e95112b444cfa0aeac9be972a	admitted	2026-11-07	-	-
-Kyoko_Fukada.wal	d3369b70bafe35bc77f686acda81e7345ac1cd04c831fa9c6aaad82adbc0aa88	admitted	2026-11-07	-	-
-Chronabie.wal	d3412c47179bea9ef53dc3d5a6bfbf5c4bc9c4806dbf94ca50af02077036b872	admitted	2026-11-07	-	-
-AniTransformers.wal	d544bd8808f3fa2b472557244a163b02ce1d1d2e702426044d52ec61b796d34b	admitted	2026-11-07	-	-
-Project_DU_Television.wal	d6410efdb2995f6369c563b60068557ce0b102ca31cda24da616c045ca5e9953	admitted	2026-11-07	-	-
-Blue_and_Silver_Pro.wal	d6ccd068635bde89c6044684bbd4cb7af7f8f385103feae6159f830e056ac97b	admitted	2026-11-07	-	-
-Star_Wars_Player.wal	d8a213d54d92f6f1cb2d28fabe61e75e1c52402abf07d5694d56cc33d258723d	admitted	2026-11-07	-	-
-Shark_by_HH.wal	deaebe515e766b9241a2a0644ba0776537faf7ab7ddece66ddc103d6f41f3a64	admitted	2026-11-07	-	-
-W%C3%83%C2%BCrlitzer_V3_1.wal	e69d35b81e78c7682d1012eef6221679ac38a42df2b19f5ac6ce3b804ae2d152	admitted	2026-11-07	-	-
-Official_Powerade_Skin.wal	e99c6c2ce7e42c182294ce4269885dea2595593155a43f0b7e714629af59a45e	admitted	2026-11-07	-	-
-UltraBM_v1.wal	ec14cdf4dc667507b5ac31ec28f1ec3626c1e41eadcfd768f75ee3111bd1a65c	admitted	2026-11-07	-	-
-CC_Red_Aler_2.wal	f78dbd93a02d33344d2df0f7796238e77cdc9542fc1f830250f5868c037e919a	admitted	2026-11-07	-	-
-Compact.wal	f9224756f10bc3ea832656254f5bb19464edb95433dfb0719a8fd8c245ee835e	admitted	2026-11-07	-	-
-EMP.wal	fb8a12dc118852aeaf2823e352fff3c45e68d3185d09c6b375ddc50e637e6551	admitted	2026-11-07	-	-
-Tuneup_v1.wal	003903ce8ea13630155e81c7c5f290e53f12c7f4d93f6d4fd00e396fc358e00f	admitted	2026-11-07	-	-
-Echo.wal	0383b8573b1935b4e75c296b728e62c405f700e81bd5e6e5ff003fbef637050c	admitted	2026-11-07	-	-
-NightWing_II.wal	6a033c89e03763f24ae7a8d2365c0293f33ca30a9bca18233021ac0c8fae69b0	admitted	2026-11-07	-	-
-Big_Red_House_.wal	039949e8aa35880cefd33816ced84cafe9c8d4ebf3dd6a771ea25dc0b8dcf60e	admitted	2026-11-07	-	-
-Winamp_Skin_Yuki_Morikawa.wal	045755315ea22cb88c8bd8484c717e3c5f7354c85759f681673eb3a3342d85ec	admitted	2026-11-07	-	-
+shark5final2.wal	a701d52b451914506feafb0d30cc202aef42e7d0e4ffb037c54616c7ae959dfa	live	2026-11-07	-	scan clean: main 10 clicked, library skin-frame closed, visual clean (5 windows)
+Battlefield_Vietnam.wal	a72da283bc861e55e931532b9da423f2802d373976b205fcc6250aaa89bf7ac5	filed	2026-11-07	B384	scan: every main control unreachable, drawer never shows (B384)
+Winamp-2006.wal	add24107c4c3de186cbbaea958c66747606dea898d68945b2c356f975999a590	live	2026-11-07	-	scan clean: main 44 clicked, library plain-chrome, visual clean (3 windows); navigateUrl of a Windows path no longer offered as a link (9e510223)
+Hitchhikers_Guide.wal	b4faacf951de64c401124e62429a8216e966fcd1412ea578455e634a6576afb4	live	2026-11-07	-	scan clean: main 14 clicked, library skin-frame closed, visual clean (4 windows)
+Underscore.wal	bc99c7742c67c5375fc6a17f14749a4481a303923de4fe7aa337e929bdc5a524	live	2026-11-07	-	scan clean: main 12 clicked, library skin-frame closed, visual clean (5 windows)
+EW.wal	beb8e3f82d10347e4ffb1512c68dd8fa7cf5fc1f3d60efe57e286d45fe3de0e8	live	2026-11-07	-	scan clean: main 12 clicked, library skin-frame closed, visual clean (4 windows)
+Software.wal	ca6c42d5a674aaca3613f8da7bc02d696d34c02e95112b444cfa0aeac9be972a	live	2026-11-07	-	scan clean: main 15 clicked, library skin-frame closed, visual clean (5 windows); dim playlist rows are the skin's studio.list.text 50,50,50
+Kyoko_Fukada.wal	d3369b70bafe35bc77f686acda81e7345ac1cd04c831fa9c6aaad82adbc0aa88	live	2026-11-07	-	scan clean: main 10 clicked, library skin-frame closed, visual clean (5 windows)
+Chronabie.wal	d3412c47179bea9ef53dc3d5a6bfbf5c4bc9c4806dbf94ca50af02077036b872	live	2026-11-07	-	scan clean: main 30 clicked, library skin-frame closed, visual clean (4 windows)
+AniTransformers.wal	d544bd8808f3fa2b472557244a163b02ce1d1d2e702426044d52ec61b796d34b	live	2026-11-07	B366	scan clean: main 13 clicked, library plain-chrome (B366), visual clean (5 windows)
+Project_DU_Television.wal	d6410efdb2995f6369c563b60068557ce0b102ca31cda24da616c045ca5e9953	live	2026-11-07	-	scan clean: main 8 clicked, library skin-frame closed, visual clean (5 windows)
+Blue_and_Silver_Pro.wal	d6ccd068635bde89c6044684bbd4cb7af7f8f385103feae6159f830e056ac97b	live	2026-11-07	-	scan clean: main 23 clicked, library skin-frame closed, visual clean (4 windows)
+Star_Wars_Player.wal	d8a213d54d92f6f1cb2d28fabe61e75e1c52402abf07d5694d56cc33d258723d	live	2026-11-07	B366	scan clean: main 13 clicked, library plain-chrome (B366), visual clean (4 windows)
+Shark_by_HH.wal	deaebe515e766b9241a2a0644ba0776537faf7ab7ddece66ddc103d6f41f3a64	live	2026-11-07	-	scan clean: main 25 clicked, library skin-frame closed, visual clean (4 windows)
+W%C3%83%C2%BCrlitzer_V3_1.wal	e69d35b81e78c7682d1012eef6221679ac38a42df2b19f5ac6ce3b804ae2d152	live	2026-11-07	-	scan clean: main 43 clicked, library skin-frame closed, visual clean (5 windows); playlist is in the jukebox body
+Official_Powerade_Skin.wal	e99c6c2ce7e42c182294ce4269885dea2595593155a43f0b7e714629af59a45e	live	2026-11-07	B366	scan clean: main 8 clicked, library plain-chrome (B366), visual clean (5 windows)
+UltraBM_v1.wal	ec14cdf4dc667507b5ac31ec28f1ec3626c1e41eadcfd768f75ee3111bd1a65c	live	2026-11-07	-	scan clean: main 28 clicked, library skin-frame closed, visual clean (4 windows); Library/Playlist open 275x154, the skin's frame default
+CC_Red_Aler_2.wal	f78dbd93a02d33344d2df0f7796238e77cdc9542fc1f830250f5868c037e919a	live	2026-11-07	-	scan clean: main 11 clicked, library skin-frame closed, visual clean (6 windows)
+Compact.wal	f9224756f10bc3ea832656254f5bb19464edb95433dfb0719a8fd8c245ee835e	live	2026-11-07	-	scan clean: main 32 clicked, library plain-chrome, visual clean (3 windows)
+EMP.wal	fb8a12dc118852aeaf2823e352fff3c45e68d3185d09c6b375ddc50e637e6551	live	2026-11-07	-	scan clean: main 13 clicked, library skin-frame closed, visual clean (7 windows)
+Tuneup_v1.wal	003903ce8ea13630155e81c7c5f290e53f12c7f4d93f6d4fd00e396fc358e00f	filed	2026-11-07	B385	scan: Playlist opens from neither its toggle nor the Windows menu (B385)
+Echo.wal	0383b8573b1935b4e75c296b728e62c405f700e81bd5e6e5ff003fbef637050c	live	2026-11-07	-	scan clean: main 15 clicked, library skin-frame closed, visual clean (3 windows)
+NightWing_II.wal	6a033c89e03763f24ae7a8d2365c0293f33ca30a9bca18233021ac0c8fae69b0	live	2026-11-07	B366	scan clean: main 13 clicked, library plain-chrome (B366), visual clean (5 windows)
+Big_Red_House_.wal	039949e8aa35880cefd33816ced84cafe9c8d4ebf3dd6a771ea25dc0b8dcf60e	live	2026-11-07	-	scan clean: main 11 clicked, library skin-frame closed, visual clean (5 windows); shade SWITCH names an undeclared layout pinkmini (the skin's)
+Winamp_Skin_Yuki_Morikawa.wal	045755315ea22cb88c8bd8484c717e3c5f7354c85759f681673eb3a3342d85ec	live	2026-11-07	-	scan clean: main 25 clicked, library skin-frame closed, visual clean (5 windows)
