@@ -2276,7 +2276,7 @@ final class WinampModernMainView: NSView {
         // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
         // skin's settings page, and that menu wins), and it must have no right-button handler of its
         // own (Love is War Miku's `visualizer.maki` binds one).
-        if object.tag.is(.vis), !hasRightButtonHandler(object) {
+        if object.isVisualizationHandle, !hasRightButtonHandler(object) {
             showVisualizationMenu(from: object)
             return
         }
@@ -2756,7 +2756,7 @@ final class WinampModernMainView: NSView {
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if object.tag.is(.layout) { return true }
         // A `<vis>` is a click target (B387), but a drag that starts on it is still the window's.
-        if object.tag.is(.vis) { return true }
+        if object.isVisualizationHandle { return true }
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
         // covers, and without `move="1"` above the skin has not offered it as a handle.
         if object.tag.is(.group) { return false }
@@ -3147,7 +3147,14 @@ final class WinampModernMainView: NSView {
             // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
             if let parameter, activateLayout(id: parameter) {
                 renderer.persistActiveLayout()
-                try? scripts.announceLayoutSwitch(to: renderer.layout)
+                if let container = renderer.layout.parent, container.tag.is(.container) {
+                    // Swallowed: a skin's own handler failing must not undo the switch the user made.
+                    do { try scripts.announceLayoutSwitch(in: container, to: renderer.layout) } catch {
+                        #if DEBUG
+                        NSLog("WinampModern onSwitchToLayout threw %@", String(describing: error))
+                        #endif
+                    }
+                }
             }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
         // shade-switch, close) as 4×5px buttons on the machine's chest. The minimize fallback is for

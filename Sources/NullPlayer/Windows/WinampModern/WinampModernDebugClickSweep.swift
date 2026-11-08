@@ -52,7 +52,8 @@ final class WinampModernDebugClickSweep {
     /// The window being swept: the main player, then the Library's.
     private weak var view: WinampModernMainView?
     private weak var main: WinampModernMainView?
-    private var pass = "main"
+    private enum Pass: String { case main, library }
+    private var pass = Pass.main
     /// The skin's container id for one of its auxiliary windows, nil for any other window.
     private let containerID: (NSWindow) -> String?
     private var targets: [Target]
@@ -124,6 +125,7 @@ final class WinampModernDebugClickSweep {
         // Battlefield_Vietnam's drawer handle is a 482x200 art whose only uncovered pixels are a
         // chevron a few points wide under the transparent part of the background (B384): no coarse
         // grid lands on it, so scan the box every 3 points before calling the object unreachable.
+        // Debug only, and each probe is a full hit test on the main thread.
         for y in stride(from: box.minY + 1, to: box.maxY, by: 3) {
             for x in stride(from: box.minX + 1, to: box.maxX, by: 3) {
                 let probe = CGPoint(x: x, y: y)
@@ -134,11 +136,11 @@ final class WinampModernDebugClickSweep {
     }
 
     private func step(_ index: Int) {
-        guard let view, index < targets.count else { return pass == "main" ? openLibrary() : closeLibrary() }
+        guard let view, index < targets.count else { return pass == .main ? openLibrary() : closeLibrary() }
         let target = targets[index]
         let point = Self.point(on: target.object, in: view)
         let skip = Self.skippedActions.contains(target.action) ? "skip" : point == nil ? "unreachable" : nil
-        let identity = ["window": pass, "idx": "\(index + 1)", "object": target.label, "action": target.action]
+        let identity = ["window": pass.rawValue, "idx": "\(index + 1)", "object": target.label, "action": target.action]
         guard let point, skip == nil else {
             Self.log(identity.merging(["note": skip ?? ""]) { $1 })
             return step(index + 1)
@@ -160,8 +162,7 @@ final class WinampModernDebugClickSweep {
             ? view.renderer.frame(of: target.object).map(Self.quarterPoint) : nil
         if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            guard let self, let view = self.view else { return self?.finish() ?? () }
-            let main = self.main ?? view
+            guard let self, let view = self.view, let main = self.main else { return self?.finish() ?? () }
             let after = self.snapshot(view)
             var notes: [String] = []
             if self.menuOpened { notes.append("menu") }
@@ -240,7 +241,7 @@ final class WinampModernDebugClickSweep {
                     if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
                     return self.finish()
                 }
-                self.pass = "library"
+                self.pass = .library
                 self.view = skinView
                 self.startLayout = skinView.renderer.activeLayoutID
                 self.targets = Self.targets(in: skinView)
@@ -288,7 +289,7 @@ final class WinampModernDebugClickSweep {
             windows[ObjectIdentifier(window)] = "\(name)(\(Int(window.frame.width))x\(Int(window.frame.height)))"
                 .replacingOccurrences(of: "|", with: "/")
         }
-        let main = (self.main ?? view).window
+        let main = self.main?.window
         let track = String((view.host.trackPath as NSString).lastPathComponent.prefix(40))
             .replacingOccurrences(of: "|", with: "/")
         // On/off, auto, preamp, and a checksum of the bands: enough to say whether any of them moved.

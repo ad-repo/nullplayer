@@ -76,44 +76,9 @@ extension WinampModernScriptRuntime {
     ///
     /// So a match that came up outranks a match that did not, and declaration order decides
     /// everything else. An object with no `image`/`bitmap` of its own is never invalid, so groups,
-    /// text and containers are unaffected; a skin with two live duplicates still gets the first, the
-    /// way it did before.
+    /// text and containers are unaffected; of two live duplicates the shallower wins, then the first declared.
     func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        var deadMatch: WasabiObject?
-        if Self.descendantFirstDeclared { return firstDeclaredDescendant(of: root, xmlID: xmlID) }
-        // Level by level, so the **shallowest** live match wins and declaration order only breaks a
-        // tie. Würlitzer's cover layout has its own `center` ticker window at the top level and a
-        // `frame` group, declared first, holding another; `getObject("center")` took the frame's, so
-        // the ticker text ran from x=27 under the transport buttons instead of from x=158 (B390).
-        var level = [root]
-        while !level.isEmpty {
-            for node in level where node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
-                // `image=""` names no bitmap at all: a placeholder box (Würlitzer's `center` ticker
-                // window), not a reference to one the skin never declared.
-                let placeholder = (node.attributes["image"] ?? node.attributes["bitmap"]) == ""
-                if placeholder || !isInvalid(node) { return node }
-                if deadMatch == nil { deadMatch = node }
-            }
-            level = level.flatMap(\.children)
-        }
-        return deadMatch
-    }
-
-    /// A/B switch for the nearest-first lookup above: `WINAMP_MODERN_DESCENDANT_FIRST_DECLARED=1` restores
-    /// the depth-first, first-declared answer `getObject`/`findObject` gave before B390.
-    static let descendantFirstDeclared = ProcessInfo.processInfo.environment["WINAMP_MODERN_DESCENDANT_FIRST_DECLARED"] == "1"
-
-    private func firstDeclaredDescendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        var deadMatch: WasabiObject?
-        func walk(_ node: WasabiObject) -> WasabiObject? {
-            if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
-                if !isInvalid(node) { return node }
-                if deadMatch == nil { deadMatch = node }
-            }
-            for child in node.children { if let match = walk(child) { return match } }
-            return nil
-        }
-        return walk(root) ?? deadMatch
+        root.nearestDescendant(xmlID: xmlID, isDead: isInvalid)
     }
 
     /// Whether `getLayout` may hand this layout back to `program`.
@@ -692,4 +657,31 @@ extension WinampModernScriptRuntime {
         }
         return table
     }()
+}
+
+extension WasabiObject {
+    /// The one name lookup over a subtree (`WinampModernScriptRuntime.descendant`, and the renderer's
+    /// auto-height source): level by level, so the **shallowest** live match wins and declaration order
+    /// only breaks a tie. Würlitzer's cover layout has its own `center` ticker window at the top level
+    /// and a `frame` group, declared first, holding another; `getObject("center")` took the frame's, so
+    /// the ticker text ran from x=27 under the transport buttons instead of from x=158 (B390). A match
+    /// `isDead` rejects is answered only when no live one exists.
+    func nearestDescendant(xmlID: String, isDead: (WasabiObject) -> Bool) -> WasabiObject? {
+        var deadMatch: WasabiObject?
+        var queue = [self]
+        var head = 0
+        while head < queue.count {
+            let node = queue[head]
+            head += 1
+            if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
+                // `image=""` names no bitmap at all: a placeholder box (Würlitzer's `center` ticker
+                // window), not a reference to one the skin never declared.
+                let placeholder = (node.attributes["image"] ?? node.attributes["bitmap"]) == ""
+                if placeholder || !isDead(node) { return node }
+                if deadMatch == nil { deadMatch = node }
+            }
+            queue.append(contentsOf: node.children)
+        }
+        return deadMatch
+    }
 }

@@ -18,6 +18,30 @@ extension WinampModernMainWindowController {
         return revealEmbeddedSurface(kind, scripts: scripts, allowAutoOpenFallback: allowAutoOpenFallback)
     }
 
+    /// `WINAMP_MODERN_NO_LOOKFOR_REVEAL=1`: the A/B switch for B385 (`harness.md`): a reveal no longer
+    /// asks the skin `onLookForComponent` after its `onGetCancelComponent` left no holder visible.
+    private static let lookForComponentRevealDisabled =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_NO_LOOKFOR_REVEAL"] == "1"
+
+    /// Tuneup_v1 (B385): its `onGetCancelComponent` only *hides* the inline playlist group; the group is
+    /// shown by `onLookForComponent`, the event a skin answers with where it hosts the component. A
+    /// skin whose cancel handler did not put a holder on screen is asked that next. True when it did.
+    func skinHostsComponent(_ kind: WinampModernComponentKind, guid: String,
+                            scripts: WinampModernScriptRuntime) -> Bool {
+        guard !Self.lookForComponentRevealDisabled else { return false }
+        let answered: Int
+        do {
+            answered = try scripts.dispatchSystem(event: "onlookforcomponent", arguments: [.string(guid)])
+        } catch {
+            // A skin handler that throws is the skin's fault; the reveal goes on to the autoopen fallback.
+            #if DEBUG
+            NSLog("WinampModern reveal %@ onLookForComponent threw %@", kind.rawValue, String(describing: error))
+            #endif
+            return false
+        }
+        return answered > 0 && hasVisibleHolder(kind)
+    }
+
     /// Put the page away: take its tab out of the strip, or tell the skin it is going.
     func concealEmbeddedPage(_ kind: WinampModernComponentKind, scripts: WinampModernScriptRuntime) {
         defer { skinView?.needsDisplay = true }

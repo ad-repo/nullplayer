@@ -190,7 +190,7 @@ extension WasabiSceneRenderer {
     /// latter inside groups that do the former).
     private func autoWidth(of object: WasabiObject) -> CGFloat? {
         if let sourceID = object.attributes["autowidthsource"],
-           let source = descendant(of: object, xmlID: sourceID) {
+           let source = object.nearestDescendant(xmlID: sourceID, isDead: { _ in false }) {
             // The inset corrects a real measurement. A source that measures nothing — S7Reflex's
             // config tabs are `<text default="">` filled in by a script that has not run — wants a
             // collapsed group, not a group the width of its own padding.
@@ -253,7 +253,7 @@ extension WasabiSceneRenderer {
     /// asking to *fill* the box, not to size it.
     private func contentBottom(of group: WasabiObject) -> CGFloat? {
         if let sourceID = group.attributes["autoheightsource"],
-           let source = descendant(of: group, xmlID: sourceID), source !== group {
+           let source = group.nearestDescendant(xmlID: sourceID, isDead: { _ in false }), source !== group {
             return declaredBottom(of: source)
         }
         return group.children.compactMap(declaredBottom(of:)).max()
@@ -267,13 +267,5 @@ extension WasabiSceneRenderer {
             return nil
         }
         return CGFloat(spec.y) + resources.metrics.lineHeight(of: object)
-    }
-
-    private func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        for child in root.children {
-            if child.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame { return child }
-            if let match = descendant(of: child, xmlID: xmlID) { return match }
-        }
-        return nil
     }
 }

@@ -138,6 +138,15 @@ enum WasabiVisualizationMode: CaseIterable {
         }
     }
 
+    /// The mode a click steps to: analyzer, oscilloscope, off, round again.
+    var next: WasabiVisualizationMode {
+        switch self {
+        case .analyzer: return .oscilloscope
+        case .oscilloscope: return .off
+        case .off: return .analyzer
+        }
+    }
+
     /// What `setMode` would write. `off` is written as `0`: a skin that ships `3` (MMD3's own
     /// animated display) reads back as off either way, and `0` is the value Winamp itself stores.
     var attributeValue: String {

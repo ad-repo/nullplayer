@@ -42,9 +42,6 @@ enum WinampModernOriginSpace {
 /// change, and the move/resize events. Split out of
 /// `WinampModernScriptRuntime.swift`.
 extension WinampModernScriptRuntime {
-    /// `WINAMP_MODERN_LAYOUT_WINDOW_TRACE=1` — every show or hide of a layout the window is not in.
-    static let tracesLayoutWindow = ProcessInfo.processInfo.environment["WINAMP_MODERN_LAYOUT_WINDOW_TRACE"] != nil
-
     /// Route a `show()`/`hide()` on a top-level container to whoever owns that window. Anything else
     /// — a group, a layer, a layout — is graph state and stops here.
     func requestWindow(for object: WasabiObject, visible: Bool) {
@@ -55,19 +52,7 @@ extension WinampModernScriptRuntime {
         // `<container>`, the results window never opened and pressing Return looked like a dead key,
         // with the search itself demonstrably running (BB31).
         guard let target = Self.windowTarget(of: object), let id = target.xmlID, !id.isEmpty else { return }
-        // A container has one window, showing one layout at a time (`activeLayoutByContainer`). A
-        // layout the window is not in has no window of its own to hide, and showing it brings the
-        // window up in it. Würlitzer's `avs` container holds two backdrops, `fond` and `underlayer`,
-        // and its avsbtn flips them with `underlay.show(); overlay.hide()`: the hide of the layout
-        // being left closed the whole visualization window (B390).
-        if object !== target, let active = activeLayoutByContainer[target.stableID], active != object.stableID {
-            if Self.tracesLayoutWindow {
-                NSLog("LAYOUT-WINDOW-TRACE %@ %@.%@ (window shows %@)", visible ? "show" : "hide",
-                      id, object.xmlID ?? "-", loadedSkin.runtime.graph.object(withID: active)?.xmlID ?? "-")
-            }
-            guard visible else { return }
-            try? switchContainer(target, to: object)
-        }
+        guard forwardsLayoutVisibility(of: object, in: target, visible: visible) else { return }
         // A show of a layout a script sized to nothing is answered as a hide: see `noteScriptSize`.
         hooks.containerVisibilityRequested?(id, visible && !isCollapsed(showing: object, in: target))
     }

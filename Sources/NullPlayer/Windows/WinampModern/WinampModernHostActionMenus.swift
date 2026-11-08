@@ -118,13 +118,11 @@ extension WinampModernMainView {
     /// handler to (Defix's trigger, Love is War Miku's) keeps its own answer.
     @discardableResult
     func cycleVisualizationMode(of object: WasabiObject) -> Bool {
-        guard object.tag.is(.vis), object.attributes["action"] == nil,
+        guard object.isVisualizationHandle, object.attributes["action"] == nil,
               !["onleftbuttondown", "onleftbuttonup", "onleftclick"].contains(where: {
                   scripts.hasBinding(for: object, event: $0) }),
               let mode = renderer.visualizationMode else { return false }
-        let all = WasabiVisualizationMode.allCases
-        let next = all[(all.firstIndex(of: mode)! + 1) % all.count]
-        applyVisualizationMode(next)
+        applyVisualizationMode(mode.next)
         return true
     }
 

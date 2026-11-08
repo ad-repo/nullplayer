@@ -409,9 +409,9 @@ extension WinampModernScriptRuntime {
         var last = animationFrame(of: object)
         _ = try? timers.schedule(id: TimerNamespace.frameEvents.id(for: id), period: 1.0 / 60.0) { [weak self] in
             guard let self, let object = loadedSkin.runtime.graph.object(withID: id) else { return }
-            // A markup-started layer has no clock until it is first drawn (`stampFirstShow`); read
-            // before that, it is already at its last frame and would end its own intro unseen.
-            guard object.attributes["animstart"] != nil else { return }
+            // A markup-started layer has no clock until it is first drawn; read before that, it is
+            // already at its last frame and would end its own intro unseen.
+            guard WasabiAnimation.hasClock(object) else { return }
             let state = WasabiAnimation.state(of: object, frameCount: animationFrameCount(of: object))
             if state.frame != last {
                 last = state.frame

@@ -41,8 +41,8 @@ enum WinampModernWebNavigationPolicy {
     /// `urlEncode()`d terms and **literal spaces** (`"…/search?q=" + artist + " " + title + " lyrics"`),
     /// so the string that arrives is usually not a legal URL — but it already carries `%XX` escapes,
     /// which is why `%` has to survive the pass. Encoding it again turns Bento's `%20` into `%2520`
-    /// and searches for the escape rather than for the song.
-    private static let preserved = CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "%#"))
+    /// and searches for the escape rather than for the song. `[` `]` stay for an IPv6 literal host.
+    private static let preserved = CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "%#[]"))
 
     static func resolve(address: String) -> Resolution {
         let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -67,11 +67,16 @@ enum WinampModernWebNavigationPolicy {
         return .allow(url)
     }
 
-    /// A dotted DNS name or IPv4 address. Winamp-2006 hands `navigateUrl` a Windows program path
-    /// (`Plugins\MSPP\rating\getCurrentRating.exe`), which the bare-host promotion above turned into
-    /// `https://Plugins%5CMSPP…` and offered to open; no web host has a backslash or no dot.
+    /// A dotted DNS name or IPv4 address, `localhost`, or an IPv6 literal. Winamp-2006 hands
+    /// `navigateUrl` a Windows program path (`Plugins\MSPP\rating\getCurrentRating.exe`), which the
+    /// bare-host promotion above turned into `https://Plugins%5CMSPP…` and offered to open; no web host
+    /// has a backslash, and a bare word that is not `localhost` has no dot.
+    private static let hostname = try! NSRegularExpression(
+        pattern: #"^(localhost|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+|\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?)$"#,
+        options: [.caseInsensitive])
+
     private static func isHostname(_ host: String) -> Bool {
-        host.range(of: #"^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$"#, options: .regularExpression) != nil
+        hostname.firstMatch(in: host, range: NSRange(host.startIndex..., in: host)) != nil
     }
 
     // MARK: - A search, rather than an address

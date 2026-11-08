@@ -100,6 +100,14 @@ final class WinampModernPhase66Tests: XCTestCase {
         }
     }
 
+    func testLocalhostAndIPLiteralsAreWebAddresses() {
+        for address in ["http://localhost:8080/", "http://192.168.1.5/radio", "http://[::1]:3000/"] {
+            guard case .allow = WinampModernWebNavigationPolicy.resolve(address: address) else {
+                return XCTFail("\(address) is a web address")
+            }
+        }
+    }
+
     func testAnAddressWithNoHostIsRefused() {
         guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: "https:///search") else {
             return XCTFail("a hostless URL is malformed")

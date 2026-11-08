@@ -36,22 +36,35 @@ if not picks:
     sys.exit("wal_intake_pick: no bronze left in the ranking; crawl with wal_intake.sh")
 if os.path.exists(ledger):
     sys.exit(f"wal_intake_pick: {ledger} exists")
+moves = [(os.path.join(root, "bronze", name), os.path.join(root, "silver", name), os.path.join(skins, name))
+         for name in picks]
+for source, destination, _ in moves:
+    if not os.path.exists(source):
+        sys.exit(f"wal_intake_pick: {source} is missing; nothing moved")
+    if os.path.exists(destination):
+        sys.exit(f"wal_intake_pick: {destination} exists; nothing moved")
 os.makedirs(os.path.join(root, "silver"), exist_ok=True)
 os.makedirs(skins, exist_ok=True)
+done = []
 try:
-    for name in picks:
-        source, destination = os.path.join(root, "bronze", name), os.path.join(root, "silver", name)
-        if os.path.exists(destination):
-            sys.exit(f"wal_intake_pick: {destination} exists; stopped part-way, see the manifest")
+    for source, destination, copy in moves:
         shutil.move(source, destination)
-        rows[at[name]][2], rows[at[name]][5] = "silver", rev
-        shutil.copy2(destination, os.path.join(skins, name))
-finally:
-    with open(manifest, "w") as handle:
-        handle.write("".join("\t".join(fields) + "\n" for fields in rows))
+        done.append((source, destination, copy))
+        shutil.copy2(destination, copy)
+except BaseException:
+    # Put every skin already moved back, so a failure strands none of them without a ledger.
+    for source, destination, copy in reversed(done):
+        if os.path.exists(copy):
+            os.remove(copy)
+        shutil.move(destination, source)
+    raise
+for name in picks:
+    rows[at[name]][2], rows[at[name]][5] = "silver", rev
 with open(ledger, "w") as handle:
     handle.write("file\tsha256\tstage\tupdated\trows\tnote\n")
     for name in picks:
         handle.write(f"{name}\t{rows[at[name]][1]}\tadmitted\t{today}\t-\t-\n")
+with open(manifest, "w") as handle:
+    handle.write("".join("\t".join(fields) + "\n" for fields in rows))
 print(f"wal_intake_pick: admitted {len(picks)} into {ledger}: {', '.join(picks)}")
 PY

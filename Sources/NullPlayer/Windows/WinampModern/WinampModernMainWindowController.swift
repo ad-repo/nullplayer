@@ -8,22 +8,20 @@ import AppKit
 final class WinampModernSkinWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
-    /// Whether this window is a glued backdrop seen through another's holes (B390). A click through
-    /// a hole must not bring it in front of the window it is seen through. Set by the owner.
-    var isBackdrop: () -> Bool = { false }
-    /// Puts every glued backdrop back under its leader. Set by the owner.
-    var restackGlue: () -> Void = {}
+    /// The skin's glued windows, asked whether this one is a backdrop (B390): a click through a hole must
+    /// not bring it in front of the window it is seen through.
+    weak var glue: WinampModernGluedWindows?
 
     override func sendEvent(_ event: NSEvent) {
         let isPress = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type)
-        let behind = isPress && isBackdrop()
+        let behind = isPress && glue?.isBackdrop(self) == true
         if behind {
             NSApp.preventWindowOrdering()
             if WinampModernGluedWindows.traces { NSLog("GLUE-TRACE backdrop click held behind") }
         }
         super.sendEvent(event)
         // Becoming key still raises it in some orders; the restack runs a turn late and wins.
-        if behind { restackGlue() }
+        if behind { glue?.restack() }
     }
 }
 
@@ -93,7 +91,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// One skin has one script runtime and several windows, so a `switchToLayout`/`resize` has to be
     /// delivered to the window that owns the container the script called it on — not to whichever
     /// view happened to install the callback last (Phase 13.3, R6).
-    private var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
+    private(set) var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
     private(set) var loadFailure: Error?
 
     convenience init() {
@@ -101,15 +99,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let window = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
                                             styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
-        glue.pairIDs = { [weak self] in
-            self?.skinView?.scripts.windowsGluedOver.map { (leader: $0.key, follower: $0.value) } ?? []
-        }
-        glue.candidateIDs = { [weak self] in
-            self?.skinView?.scripts.windowsGluedBehind.map { (leader: $0.key, follower: $0.value) } ?? []
-        }
-        glue.window = { [weak self] id in self?.viewsByContainer[id]?.window }
-        glue.picture = { [weak self] id in self?.viewsByContainer[id]?.frames.outline }
-        glue.hostsSurface = { [weak self] id in self?.auxiliaryContainers.first { $0.view.containerID == id }?.kind != nil }
+        glue.source = self
         setupWindow()
         // A transparent layer-backed window can lose its cached backing store while the display is
         // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display
@@ -611,11 +601,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
         auxWindow.setAccessibilityLabel(WinampModernContainerTopology.displayName(of: info))
         auxWindow.delegate = self
-        auxWindow.isBackdrop = { [weak self, weak auxWindow] in
-            guard let self, let auxWindow else { return false }
-            return glue.isBackdrop(auxWindow)
-        }
-        auxWindow.restackGlue = { [weak self] in self?.glue.restack() }
+        auxWindow.glue = glue
         auxWindow.orderOut(nil)
         installWindowCommands(on: view, id: info.id)
         // A script resizing *this* container resizes this window, not the player's.
@@ -1438,14 +1424,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             #endif
             return true
         }
-        // Tuneup_v1 (B385): its `onGetCancelComponent` only *hides* the inline playlist group; the
-        // group is shown by `onLookForComponent`, the event a skin answers with where it hosts the
-        // component. A skin whose cancel handler did not put a holder on screen is asked that next.
-        if allowAutoOpenFallback, !Self.lookForComponentRevealDisabled,
-           ((try? scripts.dispatchSystem(event: "onlookforcomponent", arguments: [.string(guid)])) ?? 0) > 0,
-           hasVisibleHolder(kind) {
-            return true
-        }
+        if allowAutoOpenFallback, skinHostsComponent(kind, guid: guid, scripts: scripts) { return true }
         guard allowAutoOpenFallback else {
             #if DEBUG
             NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",
@@ -1530,11 +1509,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     /// Whether the player's current scene already shows a holder for this surface.
-    /// `WINAMP_MODERN_NO_LOOKFOR_REVEAL=1`: the A/B switch for B385 (`harness.md`): a reveal no longer
-    /// asks the skin `onLookForComponent` after its `onGetCancelComponent` left no holder visible.
-    private static let lookForComponentRevealDisabled =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_NO_LOOKFOR_REVEAL"] == "1"
-
     func hasVisibleHolder(_ kind: WinampModernComponentKind) -> Bool {
         skinView?.renderer.componentHolders().contains { $0.kind == kind } ?? false
     }
