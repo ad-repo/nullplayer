@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B394 — sa's EQ band sliders — closed 2026-11-09
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B394 | **sa's ten EQ band sliders do not move the bands.** Found in intake #8's click smoke (2026-11-09, playing): `slider#eq1`…`eq10` (`action="EQ_BAND" param="1"`…`"10"`, `player.mid.drawer` in `xml/player-normal-groups.xml`) are hit and dragged 301→278 and the band checksum stays `b3300`, while `slider#preamp` (`EQ_BAND param="preamp"`) in the same drawer moves preamp 0 → +6 dB, and the script-driven Treble/Bass sliders move bands. The bands draw in the open mid drawer. Done when dragging sa's eq1 changes band 1 and the smoke reads `eq` for all ten | sa | ? | 1 |
+
+**Closed 2026-11-09, not a defect.** In the intake #8 user round (2026-11-09, reporter driving) the reporter found sa's EQ fine. The smoke's band checksum did not move on its drags; that reading is the sweep's, not the skin's.
+
 ## B391 — Winamp-2006's lower-left pane — closed 2026-11-08
 
 | Id | Item | Reach | Effort | Tier |
