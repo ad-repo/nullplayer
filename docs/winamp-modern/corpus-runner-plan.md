@@ -263,6 +263,32 @@ the volume bar needs the window shaped by its background art's alpha).
 This batch made the intake lean (§8 *Decisions*, 2026-11-07): picked by rank, no headless crawl,
 the smoke and census as the scan, and the user's go accepts the batch without testing every skin.
 
+### Done: intake #8, promoted to gold (2026-11-09)
+
+The 25 skins picked for batch 8 by `wal_intake_pick.sh` were scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-8`, accepted by the user, and promoted to
+gold on 2026-11-09, with rows on `skin-compatibility.md` (18 B, 7 C, graded from the ledger notes and
+backlog rows). The per-skin record is `intakes/intake-8.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Tokyo_Drift | The transport buttons took no clicks (B393) | An alpha-0 animated layer is not hit unless a script presses it |
+| AR-7 | The main window cut off its right edge (B395) | A layout whose origin-placed art a control overruns grows to that art |
+| -Lithium- | The drawer button slid the UI off the right of the screen (B397) | A `resize` x write is a round trip only after a `getLeft` read, per axis; the fallback close corner yields to a scripted layer |
+| EI_V2 | The clock overran the display and cut its hours and minutes | A filename `font=` the skin ships loads that file; a signed field reserves its own width; a clock the clip would cut shrinks to fit |
+| Just_Buttons | The closed thinger left a pink one-pixel lip | A rightward x target animation rests one pixel short of its target |
+| Lara_Flynn_Boyle_The_D3vil_Inside | Labels sat against the control above them | A bitmap-font text with no `fontsize` or `h` is at least 13 px tall |
+| Olimpiadas | The notifier's first toast opened in the middle of the screen | A window a script has moved counts as placed, so its first show does not tile it |
+
+Closed as not defects: sa's EQ sliders (B394, a smoke artefact), Just_Buttons not draggable (as in
+Winamp; ⌘-drag moves it), remote's split hover buttons (the skin's `hover.png`), Cyclop's empty right
+circle. Left open: B366 (The_Chronicles_of_Narnia, Thanog_, Lara_Flynn_Boyle_The_D3vil_Inside,
+Freddy_vs_Jason, Fast__Furious_Winamp5_Skin, Pax_Amp: Media Library in NullPlayer's plain chrome),
+B396 (the census hangs on Wii, and timed out on cPro_SC), B398 (Pixelated's notifier tiled at startup).
+
+This batch changed the process: the user round's fixes are swept once, together, when the user says
+the round is done (`skills/skin-intake/SKILL.md` § *Hand over*).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
