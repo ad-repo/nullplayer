@@ -1,37 +1,35 @@
 ---
 name: skin-intake
-description: Processes the .wal candidate corpus mechanically — ~900 skins in batches of 25, each batch worked over many sessions — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the status script scripts/wal_intake_status.sh that picks every session's work, and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
+description: Processes the .wal candidate corpus in batches of 25 — pick, an automated live scan (main-window controls, the Library, every window's look), one fix pass, the user's go, promote — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the pick and status scripts (scripts/wal_intake_pick.sh, scripts/wal_intake_status.sh), and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
 ---
 
 # Processing the corpus
 
-Three levels, each finished by the one below it:
-
 | Level | Is | Done when | Recorded in |
 |---|---|---|---|
-| **Corpus** | ~900 candidates in Bronze | every candidate is Gold or quarantined (certified by the census and the pre-merge sweep, plan §8) | `corpus-manifest.tsv` tiers |
-| **Batch** | 25 skins, one branch, one ledger, one run store | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
-| **Session** | one unit of work on the open batch | its result is in the ledger and committed | the ledger and the commit |
+| **Corpus** | ~750 candidates in Bronze | every candidate is Gold or quarantined | `corpus-manifest.tsv` tiers |
+| **Batch** | 25 skins, one branch, one ledger | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
 
-**One batch is open at a time.** The next is admitted only when the last is merged.
+**One batch is open at a time.** The next is picked only when the last is merged.
 
 ```sh
-scripts/wal_intake_status.sh      # corpus counts, the open batch per stage, the next session's work
+scripts/wal_intake_status.sh      # corpus counts, the open batch per stage, the next step
 ```
 
-Every session starts with it and does the `next:` line. It exits 1 when the ledger disagrees with the
-manifest or the corpus on disk (sha256, tier, file); then the session's work is fixing the ledger.
+Every session starts with it and does the `next:` line. It exits 1 when the ledger disagrees with
+the manifest or the corpus on disk (sha256, tier, file); then the work is fixing the ledger.
 
-**The return guard.** A commit that changes exactly one ledger row counts as a session spent on that
-skin. At 2 (one fix, one re-check), the script stops naming the skin in `next:` and lists it under `budget spent`. That skin
-goes to the user's round as it is, marked `live` with its open rows in `note`, and no session works
-on it again unless the user asks. Intake #4 spent 9 sessions on Ryoko and 7 on StarTrek, most of
-them re-running cycles on a skin that already worked.
+**Why the batch is lean (2026-11-07).** Intakes #2–#4 ran a headless pass per skin (dump,
+inventory, interaction and motion sweeps, a ranked fix list) because whole features were missing.
+By #5 and #6 that pass found no real defect (B317–B319, B361: all class H or not defects); every
+fix came from the live census and the user's round. Rank no longer orders anything either: by #6
+every remaining candidate's gain was 2 or less, and no crawl had quarantined a skin. So a batch is
+picked, not crawled, and checked live by the tools below, not phase by phase.
 
-## The batch ledger
+## The ledger
 
-One row per skin, committed. **It is the only progress record**: not the plan, not a commit message,
-not a chat summary, not a scratchpad — a record outside it is lost with the session that wrote it.
+One row per skin, committed. **It is the only progress record**: not the plan, not a commit
+message, not a chat summary.
 
 | Column | Holds |
 |---|---|
@@ -39,238 +37,142 @@ not a chat summary, not a scratchpad — a record outside it is lost with the se
 | `stage` | below |
 | `updated` | the date the stage last moved |
 | `rows` | backlog ids this skin filed or was fixed under (`B254`, `B261(open)`), or `-` |
-| `note` | one line: where an unfinished stage stopped (`Phase 5: next B262`), what blocks it, or `-`. A `headless` skin with an empty fix list starts its note with `headless clean`, which the status script reads. A skin at `live` carries its visual-review result (`visual: clean (6 windows)`) |
+| `note` | one line: the scan's verdict (`scan clean: main 18/18, library skin-frame closed, visual clean (5 windows)`), or what is open |
 
 | Stage | Means |
 |---|---|
-| `admitted` | in Silver and in the user's skin menu (`WinampModernSkins/`) |
-| `headless` | `skin-triage` Phases 1–4 done: every row has a verdict, the fix list is in `note`/`rows`. A fix for a defect seen on screen is not this pass. Also: a skin sent back by the user's round, the defect in its `note` |
-| `live` | Phases 5–8 done, or the user took it straight to their UI round (`note` says which) |
-| `accepted` | the user tried it and said it works |
+| `admitted` | in Silver and in the skin menu (`WinampModernSkins/`) |
+| `filed` | the scan found a defect the user would notice; its row is in `rows` |
+| `live` | scan clean, or its rows fixed and re-checked, or deferred to a row the user would not notice |
+| `accepted` | the user gave the batch their go (or tried this skin and said it works) |
 | `promoted` | manifest tier `gold`, file in `WinampModernCorpus/gold/`, a `skin-compatibility.md` row |
 
-A stage moves only on its evidence, in the commit that carries the work; it moves back only with a
-`note` saying why. A user's verdict moves a skin to `accepted` from any stage.
+A stage moves only on its evidence, in the commit that carries it; it moves back only with a
+`note` saying why.
 
-## The batch, as sessions
+## The batch
 
-The batch's lowest stage decides the next session's work. `wal_intake_status.sh` prints it.
-
-| Lowest stage | Next session | Moves |
+| Lowest stage | Next step | Moves |
 |---|---|---|
-| — (no open batch) | **Admit** batch n: branch `feat/wal-intake-<n>` from `origin/main`; `wal_intake.sh <bronze> <out> --admit`; copy the picks into `WinampModernSkins/`; commit `<out>/intake.tsv` as `intakes/intake-<n>.ranking.tsv` and the ledger at `admitted` | all → `admitted` |
-| `admitted` | **The batch pass** (below); reorder the ledger rows by its rank, since `next:` takes the first unfinished row | all → `headless` |
-| `headless` | **Scan, then one fix pass** (below, § *The live round*): the orchestrator scans every `headless` skin of the batch at once with the two one-call tools and files rows, fixing nothing; then **one** worker fixes every open row of the batch, with one set of sweeps; then one live re-check of only the skins a fix touched | clean → `live` at the scan; the rest → `live` at the fix pass |
-| `live` | **Hand over** the `live` skins in one list for the user's UI round; their verdicts go in | → `accepted`, or back with a note |
-| `accepted` | **Promote** every skin in one commit, then the branch's code-quality review and the PR | all → `promoted` |
-| `promoted` | **Close** once the PR is merged: delete the run store (`rm -rf WinampModernCorpus/runs`), then admit batch n+1 | — |
+| — (no open batch) | **Pick**: branch `feat/wal-intake-<n>` from `origin/main`; `scripts/wal_intake_pick.sh`; commit the ledger and manifest with the §8 *Progress* bullet | all → `admitted` |
+| `admitted` | **The scan** (below), by the orchestrator, no worker | clean → `live`, the rest → `filed` |
+| `filed` | **One fix pass** (below), one worker | → `live` |
+| `live` | **Hand over** (below) | → `accepted` on the user's go |
+| `accepted` | **Promote** every skin in one commit, then the pre-PR code-quality review (CLAUDE.md) and the PR | → `promoted` |
+| `promoted` | **Close** once the PR is merged: `rm -rf WinampModernCorpus/runs`, then pick batch n+1 | — |
 
-**The user may cut a batch short** at any stage and send the rest to their UI round: mark each `live`
-with `note` `handed over without a pass (user, <date>)`. A defect the round finds puts that skin back
-to `headless` with the defect in its note, and the next session fixes it from Phase 5.
+`wal_intake_pick.sh` takes the next 25 still-bronze skins in the newest `intakes/*.ranking.tsv`'s
+order. A crawl of *new* candidates still goes through `wal_intake.sh` (about 47 minutes; run it with
+`run_in_background`, check for its `wal_intake: … -> intake.tsv` line, not the exit code), which
+writes a fresh ranking.
 
 Only the batch rides on its branch; an unrelated backlog row gets its own `fix/…` branch. Push with
-`git push -u origin <branch>`. A batch past about a week PRs its `promoted` skins and continues on a
-fresh branch with the same ledger. Merge `origin/main` in every few days; never rebase a pushed branch.
+`git push -u origin <branch>`; never rebase a pushed branch.
 
-**Every candidate goes through an intake**: there is no gain floor, so batches continue, 25 in rank
-order, until bronze is empty (plan §8 *Decisions*).
+## The scan
 
-## The batch pass
+Two checks per skin, plus the look, all live with a track playing, all by script:
 
-`skin-triage` is the pass for one skin; a batch runs it once, not 25 times.¹
+1. **The main window's buttons and functions**, and 2. **the Library opens, works and closes**:
+   `scripts/wal_live_smoke.sh <skin>… --out <dir>`. It clicks and drags every main-window control
+   (volume, transport, seek, track, EQ, layout, windows), then opens the Library from the Windows
+   menu, clicks its controls and presses its own close. Its summary line per skin reads
+   `main <n> clicked, <k> nochange, …; library <kind>, …, close <closed|nochange>`; the TSV has a
+   row per control (`harness.md` § *Driving a click in the running app*).
+3. **The look of every window**: `skills/app-control/scripts/window-census.sh <skin>… --shots --out
+   <dir>`, in chunks that fit a 10-minute call (about 35 s a skin), then `scripts/review_sheet.py`
+   per skin, `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. Open every sheet
+   and judge it (§ *The visual review*).
 
-1. **Phases 1–3 over the whole batch at once**: one folder holding the batch, one dump, one
-   interaction sweep, one motion sweep, each a single invocation (`--corpus <batch dir>`).
-2. **Phase 4 ranked across the batch**: group every non-`works` row from every skin by its failing
-   line. A group that spans skins is the unlocker; fix it once and re-run the batch.
-3. **Live per skin only for the residual**: rows marked H, every class W check, and menus. A skin
-   whose headless pass is clean gets one live smoke pass, not a full re-drive.
-4. **One pass per skin**: do not leave a skin until its inventory is complete.
-5. **Reviews, refactors and changelog regrouping** happen once at the end, not between skins.
+Read the smoke table, not the app. What counts as a defect:
 
-¹ Intake #1 went skin by skin, live first, over three passes; most of what it found was visible in
-a headless dump (`corpus-runner-plan.md` § *Done: the B169 intake*).
+- A control bound to an action or script that should move something the snapshot sees (volume,
+  play, position, track, EQ, layout, a window) and reads `nochange`. Before filing, look at the
+  binding (`wal_skin_src.sh`, the skin's script): intake #6's two smoke-only rows (B370, B371) were
+  the sweep aiming before a drawer moved and a click blocker the skin lays itself. A control whose
+  only effect is pixels (a lamp, a readout) reads `nochange` and is judged on the sheet instead.
+- `library plain-chrome` where the skin declares a library frame, `not-opened`, or `close nochange`
+  / `no-close-control` on a skin-frame Library.
 
-## The live round
+The smoke cannot see right-click menus, double-clicks, drags on non-slider layers, or the main
+window's own close, minimize, quit and eject (skipped so the run survives). Those are not checked
+by an intake.
 
-Intake #6 ran it the old way first: workers clicked through four skins at a time by hand, about 200
-tool calls each, and fix passes split by row group, each paying for its own sweeps. Two fix passes
-took 61 and ~45 minutes, and the live passes burned most of the batch's tokens. This is the replacement,
-and it holds the same quality bar: every skin is still captured live with a track playing, every
-window is still judged, and every control is still clicked.
-
-1. **Scan, no worker.** The orchestrator runs, over every `headless` skin of the batch at once:
-   - `skills/app-control/scripts/window-census.sh <skin>… --shots --out <dir>`, in chunks that fit a
-     10-minute call (about 35 s a skin), then `scripts/review_sheet.py` per skin in one loop, with
-     `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. It opens every sheet itself.
-   - `scripts/wal_live_smoke.sh <skin>… --out <dir>`, which clicks and drags every main-window
-     control in the running app and writes one row per control (volume, play, position, track, EQ,
-     layout, windows, main on screen). It reads the table, not the app. What the smoke cannot see
-     (right-click menus, controls in other windows, drags on non-slider layers, and the close,
-     minimize, quit and eject controls it skips) goes to the user's round.
-   It files every defect as a row and fixes nothing. A skin with no defect moves to `live` in the
-   same commit, with its visual note.
-2. **One fix pass for the whole batch.** One worker, every open row, never split into groups: a
-   split pays for every sweep twice. Brief it tightly (rows, the tools, the rules) rather than splitting
-   it to keep its context small. Its sweeps are `scripts/wal_fix_check.sh <base> <out>`, run once
-   after all the fixes: it picks only the sweeps the diff can reach (a render-only change skips the
-   27 minutes of interaction and motion; a window-layer change has no headless sweep at all) and
-   serves the baseline from the run store. The batch's first fix pass captures that baseline once,
-   in a worktree; every later pass in the batch reuses it.
-3. **Re-check only what a fix touched**, with the same tools on only those skins: the census for
-   a window or drawing fix, the smoke for a control fix. A window-layer fix, which no headless
-   sweep sees, also runs the census on every batch skin that has the window it changed, clean or
-   not: nothing else would catch it regressing a skin that read clean.
-
-**What "never split" protects is the sweeps, not the worker.** A split is wrong only when each part
-pays for its own sweeps. When the work is wide, split it by file area across small Sonnet workers
-that build and test their own part but run no sweeps. Then run one `wal_fix_check.sh` over the
-combined result. Intake #6's pre-PR review fixes (12 findings, about 20 files) ran as one Opus
-worker. It took 210 calls and 86 minutes, and its context grew past 350k, which cost the same way
-the hand-clicking passes did.
+The scan files every defect as a row in `tasks/WINAMP5_TASKS.md` and fixes nothing. **Fix before
+the go** what the user would notice in ordinary use: a control that does nothing or the wrong
+thing, a Library that will not open or close, any visual class they would see at a glance. **Defer
+to a row**, with the skin at `live` and the row in `note`, a pixel or two at an edge, a difference
+only a reference shows, or a defect whose right behaviour needs evidence the corpus lacks.
 
 ## The visual review
 
-No skin moves to `live` without it, whether or not it says `headless clean`. A clean sweep is a
-regression result. Intake #3's user round still found see-through panes, text drawn over text and
-controls run into each other (`corpus-runner-plan.md` § *Done: intake #3*); intake #5's found
-Bubble_Tea's spectrum drawn outside its cup (B323). This review exists to catch those four.
+A clean sweep is a regression result, not a look; intake #3's round still found see-through panes,
+text over text and controls run into each other, and #5's found Bubble_Tea's spectrum outside its
+cup (B323). The census captures every window after 10 s of play (skins cross-fade and fill texts
+from timers; earlier captures filed `updating...` placeholders as defects, B301/B302).
 
-1. Run `skills/app-control/scripts/window-census.sh <skin> --shots` with a track playing. That
-   captures every window live, main included, with hosted components and cover art, after the skin
-   has played for 10 s. Skins cross-fade and fill their texts from timers. In intake #4, an early
-   capture's `updating...` placeholders and half-faded ghost strings were filed as B301/B302, and
-   both closed as not defects.
-2. Run `scripts/review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale <s>`, with `<s>` the
-   `screen0_scale` in the census's `meta.tsv` (2 on Retina), then
-   **open the sheet**. Each window is drawn over magenta under the author's screenshot.
-3. Judge every window against the four classes, and write one verdict per class:
-   - **Transparent background**: magenta inside the body that the reference fills. Open every
-     `HOLES` line first. A window that is mostly magenta has no enclosed hole, so read its
-     `transparent=` share as well.
-   - **Jumbled text**: strings overlapping each other or their art, cut off, in the wrong size or
-     font, or ids/`@TOKEN@` drawn as text.
-   - **Layout**: controls overlapping or out of place against the reference, gaps, content past the
-     edge, a window cut short or stretched.
-   - **Visualization**: every spectrum, oscilloscope or vis drawn inside the area the skin
-     defines for it (its frame, mask, region or art), aligned to it and the shape it gives. Bars
-     past that area, offset from it or the wrong size are a defect. Capture with a track playing,
-     or there is nothing to judge.
-4. Each defect is a fix-list entry: Phase 5, then review again. The stage moves only when all four
-   classes read clean. The commit's ledger `note` says so: `visual: clean (<n> windows)`.
+`review_sheet.py <sheet.png> <shots>/*.png --ref <screenshot.png> --scale <s>`, with `<s>` the
+census `meta.tsv`'s `screen0_scale`, draws each window over magenta under the author's screenshot.
+Judge every window against four classes:
+
+- **Transparent background**: magenta inside the body that the reference fills. Open every `HOLES`
+  line first; a mostly-magenta window has no enclosed hole, so read its `transparent=` share too.
+- **Jumbled text**: strings over each other or their art, cut off, the wrong size or font, or
+  ids/`@TOKEN@` drawn as text.
+- **Layout**: controls overlapping or out of place against the reference, gaps, content past the
+  edge, a window cut short or stretched.
+- **Visualization**: every spectrum or vis inside the area the skin gives it, aligned to it.
 
 A skin with no `screenshot.png` is judged against its own artwork, and the note says `no ref`.
 
-## A session
+## The fix pass
 
-No session remembers the last. What the next one needs is in the ledger, the backlog and the
-branch, so a session reads those and writes those, nothing else.
+**One worker** (`model: "sonnet"`; never two at once, since two builds or launches break each
+other and the user's app) over every open row of the batch, never split by row group: a split pays
+for every sweep twice. Brief it with the rows, these rules, and `skin-triage` Phase 5 onward:
 
-**Start:** on the batch branch, clean tree. Run the status script and take its `next:` work. Read that
-skin's `note` and its `rows` in `tasks/WINAMP5_TASKS.md`, and trust them: re-measure only a row a fix
-landed since `updated` could have moved.
+- Fix each row at its root, general and named after the skin that showed it; commit with the
+  ledger row moved.
+- Run `scripts/wal_fix_check.sh <base> <out>` once, after all the fixes: it picks only the sweeps
+  the diff can reach and serves the baseline from the run store. A difference in a skin that varies
+  between runs of one build (OrbFace, -MfS3-, CopperdeckII, Aria_of_the_Soul, Invicta,
+  winampmodern566, Cpro_Winamp_Modern, Quadelic, CPro_Winamp_for_Mac_Sync, WinampAzenis2,
+  4-dreliction, cPro_T2T, Winamp_Single_GUI, LG_Free's clock frame; Symplicipod's `tLayer`;
+  hatsune_miku_5's `visual.trigger` aim point; HALOAMP's `cont.clear.*` and `PLEdit` sizes;
+  GlassAMPfinal's `DLibrary` size, 200x152 or 330x220 across dumps of one build;
+  Official_Honda_Element_Skin's time-of-day seek dial; B296) is noise unless that skin is in the
+  batch; where the list names a field, only that field is.
+- Re-check only what a fix touched, with the scan's own tools on only those skins: the smoke for a
+  control or Library fix, the census for a window or drawing fix. A window-layer fix also runs the
+  census on every batch skin with that window, since nothing headless sees that layer.
+- Do not spawn agents. Report in at most 10 lines: rows fixed and open, stages moved, `next:`.
 
-**Work:** sweeps and baselines come from the run store, never a fresh scratchpad capture — the sweep
-scripts serve what is stored for this code, and `--rev <commit>` another commit's (`harness.md` §
-*The run store*). **Write each result into the ledger the moment it is known**, not at the end.
+Check the report: the status script exits 0 and `git log -1` is the worker's commit.
 
-**End**, in the commit that carries the work:
-1. Stage reached: move it, `note` `-` (at `live`, the visual-review result). Not reached: keep it, `note` `Phase <k>: <next action>`,
-   specific enough to start on without reading the session.
-2. A fix-list entry not done is a backlog row, its id in `rows`.
-3. Any plan edit, by § *Changing the plan*.
-4. The status script exits 0. Report "skin X: stage A → B, N rows fixed, M open" and the `next:` line.
+## Hand over
 
-## Running it: one worker per phase
+One message to the user: per skin, the scan's verdict in one line, and the few worth a look by eye
+(deferred rows, judgment calls on a sheet, anything the smoke cannot see that the skin leans on).
+**The user is not asked to test every skin.** Their go accepts the batch; a defect they report
+puts that skin back to `filed` with the defect in its note.
 
-An intake is run by an orchestrator. The main session does no phase work itself: it starts one
-worker per phase and keeps only the workers' reports. Cost is calls × context: every call re-sends
-the whole context, so a long session pays again for everything it has read. Intake #3's longest
-session made 1,505 calls and averaged 212k tokens of context per call. That came to 319M
-cache-read tokens against under 1M of actual tool output. A worker starts small and is discarded
-when it finishes, so no session needs compacting.
+## Running it
 
-**A phase**, for the worker's scope, is one row of the batch table's work, cut where the work
-naturally stops:
-
-| Stage | Phases, one worker each |
-|---|---|
-| no open batch | Admit: the orchestrator runs the crawl, then one worker does the rest (below) |
-| `admitted` | Phases 1–2 over the batch (dump, inventory) · Phase 3 (interaction and motion sweeps) · Phase 4 (ranked fix list; ledger → `headless`) |
-| `headless` | **The scan** is the orchestrator's own, no worker (§ *The live round*). **The fix pass**: one worker over every open row of the batch, sweeps by `wal_fix_check.sh`. The rest of this cell is how a defect is judged and re-checked. A live pass files defects as rows and fixes nothing. A skin with no defect moves to `live` in the same commit. **Fix before the user's round** what they would notice in ordinary use: a control that does not work or does the wrong thing, and any of the four visual-review classes they would see at a glance. **Defer to a row**, and move the skin to `live` with the row in its `note`, what they would not: a pixel or two at an edge, a difference only a reference comparison shows, or a defect whose right behaviour needs evidence the corpus lacks. Judge which it is; neither hold a skin for a pixel nor hand over one that looks broken. **Fix pass**: Phase 5 over every row the batch filed, one set of sweeps for all of them. **Re-check**: only the defect itself, on only the skins that filed it: the one window or control, not the skin's whole drive or review again. A skin or window that read clean is never reviewed again (except by a window-layer fix's census, step 3 of § *The live round*), and a fix's sweep diff in another skin is classified from the sweep, not by reopening that skin; Phase 8 is that classification, done in the fix pass, with no worker of its own. Phase 6 runs in the live pass when it has not run |
-| `accepted` | Promote · the code-quality review · the PR |
-
-**The loop:**
-
-1. Run `scripts/wal_intake_status.sh`; its `next:` line and the ledger row name the phase.
-2. Start **one** worker, with `model: "sonnet"`. The environment's default subagent model is
-   Haiku, which has misjudged a review sheet before. Opus workers cost several times more, and the
-   orchestrator's own look at every sheet (step 4) is the judgment that has to hold. Never run two at once,
-   because two builds or launches break each other and the user's running app.
-3. The worker's prompt is the phase and skin, plus these rules:
-   - Do this one phase of `skills/skin-intake` / `skills/skin-triage`, read from the ledger, the
-     backlog and the branch. Read only the skill sections the phase needs.
-   - Write each result into the ledger as soon as it is known. Commit the work, and the ledger,
-     before reporting.
-   - Do not spawn agents.
-   - Use the one-call scripts instead of their hand recipes: `scripts/wal_dump.sh` for a skin's
-     dump or probe run, and `scripts/wal_skin_src.sh` for its source and reference images. Each
-     extra call re-sends the whole context.
-   - A live phase (7 and the visual review) runs with a track playing and drives the skin's own
-     controls (`skin-triage` Phase 7 step 2), through `wal_live_smoke.sh` and the census, not
-     click by click: one hand-driven click is one tool call that re-sends the whole context. Never run
-     `window-interaction-matrix.sh` on an intake skin: its close search blind-clicks the corner
-     of every window.
-   - A fix pass runs its sweeps through `scripts/wal_fix_check.sh <base> <out>`, once, after all
-     its fixes; it runs only the sweeps the diff can reach.
-   - Interaction and motion sweeps have no noise file, and a full corpus run costs about 10
-     minutes. Never take a `--fresh` run of either for a phase. Compare against the stored
-     capture, and rerun only the skins that differ, on both revs (`--corpus` on a folder of just
-     those). A difference in a skin that varies between runs of one build (OrbFace, -MfS3-,
-     CopperdeckII, Aria_of_the_Soul, Invicta, winampmodern566, Cpro_Winamp_Modern, Quadelic,
-     CPro_Winamp_for_Mac_Sync, WinampAzenis2, 4-dreliction, cPro_T2T, Winamp_Single_GUI,
-     LG_Free's clock frame; Symplicipod's `tLayer`, whose click only shows on `TimerMain.m`'s 1 s
-     tick; hatsune_miku_5's `visual.trigger` aim point (443 or 441); HALOAMP's `cont.clear.*` and `PLEdit` sizes, which follow the random `onresize` seed order; Official_Honda_Element_Skin's seek dial, whose `seek.maki` picks `player.seek.bg.night` by `getTimeOfDay`, so a day and an evening render capture differ; B296) is noise unless it is in that
-     phase's skin. Where the list names a field, only that field is noise; any other difference in
-     that skin is classified like any skin's. A `--rev` baseline missing from the store is the one full run a phase may
-     take.
-   - Report in at most 10 lines: skin, phase, stage before → after, rows fixed and open, the
-     visual-review verdicts where they ran, the sheet's path, and the `next:` line.
-4. Check the report before passing it on. The status script must exit 0, and `git log -1` must
-   be the worker's commit. After a visual review, **open the sheet yourself**: a second look at
-   the four classes is the reason the review exists.
-5. Pass the report to the user.
-6. **Start the next phase's worker as soon as the report checks out.** Do not stop at phase
-   or skin boundaries, and never ask the user whether to continue. The turn ends only while a
-   worker is running (its notification resumes the loop), on a blocker, at the Admit crawl, or
-   when the batch reaches `live` and goes to the user's UI round.
-
-**The Admit crawl is not a worker's job.** `wal_intake.sh --admit` takes about 47 minutes, longer
-than a foreground call's 10-minute limit. A worker cannot wait on a background run either, because
-its report ends the run. So the orchestrator starts the crawl itself with `run_in_background`, with
-its output in the scratchpad. When the run ends, check for its `wal_intake: … -> intake.tsv` line;
-the exit code proves nothing (`harness.md` § *Growing the corpus*). Then **end the turn**: the
-crawl is a phase boundary, and the user compacts or starts a fresh session there. The last message
-gives the output dir's full absolute path, the one thing the next session cannot find without it.
-In the next session, one worker takes that dir and does the rest of Admit: copy the picks, commit the ranking and the ledger, and add
-the plan bullet. Never tell a worker to run the crawl in the foreground.
-
-A blocker the worker cannot clear (a decision for the user, a defect it cannot reproduce) comes
-back in its report and ends the turn the same way.
+The orchestrator runs the scan itself and starts one worker for the fix pass; nothing else needs
+a worker. Every call re-sends the whole context, so use the one-call scripts, never click by hand
+(one hand-driven click is one tool call), and never run `window-interaction-matrix.sh` on an
+intake skin (its close search blind-clicks every window's corner). Carry on from step to step
+without asking; the turn ends while a worker runs, on a blocker, or at the hand-over.
 
 ## What this skill routes to
 
 | Need | Owner |
 |---|---|
-| The per-skin pass, Phases 0–9 | `skills/skin-triage` (its record, `template.md`, lives in the scratchpad: what must outlive the session goes in the ledger, the backlog and the run store) |
-| `wal_intake.sh`, the crawler, the run store, every sweep | `winamp-modern-skin-guide/reference/harness.md` |
+| Phase 5 onward for one row | `skills/skin-triage` |
+| `wal_intake.sh`, the run store, every sweep, the smoke | `winamp-modern-skin-guide/reference/harness.md` |
 | Budget (25, no gain floor), tiers, why | `corpus-runner-plan.md` §8 *Decisions* |
 | Backlog rows | `tasks/WINAMP5_TASKS.md`, closed into `backlog-archive.md` |
 | Grades after promotion | `docs/winamp-modern/skin-compatibility.md`, rubric in `/wal-skin-report` |
-
-`.wal` is the only family with a corpus today; a family that gains one adds its manifest and status
-script here.
 
 ## Changing the plan
 
@@ -279,11 +181,10 @@ history, never progress.
 
 | When | Edit | Where |
 |---|---|---|
-| A batch is admitted | one bullet: rev, tier counts, run time, gain curve, post-admission sweep | §8 *Progress* |
+| A batch is picked | one bullet: rev, the 25 names | §8 *Progress* |
 | A batch is promoted | a *Done: intake #n* block: per skin that needed a fix, what was wrong and the fix; open rows by id | after the last *Done* block |
 | A measurement changes a decision | the decision, measurement, date and rev — **proposed to the user first** | §8 *Decisions* |
 | A parked instrument is built | *Parked* → *Built*; commands in `harness.md` | §7 |
 | The backlog loop changes | the changed step | § *The loop* |
 
-The plan's **Next:** line stays a pointer here. Anything else (progress, session notes, rewrites)
-is not a plan edit; a restructuring is proposed to the user, not done.
+The plan's **Next:** line stays a pointer here.

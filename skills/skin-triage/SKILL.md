@@ -57,8 +57,9 @@ checks missed five groups of defects; each group, its examples and the check tha
 
 ## More than one skin
 
-This file is the pass for one skin. For a set of skins — an intake or any batch — run it the way
-`skin-intake` § *The batch pass* says: Phases 1–4 once over the whole set, ranked across skins.
+This file is the pass for one skin, for a defect someone reported. A `.wal` intake batch does not
+run it per skin: it runs `skin-intake` § *The scan* over the whole batch and uses this file's
+Phase 5 onward only for the rows the scan files.
 
 ## The family decides what "wrong" means
 

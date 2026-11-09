@@ -182,7 +182,10 @@ one on Cava turns both taps off.
 > back to Winamp's engine. Writing only the mode is a **one-way door** and it reached the running app:
 > the row ticked, vis_classic kept painting, and the pane could not be got off it. The rule lives once,
 > in `WinampModernSpectrumAnalyzer.chosen(byPicking:current:)` — `presentScriptPopup` applies the same
-> one to a skin's own mode rows. `Off` is the exception: it is the absence of all of them rather than a
+> one to a skin's own mode rows, and the `<vis>` box's menu (`applyVisualizationModeFromMenu`) since
+> 2026-11-08, when Würlitzer's dome could not be got off Cava or vis_classic. It stays in the menu
+> handler, not in `applyVisualizationMode`: picking an engine while the box is off switches the mode on
+> through that function, and the rule there would undo the pick. `Off` is the exception: it is the absence of all of them rather than a
 > peer, so it leaves the selection alone (switching back on returns the last engine) and it sits at the
 > **end** of the group rather than third in Winamp's enum order.
 

@@ -94,6 +94,7 @@ extension WinampModernScriptRuntime {
         added.forEach(Self.seedHostSingletons)
         programs.append(contentsOf: added)
         try dispatchSystem(event: "onscriptloaded", to: added)
+        declareScriptedEqualizerRanges()
         deliverXUIParams(forSubtreeOf: root)
         seedPlaybackState(to: added)
     }

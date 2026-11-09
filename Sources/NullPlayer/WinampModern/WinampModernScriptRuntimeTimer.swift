@@ -409,12 +409,28 @@ extension WinampModernScriptRuntime {
         var last = animationFrame(of: object)
         _ = try? timers.schedule(id: TimerNamespace.frameEvents.id(for: id), period: 1.0 / 60.0) { [weak self] in
             guard let self, let object = loadedSkin.runtime.graph.object(withID: id) else { return }
+            // A markup-started layer has no clock until it is first drawn; read before that, it is
+            // already at its last frame and would end its own intro unseen.
+            guard WasabiAnimation.hasClock(object) else { return }
             let state = WasabiAnimation.state(of: object, frameCount: animationFrameCount(of: object))
             if state.frame != last {
                 last = state.frame
                 _ = try? dispatch(object: object, event: "onframe", arguments: [.integer(Int32(state.frame))])
             }
             if !state.isPlaying { stopFrameEvents(for: object) }
+        }
+    }
+
+    /// A once-only intro the markup starts itself (`autoplay="1" autoreplay="0"`) raises its frame
+    /// events too. Project_DU_Television hides its 190x150 intro layer from `onFrame` at the end
+    /// frame; with nothing raising it the finished layer stayed, clear but topmost, over the TV's
+    /// face and took every click meant for the visualizer under it (B388). Loops are left alone:
+    /// they have no end for a script to wait on.
+    func startMarkupFrameEvents() {
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where object.tag.is(.animatedLayer) && object.attributes["autoplay"] == "1"
+            && object.attributes["autoreplay"] == "0" && object.attributes["playing"] == nil {
+            startFrameEvents(for: object)
         }
     }
 

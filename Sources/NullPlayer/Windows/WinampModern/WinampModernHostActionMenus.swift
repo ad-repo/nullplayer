@@ -112,6 +112,20 @@ extension WinampModernMainView {
         needsDisplay = true
     }
 
+    /// A left click on a `<vis>` box steps it through Winamp's own modes — analyzer, oscilloscope,
+    /// off — as it does in Winamp itself. Kyoko_Fukada's eye is a bare 15x15 `<vis>` with no action and
+    /// no script, so the click is the only control it has (B387). A box the skin binds a left-click
+    /// handler to (Defix's trigger, Love is War Miku's) keeps its own answer.
+    @discardableResult
+    func cycleVisualizationMode(of object: WasabiObject) -> Bool {
+        guard object.isVisualizationHandle, object.attributes["action"] == nil,
+              !["onleftbuttondown", "onleftbuttonup", "onleftclick"].contains(where: {
+                  scripts.hasBinding(for: object, event: $0) }),
+              let mode = renderer.visualizationMode else { return false }
+        applyVisualizationMode(mode.next)
+        return true
+    }
+
     /// `VIS_MENU` — *which* visualization. The skin's own modes when it draws one, then the host's
     /// Visualizations menu, which is where the visualization window and the engine choice live.
     func showVisualizationMenu(from object: WasabiObject?) {
@@ -518,7 +532,13 @@ extension WinampModernMainView {
 
     @objc private func applyVisualizationModeFromMenu(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
-        applyVisualizationMode(WasabiVisualizationMode(attribute: value))
+        let mode = WasabiVisualizationMode(attribute: value)
+        // Picking Winamp's own analyzer or oscilloscope takes the box back from Cava or vis_classic
+        // (`WinampModernSpectrumAnalyzer.chosen(byPicking:current:)`). Without it the row ticked and
+        // the NullPlayer engine kept painting, with no way back — the pane menu already did this.
+        let engine = WinampModernSpectrumAnalyzer.chosen(byPicking: mode, current: renderer.spectrumAnalyzer)
+        if engine != renderer.spectrumAnalyzer { WindowManager.shared.setWinampModernSpectrumAnalyzer(engine) }
+        applyVisualizationMode(mode)
     }
 
     @objc private func applyVisualizationAttributeFromMenu(_ sender: NSMenuItem) {

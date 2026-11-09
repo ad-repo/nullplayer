@@ -14,26 +14,15 @@ ledger="$dir/intake-$n.tsv"
 [ -f "$ledger" ] || { echo "no ledger at $ledger" >&2; exit 1; }
 
 # Stage order; the batch's lowest stage decides the next session's work (skills/skin-intake).
-stages="admitted headless live accepted promoted"
+stages="admitted filed live accepted promoted"
 
-# The return guard: a commit that changes exactly one ledger row is a session spent on that skin.
-# A skin at the budget is never picked again; it goes to the user's round with its open rows.
-budget=2
-spent=$'\t'"$(git rev-list origin/main..HEAD -- "$ledger" 2>/dev/null | while read -r c; do
-    rows=$(git show --format= "$c" -- "$ledger" | grep '^+[^+]' | cut -f1 | sed 's/^+//')
-    if [ "$(printf '%s\n' "$rows" | wc -l)" -eq 1 ]; then echo "$rows"; fi
-done | sort | uniq -c | awk -v b="$budget" '$1 >= b { sub(/^ *[0-9]+ /, ""); print }' | tr '\n' '\t')"
-# Tab-separated, not spaces: corpus filenames carry spaces, and the ledger's tab-split $1 never holds a tab.
-
-awk -F'\t' -v stages="$stages" -v corpus="$WAL_CORPUS_ROOT" -v n="$n" -v spent="$spent" -v budget="$budget" '
+awk -F'\t' -v stages="$stages" -v corpus="$WAL_CORPUS_ROOT" -v n="$n" '
 BEGIN { k = split(stages, s, " "); for (i = 1; i <= k; i++) rank[s[i]] = i }
 FNR == 1 { next }
 FILENAME ~ /corpus-manifest/ { tier[$1] = $3; sha[$1] = $2; tiers[$3]++; next }
 {
     if (!($3 in rank)) { print "bad stage \"" $3 "\" for " $1; bad++; next }
     count[$3]++; total++
-    if ($3 == "headless" && index(spent, "\t" $1 "\t")) over = over " " $1
-    else if ($3 == "headless") { if ($6 ~ /^headless clean/) clean++; else if (first == "") { first = $1; first_note = $6 } }
     if (!($1 in tier)) { print "not in manifest: " $1; bad++; next }
     if (sha[$1] != $2) { print "sha256 differs from manifest: " $1; bad++ }
     want = $3 == "promoted" ? "gold" : "silver"
@@ -50,14 +39,11 @@ END {
     for (i = 1; i <= k; i++) line = line " " s[i] " " count[s[i]] + 0
     print line
     stage = s[low]
-    if (stage == "admitted") print "next: the headless pass over the whole batch"
-    else if (stage == "headless" && first != "") print "next: " first " — note: " first_note
-    else if (stage == "headless") print "next: one live smoke session over the " clean " headless-clean skins"
-    else if (stage == "live") print "next: hand the " count["live"] " live skins to the user for their UI round"
+    if (stage == "admitted") print "next: the scan — census --shots, review sheets and the click smoke over the whole batch"
+    else if (stage == "filed") print "next: one fix pass over the " count["filed"] " skins with open rows, then re-check what it touched"
+    else if (stage == "live") print "next: hand the user the batch verdicts and the skins flagged for a look; their go accepts the rest"
     else if (stage == "accepted") print "next: promote the batch, then review and PR"
-    else print "next: once the PR is merged, close: rm -rf WinampModernCorpus/runs, then admit batch " n + 1
-    if (stage == "headless" && first != "" && clean) print "      then one live smoke session over the " clean " headless-clean skins"
-    if (over != "") print "budget spent (" budget " single-skin sessions), hand to the user'"'"'s round as they are, open rows in the note:" over
+    else print "next: once the PR is merged, close: rm -rf WinampModernCorpus/runs, then scripts/wal_intake_pick.sh for batch " n + 1
     if (bad) { print bad " ledger problem(s)"; exit 1 }
 }' docs/winamp-modern/corpus-manifest.tsv "$ledger"
 

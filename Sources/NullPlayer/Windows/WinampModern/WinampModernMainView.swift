@@ -2162,6 +2162,8 @@ final class WinampModernMainView: NSView {
             origin.x += current.x - windowDragStartPoint.x
             origin.y += current.y - windowDragStartPoint.y
             origin = WindowManager.shared.windowWillMove(window, to: origin)
+            // A drag off an immediate handle (a `<vis>`) is not also its click.
+            if origin != window.frame.origin { pressMovedWindow = true }
             window.setFrameOrigin(origin)
         }
     }
@@ -2210,11 +2212,14 @@ final class WinampModernMainView: NSView {
         if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
             if releasedOver === pressedObject {
+                // A layout switch lands before the release handlers (`switchesLayoutOnClick`).
+                let switchesFirst = pressedObject.switchesLayoutOnClick
+                if switchesFirst { performAction(for: pressedObject, flip: .none) }
                 let flip = flipActivation(of: pressedObject) {
                     dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
                     _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
                 }
-                performAction(for: pressedObject, flip: flip)
+                if !switchesFirst { performAction(for: pressedObject, flip: flip) }
                 // The *second* click carries its own command in Wasabi, and for most objects that
                 // carry one it is the only command they have: a titlebar mousetrap's
                 // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the
@@ -2276,7 +2281,7 @@ final class WinampModernMainView: NSView {
         // point (Big Bento covers its own with an invisible `main.vis.trigger` layer carrying the
         // skin's settings page, and that menu wins), and it must have no right-button handler of its
         // own (Love is War Miku's `visualizer.maki` binds one).
-        if object.tag.is(.vis), !hasRightButtonHandler(object) {
+        if object.isVisualizationHandle, !hasRightButtonHandler(object) {
             showVisualizationMenu(from: object)
             return
         }
@@ -2755,6 +2760,8 @@ final class WinampModernMainView: NSView {
         // The layout is the window's own background. A skin that paints the whole frame there and
         // hangs only controls off it (T800) otherwise has nothing to drag by at all.
         if object.tag.is(.layout) { return true }
+        // A `<vis>` is a click target (B387), but a drag that starts on it is still the window's.
+        if object.isVisualizationHandle { return true }
         // A bare group has no artwork of its own, so a click reaching one landed on the background it
         // covers, and without `move="1"` above the skin has not offered it as a handle.
         if object.tag.is(.group) { return false }
@@ -3038,6 +3045,7 @@ final class WinampModernMainView: NSView {
         // a radio carries none.
         if flip != .none { needsDisplay = true }
         if flip == .radio { return }
+        if cycleVisualizationMode(of: object) { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]
         // The object comes with the action now: `action_target=` is an attribute of the *button*, and
@@ -3142,7 +3150,17 @@ final class WinampModernMainView: NSView {
             // The user clicked a control that switches layout — a titlebar shade button, a
             // `dblclickaction="SWITCH;shade"` mousetrap. That is a decision about how they want this
             // window, so it outlives the session; a script's own `switchToLayout` does not (B44a).
-            if let parameter, activateLayout(id: parameter) { renderer.persistActiveLayout() }
+            if let parameter, activateLayout(id: parameter) {
+                renderer.persistActiveLayout()
+                if let container = renderer.layout.parent, container.tag.is(.container) {
+                    // Swallowed: a skin's own handler failing must not undo the switch the user made.
+                    do { try scripts.announceLayoutSwitch(in: container, to: renderer.layout) } catch {
+                        #if DEBUG
+                        NSLog("WinampModern onSwitchToLayout threw %@", String(describing: error))
+                        #endif
+                    }
+                }
+            }
         // The window commands every skin puts on its titlebar. T800 draws all three (minimize,
         // shade-switch, close) as 4×5px buttons on the machine's chest. The minimize fallback is for
         // a view with no controller over it (tests), as `requestClose`'s is.

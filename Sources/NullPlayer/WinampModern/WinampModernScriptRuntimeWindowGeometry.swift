@@ -52,6 +52,7 @@ extension WinampModernScriptRuntime {
         // `<container>`, the results window never opened and pressing Return looked like a dead key,
         // with the search itself demonstrably running (BB31).
         guard let target = Self.windowTarget(of: object), let id = target.xmlID, !id.isEmpty else { return }
+        guard forwardsLayoutVisibility(of: object, in: target, visible: visible) else { return }
         // A show of a layout a script sized to nothing is answered as a hide: see `noteScriptSize`.
         hooks.containerVisibilityRequested?(id, visible && !isCollapsed(showing: object, in: target))
     }
@@ -127,10 +128,17 @@ extension WinampModernScriptRuntime {
               let leaderObject = loadedSkin.runtime.graph.object(withID: leaderID),
               let leader = Self.enclosingContainer(of: leaderObject)
                 ?? (Self.isWindowObject(leaderObject) ? leaderObject : nil),
-              follower.stableID != leader.stableID,
-              isDynamicallyClaimed(follower.stableID), !isDynamicallyClaimed(leader.stableID)
+              follower.stableID != leader.stableID
         else { return }
-        windowsGluedOver[leader.stableID] = follower.stableID
+        let followerIsDynamic = isDynamicallyClaimed(follower.stableID)
+        let leaderIsDynamic = isDynamicallyClaimed(leader.stableID)
+        if followerIsDynamic, !leaderIsDynamic {
+            windowsGluedOver[leader.stableID] = follower.stableID
+        } else if !followerIsDynamic, !leaderIsDynamic, windowsGluedBehind[follower.stableID] != leader.stableID {
+            // Two declared windows, one kept on the other's origin: a frame drawn over its client has to
+            // be a window the script asked for, so this is the other kind — a backdrop, if the pixels say.
+            windowsGluedBehind[leader.stableID] = follower.stableID
+        }
     }
 
     /// The window drawn on top of `container`'s, if a script has glued one there.

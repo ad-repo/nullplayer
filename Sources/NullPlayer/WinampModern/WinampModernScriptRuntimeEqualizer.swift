@@ -95,4 +95,23 @@ extension WinampModernScriptRuntime {
         }
         return moved
     }
+
+    /// An EQ slider that the skin's own script handles reads its position as Winamp's 0…255.
+    ///
+    /// CC_Red_Aler_2 hangs `setEqBand(n, newpos - 127)` on every band slider's `onSetPosition` and
+    /// cuts its dynamite-stick covers from a region map whose grey ramp runs 0…255, so on the −127…127
+    /// an undeclared EQ slider otherwise counts, the script overwrote each drag with a band 127 too
+    /// low and the covers never followed. Sliders no script handles (Tristania's, Rika's) keep
+    /// −127…127. Written once, as the `low`/`high` markup would have, after the scripts are bound
+    /// (`start`, and a group instantiated later).
+    func declareScriptedEqualizerRanges() {
+        for object in loadedSkin.runtime.graph.allObjectsUnordered
+        where object.tag.is(.slider) && object.attributes["low"] == nil && object.attributes["high"] == nil
+            && WinampModernEQAction.decode(action: object.attributes["action"],
+                                           parameter: object.attributes["param"]) != nil
+            && ["onsetposition", "onpostedposition"].contains(where: { hasBinding(for: object, event: $0) }) {
+            _ = object.setAttribute("low", value: "0")
+            _ = object.setAttribute("high", value: "255")
+        }
+    }
 }

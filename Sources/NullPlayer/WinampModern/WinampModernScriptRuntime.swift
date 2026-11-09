@@ -425,6 +425,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         if !skinLevel.isEmpty { _ = try dispatchSystem(event: "onscriptloaded", to: skinLevel) }
         dispatchColorManagerLoaded()
         dispatchColdStartLayoutShown()
+        declareScriptedEqualizerRanges()
+        startMarkupFrameEvents()
     }
 
     /// `System.onShowLayout(<layout>)` for the window that comes up with the skin.
@@ -602,6 +604,10 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// follower is drawn *over* the leader (it is the leader's border and title), so the window layer
     /// re-raises it whenever the leader comes forward.
     var windowsGluedOver: [WasabiObjectID: WasabiObjectID] = [:]
+    /// Declared windows a script keeps on another declared window's origin, by leader (Würlitzer's
+    /// `avs` backdrop, B390). Only a candidate: the window layer pairs it when the follower turns out to
+    /// be seen through the leader's holes (`WinampModernGlueBackdrop`), and ignores it otherwise.
+    var windowsGluedBehind: [WasabiObjectID: WasabiObjectID] = [:]
 
     /// The last value each bridged attribute was seen at, so a refresh only tells the skin about a
     /// setting that actually moved. Four entries — one per `WinampModernConfigBridge.Attribute`.

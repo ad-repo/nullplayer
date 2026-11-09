@@ -299,6 +299,21 @@ enum WasabiMutationTrace {
     }
 }
 
+extension WasabiObject {
+    /// A `<vis>` box: the visualization the player draws in place. One answer for the layers that treat
+    /// it alike — it takes the press (a click steps its mode, B387), it never starts a window drag by
+    /// being a control (a drag that begins on it still moves the window), and its right click opens the
+    /// visualization menu.
+    var isVisualizationHandle: Bool { tag.is(.vis) }
+
+    /// A click on it switches its window's layout, which lands **before** the click's release handlers
+    /// run, so the script hears the click in the layout it brought up. Würlitzer's shade `mode` button
+    /// is the measured case: its `onLeftClick` shows the `avs` window and its `fond` layout, and the
+    /// player's `onSwitchToLayout` closes `avs`. Switched after the handler, the return from shade left
+    /// the grille's holes open onto the desktop, and clicks there fell through to it.
+    var switchesLayoutOnClick: Bool { attributes["action"]?.caseInsensitiveCompare("SWITCH") == .orderedSame }
+}
+
 final class WasabiObjectGraph {
     private(set) var roots: [WasabiObject] = []
     private(set) var mutationGeneration: UInt64 = 0

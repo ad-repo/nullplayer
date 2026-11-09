@@ -166,7 +166,10 @@ final class WinampModernFrames {
 
     private func land(_ frame: WinampModernCanvas.Frame?, rects: [NSRect]) {
         guard let frame else { return }
-        if let outline = frame.outline { self.outline = outline }
+        if let outline = frame.outline {
+            self.outline = outline
+            NotificationCenter.default.post(name: .winampModernOutlineDidChange, object: nil)
+        }
         present(frame, rects)
     }
 

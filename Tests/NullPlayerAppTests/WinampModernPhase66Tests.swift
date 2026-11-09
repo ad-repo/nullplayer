@@ -91,6 +91,23 @@ final class WinampModernPhase66Tests: XCTestCase {
         }
     }
 
+    /// Winamp-2006's `navigateUrl` of a Windows program path was offered as `https://Plugins%5C…`.
+    func testAWindowsPathIsNotPromotedToAWebAddress() {
+        for address in [#"Plugins\MSPP\rating\getCurrentRating.exe"#, "getCurrentRating", #"C:\Program Files\x.exe"#] {
+            guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: address) else {
+                return XCTFail("\(address) is not a web address")
+            }
+        }
+    }
+
+    func testLocalhostAndIPLiteralsAreWebAddresses() {
+        for address in ["http://localhost:8080/", "http://192.168.1.5/radio", "http://[::1]:3000/"] {
+            guard case .allow = WinampModernWebNavigationPolicy.resolve(address: address) else {
+                return XCTFail("\(address) is a web address")
+            }
+        }
+    }
+
     func testAnAddressWithNoHostIsRefused() {
         guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: "https:///search") else {
             return XCTFail("a hostless URL is malformed")

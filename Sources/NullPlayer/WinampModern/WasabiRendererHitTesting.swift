@@ -665,6 +665,9 @@ extension WasabiSceneRenderer {
         // also carries an `action`, which the line above already accepts; this covers one that does
         // not and is driven from a script instead.
         if Self.isTextButton(object) { return true }
+        // A `<vis>` box takes the press: a click steps its mode (`cycleVisualizationMode`, B387), and
+        // `shouldDragWindow` keeps a drag that starts on it moving the window as it always did.
+        if object.isVisualizationHandle { return true }
         // The time readout is a control in Winamp: a click flips it between elapsed and remaining.
         if WasabiTextMetrics.togglesTimeDisplay(object) { return true }
         // A container has **no region of its own** in Wasabi — its children supply one. MMD3 declares

@@ -663,20 +663,32 @@ enum WasabiAnimation {
         let elapsed = max(0, clock - (Double(attributes["animstart"] ?? "") ?? 0))
         let steps = Int(elapsed / period)
 
+        // A range replays unless the layer says `autoreplay="0"`. The skins that sweep a knob to a
+        // value and wait for it to stop declare that (MMD3's knobs); the ones that set the whole sheet
+        // as the range, `play()` it in `onPlay` and `stop()` it in `onStop` mean "animate while the
+        // music plays" (Hitchhikers_Guide's robot, jvc.tape's reels), which a one-shot froze after
+        // one pass.
+        let replays = attributes["autoreplay"] != "0"
         // No range set: `autoreplay="0"` plays once to the last frame, so its `onStop` arrives — Moon
         // Groove's PLAY/PAUSE/STOP status hides itself and brings the song ticker back from there
         // (B256). Anything else is the classic looping animation.
         let end: Int? = if let raw = attributes["endframe"] { Int(raw) }
-            else if attributes["autoreplay"] == "0" { count - 1 }
+            else if !replays { count - 1 }
             else { nil }
         guard let end else { return ((selected + steps) % count, true) }
         let start = max(0, min(count - 1, Int(attributes["startframe"] ?? "") ?? selected))
         let target = max(0, min(count - 1, end))
         let distance = abs(target - start)
         guard distance > 0 else { return (target, false) }
-        if steps >= distance { return (target, false) }
-        return (start + (target > start ? steps : -steps), true)
+        if steps >= distance, !replays { return (target, false) }
+        // The range holds `distance + 1` frames (both ends), so a replay wraps after that many steps.
+        let step = replays ? steps % (distance + 1) : steps
+        return (start + (target > start ? step : -step), true)
     }
+
+    /// Whether the layer has a clock to read its play head from: a script's `play()` set one, or the
+    /// first draw stamped it (`stampFirstShow`). Before that `state` would count from uptime 0.
+    static func hasClock(_ object: WasabiObject) -> Bool { object.attributes["animstart"] != nil }
 
     /// A layer that plays itself from markup (`autoplay`/`autoreplay`, no `play()` yet) starts when it
     /// is first drawn. Without a stamp `state` counted from uptime 0, so a once-only intro was over

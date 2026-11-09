@@ -8,6 +8,23 @@ import AppKit
 final class WinampModernSkinWindow: NSWindow {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    /// The skin's glued windows, asked whether this one is a backdrop (B390): a click through a hole must
+    /// not bring it in front of the window it is seen through.
+    weak var glue: WinampModernGluedWindows?
+    /// Glued under another window as its backdrop, and so its child for as long as both are shown.
+    var isGluedBackdrop: Bool { glue?.isBackdrop(self) == true }
+
+    override func sendEvent(_ event: NSEvent) {
+        let isPress = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type)
+        let behind = isPress && isGluedBackdrop
+        if behind {
+            NSApp.preventWindowOrdering()
+            if WinampModernGluedWindows.traces { NSLog("GLUE-TRACE backdrop click held behind") }
+        }
+        super.sendEvent(event)
+        // Becoming key still raises it in some orders; the restack runs a turn late and wins.
+        if behind { glue?.restack() }
+    }
 }
 
 final class WinampModernMainWindowController: NSWindowController, MainWindowProviding, NSWindowDelegate {
@@ -76,7 +93,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// One skin has one script runtime and several windows, so a `switchToLayout`/`resize` has to be
     /// delivered to the window that owns the container the script called it on — not to whichever
     /// view happened to install the callback last (Phase 13.3, R6).
-    private var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
+    private(set) var viewsByContainer: [WasabiObjectID: WinampModernMainView] = [:]
     private(set) var loadFailure: Error?
 
     convenience init() {
@@ -84,10 +101,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let window = WinampModernSkinWindow(contentRect: NSRect(origin: .zero, size: defaultSize),
                                             styleMask: [.borderless], backing: .buffered, defer: false)
         self.init(window: window)
-        glue.pairIDs = { [weak self] in
-            self?.skinView?.scripts.windowsGluedOver.map { (leader: $0.key, follower: $0.value) } ?? []
-        }
-        glue.window = { [weak self] id in self?.viewsByContainer[id]?.window }
+        glue.source = self
         setupWindow()
         // A transparent layer-backed window can lose its cached backing store while the display is
         // asleep. AppKit normally reports the window becoming unoccluded afterwards, but a display
@@ -589,6 +603,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         auxWindow.setAccessibilityIdentifier("WinampModernContainer_\(info.id)")
         auxWindow.setAccessibilityLabel(WinampModernContainerTopology.displayName(of: info))
         auxWindow.delegate = self
+        auxWindow.glue = glue
         auxWindow.orderOut(nil)
         installWindowCommands(on: view, id: info.id)
         // A script resizing *this* container resizes this window, not the player's.
@@ -1411,6 +1426,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             #endif
             return true
         }
+        if allowAutoOpenFallback, skinHostsComponent(kind, guid: guid, scripts: scripts) { return true }
         guard allowAutoOpenFallback else {
             #if DEBUG
             NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",
@@ -1825,7 +1841,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func minimizeAllWindows() {
         window?.miniaturize(nil)
-        for container in auxiliaryContainers where container.window.isVisible {
+        // A child window (a glued backdrop) goes into the Dock with its parent, not on a tile of its own.
+        for container in auxiliaryContainers where container.window.isVisible && container.window.parent == nil {
             container.window.miniaturize(nil)
         }
     }

@@ -61,7 +61,7 @@ extension WinampModernScriptRuntime {
         return descendant(of: object, xmlID: id)
     }
 
-    /// The named object in `root`'s subtree — **the first one that came up**.
+    /// The named object in `root`'s subtree — **the nearest one that came up**.
     ///
     /// Ids are supposed to be unique inside a window and routinely are not: 304 duplicate ids inside
     /// one group/layout across the corpus, most of them harmless because nothing looks them up. The
@@ -76,21 +76,9 @@ extension WinampModernScriptRuntime {
     ///
     /// So a match that came up outranks a match that did not, and declaration order decides
     /// everything else. An object with no `image`/`bitmap` of its own is never invalid, so groups,
-    /// text and containers are unaffected; a skin with two live duplicates still gets the first, the
-    /// way it did before.
+    /// text and containers are unaffected; of two live duplicates the shallower wins, then the first declared.
     func descendant(of root: WasabiObject, xmlID: String) -> WasabiObject? {
-        var deadMatch: WasabiObject?
-        func walk(_ node: WasabiObject) -> WasabiObject? {
-            if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
-                if !isInvalid(node) { return node }
-                if deadMatch == nil { deadMatch = node }
-            }
-            for child in node.children {
-                if let match = walk(child) { return match }
-            }
-            return nil
-        }
-        return walk(root) ?? deadMatch
+        root.nearestDescendant(xmlID: xmlID, isDead: isInvalid)
     }
 
     /// Whether `getLayout` may hand this layout back to `program`.
@@ -253,11 +241,7 @@ extension WinampModernScriptRuntime {
                       $0.tag.is(.layout) &&
                       $0.xmlID?.caseInsensitiveCompare(call.arguments[0].stringValue) == .orderedSame
                   }) else { return .null }
-            runtime.activeLayoutByContainer[call.object.stableID] = next.stableID
-            runtime.realizedLayouts.insert(next.stableID)
-            _ = runtime.hooks.layoutSwitchRequested?(call.object.stableID, call.arguments[0].stringValue)
-            _ = try runtime.dispatch(object: call.object, event: "onswitchtolayout",
-                                     arguments: [runtime.objectValue(next)])
+            try runtime.switchContainer(call.object, to: next)
             return .null
         }
         // A group's children, which ClassicPro walks to find the widgets a component bucket loaded.
@@ -673,4 +657,31 @@ extension WinampModernScriptRuntime {
         }
         return table
     }()
+}
+
+extension WasabiObject {
+    /// The one name lookup over a subtree (`WinampModernScriptRuntime.descendant`, and the renderer's
+    /// auto-height source): level by level, so the **shallowest** live match wins and declaration order
+    /// only breaks a tie. Würlitzer's cover layout has its own `center` ticker window at the top level
+    /// and a `frame` group, declared first, holding another; `getObject("center")` took the frame's, so
+    /// the ticker text ran from x=27 under the transport buttons instead of from x=158 (B390). A match
+    /// `isDead` rejects is answered only when no live one exists.
+    func nearestDescendant(xmlID: String, isDead: (WasabiObject) -> Bool) -> WasabiObject? {
+        var deadMatch: WasabiObject?
+        var queue = [self]
+        var head = 0
+        while head < queue.count {
+            let node = queue[head]
+            head += 1
+            if node.xmlID?.caseInsensitiveCompare(xmlID) == .orderedSame {
+                // `image=""` names no bitmap at all: a placeholder box (Würlitzer's `center` ticker
+                // window), not a reference to one the skin never declared.
+                let placeholder = (node.attributes["image"] ?? node.attributes["bitmap"]) == ""
+                if placeholder || !isDead(node) { return node }
+                if deadMatch == nil { deadMatch = node }
+            }
+            queue.append(contentsOf: node.children)
+        }
+        return deadMatch
+    }
 }

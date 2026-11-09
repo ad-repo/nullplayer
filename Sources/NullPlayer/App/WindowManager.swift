@@ -8299,9 +8299,11 @@ class WindowManager {
 
         // Remove children that are no longer docked — except the window's drop shadow, which is a
         // child of it for as long as it is on screen and would otherwise be stripped on the first
-        // drag and left behind on the desktop.
+        // drag and left behind on the desktop. A `.wal` backdrop is the same: its glue keeps it a
+        // child below the player (B390), and stripping it put the visualization on top of the skin.
         for child in mainWindow.childWindows ?? [] {
             if child is SkinShadowWindow { continue }
+            if (child as? WinampModernSkinWindow)?.isGluedBackdrop == true { continue }
             if !docked.contains(child) {
                 mainWindow.removeChildWindow(child)
             }

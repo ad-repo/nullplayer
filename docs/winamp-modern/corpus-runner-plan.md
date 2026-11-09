@@ -235,7 +235,33 @@ declared boxes overlap; B290 fontsize).
 
 This batch changed the process: scans run by `window-census.sh --shots` and `wal_live_smoke.sh` with
 no worker, one fix pass fixes every open row of the batch, and `wal_fix_check.sh` picks the sweeps a
-fix needs (`skills/skin-intake/SKILL.md` § *The live round*).
+fix needs (`skills/skin-intake/SKILL.md`; § *The live round* became § *The scan* on 2026-11-07).
+
+### Done: intake #7, promoted to gold (2026-11-08)
+
+The 25 skins picked for batch 7 by `wal_intake_pick.sh` were scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-7`, accepted by the user, and promoted to
+gold on 2026-11-08, with rows on `skin-compatibility.md` (21 B, 4 C, graded from the ledger notes and
+backlog rows). The per-skin record is `intakes/intake-7.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Tuneup_v1 | Playlist button and Windows menu did not reveal its inline playlist (B385) | A reveal that finds no visible holder dispatches the skin's `onLookForComponent` |
+| Battlefield_Vietnam | The click sweep missed its drawer handle (B384) | The sweep scans a target's box for a hittable point |
+| Winamp-2006 | A navigate URL of a Windows path offered as a web link; bottom band clipped to its tile (B391) | A Windows path is never promoted to a web address; a painted-tile group with a width and no height is as tall as its content |
+| Hitchhikers_Guide | The robot played its frame range once and stopped | An animation played over a frame range replays unless `autoreplay="0"` |
+| CC_Red_Aler_2 | EQ sliders snapped back on every drag (B386) | A slider the skin's own script handles counts 0..255 |
+| Kyoko_Fukada | The eye visualizer ignored clicks (B387) | A click on a bare `<vis>` steps its mode |
+| Project_DU_Television | The face took no clicks (B388) | A markup intro animation gets `onFrame`, so its script hides it |
+| Würlitzer | Vis window over the player, left behind on shade, closed by its own toggle; cover ticker over the buttons (B390) | User layout switches raise `onSwitchToLayout`; `getObject` returns the nearest match; a hide of an inactive layout is dropped and a show switches to it; a glued host-surface window the leader's art is transparent over stacks under it, and a click on it never raises it |
+
+Closed as not defects: Project_DU's time position (the skin's markup), Winamp-2006's MSPP page text
+(clips only at the default window size). Left open: B366 (AniTransformers, Star_Wars_Player,
+Official_Powerade_Skin, NightWing_II: Media Library in NullPlayer's plain chrome), B389 (Software:
+the volume bar needs the window shaped by its background art's alpha).
+
+This batch made the intake lean (§8 *Decisions*, 2026-11-07): picked by rank, no headless crawl,
+the smoke and census as the scan, and the user's go accepts the batch without testing every skin.
 
 ### Intakes (2026-10-22)
 
@@ -617,6 +643,9 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #6 admitted 2026-11-05** (`feat/wal-intake-6`, rev `039b1d2d`). Run over the 779 bronze:
   **25 silver, 754 bronze, 0 quarantine**, ~45 min. **Gain curve** (first 60): `2` through rank 45, then
   `1 1 2 1 1 1 1 1 1 1 1 1 1 1 1`; the 25 silver are all gain 2. Post-admission sweep: not run.
+- **Intake #7 picked 2026-11-07** (`feat/wal-intake-7`, rev `4f167819`) by `wal_intake_pick.sh`, no
+  crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 729 bronze, 0 quarantine.** Batch:
+  shark5final2, Battlefield_Vietnam, Winamp-2006, Hitchhikers_Guide, Underscore, EW, Software, Kyoko_Fukada, Chronabie, AniTransformers, Project_DU_Television, Blue_and_Silver_Pro, Star_Wars_Player, Shark_by_HH, W%C3%83%C2%BCrlitzer_V3_1, Official_Powerade_Skin, UltraBM_v1, CC_Red_Aler_2, Compact, EMP, Tuneup_v1, Echo, NightWing_II, Big_Red_House_, Winamp_Skin_Yuki_Morikawa (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
@@ -641,6 +670,14 @@ so a corpus run can't lose lines, not *what* is measured.
   orders the batches. The budget is the sweep's cost. Bronze =
   the rest, census-only. Quarantine = does-not-load, crash or hang — a trap on real input is a security
   bug first (S1).
+- **A batch is picked, not crawled, and checked live, not phase by phase** (2026-11-07, rev
+  `c5fcc269`). Measured over intakes #5 and #6: the headless Phases 1–4 filed four rows (B317–B319,
+  B361) and none was a real defect, while every fix came from the live census, the live pass and
+  the user's round; the crawl's greedy gain was ≤ 2 for every remaining candidate and no crawl had
+  quarantined a skin. So `scripts/wal_intake_pick.sh` takes the next 25 bronze in the last
+  ranking's order, and a batch runs the click smoke (main window, then the Library opened, used and
+  closed) and the census visual review, one fix pass, and the user's go — not a per-skin UI round
+  (`skills/skin-intake`). A crawl of new candidates still ranks them with `wal_intake.sh`.
 - **Tier decides which actions run.** Pre-merge render sweep = gold+silver. Impact-selected sweep
   (`--touching <feature,…>`) = every tier, selected from the feature index. Full Bronze census = batch,
   after an intake or before a release. App-driven tools (`skin-screenshots`, `window-census`,
