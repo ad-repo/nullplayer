@@ -118,11 +118,12 @@ enum PlayerUIMode: String, CaseIterable {
     /// This matches the NullPlayer modern controller family, but remains a distinct policy
     /// because other families may use custom controllers with a different EQ. `winampModern`
     /// deliberately uses the **classic 10-band** layout (cPro-Bento embeds a classic-10 EQ), so
-    /// it returns `false` here even though it is a "modern" skin system.
+    /// it returns `false` here even though it is a "modern" skin system. `sonique` uses the 21
+    /// bands so each of its drawer's 20 sliders drives a band of its own (#727).
     var usesModernEQLayout: Bool {
         switch self {
-        case .classic, .winampModern, .wmp, .audion, .sonique: return false
-        case .modern, .metal: return true
+        case .classic, .winampModern, .wmp, .audion: return false
+        case .modern, .metal, .sonique: return true
         }
     }
 

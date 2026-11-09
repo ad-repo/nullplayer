@@ -4,14 +4,23 @@ import Foundation
 /// The three modes: each one's picture, controls and what Sonique draws over them.
 extension SoniqueSkinPainter {
     func navigator() {
-        // The drawer first: the console is drawn over all of it but what hangs below the frame.
+        // The drawer first, and only outside the console's frame: it sits behind the console, so the
+        // console's pure black is black, not the drawer (padd's sliders, sonyque's icons, #725).
         if let drawer = scene.drawer, let misc = skin.image("/jpeg/misc") {
+            context.saveGState()
+            if let frame = skin.region(SoniqueSkin.Mode.navigator.frame) {
+                // Frame rects never overlap, so even-odd over the canvas leaves the canvas minus the frame.
+                context.addRect(scene.canvas.cgRect)
+                context.addRects(frame.rects.map(\.cgRect))
+                context.clip(using: .evenOdd)
+            }
             let b = drawer.bounds, origin = scene.drawerOrigin
             let at = skin.settings.origin(.drawer)
             let x = at.x + b.left - origin.x, y = at.y + b.top - origin.y
             draw(misc, source: .init(left: x, top: y, right: x + b.right - b.left, bottom: y + b.bottom - b.top),
                  x: b.left, y: b.top, clip: drawer.rects)
             if scene.state.navDrawerOpen { drawerDials(misc, clip: drawer.rects) }
+            context.restoreGState()
         }
         // The screen is Sonique's own surface, opaque: black in the picture there stays black (k2),
         // and nothing behind it, the drawer included, shows through (Trigun).

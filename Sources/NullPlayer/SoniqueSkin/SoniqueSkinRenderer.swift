@@ -114,6 +114,10 @@ struct SoniqueSkinPainter {
         guard let region = scene.region(for: control) else { return }
         let (x, y) = skin.settings.origin(state, navigator: navigator)
         let b = region.bounds
+        // Opaque, as a knob is: a lit state's pure black is black, not the unlit button under it
+        // (zSonique's stop square and pause bars showed the ▶ and II through, #726).
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(region.rects.map(\.cgRect))
         draw(misc, source: .init(left: x, top: y, right: x + b.right - b.left, bottom: y + b.bottom - b.top),
              x: b.left, y: b.top, clip: region.rects)
     }

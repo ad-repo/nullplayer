@@ -50,7 +50,8 @@ enum SoniqueSkinAudioEngineHost {
     /// Octaves of playback speed across the pitch knob's drawing: 0.25× to 4×.
     private static let speedOctaves = Double(log2(PitchTuningController.maxRate / PitchTuningController.minRate))
 
-    /// Sonique's 20 sliders over NullPlayer's 10 or 21 bands: each drives the band at its share.
+    /// Sonique's 20 sliders over the 21-band layout (`PlayerUIMode.usesModernEQLayout`): slider n
+    /// drives band n, and the 20 kHz shelf has no slider.
     private static func band(forSlider slider: Int, _ engine: AudioEngine) -> Int {
         slider * engine.eqConfiguration.bandCount / SoniqueSkinScene.eqSliders
     }

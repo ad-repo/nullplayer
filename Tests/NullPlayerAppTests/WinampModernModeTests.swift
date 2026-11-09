@@ -32,6 +32,7 @@ final class WinampModernModeTests: XCTestCase {
         XCTAssertFalse(PlayerUIMode.classic.usesModernEQLayout)
         XCTAssertTrue(PlayerUIMode.modern.usesModernEQLayout)
         XCTAssertTrue(PlayerUIMode.metal.usesModernEQLayout)
+        XCTAssertTrue(PlayerUIMode.sonique.usesModernEQLayout, "20 drawer sliders need a band each (#727)")
     }
 
     func testWinampModernHasNoNullPlayerSkinFamily() {
