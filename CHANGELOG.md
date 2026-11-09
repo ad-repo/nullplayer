@@ -8,14 +8,18 @@
   EIV2, Fast And The Furious, Fast And The Furious 4, FreddyvsJason, GlassAMP, Heroes, Just Buttons,
   Lara Flynn Boyle - The Devil Inside, Lithium, MacOSesque, Narnia, Nokia 5800 XpressMusic,
   Olimpiadas, Pax, Pixelated, PokerGods, Remote, Side Amp, Thanog, Turner Classic Movies.
-- **Tokyo_Drift's transport buttons take clicks**: a faded-out animation no longer covers them.
-- **AR-7's player shows its whole body**, including the Media Library button and readout at its right edge.
-- **Lithium's drawer slides open and closed on screen** instead of sending the player off the right of the screen.
-- **EI_V2's clock fits its display.** A font the skin ships but does not declare is used, a remaining
-  time sits flush in its slot, and a clock too wide for its box shrinks to fit instead of losing its digits.
-- **Just_Buttons' drawer closes without leaving a pink edge.**
-- **Small pixel-font labels sit in their own space** (Lara Flynn Boyle's control labels no longer touch the control above).
-- **Olimpiadas' now-playing notifier opens in the corner of the screen** the first time, not in the middle.
+- **Buttons under a hidden animation take clicks.** An animation a skin has faded out no longer
+  covers the controls beneath it.
+- **A shaped player window shows its whole body**, when its artwork and controls run past the size
+  the skin declares.
+- **Sliding drawers and panels stay on screen**, and a skin's own control in the window's corner is
+  no longer taken for the close button.
+- **Clocks fit their displays.** A font the skin ships without declaring it is used, a remaining time
+  sits flush in its slot, and a clock too wide for its box shrinks to fit instead of losing digits.
+- **A panel that slides shut closes fully**, without leaving a one-pixel edge of the art behind it.
+- **Small pixel-font labels have room**, so they no longer sit against the control above them.
+- **A window a skin places itself, such as a now-playing notifier, opens where the skin puts it** the
+  first time, not in the middle of the screen.
 
 ## 0.35.0
 
