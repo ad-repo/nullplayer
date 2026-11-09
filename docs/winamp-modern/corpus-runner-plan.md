@@ -646,6 +646,9 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #7 picked 2026-11-07** (`feat/wal-intake-7`, rev `4f167819`) by `wal_intake_pick.sh`, no
   crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 729 bronze, 0 quarantine.** Batch:
   shark5final2, Battlefield_Vietnam, Winamp-2006, Hitchhikers_Guide, Underscore, EW, Software, Kyoko_Fukada, Chronabie, AniTransformers, Project_DU_Television, Blue_and_Silver_Pro, Star_Wars_Player, Shark_by_HH, W%C3%83%C2%BCrlitzer_V3_1, Official_Powerade_Skin, UltraBM_v1, CC_Red_Aler_2, Compact, EMP, Tuneup_v1, Echo, NightWing_II, Big_Red_House_, Winamp_Skin_Yuki_Morikawa (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #8 picked 2026-11-09** (`feat/wal-intake-8`, rev `b6a8f81d`) by `wal_intake_pick.sh`, no
+  crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 704 bronze, 0 quarantine.** Batch:
+  cPro_SC, The_Chronicles_of_Narnia, Cyclop_VX1, sa, AR-7, Pixelated, Tokyo_Drift, MacOSesque_v1_2, PokerRoyalFlush, Just_Buttons, Thanog_, Lara_Flynn_Boyle_The_D3vil_Inside, GlassAMP2, Nokia_5800_XPressMusic_by_techmafia_1, Freddy_vs_Jason, Fast__Furious_Winamp5_Skin, Wii, Pax_Amp, Turner_Classic_Movies_Winamp5_Skin, remote, Heroes, Catwoman_Winamp5_Skin, -Lithium-, EI_V2, Olimpiadas (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
