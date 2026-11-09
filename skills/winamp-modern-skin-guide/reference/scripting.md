@@ -707,7 +707,11 @@ A script's `obj.leftClick()` does what the mouse does to that object (B71): a to
 click runs in `WinampModernMainView`; keep the two in step. The bound write comes **before**
 `onLeftClick` since B279: NEO's `shuf_rep` reads `getXmlParam("cfgval")` there to name the button's
 tooltip, and Big Bento announces `Repeat: Playlist` from its release — written after the release, both
-named the state the click had just left. Skins use it to
+named the state the click had just left. **A `SWITCH` runs first** (`switchesLayoutOnClick`, mouse and
+`leftClick()` alike): the script hears the click in the layout it brought up. Würlitzer's shade `mode`
+button shows the `avs` window and its `fond` layout from `onLeftClick`, and the player's
+`onSwitchToLayout` closes `avs` on every switch; switched after the handler, the return from shade
+left the grille's holes open onto the desktop and clicks fell through them. Skins use `leftClick()` to
 route a click through an invisible proxy: Defix's detached visualizer answers Reattach and Random
 with `leftClick()` on a ghosted `cfgattrib` togglebutton (`vis.DTTB`, `vis.random.active`), and while
 `leftClick` dispatched only `onLeftClick` the attribute never moved and both buttons were dead.
@@ -1147,6 +1151,19 @@ A follower that is the dragged window itself is not linked; its own `onMove` pul
 before. Snapping skips a window's glued partner (`gluedPartner(of:)`). Snapped against the content on the
 frame's exact rect, a solo drag of the frame stuck until the pointer passed the 15 pt threshold, in
 ~16 pt jumps every ~35 ms; after the fix it moved every 8.5 ms.
+
+**A backdrop is a child window for as long as both are shown** (B390 follow-up, 2026-11-08). The
+drag-only link above is for frames; a follower judged a *backdrop* (seen through the leader's holes,
+`WinampModernGlueBackdrop`) is linked by `attachBackdrops` with `addChildWindow(_:ordered: .below)`
+the moment its verdict lands and at every restack, and let go when either window closes. Restacking
+after the fact was not enough on Würlitzer: the `avs` window opened on top (its verdict lands after it
+first draws, and nothing restacked then), a quick drag showed its square edge lagging the grille, and
+the skin's Minimize sent it to a Dock tile of its own, after which the restored player had no
+visualization behind it. As a child the window server keeps it under the player, moves it in the same
+operation and takes it into the Dock with it; `minimizeAllWindows` skips child windows, and
+`WindowManager.updateDockedChildWindows` keeps a `.wal` backdrop child the way it keeps a drop shadow.
+A pair is judged only while both windows are visible, and a pair with no overlap stays undecided
+rather than cached as "frame".
 
 ### `onSetVisible` — a window a script closes has to be *reopened*, not just ordered in
 

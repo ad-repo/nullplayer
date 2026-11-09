@@ -144,6 +144,10 @@
 - **Wurlitzer's shade button closes its floating visualization window**, and its cover window's title ticker sits in its own box beside the transport buttons instead of under them. A skin's `main.onSwitchToLayout` now hears the user's layout switch, and `getObject` answers the nearest object with an id before a nested one (Kepler_1.1's volume bar on its AVS and Video windows now follows the volume).
 - **Wurlitzer's visualization shows only through the jukebox grille's holes, with the player's ironwork over it.** The skin's `avs` backdrops (hidden and shown as layouts of one window) no longer ride on top of the player after the vis button is clicked, a click, a drag or a shade; hiding a layout the window is not showing no longer closes the window, and showing one switches the window to it.
 - **Winamp-2006's bottom band draws in full.** The transport buttons, volume and bass/treble under the seek bar were clipped away to a 10px strip because the band's box was sized to its 10px background tile; a group that paints a background tile and states a width but no height is now as tall as its content.
+- **Wurlitzer's visualization stays glued under the jukebox.** It opens behind the grille the first time, moves with the player in one piece when dragged, goes into the Dock with the player instead of on a tile of its own, and is back and running after a restore. Coming back from shade mode brings the grille's backing back too, so clicks through its holes no longer fall through to the desktop.
+- **Wurlitzer's dome analyzer lights across its whole width.** Narrow analyzer boxes draw their bars edge to edge, so none of them hide behind the dot grid the skin lays over them.
+- **A `.wal` visualization can be switched back from Cava or vis_classic** to the skin's own Spectrum Analyzer or Oscilloscope from its right-click menu.
+- **Dragging a `.wal` window by its visualization no longer also changes the visualization's mode.**
 
 
 ## 0.34.2

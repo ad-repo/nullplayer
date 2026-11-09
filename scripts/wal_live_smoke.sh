@@ -64,7 +64,7 @@ for SKIN in "${SKINS[@]}"; do
         } END {
             printf "%s: %s, main %d clicked, %d nochange, %d not clicked; library %s", skin, status,
                 clicked["main"], same["main"], other["main"], (opened == "" ? "not reached" : opened)
-            if (opened == "skin-frame") printf ", %d clicked, %d nochange, close %s", clicked["library"], same["library"], shut
+            if (opened == "skin-frame") printf ", %d clicked, %d nochange, %d not clicked, close %s", clicked["library"], same["library"], other["library"], shut
             printf "\n"
         }' "$TSV"
 done

@@ -2162,6 +2162,8 @@ final class WinampModernMainView: NSView {
             origin.x += current.x - windowDragStartPoint.x
             origin.y += current.y - windowDragStartPoint.y
             origin = WindowManager.shared.windowWillMove(window, to: origin)
+            // A drag off an immediate handle (a `<vis>`) is not also its click.
+            if origin != window.frame.origin { pressMovedWindow = true }
             window.setFrameOrigin(origin)
         }
     }
@@ -2210,11 +2212,14 @@ final class WinampModernMainView: NSView {
         if let pressedObject { noteFinalPosition(on: pressedObject) }
         if let pressedObject, !moved {
             if releasedOver === pressedObject {
+                // A layout switch lands before the release handlers (`switchesLayoutOnClick`).
+                let switchesFirst = pressedObject.switchesLayoutOnClick
+                if switchesFirst { performAction(for: pressedObject, flip: .none) }
                 let flip = flipActivation(of: pressedObject) {
                     dispatch(object: pressedObject, event: "onleftbuttonup", point: point)
                     _ = try? scripts.dispatch(object: pressedObject, event: "onleftclick")
                 }
-                performAction(for: pressedObject, flip: flip)
+                if !switchesFirst { performAction(for: pressedObject, flip: flip) }
                 // The *second* click carries its own command in Wasabi, and for most objects that
                 // carry one it is the only command they have: a titlebar mousetrap's
                 // `dblclickaction="SWITCH;shade"`, a song title's `TRACKINFO`. It runs after the

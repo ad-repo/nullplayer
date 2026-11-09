@@ -380,6 +380,12 @@ extension WinampModernScriptRuntime {
             if !runtime.toggleActivation(of: call.object), call.object.attributes["action"] == nil {
                 _ = runtime.toggleConfigAttribute(of: call.object)
             }
+            // A layout switch lands first, as the mouse's does (`switchesLayoutOnClick`).
+            if call.object.switchesLayoutOnClick {
+                runtime.hooks.actionRequested?(call.object.attributes["action"] ?? "", call.object.attributes["param"])
+                _ = try runtime.dispatch(object: call.object, event: "onleftclick")
+                return .null
+            }
             _ = try runtime.dispatch(object: call.object, event: "onleftclick")
             // Read after the handler, as the mouse does: one that `setXmlParam`s its own action
             // sends the new one.
@@ -587,7 +593,7 @@ extension WinampModernScriptRuntime {
             return .null
         }
         table.add("getautoreplay", 0) { runtime, call in
-            .boolean(call.object.attributes["autoreplay"] == "1")
+            .boolean(call.object.attributes["autoreplay"] != "0")
         }
         table.add("callme", 1) { runtime, call in .null }
         return table

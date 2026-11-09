@@ -304,13 +304,18 @@ final class WasabiBuiltInVisRenderer: WasabiVisRenderer {
     /// Bar `index` of `count` in `frame`, on whole pixels. A fractional slot antialiases the 1px gap
     /// between bars into a smear, and a `wide` row then reads as one solid block rather than as
     /// Winamp's separated bars. **`thin` bars abut** (B264): its 75 bands leave a 1–2px slot, where
-    /// the gap ate whole bars and left an irregular comb of gaps.
+    /// the gap ate whole bars and left an irregular comb of gaps. **So does any row whose slot is
+    /// under 3px**, `wide` included: the gap would leave 1px bars. Würlitzer's dome is a 36px `wide`
+    /// box (19 bands, 1.9px slots) under a dot-grid overlay of 2px pitch, and a 1px bar shows only
+    /// where it lands on a hole — the slot drifts against the grid, so bars 1–8 sat on the metal
+    /// between the holes and the left half of the analyzer never lit.
     static func analyzerColumn(_ index: Int, count: Int, in frame: CGRect,
                                isThin: Bool) -> (x: CGFloat, width: CGFloat) {
         let slot = frame.width / CGFloat(count)
         let start = (CGFloat(index) * slot).rounded(.down)
         let end = (CGFloat(index + 1) * slot).rounded(.down)
-        return (frame.minX + start, max(1, end - start - (isThin ? 0 : 1)))
+        let gap: CGFloat = isThin || slot < 3 ? 0 : 1
+        return (frame.minX + start, max(1, end - start - gap))
     }
 
     /// The longest step a single frame may decay by. A stall — or the first draw, whose `lastDraw` is

@@ -35,8 +35,6 @@ final class WinampModernGluedWindows {
     private var dragObservers: [NSObjectProtocol] = []
     /// The (leader, follower) pairs `attachForDrag` linked, undone when the drag ends.
     private var dragAttached: [(leader: NSWindow, follower: NSWindow)] = []
-    /// Whether the drag carried a backdrop, which unlinking leaves in front of its leader.
-    private var dragCarriedBackdrop = false
 
     init() {
         dragObservers = [
@@ -89,7 +87,9 @@ final class WinampModernGluedWindows {
         guard let source else { return }
         for (leaderID, followerID) in source.gluedBehindCandidates {
             guard let leader = source.gluedWindow(leaderID), let follower = source.gluedWindow(followerID),
-                  leader !== follower, source.isHostSurface(followerID), !source.isHostSurface(leaderID)
+                  leader !== follower, source.isHostSurface(followerID), !source.isHostSurface(leaderID),
+                  // A closed window has nothing on screen to judge; the pair waits until both show.
+                  leader.isVisible, follower.isVisible
             else { continue }
             let key = Self.key(leaderID, followerID)
             // Before fetching a picture, which is a render: a kept verdict costs two size compares.
@@ -104,10 +104,35 @@ final class WinampModernGluedWindows {
                 }
             }
             let result = WinampModernGlueBackdrop.isBackdrop(transparentShare: share)
-            verdicts[key] = (leader.frame.size, follower.frame.size, result)
+            // No overlap, nothing to judge: stay undecided so the pair is judged again once glued.
+            verdicts[key] = share == nil ? nil : (leader.frame.size, follower.frame.size, result)
             if Self.traces {
                 NSLog("GLUE-TRACE %@ %@ leader transparent over follower's art %@", key,
                       result ? "BACKDROP" : "frame", share.map { String(format: "%.3f", $0) } ?? "none")
+            }
+        }
+        // A verdict usually lands after the follower opened (it has to draw first), and the window
+        // that just opened is in front: put it under now, not at the next click.
+        attachBackdrops()
+    }
+
+    /// Every visible backdrop is a child window of its leader, ordered below it (B390). The window
+    /// server then keeps it under the leader whatever is raised, moves it in the same operation as a
+    /// drag (no lagging square at the edges) and takes it into the Dock and back with the leader, so
+    /// minimizing never leaves it on its own tile. A backdrop that closed is let go, so ordering the
+    /// leader in cannot bring it back.
+    private func attachBackdrops() {
+        for (leader, follower, isBackdrop) in pairs where isBackdrop {
+            let wanted = leader.isVisible && follower.isVisible
+            if wanted, follower.parent !== leader {
+                follower.parent?.removeChildWindow(follower)
+                leader.addChildWindow(follower, ordered: .below)
+                if Self.traces {
+                    NSLog("GLUE-TRACE backdrop %@ child of %@", follower.accessibilityIdentifier(),
+                          leader.accessibilityIdentifier())
+                }
+            } else if !wanted, follower.parent === leader {
+                leader.removeChildWindow(follower)
             }
         }
     }
@@ -186,12 +211,14 @@ final class WinampModernGluedWindows {
                           followerName, followerWindow?.isVisible == true ? "visible" : "hidden")
                 }
             }
+            self.attachBackdrops()
             for (leader, follower, isBackdrop) in pairs where leader.isVisible && follower.isVisible {
                 // A backdrop goes under its leader whoever has the keyboard. Of a frame pair, whichever
                 // the user is in stays where it is and the other joins it, so clicking the frame's
                 // title bar does not leave its client stranded behind something.
                 if isBackdrop {
-                    follower.order(.below, relativeTo: leader.windowNumber)
+                    // Its child-window ordering is the window server's now; only a stray needs it.
+                    if follower.parent !== leader { follower.order(.below, relativeTo: leader.windowNumber) }
                 } else if follower.isKeyWindow {
                     leader.order(.below, relativeTo: follower.windowNumber)
                 } else {
@@ -221,14 +248,15 @@ final class WinampModernGluedWindows {
     /// A follower that is the dragged window itself is left alone: it moves itself, and its own
     /// `onMove` pulls the content after it, as it always has. Linked only for the drag, because a
     /// script-driven move or resize of the content must not carry the frame. The script moves the
-    /// frame onto the content itself, and a second carry would move the frame twice.
+    /// frame onto the content itself, and a second carry would move the frame twice. A backdrop is
+    /// already a child for good (`attachBackdrops`).
     private func attachForDrag(dragged: NSWindow?) {
         detachAfterDrag()
+        attachBackdrops()
         for (leader, follower, isBackdrop) in pairs
-        where follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {
-            leader.addChildWindow(follower, ordered: isBackdrop ? .below : .above)
+        where !isBackdrop && follower !== dragged && leader.isVisible && follower.isVisible && follower.parent == nil {
+            leader.addChildWindow(follower, ordered: .above)
             dragAttached.append((leader, follower))
-            dragCarriedBackdrop = dragCarriedBackdrop || isBackdrop
             if Self.traces {
                 NSLog("GLUE-TRACE drag carries %@ with %@", follower.accessibilityIdentifier(),
                       leader.accessibilityIdentifier())
@@ -241,9 +269,5 @@ final class WinampModernGluedWindows {
             leader.removeChildWindow(follower)
         }
         dragAttached.removeAll()
-        if dragCarriedBackdrop {
-            dragCarriedBackdrop = false
-            restack()
-        }
     }
 }

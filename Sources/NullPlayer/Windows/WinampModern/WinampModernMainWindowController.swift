@@ -11,10 +11,12 @@ final class WinampModernSkinWindow: NSWindow {
     /// The skin's glued windows, asked whether this one is a backdrop (B390): a click through a hole must
     /// not bring it in front of the window it is seen through.
     weak var glue: WinampModernGluedWindows?
+    /// Glued under another window as its backdrop, and so its child for as long as both are shown.
+    var isGluedBackdrop: Bool { glue?.isBackdrop(self) == true }
 
     override func sendEvent(_ event: NSEvent) {
         let isPress = [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type)
-        let behind = isPress && glue?.isBackdrop(self) == true
+        let behind = isPress && isGluedBackdrop
         if behind {
             NSApp.preventWindowOrdering()
             if WinampModernGluedWindows.traces { NSLog("GLUE-TRACE backdrop click held behind") }
@@ -1839,7 +1841,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     private func minimizeAllWindows() {
         window?.miniaturize(nil)
-        for container in auxiliaryContainers where container.window.isVisible {
+        // A child window (a glued backdrop) goes into the Dock with its parent, not on a tile of its own.
+        for container in auxiliaryContainers where container.window.isVisible && container.window.parent == nil {
             container.window.miniaturize(nil)
         }
     }

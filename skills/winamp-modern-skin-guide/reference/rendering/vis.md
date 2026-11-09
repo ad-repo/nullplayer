@@ -76,7 +76,11 @@ Three rules, all of them measured on Ujola Cat, all of them engine-wide:
   silently dropped the top 11 of the tap's 75 bands. Bars are laid out on **whole pixels**: at a
   fractional slot the 1px gap antialiases into a smear and a `wide` row reads as one solid block.
   **Only `wide` gets the gap; `thin` bars abut** (B264): 75 bands leave a 1–2px slot, where the gap
-  ate whole bars and drew an irregular comb (cPro__KAO). The colour ramp's slices sit on whole pixels
+  ate whole bars and drew an irregular comb (cPro__KAO). **Any row whose slot is under 3px abuts too**,
+  `wide` included: the gap would leave 1px bars. Würlitzer's dome is a 36px `wide` box (1.9px slots)
+  under a 2px-pitch dot-grid overlay, and a 1px bar shows only where it lands on a hole; the slot
+  drifts against the grid, so bands 1–8 sat on the metal and the left half of the analyzer never lit
+  while measuring 0.6 (`WINAMP_MODERN_VIS_FRAMES=4`). The colour ramp's slices sit on whole pixels
   too (`WasabiVisStyle.rampSlice`) — fractional slice edges drew a dark seam between every one of Big
   Bento's 16 bands. Both rules are pure statics with tests in `WinampModernB73Tests`; the render
   sweep cannot see them, since the harness draws no bars without audio.

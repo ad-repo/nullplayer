@@ -28,6 +28,8 @@ python3 -I - "$dir/intake-$ranking.ranking.tsv" docs/winamp-modern/corpus-manife
 import os, shutil, sys
 
 ranking, manifest, root, skins, ledger, count, rev, today = sys.argv[1:9]
+if not count.isdigit() or not 1 <= int(count) <= 25:
+    sys.exit(f"wal_intake_pick: count must be 1-25, got {count}")
 rows = [line.split("\t") for line in open(manifest).read().splitlines()]
 at = {fields[0]: i for i, fields in enumerate(rows)}
 order = [line.split("\t")[1] for line in open(ranking).read().splitlines()[1:]]
@@ -49,12 +51,14 @@ done = []
 try:
     for source, destination, copy in moves:
         shutil.move(source, destination)
-        done.append((source, destination, copy))
+        installed = os.path.exists(copy)
+        done.append((source, destination, copy, installed))
         shutil.copy2(destination, copy)
 except BaseException:
-    # Put every skin already moved back, so a failure strands none of them without a ledger.
-    for source, destination, copy in reversed(done):
-        if os.path.exists(copy):
+    # Put every skin already moved back, so a failure strands none of them without a ledger. A
+    # skin-menu copy that was there before this run stays.
+    for source, destination, copy, installed in reversed(done):
+        if not installed and os.path.exists(copy):
             os.remove(copy)
         shutil.move(destination, source)
     raise

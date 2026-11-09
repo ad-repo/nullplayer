@@ -532,7 +532,13 @@ extension WinampModernMainView {
 
     @objc private func applyVisualizationModeFromMenu(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
-        applyVisualizationMode(WasabiVisualizationMode(attribute: value))
+        let mode = WasabiVisualizationMode(attribute: value)
+        // Picking Winamp's own analyzer or oscilloscope takes the box back from Cava or vis_classic
+        // (`WinampModernSpectrumAnalyzer.chosen(byPicking:current:)`). Without it the row ticked and
+        // the NullPlayer engine kept painting, with no way back — the pane menu already did this.
+        let engine = WinampModernSpectrumAnalyzer.chosen(byPicking: mode, current: renderer.spectrumAnalyzer)
+        if engine != renderer.spectrumAnalyzer { WindowManager.shared.setWinampModernSpectrumAnalyzer(engine) }
+        applyVisualizationMode(mode)
     }
 
     @objc private func applyVisualizationAttributeFromMenu(_ sender: NSMenuItem) {
