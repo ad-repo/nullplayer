@@ -336,6 +336,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // sized only gets its real minimum once there is content to measure (`contentFittedFloor`),
             // and the first call above ran before any of it existed.
             applyLayoutConstraints()
+            // The same reason, for the size: the content and shape fits measure once the scripts have
+            // run, after `loadSkin` sized the window from the unfitted canvas (AR-7's body is wider
+            // than the `w` it declares, B395).
+            if let window, window.contentLayoutRect.size != view.scaledCanvasSize {
+                resizeWindow(to: view.scaledCanvasSize, reason: "contentFit")
+            }
             // The player's window is on screen from here; the auxiliary ones were ordered out at
             // creation and say so when they open. A skin that starts its animation from
             // `onSetVisible` (Defix's cassette reels) needs to be told.

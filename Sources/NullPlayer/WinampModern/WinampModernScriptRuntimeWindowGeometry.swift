@@ -79,18 +79,19 @@ extension WinampModernScriptRuntime {
     /// Whether a geometry write on `object` can be a round trip of its own origin: it is a window
     /// object whose origin a script read since its last move. A write that `moves` the origin
     /// spends the read.
-    func takeOriginRead(of object: WasabiObject, moves: Bool) -> Bool {
-        guard Self.isWindowObject(object) else { return false }
+    func takeOriginRead(of object: WasabiObject, moves: Bool) -> Set<WinampModernBorrowedOrigin.Axis> {
+        guard Self.isWindowObject(object) else { return [] }
         return borrowedOrigin.takeRead(of: object.stableID, moves: moves)
     }
 
     /// `getLeft()`/`getTop()` (and `getGuiX()`/`getGuiY()` on an absolute axis): the reported
     /// origin, remembered when it was read off a window object so a write on another window can be
     /// recognised as relative to it.
-    func scriptReadsOrigin(of object: WasabiObject, in space: WinampModernOriginSpace) -> CGPoint {
+    func scriptReadsOrigin(of object: WasabiObject, in space: WinampModernOriginSpace,
+                           axis: WinampModernBorrowedOrigin.Axis) -> CGPoint {
         let reported = reportedOrigin(of: object, in: space)
         guard Self.isWindowObject(object) else { return reported }
-        borrowedOrigin.noteRead(of: object.stableID)
+        borrowedOrigin.noteRead(of: object.stableID, axis: axis)
         if let desktop = windowOrigin(of: object) {
             let onScreen = enclosingWindowID(of: object).flatMap { containerVisibilityQuery?($0) } != false
             borrowedOrigin.record(.init(window: object.stableID, reported: reported, desktop: desktop,

@@ -90,11 +90,42 @@ extension WasabiSceneRenderer {
     func contentFit() -> WasabiLayoutAutoFit.ContentFit {
         if let cached = autoFit.contentFit { return cached }
         let declared = defaultSize(for: layout)
-        let fitted = frameContentFittedSize(contentFittedSize(declared, for: layout))
+        let fitted = shapeFittedSize(frameContentFittedSize(contentFittedSize(declared, for: layout)))
         let fit = WasabiLayoutAutoFit.ContentFit(declared: declared, fitted: fitted,
                                                  titleWidth: titleFittedSize(fitted).width)
         autoFit.contentFit = fit
         return fit
+    }
+
+    /// Grow a layout whose only size is a bare `w`/`h` to where its `sysregion` artwork ends.
+    ///
+    /// A layout that states nothing but `w`/`h` — no `default_*`, `minimum_*` or `background` of its
+    /// own, no container default — and is shaped by `sysregion` layers is a shaped window, and a
+    /// shaped window ends where its shape does (the same rule `alphabackground` follows in
+    /// `defaultSize`, B254). AR-7 declares `w="320" h="225"` over a body whose artwork runs to 362,
+    /// so the ML button and the readout were clipped at the right edge (B395). Measured on the
+    /// artwork's own pixels, not its box: that body is a 400x405 sheet whose opaque part ends at 362
+    /// by 213. Only ever grows, clamped by `maximum_*`.
+    private func shapeFittedSize(_ size: CGSize) -> CGSize {
+        let attributes = layout.attributes
+        let container = layout.parent?.attributes ?? [:]
+        let states = ["default_w", "default_h", "minimum_w", "minimum_h", "background", "alphabackground"]
+        guard attributes["w"] != nil || attributes["h"] != nil,
+              !states.contains(where: { attributes[$0] != nil }),
+              container["default_w"] == nil, container["default_h"] == nil else { return size }
+        var reach = size
+        for node in sceneNodes(canvas: size) where node.object !== layout {
+            guard (Self.windowRegionValue(of: node.object) ?? 0) > 0, node.object.tag.is(.layer),
+                  (Int(node.object.attributes["alpha"] ?? "255") ?? 255) > 0,
+                  let id = node.bitmapID, let bitmap = resources.bitmap(identifier: id),
+                  let opaque = WasabiResourceCache.opaqueBounds(of: bitmap.image) else { continue }
+            let scaleX = node.frame.width / CGFloat(bitmap.width), scaleY = node.frame.height / CGFloat(bitmap.height)
+            reach.width = max(reach.width, node.frame.minX + opaque.maxX * scaleX)
+            reach.height = max(reach.height, node.frame.minY + opaque.maxY * scaleY)
+        }
+        let maximum = layoutMaximumSize
+        return CGSize(width: min(maximum.width, reach.width.rounded(.up)),
+                      height: min(maximum.height, reach.height.rounded(.up)))
     }
 
     /// The size the content fit asks for, as a **floor** as well as a default — `nil` for a layout

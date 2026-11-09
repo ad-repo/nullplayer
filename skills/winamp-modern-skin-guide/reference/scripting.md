@@ -1630,3 +1630,11 @@ two-step create-then-`init(parent)` dance, where a script must not look around b
 placed, and `instantiate` has no second step. Deferred, all eight `setXmlParam` calls landed before
 the handler was listening. And the object is configured the instant it is created, so the write and
 the handler have to be in the same turn.
+
+### Round-trip writes are per axis (B397)
+
+`resize(x, y, w, h)` on a window is "not a move" only for the axes the script read first (`getLeft` for x, `getTop` for y). An unhosted layout reports (0, 0), so a script that writes x=0 after reading only `getTop()` — -Lithium- parks its bar at `getViewportLeft()` — is a placement, not a round trip.
+
+### Shape-fitted layouts (B395)
+
+A layout stating only `w`/`h` (no `default_*`, `minimum_*`, `background`, `alphabackground`) grows to where its `sysregion` layers' opaque pixels end (`shapeFittedSize` in `WasabiRendererLayoutSizing.swift`), and the main window follows the post-start fit in `WinampModernMainWindowController` ("contentFit" resize). AR-7: 320 declared, 362 drawn.

@@ -2786,7 +2786,7 @@ final class WinampModernMainView: NSView {
 
     /// Whether pressing this object can do anything: a command attribute, or a script bound to one
     /// of the mouse events.
-    private static func hasPressCommand(_ object: WasabiObject, scripts: WinampModernScriptRuntime) -> Bool {
+    static func hasPressCommand(_ object: WasabiObject, scripts: WinampModernScriptRuntime) -> Bool {
         ["action", "dblclickaction", "rightclickaction", "cfgattrib", "param"].contains { object.attributes[$0] != nil }
             || mouseEvents.contains { scripts.hasBinding(for: object, event: $0) }
     }

@@ -583,18 +583,18 @@ extension WinampModernScriptRuntime {
         // parent's: Xenon's tray test adds `d2.getGuiX()` to `d2.clientToScreenX` (B332). An `x`/`y`
         // write is the parent's too (`writeGeometry`).
         table.add("getleft", 0) { runtime, call in
-            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).x)))
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace, axis: .x).x)))
         }
         table.add("gettop", 0) { runtime, call in
-            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace).y)))
+            .integer(Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .coordinateSpace, axis: .y).y)))
         }
         table.add("getguix", 0) { runtime, call in
             .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "x")
-                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).x)))
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent, axis: .x).x)))
         }
         table.add("getguiy", 0) { runtime, call in
             .integer(WinampModernScriptRuntime.relativeMarkup(of: call.object, axis: "y")
-                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent).y)))
+                ?? Int32(clamping: Int(runtime.scriptReadsOrigin(of: call.object, in: .parent, axis: .y).y)))
         }
         table.add(["getwidth", "getguiw"], 0) { runtime, call in
             if call.method == "getguiw",

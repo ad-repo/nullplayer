@@ -30,6 +30,11 @@ extension WasabiSceneRenderer {
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
+            // An animated layer a script has faded to `alpha="0"` paints nothing, and its union-of-frames
+            // region (below) would still cover every frame's artwork: Tokyo_Drift's full-window `eq.anim`
+            // is hidden by `setAlpha(0)` at load and covered all nine transport buttons (B393). It is
+            // visible again the moment the script raises the alpha (`setTargetA`).
+            if object.tag.is(.animatedLayer), (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0 { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
             // alpha question, and testing the bitmap anyway contradicts the attribute. Defix's four

@@ -48,14 +48,18 @@ struct WinampModernBorrowedOrigin {
     /// that same origin can be a round trip on (B61). An unhosted layout reports (0, 0), so without this every
     /// script that parks its window at the desktop's corner — Nitrous Audio's monitor mode writes
     /// `x=0`/`y=0` on its layout and never asks where it is — was taken as one.
-    private var readSinceMove: Set<WasabiObjectID> = []
+    /// Per axis: Lithium writes `resize(getViewportLeft(), getTop(), …)`, a round trip on y alone, and
+    /// its x of 0 is the work area's edge, not the window's own position (B397).
+    private var readSinceMove: [WasabiObjectID: Set<Axis>] = [:]
 
-    mutating func noteRead(of window: WasabiObjectID) { readSinceMove.insert(window) }
+    enum Axis { case x, y }
 
-    /// Whether a write on `window` can be a round trip of its own origin. A write that `moves` it
-    /// spends the read.
-    mutating func takeRead(of window: WasabiObjectID, moves: Bool) -> Bool {
-        moves ? readSinceMove.remove(window) != nil : readSinceMove.contains(window)
+    mutating func noteRead(of window: WasabiObjectID, axis: Axis) { readSinceMove[window, default: []].insert(axis) }
+
+    /// The axes of `window`'s origin a script has read since its last move, which are the ones a write
+    /// can be a round trip on. A write that `moves` it spends them.
+    mutating func takeRead(of window: WasabiObjectID, moves: Bool) -> Set<Axis> {
+        (moves ? readSinceMove.removeValue(forKey: window) : readSinceMove[window]) ?? []
     }
 
     mutating func record(_ read: Read) {
