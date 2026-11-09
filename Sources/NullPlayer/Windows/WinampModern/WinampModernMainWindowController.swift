@@ -1977,6 +1977,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container })
         if let auxiliary {
             target = auxiliary.window
+            // A script that put its window somewhere has placed it: the first `show()` must not tile it
+            // over. Olimpiadas' opensource_notifier `resize()`s itself to the viewport's corner and
+            // then shows, and its first toast landed in the next tiling slot under the playlist. A pin
+            // is the same case: ONYX V2 pins its visualization over the player's art box, then shows it.
+            placedAuxiliaryWindows.insert(auxiliary.containerID)
         } else if skinView?.containerID == container {
             target = window
         } else if let hosted = hostedWindowMaterializer?.materializedWindows
@@ -2013,9 +2018,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 ? visible.maxY - size.height
                 : min(max(origin.y, visible.minY), visible.maxY - size.height)
         }
-        // A pin places the window relative to another one, so `place` must not tile it afresh when it
-        // first opens: ONYX V2 pins its visualization over the player's art box and then shows it.
-        if pinned, let auxiliary { placedAuxiliaryWindows.insert(auxiliary.containerID) }
         guard origin != target.frame.origin else { return }
         if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
             // A script parking its own window overrides whatever `place` decided, and legitimately

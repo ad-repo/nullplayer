@@ -41,7 +41,17 @@ extension WasabiSceneRenderer {
         // states no `h`, and its song title was a zero-height box.
         if object.attributes["h"] == nil,
            object.tag.is(anyOf: [.text, .songticker]) {
-            intrinsic.height = Double(resources.metrics.lineHeight(of: object))
+            // A short bitmap-font line that names no `fontsize` still gets a 13px box, with the glyphs
+            // centred in it: Lara Flynn Boyle's 5px `wasabi.font.button.small` labels sit 10px above
+            // their bars, and a box only as tall as the glyphs drew each one onto the bar above. 13 is
+            // judged live (11 still left them touching the bar above; 13 sets each nearer its own bar).
+            // A skin that states a `fontsize` sized its box around it: LogicallityV1_0's `fontsize="10"`
+            // titles were cut at the bottom of their strips by the taller box. A TrueType line is
+            // already its `fontsize`; `getAutoHeight()` still answers the line.
+            let line = Double(resources.metrics.lineHeight(of: object))
+            let unsizedBitmap = resources.metrics.bitmapFont(of: object) != nil
+                && object.attributes["fontsize"] == nil
+            intrinsic.height = unsizedBitmap ? max(line, 13) : line
         }
         // A window-chrome button whose artwork Winamp supplied and the skin does not. It has no
         // bitmap to size to, so it resolved to 0x0 and never appeared at all — `Winamp 3.0 Default`'s

@@ -374,7 +374,12 @@ extension WinampModernScriptRuntime {
         if state.hasTargetA { movedAlpha = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
 
         if animationReached(state) {
-            if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(state.targetX))) }
+            // A slide to the right comes to rest a pixel short of its target. Authors wrote around it:
+            // MBOS's `LRdoor.m` says "Remember to add 1 to StartX for R, and not to for L", and
+            // Just_Buttons' and MalteseXp's thinger close to `StartX+1` — landed exactly, that drawer
+            // stops a pixel right of where it opened and bares the magenta base beside it.
+            let restingX = state.targetX > state.startX ? state.targetX - 1 : state.targetX
+            if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(restingX))) }
             if state.hasTargetY { _ = object.moveForTarget("y", to: String(Int(state.targetY))) }
             if state.hasTargetW { _ = object.moveForTarget("w", to: String(Int(state.targetW))) }
             if state.hasTargetH { _ = object.moveForTarget("h", to: String(Int(state.targetH))) }

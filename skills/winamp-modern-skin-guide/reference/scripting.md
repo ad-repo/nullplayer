@@ -1061,8 +1061,9 @@ already a desktop point: it does not match and lands as a plain (clamped) move t
 container reads its real desktop origin, so for a container read only the ±1 case matches. Each axis of a read
 is **spent by the write that uses it**, and the read is **forgotten when the outermost event unwinds**
 (`dispatch`'s `isOutermost` block), so a stale read can never pin a later write that only happens to
-name the same coordinates. A pinned move also marks an auxiliary window placed
-(`placedAuxiliaryWindows`), or `place` re-tiles it the first time the script shows it.
+name the same coordinates. Any script move of an auxiliary window, pinned or not, marks it placed
+(`placedAuxiliaryWindows`), or `place` re-tiles it the first time the script shows it (Olimpiadas'
+notifier `resize()`s to the viewport corner before its first show).
 
 **A layout a script sizes to 0×0 stays off screen** until a script gives it a size again
 (`scriptCollapsedLayouts`, kept in `applyContainerGeometry`'s `applySize`). ONYX gives its
@@ -1495,6 +1496,12 @@ defaults to `"0"` (correct for x/y/w/h) but wrong for alpha (would fade everythi
 The fix: `targetAlpha` uses `object.attributes["targeta"].flatMap(Double.init) ?? ca` where `ca` is
 the current alpha (defaulting to 255). The speed=0 snap path already handled this correctly with
 `?? object.attributes["alpha"] ?? "255"`.
+
+**A rightward x animation rests one pixel short of its target** (intake #8, 2026-11-09). When
+`tickTargetAnimation` reaches a target with `targetX > startX`, the object settles at `targetX - 1`;
+leftward and y moves land exactly. The skins say so themselves: MBOS's `LRdoor.m` ("Remember to add 1
+to StartX for R, and not to for L"), and Just_Buttons and MalteseXp open their slides with
+`StartX+1`. Landing exactly left Just_Buttons' closed thinger a pink one-pixel lip.
 
 **A target animation moves the object, not its XML.** `getXmlParam("x"/"y"/"w"/"h")` still answers
 the declared value after `gotoTarget` has moved it; the first animated write

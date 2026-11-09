@@ -156,6 +156,11 @@ One message to the user: per skin, the scan's verdict in one line, and the few w
 **The user is not asked to test every skin.** Their go accepts the batch; a defect they report
 puts that skin back to `filed` with the defect in its note.
 
+**Fixes from the user's round are swept once, together.** Fix each defect as it is reported and
+verify it live on its own skin, then wait for the next report; `wal_fix_check.sh` runs once, when
+the user says the round is done, over every fix since the last check, before promotion. Never a
+check per fix: each costs ~20 minutes (interaction is most of it), and the user is waiting on it.
+
 ## Running it
 
 The orchestrator runs the scan itself and starts one worker for the fix pass; nothing else needs

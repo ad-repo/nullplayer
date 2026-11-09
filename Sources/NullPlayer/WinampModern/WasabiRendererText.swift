@@ -57,9 +57,36 @@ extension WasabiSceneRenderer {
         // something that does not parse. CoreText builds its own attribute dictionary from whatever
         // it is handed, and an unusable size or font there aborts the process from inside a draw.
         let size = WasabiTextMetrics.pointSize(of: object)
-        let font = resources.font(identifier: object.attributes["font"], size: size,
+        var font = resources.font(identifier: object.attributes["font"], size: size,
                                   traits: WasabiTextMetrics.traits(of: object))
             ?? NSFont.systemFont(ofSize: size)
+        // A clock its clip would cut shrinks until it fits — NullPlayer's departure from Winamp, which
+        // cuts it: EI_V2's 70px timer in its own Bank Gothic showed `0:23` of a `-10:23`. Only digits
+        // that would be cut count: a clock that overruns its box into room its group releases to it
+        // (cPro2 minimal's `4:05`) draws whole and keeps its size. A colon's declared cell does not
+        // scale, so the ratio can land a pixel over; a second pass settles it.
+        var requested = size
+        for _ in 0..<2 {
+            guard let run = WasabiTextMetrics.clockRun(of: object, text: text, font: font) else { break }
+            let clip = horizontalClip(of: object, text: text, measured: run.width, frame: frame,
+                                      scrolls: false, wraps: false, context: context)
+            let inset = WasabiTextMetrics.ClockRun.edgeInset
+            let start: CGFloat
+            switch WasabiTextMetrics.horizontalAlignment(of: object) {
+            case .right: start = frame.maxX - inset - run.layoutWidth
+            case .center: start = frame.minX + (frame.width - run.width) / 2
+            default: start = frame.minX + inset
+            }
+            let room = frame.width - inset
+            guard start < clip.minX - 0.5 || start + run.width > clip.maxX + 0.5,
+                  room > 0, run.layoutWidth > room else { break }
+            let fitted = floor(requested * room / run.layoutWidth)
+            requested = fitted
+            guard fitted >= 1, let smaller = resources.font(identifier: object.attributes["font"], size: fitted,
+                                                            traits: WasabiTextMetrics.traits(of: object))
+            else { break }
+            font = smaller
+        }
         let alignment = WasabiTextMetrics.horizontalAlignment(of: object)
         // A wrapping object is laid out as a paragraph rather than as a line: broken at word
         // boundaries inside its own width, stacked downward, and never scrolled. See
