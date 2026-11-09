@@ -196,12 +196,13 @@ exits 1; one below it prints `BETTER`, and `--record` rewrites the file. Only co
 are in it, never artwork. Record after a change that improves the counts, never to silence a
 regression.
 
-Measured 2026-10-18 after S16's lettering, with outline-first alignment (S10's own figures:
-shape 1.49 / 4.69 / 4.39 %, colour 12.29 / 7.61 / 9.29 %):
+Measured 2026-11-09 after the drawer was hidden behind the console and lit states made opaque
+(#725, #726; nav 11.06 → 10.87 %, mid 6.56 → 6.55 %, four cells 1–3 px worse), with outline-first
+alignment (S10's own figures: shape 1.49 / 4.69 / 4.39 %, colour 12.29 / 7.61 / 9.29 %):
 
 ```text
-SUMMARY nav: 524 compared, shape exact 512, shape 0.09%, colour 11.06% of 67176100 px
-SUMMARY mid: 524 compared, shape exact 521, shape 0.00%, colour 6.56% of 30591336 px
+SUMMARY nav: 524 compared, shape exact 512, shape 0.09%, colour 10.87% of 67176100 px
+SUMMARY mid: 524 compared, shape exact 521, shape 0.00%, colour 6.55% of 30591336 px
 SUMMARY small: 524 compared, shape exact 516, shape 0.00%, colour 10.14% of 2350770 px
 ```
 

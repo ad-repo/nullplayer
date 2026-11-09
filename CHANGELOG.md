@@ -149,6 +149,12 @@
 - **A `.wal` visualization can be switched back from Cava or vis_classic** to the skin's own Spectrum Analyzer or Oscilloscope from its right-click menu.
 - **Dragging a `.wal` window by its visualization no longer also changes the visualization's mode.**
 
+### Sonique skins
+
+- **Sonique's closed EQ drawer no longer shows through the player.** On padd, sonyque, DE_StarTrek-LCARS and other skins, the drawer's sliders and icons showed through the black parts of the player while it was closed; they are black now, as Sonique draws them.
+- **A lit Sonique button draws whole.** zSonique's play/stop and pause buttons no longer show the unlit play or pause symbol through their lit picture while pressed, playing or paused.
+- **Each of the Sonique drawer's 20 EQ sliders moves on its own.** Sonique skins use the 21-band equalizer, so a slider no longer drags its neighbour with it.
+
 
 ## 0.34.2
 

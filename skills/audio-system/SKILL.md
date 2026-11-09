@@ -326,7 +326,7 @@ does not mount shares itself. An SMB share that dropped is not remounted automat
 
 ### Configuration
 
-Classic mode uses the legacy 10-band configuration; modern mode uses a 21-band configuration derived from `EQConfiguration.modern21`. Both pipelines build their `AVAudioUnitEQ` from the same active layout at launch.
+Classic mode uses the legacy 10-band configuration; modern mode uses a 21-band configuration derived from `EQConfiguration.modern21`. Which one a mode uses is `PlayerUIMode.usesModernEQLayout`: modern, metal and Sonique (its drawer has 20 sliders) take the 21 bands. Both pipelines build their `AVAudioUnitEQ` from the same active layout at launch.
 
 ### Classic 10-Band Configuration
 
