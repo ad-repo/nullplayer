@@ -114,8 +114,11 @@ extension WasabiSceneRenderer {
         guard attributes["w"] != nil || attributes["h"] != nil,
               !states.contains(where: { attributes[$0] != nil }),
               container["default_w"] == nil, container["default_h"] == nil else { return size }
+        // One layout pass, and `opaqueBounds` draws each sysregion bitmap whole: paid once per layout,
+        // since `contentFit()` caches the answer.
+        let nodes = sceneNodes(canvas: size)
         var reach = size
-        for node in sceneNodes(canvas: size) where node.object !== layout {
+        for node in nodes where node.object !== layout {
             guard (Self.windowRegionValue(of: node.object) ?? 0) > 0, node.object.tag.is(.layer),
                   (Int(node.object.attributes["alpha"] ?? "255") ?? 255) > 0,
                   let id = node.bitmapID, let bitmap = resources.bitmap(identifier: id),
@@ -124,17 +127,16 @@ extension WasabiSceneRenderer {
             // Only art placed from the origin. One anchored to the far edge (`relatx`/`relaty`) or
             // stretched with the canvas is decoration the window clips on purpose and would chase the
             // canvas: the Miku skins' preferences window hangs a character off its bottom-right.
-            let attributes = node.object.attributes
-            if attributes["relatx"] != "1", attributes["relatw"] != "1" {
+            let art = node.object.attributes
+            if art["relatx"] != "1", art["relatw"] != "1" {
                 reach.width = max(reach.width, node.frame.minX + opaque.maxX * scaleX)
             }
-            if attributes["relaty"] != "1", attributes["relath"] != "1" {
+            if art["relaty"] != "1", art["relath"] != "1" {
                 reach.height = max(reach.height, node.frame.minY + opaque.maxY * scaleY)
             }
         }
         // Only on an axis where a control is clipped: art that overruns the box with nothing to press
         // in the overrun is a margin the author let the window crop (kaza's Miku, 4px of it).
-        let nodes = sceneNodes(canvas: size)
         let controls = nodes.filter { $0.object !== layout && isVisible($0.object) && isInteractive($0.object) }
         if !controls.contains(where: { $0.frame.maxX > size.width }) { reach.width = size.width }
         if !controls.contains(where: { $0.frame.maxY > size.height }) { reach.height = size.height }

@@ -48,10 +48,11 @@ extension WasabiSceneRenderer {
             // A skin that states a `fontsize` sized its box around it: LogicallityV1_0's `fontsize="10"`
             // titles were cut at the bottom of their strips by the taller box. A TrueType line is
             // already its `fontsize`; `getAutoHeight()` still answers the line.
+            let minimumUnsizedBitmapLine = 13.0
             let line = Double(resources.metrics.lineHeight(of: object))
             let unsizedBitmap = resources.metrics.bitmapFont(of: object) != nil
                 && object.attributes["fontsize"] == nil
-            intrinsic.height = unsizedBitmap ? max(line, 13) : line
+            intrinsic.height = unsizedBitmap ? max(line, minimumUnsizedBitmapLine) : line
         }
         // A window-chrome button whose artwork Winamp supplied and the skin does not. It has no
         // bitmap to size to, so it resolved to 0x0 and never appeared at all — `Winamp 3.0 Default`'s

@@ -1977,11 +1977,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         let auxiliary = auxiliaryContainers.first(where: { $0.view.containerID == container })
         if let auxiliary {
             target = auxiliary.window
-            // A script that put its window somewhere has placed it: the first `show()` must not tile it
-            // over. Olimpiadas' opensource_notifier `resize()`s itself to the viewport's corner and
-            // then shows, and its first toast landed in the next tiling slot under the playlist. A pin
-            // is the same case: ONYX V2 pins its visualization over the player's art box, then shows it.
-            placedAuxiliaryWindows.insert(auxiliary.containerID)
         } else if skinView?.containerID == container {
             target = window
         } else if let hosted = hostedWindowMaterializer?.materializedWindows
@@ -2002,6 +1997,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             target = nil
         }
         guard let target, let screen = target.screen ?? NSScreen.main else { return }
+        // A script that put its window somewhere has placed it: the first `show()` must not tile it
+        // over. Olimpiadas' opensource_notifier `resize()`s itself to the viewport's corner and then
+        // shows, and its first toast landed in the next tiling slot under the playlist. A pin is the
+        // same case: ONYX V2 pins its visualization over the player's art box, then shows it.
+        if let auxiliary { placedAuxiliaryWindows.insert(auxiliary.containerID) }
         let size = target.frame.size
         let topLeft = WinampModernScreenSpace.cocoaPoint(point, on: screen)
         var origin = NSPoint(x: topLeft.x, y: topLeft.y - size.height)

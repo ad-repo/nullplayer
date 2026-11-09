@@ -100,12 +100,9 @@ extension WinampModernScriptRuntime {
     /// `skin.control.nonPlay`; see `reference/rendering.md` → *A hover reaches `onMouseMove`*.
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
-        let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
-        // A write names a round trip only on axes the script read: `x=0` beside a read of `getTop()` alone
-        // is a placement at the corner, and (0, 0) is also what an unhosted layout reports (B397).
-        let axesRead = takeOriginRead(of: object, moves: moves)
-        let writesBothAxes = attributes.contains { $0.key == "x" } && attributes.contains { $0.key == "y" }
-        let isRoundTrip = writesBothAxes ? axesRead.count == 2 : !axesRead.isEmpty
+        let written = Set(attributes.compactMap { WinampModernBorrowedOrigin.Axis(key: $0.key) })
+        let isRoundTrip = WinampModernBorrowedOrigin.isRoundTrip(
+            written: written, read: takeOriginRead(of: object, moves: !written.isEmpty))
         let reportedBeforeWrite = isRoundTrip ? reportedOrigin(of: object, in: .parent) : nil
         for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)

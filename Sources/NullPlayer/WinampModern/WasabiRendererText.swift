@@ -57,36 +57,10 @@ extension WasabiSceneRenderer {
         // something that does not parse. CoreText builds its own attribute dictionary from whatever
         // it is handed, and an unusable size or font there aborts the process from inside a draw.
         let size = WasabiTextMetrics.pointSize(of: object)
-        var font = resources.font(identifier: object.attributes["font"], size: size,
-                                  traits: WasabiTextMetrics.traits(of: object))
-            ?? NSFont.systemFont(ofSize: size)
-        // A clock its clip would cut shrinks until it fits — NullPlayer's departure from Winamp, which
-        // cuts it: EI_V2's 70px timer in its own Bank Gothic showed `0:23` of a `-10:23`. Only digits
-        // that would be cut count: a clock that overruns its box into room its group releases to it
-        // (cPro2 minimal's `4:05`) draws whole and keeps its size. A colon's declared cell does not
-        // scale, so the ratio can land a pixel over; a second pass settles it.
-        var requested = size
-        for _ in 0..<2 {
-            guard let run = WasabiTextMetrics.clockRun(of: object, text: text, font: font) else { break }
-            let clip = horizontalClip(of: object, text: text, measured: run.width, frame: frame,
-                                      scrolls: false, wraps: false, context: context)
-            let inset = WasabiTextMetrics.ClockRun.edgeInset
-            let start: CGFloat
-            switch WasabiTextMetrics.horizontalAlignment(of: object) {
-            case .right: start = frame.maxX - inset - run.layoutWidth
-            case .center: start = frame.minX + (frame.width - run.width) / 2
-            default: start = frame.minX + inset
-            }
-            let room = frame.width - inset
-            guard start < clip.minX - 0.5 || start + run.width > clip.maxX + 0.5,
-                  room > 0, run.layoutWidth > room else { break }
-            let fitted = floor(requested * room / run.layoutWidth)
-            requested = fitted
-            guard fitted >= 1, let smaller = resources.font(identifier: object.attributes["font"], size: fitted,
-                                                            traits: WasabiTextMetrics.traits(of: object))
-            else { break }
-            font = smaller
-        }
+        let font = clockFittedFont(text, object: object, frame: frame, context: context, requested: size,
+                                   font: resources.font(identifier: object.attributes["font"], size: size,
+                                                        traits: WasabiTextMetrics.traits(of: object))
+                                       ?? NSFont.systemFont(ofSize: size))
         let alignment = WasabiTextMetrics.horizontalAlignment(of: object)
         // A wrapping object is laid out as a paragraph rather than as a line: broken at word
         // boundaries inside its own width, stacked downward, and never scrolled. See
@@ -195,16 +169,7 @@ extension WasabiSceneRenderer {
             // separator beside a readout counts on it — and is placed by the room the clock holds,
             // then drawn from that room's left edge, so the digits stay in their columns rather than
             // shuffling when the value gains one.
-            //
-            // A centred run is centred on what it draws. The room's spare digit is all on one side,
-            // so centring by it pushed Cell's `1:13` half a field off its brackets (#581).
-            var origin: CGFloat
-            switch alignment {
-            case .right:
-                origin = drawFrame.maxX - WasabiTextMetrics.ClockRun.edgeInset - clock.layoutWidth
-            case .center: origin = drawFrame.minX + (drawFrame.width - clock.width) / 2
-            default: origin = drawFrame.minX + WasabiTextMetrics.ClockRun.edgeInset
-            }
+            var origin = clock.origin(in: drawFrame, alignment: alignment)
             // Each cell places its own field, so the object's alignment must not apply a second time
             // inside one: a centred glyph sits in the middle of its fixed-pitch cell, and every other
             // field starts at its own cell's left edge.
@@ -392,6 +357,33 @@ extension WasabiSceneRenderer {
     }
 
     /// What a string is scissored to: its own box, or released horizontally to the ambient clip.
+    /// The font a clock draws in: smaller when its clip would cut it — NullPlayer's departure from
+    /// Winamp, which cuts it: EI_V2's 70px timer in its own Bank Gothic showed `0:23` of a `-10:23`.
+    /// Only digits that would be cut count: a clock that overruns its box into room its group
+    /// releases to it (cPro2 minimal's `4:05`) draws whole and keeps its size. A colon's declared cell
+    /// does not scale, so the ratio can land a pixel over; a second pass settles it. Not a clock: `font`.
+    private func clockFittedFont(_ text: String, object: WasabiObject, frame: CGRect,
+                                 context: WasabiDrawList, requested: CGFloat, font: NSFont) -> NSFont {
+        var font = font
+        var requested = requested
+        let room = frame.width - WasabiTextMetrics.ClockRun.edgeInset
+        for _ in 0..<2 {
+            guard let run = WasabiTextMetrics.clockRun(of: object, text: text, font: font),
+                  room > 0, run.layoutWidth > room else { break }
+            let clip = horizontalClip(of: object, text: text, measured: run.width, frame: frame,
+                                      scrolls: false, wraps: false, context: context)
+            let start = run.origin(in: frame, alignment: WasabiTextMetrics.horizontalAlignment(of: object))
+            guard start < clip.minX - 0.5 || start + run.width > clip.maxX + 0.5 else { break }
+            requested = floor(requested * room / run.layoutWidth)
+            guard requested >= 1, let smaller = resources.font(identifier: object.attributes["font"],
+                                                               size: requested,
+                                                               traits: WasabiTextMetrics.traits(of: object))
+            else { break }
+            font = smaller
+        }
+        return font
+    }
+
     private func horizontalClip(of object: WasabiObject, text: String, measured: CGFloat,
                                 frame: CGRect, scrolls: Bool, wraps: Bool,
                                 context: WasabiDrawList) -> CGRect {
