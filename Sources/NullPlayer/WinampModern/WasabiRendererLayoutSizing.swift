@@ -105,7 +105,8 @@ extension WasabiSceneRenderer {
     /// `defaultSize`, B254). AR-7 declares `w="320" h="225"` over a body whose artwork runs to 362,
     /// so the ML button and the readout were clipped at the right edge (B395). Measured on the
     /// artwork's own pixels, not its box: that body is a 400x405 sheet whose opaque part ends at 362
-    /// by 213. Only ever grows, clamped by `maximum_*`.
+    /// by 213. Only art placed from the origin counts, and only on an axis a control overruns. Only ever
+    /// grows, clamped by `maximum_*`.
     private func shapeFittedSize(_ size: CGSize) -> CGSize {
         let attributes = layout.attributes
         let container = layout.parent?.attributes ?? [:]
@@ -120,9 +121,23 @@ extension WasabiSceneRenderer {
                   let id = node.bitmapID, let bitmap = resources.bitmap(identifier: id),
                   let opaque = WasabiResourceCache.opaqueBounds(of: bitmap.image) else { continue }
             let scaleX = node.frame.width / CGFloat(bitmap.width), scaleY = node.frame.height / CGFloat(bitmap.height)
-            reach.width = max(reach.width, node.frame.minX + opaque.maxX * scaleX)
-            reach.height = max(reach.height, node.frame.minY + opaque.maxY * scaleY)
+            // Only art placed from the origin. One anchored to the far edge (`relatx`/`relaty`) or
+            // stretched with the canvas is decoration the window clips on purpose and would chase the
+            // canvas: the Miku skins' preferences window hangs a character off its bottom-right.
+            let attributes = node.object.attributes
+            if attributes["relatx"] != "1", attributes["relatw"] != "1" {
+                reach.width = max(reach.width, node.frame.minX + opaque.maxX * scaleX)
+            }
+            if attributes["relaty"] != "1", attributes["relath"] != "1" {
+                reach.height = max(reach.height, node.frame.minY + opaque.maxY * scaleY)
+            }
         }
+        // Only on an axis where a control is clipped: art that overruns the box with nothing to press
+        // in the overrun is a margin the author let the window crop (kaza's Miku, 4px of it).
+        let nodes = sceneNodes(canvas: size)
+        let controls = nodes.filter { $0.object !== layout && isVisible($0.object) && isInteractive($0.object) }
+        if !controls.contains(where: { $0.frame.maxX > size.width }) { reach.width = size.width }
+        if !controls.contains(where: { $0.frame.maxY > size.height }) { reach.height = size.height }
         let maximum = layoutMaximumSize
         return CGSize(width: min(maximum.width, reach.width.rounded(.up)),
                       height: min(maximum.height, reach.height.rounded(.up)))
