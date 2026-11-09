@@ -4,16 +4,11 @@ import Foundation
 /// The three modes: each one's picture, controls and what Sonique draws over them.
 extension SoniqueSkinPainter {
     func navigator() {
-        // The drawer first, and only outside the console's frame: it sits behind the console, so the
-        // console's pure black is black, not the drawer (padd's sliders, sonyque's icons, #725).
+        // The drawer first, its dials included, and only outside the console's frame: it sits behind
+        // the console, so the console's pure black is black, not the drawer (padd's sliders, sonyque's icons).
         if let drawer = scene.drawer, let misc = skin.image("/jpeg/misc") {
             context.saveGState()
-            if let frame = skin.region(SoniqueSkin.Mode.navigator.frame) {
-                // Frame rects never overlap, so even-odd over the canvas leaves the canvas minus the frame.
-                context.addRect(scene.canvas.cgRect)
-                context.addRects(frame.rects.map(\.cgRect))
-                context.clip(using: .evenOdd)
-            }
+            clipOutsideConsole()
             let b = drawer.bounds, origin = scene.drawerOrigin
             let at = skin.settings.origin(.drawer)
             let x = at.x + b.left - origin.x, y = at.y + b.top - origin.y
@@ -35,6 +30,15 @@ extension SoniqueSkinPainter {
         litStates(navigator: true)
         let strip: SoniqueKnobStrip = skin.image(SoniqueKnobStrip.navVolume.image) != nil ? .navVolume : .volume
         knob(control: .volume, strip: strip, value: host.volume)
+    }
+
+    /// Clips to the canvas minus the navigator's frame. Frame rects never overlap, so even-odd over
+    /// the canvas leaves exactly the canvas without them.
+    private func clipOutsideConsole() {
+        guard let frame = skin.region(SoniqueSkin.Mode.navigator.frame) else { return }
+        context.addRect(scene.canvas.cgRect)
+        context.addRects(frame.rects.map(\.cgRect))
+        context.clip(using: .evenOdd)
     }
 
     /// The open drawer's EQ slider handles (`SLIDEROFF`, `SLIDERON` while held), centred on their

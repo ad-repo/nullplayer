@@ -21,10 +21,13 @@ reshape it freely (Trigun is a cross, MintE a swirl), see the sample captures.
 
 **`0x000000` is transparent** in every picture, but inside the window Sonique paints black under
 it: only the outline is see-through. The key still matters for what is drawn over a picture (lit
-states, knob frames). The drawer sits behind the console: none of it shows inside `/rgn/nav/frame`,
-open or closed, the console's pure black included (padd, sonyque; #725). A lit state is opaque, as a
-knob is: its pure black is black, not the unlit button under it (zSonique; #726). Authors use a near-black. Measured by the oracle sweep:
-filling the outline black first took shape-exact captures from 86/93/146 to 512/519/492 of 524.
+states, knob frames). Authors use a near-black. Measured by the oracle sweep: filling the outline
+black first took shape-exact captures from 86/93/146 to 512/519/492 of 524.
+
+- **The drawer sits behind the console**: none of it shows inside `/rgn/nav/frame`, open or closed,
+  the console's pure black included (padd, sonyque).
+- **A lit state is opaque**, as a knob is: its pure black is black, not the unlit button under it
+  (zSonique).
 
 ## Container
 
@@ -194,8 +197,8 @@ in the drawer's own pixels, moved with it:
 | the tab that opens and closes it | `/rgn/nav/drawertop` |
 
 The window keeps room for the drawer open, as small mode's does for its drawers. NullPlayer maps the
-sliders to the 21-band layout, slider n to band n with no slider on the 20 kHz shelf (#727), amp to the preamp, bal to balance and pitch to playback
-speed over NullPlayer's own range (`SoniqueSkinAudioEngineHost.setDial`; decision record § *Control
+sliders to the 21-band layout, slider n to band n with no slider on the 20 kHz shelf, amp to the
+preamp, bal to balance and pitch to playback speed over NullPlayer's own range (`SoniqueSkinAudioEngineHost.setDial`; decision record § *Control
 mapping*).
 
 Measured against the oracle's screen 6 (S14, sonique, BlueEyes, k2): the open drawer's outline is
