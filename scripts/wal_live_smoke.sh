@@ -33,7 +33,7 @@ TSV="$OUT/smoke.tsv"
 : >"$TSV"
 
 for SKIN in "${SKINS[@]}"; do
-    NAME=$(basename "${SKIN%.*}")
+    NAME=$(basename -- "${SKIN%.*}")
     LOG="$OUT/$NAME.log"
     if ! WINAMP_MODERN_DEBUG_CLICK=auto skills/app-control/scripts/launch.sh "$SKIN" --log "$LOG" >/dev/null; then
         echo "$NAME: LAUNCH FAIL (see $LOG.build)"; continue

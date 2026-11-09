@@ -255,8 +255,9 @@ final class WinampModernDebugClickSweep {
     private func closeLibrary() {
         let manager = WindowManager.shared
         guard let view, let window = view.window,
-              let close = targets.first(where: { $0.action == "CLOSE" }),
-              let point = Self.point(on: close.object, in: view) else {
+              // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
+              let (close, point) = targets.lazy.filter({ $0.action == "CLOSE" })
+                  .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first else {
             Self.log(["window": "library", "idx": "close", "note": "no-close-control", "changed": "-"])
             if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
             return finish()
