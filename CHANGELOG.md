@@ -166,7 +166,6 @@
 - **A `.wal` visualization can be switched back from Cava or vis_classic** to the skin's own Spectrum Analyzer or Oscilloscope from its right-click menu.
 - **Dragging a `.wal` window by its visualization no longer also changes the visualization's mode.**
 
-
 ### Sonique skins
 
 - **Sonique's closed EQ drawer no longer shows through the player.** On padd, sonyque, DE_StarTrek-LCARS and other skins, the drawer's sliders and icons showed through the black parts of the player while it was closed; they are black now, as Sonique draws them.
