@@ -149,6 +149,19 @@
 - **A `.wal` visualization can be switched back from Cava or vis_classic** to the skin's own Spectrum Analyzer or Oscilloscope from its right-click menu.
 - **Dragging a `.wal` window by its visualization no longer also changes the visualization's mode.**
 
+- **25 more skins checked** (corpus intake eight): AR-7, Catwoman, cPro: Wii, cPro SC, CyclopVX-1,
+  EIV2, Fast And The Furious, Fast And The Furious 4, FreddyvsJason, GlassAMP, Heroes, Just Buttons,
+  Lara Flynn Boyle - The Devil Inside, Lithium, MacOSesque, Narnia, Nokia 5800 XpressMusic,
+  Olimpiadas, Pax, Pixelated, PokerGods, Remote, Side Amp, Thanog, Turner Classic Movies.
+- **Tokyo_Drift's transport buttons take clicks**: a faded-out animation no longer covers them.
+- **AR-7's player shows its whole body**, including the Media Library button and readout at its right edge.
+- **Lithium's drawer slides open and closed on screen** instead of sending the player off the right of the screen.
+- **EI_V2's clock fits its display.** A font the skin ships but does not declare is used, a remaining
+  time sits flush in its slot, and a clock too wide for its box shrinks to fit instead of losing its digits.
+- **Just_Buttons' drawer closes without leaving a pink edge.**
+- **Small pixel-font labels sit in their own space** (Lara Flynn Boyle's control labels no longer touch the control above).
+- **Olimpiadas' now-playing notifier opens in the corner of the screen** the first time, not in the middle.
+
 ### Sonique skins
 
 - **Sonique's closed EQ drawer no longer shows through the player.** On padd, sonyque, DE_StarTrek-LCARS and other skins, the drawer's sliders and icons showed through the black parts of the player while it was closed; they are black now, as Sonique draws them.
