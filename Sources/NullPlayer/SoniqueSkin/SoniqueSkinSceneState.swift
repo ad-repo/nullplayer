@@ -14,6 +14,9 @@ struct SoniqueSkinHostState: Equatable {
     var listProgress = 0.0
     /// 1-based; 0 with nothing loaded.
     var trackNumber = 0
+    /// Whether a track is loaded: the oracle captured none, and with none mid mode's rings and top
+    /// window are the picture, with no vis over it.
+    var trackLoaded: Bool { trackNumber > 0 }
     var elapsedSeconds = 0
     /// The hundredths past `elapsedSeconds`, which the visual mode screen's clock shows.
     var elapsedHundredths = 0

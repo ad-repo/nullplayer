@@ -53,13 +53,13 @@ extension SoniqueSkinScene {
     }
 
     /// The effects surface's area, nil where none shows: the visual mode panel's well cut to the
-    /// display, or mid mode's top window, where Sonique draws its vis under the window balls
-    /// (issue #729), cut to `/rgn/mid/top` less the balls.
+    /// display, or mid mode's top window while a track is loaded, where Sonique draws its vis under
+    /// the window balls (issue #729), cut to `/rgn/mid/top` less the balls.
     var effectsArea: EffectsArea? {
         if let display = visualScreenDisplay {
             return EffectsArea(rect: VisualScreen.effects.offset(display.bounds.left, display.bounds.top), shape: display.rects)
         }
-        guard state.mode == .mid, let top = region(for: .vis) else { return nil }
+        guard state.mode == .mid, state.host.trackLoaded, let top = region(for: .vis) else { return nil }
         return EffectsArea(rect: top.bounds, shape: top.rects, holes: ballRects.map(\.1))
     }
 }

@@ -305,7 +305,9 @@ final class SoniqueSkinMainView: NSView {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        if let effects, effects.frame.contains(convert(event.locationInWindow, from: nil)) { return effects.buildMenu() }
+        let point = convert(event.locationInWindow, from: nil)
+        if let effects, let scene, let area = effectsLayout?.area, effects.frame.contains(point),
+           !area.holes.contains(where: { viewRect($0, in: scene).contains(point) }) { return effects.buildMenu() }
         return ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false)
     }
 

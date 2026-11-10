@@ -87,15 +87,11 @@ extension SoniqueSkinPainter {
         return context.makeImage()
     }
 
-    /// Whether a track is loaded: the oracle captured none, and with none the rings and the top window
-    /// are the picture.
-    private var trackLoaded: Bool { host.trackNumber > 0 }
-
     func mid() {
         picture()
         // With a track loaded the top window is the vis's, drawn on black (issue #729's captures of
         // Sonique); with none it is the picture, as the oracle draws it.
-        if trackLoaded, let top = scene.region(for: .vis) {
+        if host.trackLoaded, let top = scene.region(for: .vis) {
             context.setFillColor(CGColor(gray: 0, alpha: 1))
             context.fill(top.rects.map(\.cgRect))
         }
@@ -116,7 +112,7 @@ extension SoniqueSkinPainter {
     /// the gradient at each dot's place, the rest by `ProgressBkColor`. With nothing loaded the ring
     /// is the picture, as the oracle draws it (a flat `ProgressBkColor` there made 239 mid captures worse).
     private func ring(_ control: SoniqueSkinControl, progress: Double, sweep: Double, gradient: SoniqueProgressGradient) {
-        guard trackLoaded, let region = scene.region(for: control) else { return }
+        guard host.trackLoaded, let region = scene.region(for: control) else { return }
         context.saveGState()
         clip(to: region.rects)
         context.setBlendMode(.multiply)

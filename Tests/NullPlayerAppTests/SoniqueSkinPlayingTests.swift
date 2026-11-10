@@ -69,6 +69,29 @@ final class SoniqueSkinPlayingTests: XCTestCase {
         }
         XCTAssertGreaterThan(lit, 0)
         XCTAssertGreaterThan(unlit, 0)
+
+        // Filled, half way round is `ProgressColor_2` and the end `_3`, each times the picture.
+        let full = try Pixels(scene(.mid, loaded(song: 1)))
+        for (stop, range) in [(SoniqueColour.progressColor2, 0.49...0.51), (.progressColor3, 0.97...0.99)] {
+            let c = skin.settings.colour(stop)
+            let tint = (r: Int(c >> 16 & 0xFF), g: Int(c >> 8 & 0xFF), b: Int(c & 0xFF))
+            var seen = 0
+            for rect in ring.rects {
+                for y in rect.top..<rect.bottom {
+                    for x in rect.left..<rect.right {
+                        let p = picture.rgb(x, y)
+                        let turn = (atan2(Double(x) + 0.5 - cx, cy - Double(y) - 0.5) / (2 * .pi) + 1).truncatingRemainder(dividingBy: 1)
+                        guard p.b > 10, range.contains(turn) else { continue }
+                        seen += 1
+                        let q = full.rgb(x, y)
+                        for (got, want) in [(q.r, p.r * tint.r / 255), (q.g, p.g * tint.g / 255), (q.b, p.b * tint.b / 255)] {
+                            XCTAssertEqual(got, want, accuracy: 12, "\(stop) \(x),\(y)")
+                        }
+                    }
+                }
+            }
+            XCTAssertGreaterThan(seen, 0, "\(stop)")
+        }
     }
 
     /// #729: with a track loaded mid mode's top window is black under the effects surface, which
@@ -79,6 +102,7 @@ final class SoniqueSkinPlayingTests: XCTestCase {
         let area = try XCTUnwrap(playing.effectsArea)
         XCTAssertEqual(area.rect, top.bounds)
         XCTAssertEqual(area.holes, playing.ballRects.map(\.1))
+        XCTAssertNil(scene(.mid, .init()).effectsArea)
         XCTAssertNil(scene(.navigator, loaded()).effectsArea)
         XCTAssertNotNil(scene(.navigator, loaded(), screen: .visualMode).effectsArea)
 
