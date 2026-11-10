@@ -675,6 +675,9 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #8 picked 2026-11-09** (`feat/wal-intake-8`, rev `b6a8f81d`) by `wal_intake_pick.sh`, no
   crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 704 bronze, 0 quarantine.** Batch:
   cPro_SC, The_Chronicles_of_Narnia, Cyclop_VX1, sa, AR-7, Pixelated, Tokyo_Drift, MacOSesque_v1_2, PokerRoyalFlush, Just_Buttons, Thanog_, Lara_Flynn_Boyle_The_D3vil_Inside, GlassAMP2, Nokia_5800_XPressMusic_by_techmafia_1, Freddy_vs_Jason, Fast__Furious_Winamp5_Skin, Wii, Pax_Amp, Turner_Classic_Movies_Winamp5_Skin, remote, Heroes, Catwoman_Winamp5_Skin, -Lithium-, EI_V2, Olimpiadas (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #9 picked 2026-11-09** (`feat/wal-intake-9`, rev `47b00c7b`) by `wal_intake_pick.sh`, no
+  crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 679 bronze, 0 quarantine.** Batch:
+  GUILTY_GEAR_XX_WINAMP5_SKIN, _Scythe, Official_Dawsons_Creek_Series_Skin, NaturallZ, IPHONE_THEME_ALBUM_ART_SUPPORT, LCD_hm1_m, Artzar, Jpod, Dr_Who_--_Monsters_and_Villains, Simplistic_Vision_2, MERCURY_1.0F, blackwhite_version1, Minima, AmpTunes_III, Enter_the_Matrix, Official_Go_Army_Winamp5_Skin, Lapis_Lazuli, Nokia_7210_Amp, HUD, Lou_Reed_-_The_Raven, cPro2__HOLOlike, ipamp14, LiquidStar, HardHouseCafeAmp, Helloween (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
