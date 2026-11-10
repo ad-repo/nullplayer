@@ -111,6 +111,30 @@ final class WinampModernB139Tests: XCTestCase {
                        "`shade` links `normal`, not `mini`, so it opens on its own declared width")
     }
 
+    /// AmpTunes_III rings its four tab layouts (Media→Visual→Video→Online→Media) on `linkwidth` and
+    /// `linkheight`: Visual names Video, not Media, yet the tab switch keeps the window's whole size.
+    func testAChainOfLinksSharesTheSizeAcrossEveryLayoutItReaches() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="media" w="660" h="432" minimum_w="300" minimum_h="200" linkwidth="visual" linkheight="visual"/>
+            <layout id="visual" w="660" h="432" minimum_w="300" minimum_h="200" linkwidth="video" linkheight="video"/>
+            <layout id="video" w="660" h="432" minimum_w="300" minimum_h="200" linkwidth="media" linkheight="media"/>
+          </container>
+        </WasabiXML>
+        """)
+        let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: TestHost())
+        addTeardownBlock { renderer.teardown() }
+        _ = renderer.resize(to: CGSize(width: 900, height: 600))
+
+        _ = try renderer.activateLayout(id: "visual")
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 900, height: 600))
+        _ = renderer.resize(to: CGSize(width: 1000, height: 700))
+        _ = try renderer.activateLayout(id: "media")
+        XCTAssertEqual(renderer.canvasSize, CGSize(width: 1000, height: 700),
+                       "a resize in one tab carries back to a tab already seen")
+    }
+
     // MARK: - What must not change
 
     /// A remembered size is still the layout's to clamp. A window left wider than a layout allows

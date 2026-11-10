@@ -165,7 +165,10 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// track would.
     func playlistAppend(mediaAt url: URL, play: Bool) {
         let row = engine.playlist.count
-        engine.appendTracks([Track(lightweightURL: url)])
+        // A bare stream address has no file name to title it by — Helloween's nose plays
+        // `http://83.170.113.110:8080` — so the row is named by the address, not left blank.
+        let named = Track(lightweightURL: url)
+        engine.appendTracks([named.title.isEmpty ? Track(url: url, title: url.absoluteString) : named])
         guard play, row < engine.playlist.count else { return }
         selectedRow = row
         selectedRows = [row]

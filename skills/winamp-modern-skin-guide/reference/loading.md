@@ -380,6 +380,19 @@ Group semantics worth knowing:
   attributes; a groupdef: XUI tag, `inherit_group`, `embed_xui`, defaults and the whole template
   subtree via `WalXMLNode.isStructurallyEqual(to:)`), with the source location ignored. Corpus:
   1343 → 851 diagnostic occurrences over the 30 skins then installed, and every differing redefinition still reported.
+- A redefined **bitmap** is later-wins (the registry has one entry per id), which is what Winamp 5
+  skins are written against: cPro-Bento's `custom-element-overide.xml`, included after the
+  ClassicPro engine's `load.xml`, is the skin's look, and SpongeBob_Squarepants (`version="1.2"`)
+  redefines `main.vol.*` for its EQ shade. **A document declaring `<WinampAbstractionLayer
+  version>` below 1 takes the definition in effect where each container is declared** (B401,
+  `WasabiWinamp3BitmapScope`): an attribute naming a redefined id is pointed at a private
+  `<id>@winamp3.<order>` copy of the earlier definition. Lapis_Lazuli (`0.8`) defines `glass` as its
+  dome sheen before the player and as a 195x21 bar in `standardframe.xml` after it, and its Winamp3
+  screenshot shows the sheen. `0.8` is not Winamp3-only (141 of 315 gold+silver skins declare it,
+  T800 and Bio-Nid among them), but the rule changes the resolution in 4 of them and the render in
+  Lapis and a 3px corner of NightWing_II's playlist. Rewritten once at load: a script's
+  `setXmlParam("image", id)` still gets the last definition. A rule keyed on that version for
+  anything wider, such as clipping a layout to its backing, reached 97 skins and was reverted (B411).
 - `registerWasabiStandardLibrary` seeds the curated `wasabi.*` base groups that ship inside Winamp
   rather than in the archive. Skin/engine definitions register first and always win. A base outside
   the curated set warns and is dropped rather than failing the load.

@@ -58,6 +58,8 @@ final class WinampModernFrames {
     var drawsDirectly: Bool { target == .direct }
     /// The newest outline a frame reported, for the drop shadow (`WinampModernMainView+Shadow`).
     private(set) var outline: CGImage?
+    /// The newest outline's enclosed holes, which catch a press (`WinampModernHoles`).
+    private(set) var holes: WinampModernHoles?
 
     /// Whether anyone can see the window, from its occlusion (`WinampModernMainView`).
     ///
@@ -168,6 +170,7 @@ final class WinampModernFrames {
         guard let frame else { return }
         if let outline = frame.outline {
             self.outline = outline
+            holes = frame.holes
             NotificationCenter.default.post(name: .winampModernOutlineDidChange, object: nil)
         }
         present(frame, rects)
@@ -230,6 +233,36 @@ extension WinampModernMainView {
         if layer.contentsScale != scale { layer.contentsScale = scale }
         if layer.contentsGravity != .bottomLeft { layer.contentsGravity = .bottomLeft }
         layer.contents = frame.picture
+        if frame.outline != nil { presentHoleBacking(frame.holes?.backing, in: layer, scale: scale) }
+    }
+
+    /// The near-invisible fill that keeps a press in a hole of the window (`WinampModernHoles`). The
+    /// lowest sublayer, so it sits over the picture — where it has pixels the picture has none — and
+    /// under every hosted surface.
+    private static let holeBackingName = "wal.holes"
+
+    /// Whether the hole backing is on screen: the intake smoke's check that holes catch a press.
+    var showsHoleBacking: Bool {
+        layer?.sublayers?.contains { $0.name == Self.holeBackingName && $0.contents != nil } == true
+    }
+
+    private func presentHoleBacking(_ backing: CGImage?, in layer: CALayer, scale: CGFloat) {
+        let name = Self.holeBackingName
+        guard let backing else {
+            layer.sublayers?.first { $0.name == name }?.removeFromSuperlayer()
+            return
+        }
+        let holes = layer.sublayers?.first { $0.name == name } ?? {
+            let holes = CALayer()
+            holes.name = name
+            holes.contentsGravity = .bottomLeft
+            holes.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+            layer.insertSublayer(holes, at: 0)
+            return holes
+        }()
+        holes.frame = layer.bounds
+        holes.contentsScale = scale
+        holes.contents = backing
     }
 
     /// The scene recorded for `rects` (canvas pixels).

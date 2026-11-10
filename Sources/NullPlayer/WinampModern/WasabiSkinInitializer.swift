@@ -701,6 +701,7 @@ final class WasabiSkinInitializer {
                           pendingScripts: &pendingScripts, pendingMetaCommands: &pendingMetaCommands,
                           definitionStack: [], createdCount: &createdCount,
                           documentOrder: documentOrder, enclosingOrder: nil)
+        WasabiWinamp3BitmapScope.apply(roots: document.roots, graph: graph, resources: resources)
         applyMetaCommands(pendingMetaCommands)
         try addPlaylistCommandBars(beneath: graph.roots, graph: graph, types: types,
                                    pendingScripts: &pendingScripts,

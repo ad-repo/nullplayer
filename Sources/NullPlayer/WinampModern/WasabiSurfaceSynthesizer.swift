@@ -222,7 +222,11 @@ enum WasabiSurfaceSynthesizer {
         if let declared = containerHosting(group: aboutGroupIdentifier, in: document.roots) {
             return AboutRoute(containerID: declared)
         }
+        // B366's fallback frame draws its border over the bottom of the 380x321 page (pumaSKIN's
+        // version line), so the page keeps NullPlayer's chrome there.
         switch frame {
+        case .success(let frame) where frame.filledByInitializer:
+            return AboutRoute(containerID: aboutContainerIdentifier, nodes: [makeAboutContainer(frame: nil)])
         case .failure(let reason):
             return AboutRoute(containerID: aboutContainerIdentifier,
                               nodes: [makeAboutContainer(frame: nil)],
@@ -375,6 +379,9 @@ enum WasabiSurfaceSynthesizer {
         /// (`clientInsets(of:definitions:)`). Nil where the skin states no client rect, and for an
         /// exemplar frame, whose border is the exemplar's.
         let clientInsets: ClientInsets?
+        /// A frame with artwork and no content script, whose client the initializer fills (B366).
+        /// Its border is unmeasured, so a fixed-size page (the About page) is not put inside it.
+        var filledByInitializer = false
 
         init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
              exemplar: FrameExemplar? = nil, clientInsets: ClientInsets? = nil) {
@@ -499,19 +506,14 @@ enum WasabiSurfaceSynthesizer {
         -> (playlist: FrameSelection, other: FrameSelection) {
         var reasons: [String] = []
         var declared: [(border: Double, order: Int, frame: Frame)] = []
+        // B366: frames with artwork and no content script. The initializer fills their client area
+        // itself (`WasabiStandardFrames.needsHostedContent`, B143), so they are a last resort before
+        // NullPlayer's own chrome — after an exemplar, which is the skin's own layout.
+        var filledByInitializer: [(border: Double, order: Int, frame: Frame)] = []
         var withPlaylistBar = Set<String>()
         for (order, flavour) in WasabiStandardFrames.Flavour.allCases.enumerated() {
             guard let definition = definitions[fold(flavour.groupIdentifier)] else {
                 reasons.append("\(flavour.rawValue): the skin declares no '\(flavour.groupIdentifier)'")
-                continue
-            }
-            // A frame builds its client area from `content=` in its own script. Without that script
-            // the window would be chrome around an empty hole — exactly what the artwork-less Wasabi
-            // shells produce.
-            guard hasContentScript(definition, definitions: definitions,
-                                   scriptReader: scriptReader) else {
-                reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
-                               + "that instantiates its content")
                 continue
             }
             guard !paintsOnlyTooltipArt(definition, definitions: definitions) else {
@@ -519,16 +521,26 @@ enum WasabiSurfaceSynthesizer {
                                + "tooltip artwork")
                 continue
             }
-            let frame = Frame(groupIdentifier: flavour.groupIdentifier,
+            var frame = Frame(groupIdentifier: flavour.groupIdentifier,
                               xuiTag: flavour.xuiTag,
                               hasArtwork: hasArtwork(definition, definitions: definitions),
                               exemplar: nil,
                               clientInsets: clientInsets(of: definition, definitions: definitions))
+            let entry = (border: Double(frame.chromeInset.width + frame.chromeInset.height),
+                         order: order, frame: frame)
+            // A frame builds its client area from `content=` in its own script.
+            guard hasContentScript(definition, definitions: definitions,
+                                   scriptReader: scriptReader) else {
+                reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
+                               + "that instantiates its content")
+                frame.filledByInitializer = true
+                if frame.hasArtwork { filledByInitializer.append((entry.border, order, frame)) }
+                continue
+            }
             if contains(definition, where: { $0.attribute("action")?.uppercased().hasPrefix("PE_") == true }) {
                 withPlaylistBar.insert(flavour.groupIdentifier)
             }
-            declared.append((border: frame.chromeInset.width + frame.chromeInset.height,
-                             order: order, frame: frame))
+            declared.append(entry)
         }
         // A frame that draws Add/Rem/Sel/Misc/List into its own chrome (LG_Free's status-bar frame)
         // is the playlist's; any other window takes a sibling frame when the skin has one.
@@ -541,7 +553,8 @@ enum WasabiSurfaceSynthesizer {
         let playlist = thinnest(barred.isEmpty || playlistBarOnAnyFrame ? declared : barred)
         let other = thinnest(plain.isEmpty || playlistBarOnAnyFrame ? declared : plain)
         if let playlist, let other { return (playlist, other) }
-        let fallback = exemplarFrame(in: definitions, document: document, reasons: reasons)
+        var fallback = exemplarFrame(in: definitions, document: document, reasons: reasons)
+        if case .failure = fallback, let filled = thinnest(filledByInitializer) { fallback = filled }
         return (playlist ?? fallback, other ?? fallback)
     }
 

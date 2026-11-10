@@ -961,10 +961,16 @@ final class WasabiSceneRenderer {
         // all three.
         canvasSizeByLayout[layout.stableID] = storedCanvasSize
         let previous = layout
+        let left = storedCanvasSize
         layout = next
-        let restored = canvasSizeByLayout[next.stableID]
-            ?? Self.linkedWidthCarry(into: next, from: previous, width: storedCanvasSize.width,
-                                     height: defaultSize(for: next).height)
+        var restored = canvasSizeByLayout[next.stableID]
+        let sharesWidth = Self.areLinked(previous, next, by: "linkwidth", among: layouts)
+        let sharesHeight = Self.areLinked(previous, next, by: "linkheight", among: layouts)
+        if sharesWidth || sharesHeight {
+            let own = restored ?? defaultSize(for: next)
+            restored = CGSize(width: sharesWidth ? left.width : own.width,
+                              height: sharesHeight ? left.height : own.height)
+        }
         storedCanvasSize = defaultSize(for: next)
         // A size this renderer is *restoring* is not one it chose, so the content fit must leave it
         // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
@@ -984,20 +990,27 @@ final class WasabiSceneRenderer {
     /// container that never leaves `normal` behaves exactly as it did.
     private var canvasSizeByLayout: [WasabiObjectID: CGSize] = [:]
 
-    /// Wasabi's `linkwidth`: two layouts that name each other share a width, so shading a window
-    /// keeps the width the user gave it and unshading gives it back. cPro's player declares the pair
-    /// (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`). Only consulted for a
-    /// layout being entered for the *first* time — after that its own remembered size is the better
-    /// answer, and it already carries the width.
-    private static func linkedWidthCarry(into next: WasabiObject, from previous: WasabiObject,
-                                         width: CGFloat, height: CGFloat) -> CGSize? {
-        guard let link = next.attributes["linkwidth"], !link.isEmpty,
-              previous.xmlID?.caseInsensitiveCompare(link) == .orderedSame else { return nil }
-        // Height is the entered layout's own business: its declared height, which `resize(to:)`
-        // then clamps to its limits, so `shade`'s `maximum_h="23"` still wins. Carried as 0 and left
-        // to the minimum, a shade that states `h="36"` and no `minimum_h` (CopperdeckII's player and
-        // equalizer) collapsed to a 1px strip.
-        return CGSize(width: width, height: height)
+    /// Wasabi's `linkwidth`/`linkheight`: a layout names another that shares its width (height), and
+    /// every layout a chain of links reaches shares it too, whichever side wrote the link. cPro's
+    /// player is a pair (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`), so
+    /// shading keeps the width; AmpTunes_III rings its four tabs (Media→Visual→Video→Online→Media,
+    /// width and height), so switching tab keeps the window's size. An axis that is not linked stays
+    /// the entered layout's own business, which `resize(to:)` clamps, so shade's `maximum_h="23"` wins.
+    private static func areLinked(_ from: WasabiObject, _ to: WasabiObject, by attribute: String,
+                                  among layouts: [WasabiObject]) -> Bool {
+        func key(_ id: String?) -> String { (id ?? "").lowercased() }
+        var neighbours: [String: Set<String>] = [:]
+        for layout in layouts {
+            guard let link = layout.attributes[attribute], !link.isEmpty else { continue }
+            neighbours[key(layout.xmlID), default: []].insert(key(link))
+            neighbours[key(link), default: []].insert(key(layout.xmlID))
+        }
+        var reached: Set<String> = [key(from.xmlID)]
+        var pending = [key(from.xmlID)]
+        while let current = pending.popLast() {
+            for next in neighbours[current] ?? [] where reached.insert(next).inserted { pending.append(next) }
+        }
+        return key(from.xmlID) != key(to.xmlID) && reached.contains(key(to.xmlID))
     }
 
     /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective

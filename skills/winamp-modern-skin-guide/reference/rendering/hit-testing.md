@@ -38,6 +38,23 @@ with the same answer: a group's `background` is its region whether it paints it 
 layer's artwork is, so the group is hit through that alpha always, and only an unpainted one also
 clips its children — a painted background already shows the shape the children sit on.
 
+#### A see-through hole in the body still catches the press (2026-11-10)
+
+The window server hands a press on an alpha-0 pixel to whatever is behind the window, before
+`hitTest` is ever asked. Outside the silhouette that is right, but LiquidStar's body has a
+see-through star at its centre, and a click there brought the app behind it to the front.
+`WinampModernHoles` (built by `WinampModernCanvas` whenever a frame changes the outline) flood-fills
+the alpha-0 pixels from the window's edge. Whatever stays unreached is a hole, and the view backs it
+with alpha-1 black in a sublayer under every hosted surface (`presentHoleBacking`), which the eye
+cannot see and the window server delivers. `hitTest` claims it (`self (hole)` under
+`WINAMP_MODERN_DRAG_TRACE=1`). `.wal` only. A hole that opens to the edge, such as a notch or a gap
+between two arms, is outside the window and stays click-through.
+
+**A container a script creates (`dynamic="1"`) backs no hole** (`Job.backsHoles`). Those are
+overlays: ipamp14's `cont.clear.ml` is a frame with a see-through client that its
+`standardframeML.m` keeps over the Media Library window, and the client is how the library shows
+and takes clicks. Backed, the whole 560x340 client caught every press meant for the library.
+
 #### Hit testing: who owns a point
 
 `object(at:)` walks the scene in reverse (`sceneNodes()` is a pre-order DFS, so reversing puts every

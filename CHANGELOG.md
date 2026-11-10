@@ -40,6 +40,25 @@
 - **Small pixel-font labels have room**, so they no longer sit against the control above them.
 - **A window a skin places itself, such as a now-playing notifier, opens where the skin puts it** the
   first time, not in the middle of the screen.
+- **25 more skins checked** (corpus intake nine): AmpTunes III, Artzar, blackwhite, Dawson's Creek,
+  Dr Who, Enter the Matrix, Go Army, Guilty Gear XX, HardHouseCafeAmp, Helloween, HOLO like, HUD,
+  iPAMP, iPhone Theme, Jpod, Lapis Lazuli, LCD hm1, LiquidStar, Lou Reed - The Raven, Mercury,
+  Minima, NaturallZ, Nokia 7210, Scythe, Simplistic Vision 2.
+- **Windows whose layouts are linked keep one size** when the skin switches between them, however
+  the links are chained.
+- **A layout switch that keeps the window's size shows the new layout's library and video panes**
+  instead of black.
+- **Video opens in the skin's own video tab** when another layout of the window holds it, instead
+  of a separate window first.
+- **A stream a skin starts from a button is listed by its address** in the playlist, not as a blank
+  entry.
+- **Clicks in a see-through hole inside a player's outline stay with the player** instead of going
+  to the app behind it.
+- **Skins whose own frame has no frame script open the Playlist and Library in that frame**, not in
+  NullPlayer's plain chrome.
+- **A skin's stock display panel is drawn** (`wasabi.window.embedded`), so text on it is readable.
+- **An early-format skin that defines one image twice uses the version its window was written
+  against.**
 
 ### Sonique skins
 

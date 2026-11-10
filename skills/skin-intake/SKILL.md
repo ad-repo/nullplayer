@@ -77,8 +77,9 @@ Two checks per skin, plus the look, all live with a track playing, all by script
    `scripts/wal_live_smoke.sh <skin>… --out <dir>`. It clicks and drags every main-window control
    (volume, transport, seek, track, EQ, layout, windows), then opens the Library from the Windows
    menu, clicks its controls and presses its own close. Its summary line per skin reads
-   `main <n> clicked, <k> nochange, …; library <kind>, …, close <closed|nochange>`; the TSV has a
-   row per control (`harness.md` § *Driving a click in the running app*).
+   `main <n> clicked, <k> nochange, …; library <kind>, …, close <closed|nochange>`, plus
+   `; holes in <window> <backed|unbacked> (pixels=<n>)` for a window with see-through holes inside
+   its outline; the TSV has a row per control (`harness.md` § *Driving a click in the running app*).
 3. **The look of every window**: `skills/app-control/scripts/window-census.sh <skin>… --shots --out
    <dir>`, in chunks that fit a 10-minute call (about 35 s a skin), then `scripts/review_sheet.py`
    per skin, `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. Open every sheet
@@ -93,6 +94,10 @@ Read the smoke table, not the app. What counts as a defect:
   only effect is pixels (a lamp, a readout) reads `nochange` and is judged on the sheet instead.
 - `library plain-chrome` where the skin declares a library frame, `not-opened`, or `close nochange`
   / `no-close-control` on a skin-frame Library.
+- `holes … unbacked`: a click in that see-through hole goes to the app behind the player
+  (`reference/rendering/hit-testing.md` § *A see-through hole in the body still catches the press*).
+  `backed` is the fix working, so a backed hole is not a defect; name the skin in the hand-over so
+  the user can try a click in it.
 
 The smoke cannot see right-click menus, double-clicks, drags on non-slider layers, or the main
 window's own close, minimize, quit and eject (skipped so the run survives). Those are not checked

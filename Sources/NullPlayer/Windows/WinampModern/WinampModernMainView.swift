@@ -407,6 +407,10 @@ final class WinampModernMainView: NSView {
         // A different layout declares a different height, which is what `auto` Text Size is keyed on.
         pushLibraryContentScale()
         matchResizableMaskToLayout()
+        // The new layout's holders mount in `layout()`, which AppKit runs on its own only when the
+        // frame size changed. AmpTunes_III's four tabs share one size, so a switch left the content
+        // area black.
+        needsLayout = true
         needsDisplay = true
         return true
     }
@@ -988,8 +992,11 @@ final class WinampModernMainView: NSView {
         // Dronev11's compact player is ghost artwork from edge to edge and could not be dragged
         // anywhere. The press itself is routed by `pressTarget`.
         let visible = renderer.containsVisiblePixel(at: skin, includingGhosts: true)
-        traceHitTest(point, verdict: visible ? "self (pixel)" : "nil (no visible pixel)")
-        return visible ? self : nil
+        // A see-through hole inside the outline is still the window (`WinampModernHoles`).
+        let scale = window?.backingScaleFactor ?? 1
+        let inHole = !visible && frames.holes?.contains(x: Int(point.x * scale), y: Int(point.y * scale)) == true
+        traceHitTest(point, verdict: visible ? "self (pixel)" : inHole ? "self (hole)" : "nil (no visible pixel)")
+        return visible || inHole ? self : nil
     }
 
     private func traceHitTest(_ point: NSPoint, verdict: String) {
