@@ -4,61 +4,68 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **Tuneup_v1's Playlist opens** from its playlist toggle and from the Windows menu, inline in the
-  skin's own window. Its script shows the playlist only when asked where the component goes
-  (`onLookForComponent`), which NullPlayer now asks when the skin's other handler leaves none on screen.
+- **50 more skins checked** (corpus intakes eight and nine): AmpTunes III, AR-7, Artzar, blackwhite,
+  Catwoman, cPro: Wii, cPro SC, CyclopVX-1, Dawson's Creek, Dr Who, EIV2, Enter the Matrix, Fast And
+  The Furious, Fast And The Furious 4, FreddyvsJason, GlassAMP, Go Army, Guilty Gear XX,
+  HardHouseCafeAmp, Helloween, Heroes, HOLO like, HUD, iPAMP, iPhone Theme, Jpod, Just Buttons, Lapis
+  Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1, Lithium, LiquidStar, Lou Reed - The Raven,
+  MacOSesque, Mercury, Minima, Narnia, NaturallZ, Nokia 5800 XpressMusic, Nokia 7210, Olimpiadas,
+  Pax, Pixelated, PokerGods, Remote, Scythe, Side Amp, Simplistic Vision 2, Thanog, Turner Classic
+  Movies.
 
-- **`.wal` animations that a skin plays over a frame range keep looping** until the skin stops them,
-  unless the layer says `autoreplay="0"`. Hitchhikers_Guide's robot dances for its 20 seconds after a
-  click or a Play instead of one pass, and the "animate while playing" layers of jvc.tape, Shield_Amp,
-  MBOS and eight more skins keep moving.
+#### Windows and layouts
 
-- **CC_Red_Aler_2's equalizer sliders work.** A band slider a skin's own script handles reads its position as 0...255, as that script assumes, so a drag sets its band and moves its dynamite stick instead of being overwritten.
-- **Clicking Kyoko_Fukada's eye cycles its visualization**, and a click on any `.wal` `<vis>` box with no action of its own steps analyzer, oscilloscope and off.
-- **Project_DU_Television's TV face takes clicks** once its start-up animation ends: a once-only animation the skin plays from markup now reports its frames, so the skin hides the finished layer that was covering the face.
-- **Wurlitzer's shade button closes its floating visualization window**, and its cover window's title ticker sits in its own box beside the transport buttons instead of under them. A skin's `main.onSwitchToLayout` now hears the user's layout switch, and `getObject` answers the nearest object with an id before a nested one (Kepler_1.1's volume bar on its AVS and Video windows now follows the volume).
-- **Wurlitzer's visualization shows only through the jukebox grille's holes, with the player's ironwork over it.** The skin's `avs` backdrops (hidden and shown as layouts of one window) no longer ride on top of the player after the vis button is clicked, a click, a drag or a shade; hiding a layout the window is not showing no longer closes the window, and showing one switches the window to it.
-- **Winamp-2006's bottom band draws in full.** The transport buttons, volume and bass/treble under the seek bar were clipped away to a 10px strip because the band's box was sized to its 10px background tile; a group that paints a background tile and states a width but no height is now as tall as its content.
-- **Wurlitzer's visualization stays glued under the jukebox.** It opens behind the grille the first time, moves with the player in one piece when dragged, goes into the Dock with the player instead of on a tile of its own, and is back and running after a restore. Coming back from shade mode brings the grille's backing back too, so clicks through its holes no longer fall through to the desktop.
-- **Wurlitzer's dome analyzer lights across its whole width.** Narrow analyzer boxes draw their bars edge to edge, so none of them hide behind the dot grid the skin lays over them.
-- **A `.wal` visualization can be switched back from Cava or vis_classic** to the skin's own Spectrum Analyzer or Oscilloscope from its right-click menu.
-- **Dragging a `.wal` window by its visualization no longer also changes the visualization's mode.**
-
-- **25 more skins checked** (corpus intake eight): AR-7, Catwoman, cPro: Wii, cPro SC, CyclopVX-1,
-  EIV2, Fast And The Furious, Fast And The Furious 4, FreddyvsJason, GlassAMP, Heroes, Just Buttons,
-  Lara Flynn Boyle - The Devil Inside, Lithium, MacOSesque, Narnia, Nokia 5800 XpressMusic,
-  Olimpiadas, Pax, Pixelated, PokerGods, Remote, Side Amp, Thanog, Turner Classic Movies.
-- **Buttons under a hidden animation take clicks.** An animation a skin has faded out no longer
-  covers the controls beneath it.
 - **A shaped player window shows its whole body**, when its artwork and controls run past the size
   the skin declares.
-- **Sliding drawers and panels stay on screen**, and a skin's own control in the window's corner is
-  no longer taken for the close button.
-- **Clocks fit their displays.** A font the skin ships without declaring it is used, a remaining time
-  sits flush in its slot, and a clock too wide for its box shrinks to fit instead of losing digits.
-- **A panel that slides shut closes fully**, without leaving a one-pixel edge of the art behind it.
-- **Small pixel-font labels have room**, so they no longer sit against the control above them.
-- **A window a skin places itself, such as a now-playing notifier, opens where the skin puts it** the
-  first time, not in the middle of the screen.
-- **25 more skins checked** (corpus intake nine): AmpTunes III, Artzar, blackwhite, Dawson's Creek,
-  Dr Who, Enter the Matrix, Go Army, Guilty Gear XX, HardHouseCafeAmp, Helloween, HOLO like, HUD,
-  iPAMP, iPhone Theme, Jpod, Lapis Lazuli, LCD hm1, LiquidStar, Lou Reed - The Raven, Mercury,
-  Minima, NaturallZ, Nokia 7210, Scythe, Simplistic Vision 2.
 - **Windows whose layouts are linked keep one size** when the skin switches between them, however
   the links are chained.
 - **A layout switch that keeps the window's size shows the new layout's library and video panes**
   instead of black.
-- **Video opens in the skin's own video tab** when another layout of the window holds it, instead
-  of a separate window first.
-- **A stream a skin starts from a button is listed by its address** in the playlist, not as a blank
-  entry.
-- **Clicks in a see-through hole inside a player's outline stay with the player** instead of going
-  to the app behind it.
+- **Sliding drawers and panels stay on screen and close fully**, without a one-pixel edge of the art
+  left behind, and a skin's own control in the window's corner is no longer taken for the close button.
+- **A window a skin places itself, such as a now-playing notifier, opens where the skin puts it** the
+  first time, not in the middle of the screen.
 - **Skins whose own frame has no frame script open the Playlist and Library in that frame**, not in
-  NullPlayer's plain chrome.
+  NullPlayer's plain chrome. Tuneup_v1's Playlist opens inline in the skin's window, from its toggle
+  and from the Windows menu.
+- **Video opens in the skin's own video tab** when another layout of the window holds it, instead of
+  a separate window first.
+
+#### Drawing
+
 - **A skin's stock display panel is drawn** (`wasabi.window.embedded`), so text on it is readable.
+- **A band that paints a background tile and states only a width is as tall as its content**, so
+  Winamp-2006's transport, volume and tone controls under the seek bar draw in full.
+- **Clocks fit their displays.** A font the skin ships without declaring it is used, a remaining time
+  sits flush in its slot, and a clock too wide for its box shrinks to fit instead of losing digits.
+- **Small pixel-font labels have room**, so they no longer sit against the control above them.
 - **An early-format skin that defines one image twice uses the version its window was written
   against.**
+- **Animations a skin plays over a frame range keep looping** until the skin stops them, unless the
+  layer says `autoreplay="0"` (Hitchhikers_Guide's robot, jvc.tape, Shield_Amp, MBOS and more).
+
+#### Clicks and controls
+
+- **Buttons under a hidden or finished animation take clicks** (Project_DU_Television's TV face).
+- **Clicks in a see-through hole inside a player's outline stay with the player** instead of going
+  to the app behind it.
+- **Equalizer sliders a skin's script drives work**: the script reads 0...255, as it assumes
+  (CC_Red_Aler_2).
+- **A stream a skin starts from a button is listed by its address** in the playlist, not as a blank
+  entry.
+- **A skin hears the user's layout switches** (`onSwitchToLayout`), and `getObject` answers the nearest
+  object with an id first, so Kepler_1.1's volume bars follow the volume.
+
+#### Visualizations
+
+- **A click on a `<vis>` with no action of its own cycles analyzer, oscilloscope and off**
+  (Kyoko_Fukada's eye), and dragging the window by it no longer also changes the mode.
+- **A skin's visualization can be switched back from Cava or vis_classic** to its own Spectrum
+  Analyzer or Oscilloscope from the right-click menu.
+- **Narrow analyzers draw their bars edge to edge.**
+- **Wurlitzer's visualization stays under the jukebox grille**, showing through its holes with the
+  ironwork over it: it opens there, moves and docks with the player, survives a restore and a shade,
+  and the shade button closes it. Its cover window's title ticker sits beside the transport buttons.
 
 ### Sonique skins
 
