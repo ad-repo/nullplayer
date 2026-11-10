@@ -1271,6 +1271,7 @@ final class WasabiSkinInitializer {
         "wasabi.frame",
         "wasabi.objectframe",
         "wasabi.objectframe.group",
+        "wasabi.window.embedded",
         // Text
         "wasabi.text",
         "wasabi.text.group",
@@ -1345,6 +1346,13 @@ final class WasabiSkinInitializer {
                 id: "wasabi.objectframe.grid",
                 prefix: "wasabi.objectframe",
                 middle: "wasabi.objectframe.center"
+            )]
+        case "wasabi.window.embedded":
+            // Minima's display panel: the nine `wasabi.window.*` bitmaps, centre in `Display Backgrounds`.
+            return [standardLibraryGrid(
+                id: "wasabi.window.embedded.grid",
+                prefix: "wasabi.window",
+                middle: "wasabi.window.center"
             )]
         case "wasabi.titlebar":
             return [titleTextNode(height: nil)]
