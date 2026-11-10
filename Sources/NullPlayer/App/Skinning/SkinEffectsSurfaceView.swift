@@ -36,6 +36,8 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private let cavaPresenter: CavaPresenter
     private let visClassicWaveform: WinampModernWaveformTap
     private var visClassicBridge: VisClassicBridge?
+    /// The width the bridge's reference was last set to.
+    private var visClassicWidth = 0
     private var visClassicBytes: [UInt8] = []
     /// The GL engines are pulled, not pushed: the view is never in the hierarchy, its display link
     /// never starts, and this timer asks it for one frame at a time. 30fps rather than 60 because
@@ -431,13 +433,19 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
 
     private func visClassicBridge(width: Int, height: Int) -> VisClassicBridge? {
         if let visClassicBridge {
-            visClassicBridge.setReferenceWidth(width)
+            // Only on a new width: setting it clears the effects' ghosts, so Shadow and Smoke never
+            // built up when it was set every frame (#735).
+            if visClassicWidth != width {
+                visClassicBridge.setReferenceWidth(width)
+                visClassicWidth = width
+            }
             return visClassicBridge
         }
         guard let made = VisClassicBridge(width: width, height: height, scope: selection.visClassicScope) else {
             return nil
         }
         made.setReferenceWidth(width)
+        visClassicWidth = width
         applyVisClassicSkinDefault()
         made.reloadPersistedSettings()
         // This is an overlay, not a standalone analyzer canvas. Profiles may specify a black

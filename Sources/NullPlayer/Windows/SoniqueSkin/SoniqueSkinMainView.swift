@@ -119,12 +119,11 @@ final class SoniqueSkinMainView: NSView {
         layoutEffects()
     }
 
-    /// The effects surface over the visual mode panel's well, cut to the display as the panel is.
-    /// Placed again only when the window's size moves it; a new skin starts a new surface.
+    /// The effects surface over `SoniqueSkinScene.effectsArea`. Placed again only when the window's
+    /// size or mode moves it; a new skin starts a new surface.
     private func layoutEffects() {
-        guard let scene, let display = scene.visualScreenDisplay else { return dropEffects() }
-        let well = SoniqueSkinScene.VisualScreen.effects.offset(display.bounds.left, display.bounds.top)
-        let frame = viewRect(well, in: scene)
+        guard let scene, let area = scene.effectsArea else { return dropEffects() }
+        let frame = viewRect(area.rect, in: scene)
         if effects?.frame == frame { return }
         let surface = effects ?? SkinEffectsSurfaceView(frame: frame, selection: .sonique)
         if effects == nil {
@@ -133,7 +132,7 @@ final class SoniqueSkinMainView: NSView {
             surface.setActive(state.host.playState == .playing)
         }
         surface.frame = frame
-        surface.applyClippingShape(Self.mask(display.rects, over: well), rect: surface.bounds)
+        surface.applyClippingShape(Self.mask(area.shape, less: area.holes, over: area.rect), rect: surface.bounds)
     }
 
     /// A skin-pixel rect of the scene in this view's points.
@@ -148,13 +147,19 @@ final class SoniqueSkinMainView: NSView {
         effects = nil
     }
 
-    /// `rects` as a mask over `area`, one pixel per skin pixel, its first row the top.
-    private static func mask(_ rects: [SoniqueSkinRegion.Rect], over area: SoniqueSkinRegion.Rect) -> CGImage? {
+    /// `rects` less `holes` as a mask over `area`, one pixel per skin pixel, its first row the top.
+    private static func mask(_ rects: [SoniqueSkinRegion.Rect], less holes: [SoniqueSkinRegion.Rect],
+                             over area: SoniqueSkinRegion.Rect) -> CGImage? {
         let width = area.right - area.left, height = area.bottom - area.top
         guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
                                       space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return nil }
+        let local = { (rects: [SoniqueSkinRegion.Rect]) in
+            rects.map { CGRect(x: $0.left - area.left, y: area.bottom - $0.bottom, width: $0.right - $0.left, height: $0.bottom - $0.top) }
+        }
         context.setFillColor(gray: 1, alpha: 1)
-        context.fill(rects.map { CGRect(x: $0.left - area.left, y: area.bottom - $0.bottom, width: $0.right - $0.left, height: $0.bottom - $0.top) })
+        context.fill(local(rects))
+        context.setFillColor(gray: 0, alpha: 1)
+        context.fill(local(holes))
         return context.makeImage()
     }
 

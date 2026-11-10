@@ -278,7 +278,9 @@ All loaded from `[Classic Analyzer]` INI section:
   - Grid and Flash Grid follow the Mirror and Reflection layouts (Reflection Waves draws them only
     with `X-Spacing=0`, as the plugin does)
   - ghosts advance in `vc_process_frame_only`, one step per 33 ms tick, and reset whenever the
-    geometry or the Effect changes; drawing only reads them, so several boxes share one core
+    geometry or the Effect changes; drawing only reads them, so several boxes share one core.
+    Setting `referencewidth` recalculates the geometry, so a host sets it only when its width
+    changes: set every frame, the ghosts never build up (#735, the skin effects surface)
 
 - `Peak Effect` (`0..5`), ported from the plugin (`VisClassicPeaks.cpp`). A peak's whole life is a
   table built from the effect and `PeakChange`: set at a bar's level, it counts down through

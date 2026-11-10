@@ -39,12 +39,13 @@ extension SoniqueSkinPainter {
         for (string, centre) in Screen.labels {
             text(label(string, x, bottom + Screen.labelBaseline).centred(on: x + centre))
         }
-        // The dots fill with progress as the mid rings do: the playlist's in `PlayListColor_1`, the
-        // track's in `ProgressColor_1`, over `ProgressBkColor`.
-        for (row, (progress, fill)) in zip(Screen.progressRows, [(host.listProgress, SoniqueColour.playListColor1), (host.songProgress, .progressColor1)]) {
+        // The dots fill with progress as the mid rings do, each lit dot its place's colour along the
+        // row's gradient (`progressGradients`), over `ProgressBkColor`.
+        for (row, (progress, fill)) in zip(Screen.progressRows, zip([host.listProgress, host.songProgress], Self.progressGradients)) {
             let lit = Int((progress * Double(Screen.dots)).rounded(.down))
             for dot in 0..<Screen.dots {
-                context.setFillColor(colour(dot < lit ? fill : .progressBkColor))
+                context.setFillColor(dot < lit ? colour(along: fill, at: Double(dot) / Double(Screen.dots - 1))
+                                               : colour(.progressBkColor))
                 context.fillEllipse(in: CGRect(x: x + Screen.dotLeft + dot * Screen.dotSize, y: bottom + row.top,
                                                width: Screen.dotSize, height: Screen.dotSize))
             }
@@ -53,7 +54,7 @@ extension SoniqueSkinPainter {
 
         text(label("file:", x + Screen.fileLeft, top + Screen.fileBaseline))
         var file = SoniqueSkinText(string: host.fileName, x: x + Screen.fileLeft, baseline: 0, size: 8, colour: .systemColor1)
-        for (i, line) in wrapped(file, width: CGFloat(Screen.fileFrame.right - Screen.fileLeft - 3)).enumerated() {
+        for (i, line) in wrapped(file, width: { _ in CGFloat(Screen.fileFrame.right - Screen.fileLeft - 3) }).enumerated() {
             let baseline = Screen.fileBaseline + (i + 1) * Screen.fileLineHeight
             guard baseline <= Screen.fileFrame.bottom - 3 else { break }
             file.string = line

@@ -290,4 +290,6 @@ to someone who will change skins in it (it reads as "skins cannot be changed", 2
 
 The render probe draws the default state and one playing state; the oracle captures only the
 default state. Animation (the mode morph, the drawer slide, the progress rings filling), hover and
-the knobs turning are invisible to both.
+the knobs turning are invisible to both. A track loaded is invisible to the sweep, whose oracle state
+has none: `SoniqueSkinPlayingTests` pins what is drawn then (the mid rings, the top window, the
+wrapped title, the visual screen's dots) on the default skin.

@@ -103,15 +103,16 @@ extension SoniqueSkinPainter {
         context.restoreGState()
     }
 
-    /// `t`'s string broken into lines no wider than `width`, at word breaks where it can and anywhere
-    /// where it cannot (a file name is often one long word).
-    func wrapped(_ t: SoniqueSkinText, width: CGFloat) -> [String] {
+    /// `t`'s string broken into lines, line n no wider than `width(n)`, at word breaks where it can and
+    /// anywhere where it cannot (a file name is often one long word).
+    func wrapped(_ t: SoniqueSkinText, width: (Int) -> CGFloat) -> [String] {
         let typesetter = CTTypesetterCreateWithAttributedString(t.attributed(ink: SoniqueSkinRenderer.cgColor(0)))
         let text = t.string as NSString
         var lines: [String] = [], start = 0
         while start < text.length {
-            var count = CTTypesetterSuggestLineBreak(typesetter, start, Double(width))
-            if count <= 0 { count = max(1, CTTypesetterSuggestClusterBreak(typesetter, start, Double(width))) }
+            let width = Double(width(lines.count))
+            var count = CTTypesetterSuggestLineBreak(typesetter, start, width)
+            if count <= 0 { count = max(1, CTTypesetterSuggestClusterBreak(typesetter, start, width)) }
             lines.append(text.substring(with: NSRange(location: start, length: count)).trimmingCharacters(in: .whitespaces))
             start += count
         }

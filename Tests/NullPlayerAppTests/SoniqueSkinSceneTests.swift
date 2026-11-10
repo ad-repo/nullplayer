@@ -108,6 +108,6 @@ final class SoniqueSkinSceneTests: XCTestCase {
             _ = settings.origin(state, navigator: true)
         }
         for strip in SoniqueKnobStrip.allCases { _ = settings.frames(strip) }
-        _ = (settings.drawerSliders, settings.midBallOrigins, settings.navBallInset, settings.midRingsFillFromTop)
+        _ = (settings.drawerSliders, settings.midBallOrigins, settings.navBallInset, settings.midListRingIsWholeTurn)
     }
 }
