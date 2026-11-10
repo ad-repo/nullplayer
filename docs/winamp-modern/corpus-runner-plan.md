@@ -289,6 +289,34 @@ B396 (the census hangs on Wii, and timed out on cPro_SC), B398 (Pixelated's noti
 This batch changed the process: the user round's fixes are swept once, together, when the user says
 the round is done (`skills/skin-intake/SKILL.md` § *Hand over*).
 
+### Done: intake #9, promoted to gold (2026-11-10)
+
+The 25 skins picked for batch 9 by `wal_intake_pick.sh` were scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-9`, accepted by the user, and promoted to
+gold on 2026-11-10, with rows on `skin-compatibility.md` (24 B, 1 C, graded from the ledger notes and
+backlog rows). The per-skin record is `intakes/intake-9.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| _Scythe, Dr_Who, MERCURY, blackwhite, Lapis_Lazuli, Lou_Reed | The Media Library opened in NullPlayer's plain chrome (B366) | A frame with artwork and no content script is the synthesizer's last resort; the initializer fills its client |
+| Minima | The display panel was not drawn (B400) | The stock `wasabi.window.embedded` group is seeded as a nine-slice grid of the skin's `wasabi.window.*` bitmaps |
+| Lapis_Lazuli | A grey bar across the top of the triangle (B401) | In a document declaring a version below 1, a container's bitmaps resolve where it is declared |
+| AmpTunes_III | The viz button changed the window's size (B406) | `linkwidth`/`linkheight` carry the size across every layout the link graph reaches |
+| AmpTunes_III | Two tabs went black (B407) | A same-size layout switch mounts the new layout's hosted surfaces |
+| AmpTunes_III | Video opened in its own window before its tab (B408) | An embedded reveal switches to the container's layout holding the component |
+| Helloween | The nose appended a blank playlist entry (B409) | `System.playFile` titles a nameless stream URL by its address |
+| LiquidStar, Lou_Reed, Enter_the_Matrix | A click in a see-through hole in the body went to the app behind (B410) | Enclosed holes are backed and claimed by `hitTest`, except in script-made overlays; the smoke reports them |
+
+Closed as not defects: ipamp14's two-window Library (B399, the skin's frame over its content),
+cPro2__HOLOlike's About background (B402, its rotate/zoom animation). Left open: B403 (Dawson's Creek,
+LCD_hm1_m, Nokia_7210_Amp: a video or browser button with no surface of the skin's), B404 (Minima's
+panel black, not navy), B411 (Lapis_Lazuli's title and backdrop band past the triangle), B396 (the
+census hangs on cPro2__HOLOlike), M87 (Helloween's dead stream shows no error), B309 (ipamp14's
+notifier placement), B405 (an animation speed setting, filed from HUD).
+
+This batch measured that the WAL version is not a Winamp3 marker: 141 of 315 gold+silver skins
+declare `0.8`, so a rule keyed on it must be checked against its whole match set (B401, B411).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
