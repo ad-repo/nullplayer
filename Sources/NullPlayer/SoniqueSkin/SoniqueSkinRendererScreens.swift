@@ -40,8 +40,8 @@ extension SoniqueSkinPainter {
             text(label(string, x, bottom + Screen.labelBaseline).centred(on: x + centre))
         }
         // The dots fill with progress as the mid rings do, each lit dot its place's colour along the
-        // row's gradient (`progressGradients`), over `ProgressBkColor`.
-        for (row, (progress, fill)) in zip(Screen.progressRows, zip([host.listProgress, host.songProgress], Self.progressGradients)) {
+        // row's gradient, over `ProgressBkColor`.
+        for (row, (progress, fill)) in zip(Screen.progressRows, [(host.listProgress, SoniqueProgressGradient.playList), (host.songProgress, .track)]) {
             let lit = Int((progress * Double(Screen.dots)).rounded(.down))
             for dot in 0..<Screen.dots {
                 context.setFillColor(dot < lit ? colour(along: fill, at: Double(dot) / Double(Screen.dots - 1))

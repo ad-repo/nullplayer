@@ -40,6 +40,8 @@ final class SoniqueSkinMainView: NSView {
     /// The visual mode screen's effects surface, present only while that screen shows: removing it
     /// stops its engine.
     private var effects: SkinEffectsSurfaceView?
+    /// The area and frame `effects` was last laid out on.
+    private var effectsLayout: (area: SoniqueSkinScene.EffectsArea, frame: CGRect)?
     private var effectObserver: NSObjectProtocol?
     /// Steps `State.marqueeOffset` while a title shows.
     private var marqueeTimer: Timer?
@@ -119,12 +121,13 @@ final class SoniqueSkinMainView: NSView {
         layoutEffects()
     }
 
-    /// The effects surface over `SoniqueSkinScene.effectsArea`. Placed again only when the window's
-    /// size or mode moves it; a new skin starts a new surface.
+    /// The effects surface over `SoniqueSkinScene.effectsArea`. Placed again only when its area or
+    /// the window's size moves; a new skin starts a new surface.
     private func layoutEffects() {
         guard let scene, let area = scene.effectsArea else { return dropEffects() }
         let frame = viewRect(area.rect, in: scene)
-        if effects?.frame == frame { return }
+        if effects != nil, let last = effectsLayout, last.area == area, last.frame == frame { return }
+        effectsLayout = (area, frame)
         let surface = effects ?? SkinEffectsSurfaceView(frame: frame, selection: .sonique)
         if effects == nil {
             addSubview(surface)
@@ -145,6 +148,7 @@ final class SoniqueSkinMainView: NSView {
     private func dropEffects() {
         effects?.removeFromSuperview()
         effects = nil
+        effectsLayout = nil
     }
 
     /// `rects` less `holes` as a mask over `area`, one pixel per skin pixel, its first row the top.
