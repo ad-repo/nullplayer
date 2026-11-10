@@ -142,6 +142,7 @@ final class WinampModernPhase14Tests: XCTestCase {
         for (identifier, prefix, middle) in [
             ("wasabi.panel", "wasabi.panel", "wasabi.panel.tint"),
             ("wasabi.objectframe.group", "wasabi.objectframe", "wasabi.objectframe.center"),
+            ("wasabi.window.embedded", "wasabi.window", "wasabi.window.center"),
         ] {
             let runtime = try initialize(xml: """
             <WasabiXML>
@@ -172,7 +173,9 @@ final class WinampModernPhase14Tests: XCTestCase {
     func testEveryOtherShellStaysIdentifierOnly() throws {
         // The remaining shells are identifier-only by design — a body would put structure we did
         // not measure into every skin that inherits one.
-        let shellsWithBodies = Set(["wasabi.titlebar", "wasabi.panel", "wasabi.objectframe.group"])
+        let shellsWithBodies = Set([
+            "wasabi.titlebar", "wasabi.panel", "wasabi.objectframe.group", "wasabi.window.embedded",
+        ])
         for identifier in WasabiSkinInitializer.wasabiStandardLibraryGroups
         where !shellsWithBodies.contains(identifier) {
             let runtime = try initialize(xml: """
