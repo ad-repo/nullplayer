@@ -1,5 +1,5 @@
 file	sha256	stage	updated	rows	note
-cPro_SC.wal	04e1cf83baac4eadcfb2ecac37c361bf59a561cdbb59edb256a194814bea00cd	promoted	2026-11-09	-	scan clean: main 25 clicked (ClassicPro tabs/resizers pixel-only), library embedded, visual clean (4 windows) vs ref
+cPro_SC.wal	04e1cf83baac4eadcfb2ecac37c361bf59a561cdbb59edb256a194814bea00cd	promoted	2026-11-09	B396(open)	scan clean: main 25 clicked (ClassicPro tabs/resizers pixel-only), library embedded, visual clean (4 windows) vs ref; fix-check census timed out at 240s = B396 (harness)
 The_Chronicles_of_Narnia.wal	071f0bb10a501d33b44a965561383f9a48a1d6209bbaeb05aab7b45bf1dddcbb	promoted	2026-11-09	B366	scan: main 15 clicked (ibt/eqbt slide in-window panels, pixel-only), library plain-chrome = B366, visual clean (5 windows), no ref
 Cyclop_VX1.wal	0a7cf701950e2e53b669d2bb8d98080d88500dac8af619b07f28c154cb3ddd6e	promoted	2026-11-09	-	scan clean: main 13 clicked (EQ drawer closed: its 18 controls unreachable until opened), library skin-frame closed, visual clean (5 windows), no ref
 sa.wal	14888ccf68f869b2a2e9158bdeaf4e5f6cf446a33b7cd1ae40d3bd5ee173d28d	promoted	2026-11-09	B394	user round 2026-11-09: EQ fine; B394 closed as a smoke artefact; library skin-frame closed; visual clean vs ref

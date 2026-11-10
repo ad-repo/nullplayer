@@ -254,7 +254,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **MultiButtons**<br>`MultiButtons_v0.02.wal` | Cip | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.frame.resizer`; open: B290 (a fontsize-less song title draws smaller than the reference) |
 | **Multipass**<br>`multipass_1_4_by_rpeterclark_d5lwjv.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Music Show**<br>`MusicshowB_version.wal` | Skin Consortium | B<br><sub>provisional</sub> | Fully skinned | 4 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `onegd`, `resizel`, `resizer` |
-| **My Skin Name**<br>`cPro_SC.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **My Skin Name**<br>`cPro_SC.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the window census timed out on it (harness, open B396) |
 | **Narnia**<br>`The_Chronicles_of_Narnia.wal` | Petrol Designs | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
 | **Nebular**<br>`Nebular.wal` | Vica. | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
 | **NEO**<br>`NEO.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Player skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `dummy0` |

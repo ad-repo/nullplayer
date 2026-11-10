@@ -377,6 +377,9 @@ extension WinampModernScriptRuntime {
             // stops a pixel right of where it opened and bares the magenta base beside it.
             let restingX = state.targetX > state.startX ? state.targetX - 1 : state.targetX
             if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(restingX))) }
+            // The slide is done: a later `gotoTarget` that only fades must not see the pixel as a gap
+            // and slide (or snap) it the rest of the way. A new `setTargetX` sets it again.
+            if state.hasTargetX, restingX != state.targetX { _ = object.setAttribute("targetx", value: nil) }
             if state.hasTargetY { _ = object.moveForTarget("y", to: String(Int(state.targetY))) }
             if state.hasTargetW { _ = object.moveForTarget("w", to: String(Int(state.targetW))) }
             if state.hasTargetH { _ = object.moveForTarget("h", to: String(Int(state.targetH))) }
