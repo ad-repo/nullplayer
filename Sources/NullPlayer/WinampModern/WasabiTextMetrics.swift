@@ -11,7 +11,8 @@ import Foundation
 /// lives here, on the loaded skin, and both sides ask it the same question.
 final class WasabiTextMetrics {
     let loadedSkin: WinampModernLoadedSkin
-    private var fonts: [String: CGFont] = [:]
+    /// Decoded font files by lowercased path (`WasabiTextMetricsFontFiles.swift`).
+    var fonts: [String: CGFont] = [:]
     /// The **resolved** font for a request, which is not what `fonts` holds.
     ///
     /// `fonts` caches the raw `CGFont` parsed out of the skin, and everything after it ran per
@@ -187,6 +188,9 @@ final class WasabiTextMetrics {
                                                                 traits: traits) {
                 return installed
             }
+            if let identifier, let shipped = shippedFont(namedBySkin: identifier, size: size, traits: traits) {
+                return shipped
+            }
             if let identifier {
                 // Two different failures land here and they are not the same report. A skin that
                 // *declared* a `<truetypefont>` whose file never made it into the archive resolves a
@@ -204,41 +208,8 @@ final class WasabiTextMetrics {
             return substituteFont(size: size * Self.substituteScale(forMissing: identifier ?? ""),
                                   traits: traits)
         }
-        let key = path.lowercased()
-        let cgFont: CGFont?
-        if let cached = fonts[key] {
-            cgFont = cached
-        } else if let data = try? loadedSkin.vfs.data(at: path, location: definition.source),
-                  let provider = CGDataProvider(data: data as CFData),
-                  let decoded = CGFont(provider) {
-            fonts[key] = decoded
-            cgFont = decoded
-        } else {
-            cgFont = nil
-        }
-        if let cgFont {
-            let created = CTFontCreateWithGraphicsFont(cgFont, size, nil, nil)
-            // A font parsed out of a skin can come back null from a constructor imported as
-            // non-optional. Put in an attributes dictionary, that null reaches the ObjC bridge as a
-            // real nil and aborts the **process** from inside `NSString.size(withAttributes:)`:
-            //
-            //   -[__NSPlaceholderDictionary initWithObjects:forKeys:count:]: attempt to insert nil
-            //   object from objects[0]
-            //
-            // which is the 2026-08-16 cPro-Bento report exactly. Assigning to an `NSFont?` is the
-            // whole defence: a nil class reference lands as `.none`, so `if let` catches it and the
-            // caller's guaranteed fallback answers instead.
-            //
-            // **Do not reinstate a PostScript-name check here.** Two have been tried and neither
-            // could ever fire. `CTFontCopyPostScriptName(created) == nil` is *always false* — the
-            // overlay returns a non-optional `CFString`. Testing the name for `isEmpty` (0.30.0) is
-            // no better: CoreGraphics **synthesizes** a name (`font00000000308faa8`) for any font
-            // whose `name` table is missing, empty, or carries a zero-length nameID 6, and rejects
-            // outright anything malformed enough to have no name at all — so no font that reaches
-            // this line can have an empty name. Measured, not reasoned:
-            // `WinampModernNamelessFontTests`.
-            let bridged: NSFont? = created as NSFont
-            if let bridged { return Self.applying(traits, to: bridged) }
+        if let fileFont = fileFont(at: path, location: definition.source, size: size, traits: traits) {
+            return fileFont
         }
         recordUnresolved(identifier,
                          "declares file=\"\(path)\", which is not in the archive or cannot be read "
@@ -364,7 +335,7 @@ final class WasabiTextMetrics {
         return applying(traits, to: exact)
     }
 
-    private static func applying(_ traits: NSFontTraitMask, to font: NSFont) -> NSFont? {
+    static func applying(_ traits: NSFontTraitMask, to font: NSFont) -> NSFont? {
         guard !traits.isEmpty else { return font }
         let converted: NSFont? = NSFontManager.shared.convert(font, toHaveTrait: traits)
         return converted ?? font
@@ -425,6 +396,17 @@ final class WasabiTextMetrics {
 
         /// Clearance kept between the run and the box edge it aligns against.
         static let edgeInset: CGFloat = 2
+
+        /// Where the run starts in `frame`: against the aligned edge by its room, or centred on what
+        /// it draws (the room's spare digit is all on one side, so centring by it pushed Cell's `1:13`
+        /// half a field off its brackets, #581).
+        func origin(in frame: CGRect, alignment: NSTextAlignment) -> CGFloat {
+            switch alignment {
+            case .right: return frame.maxX - Self.edgeInset - layoutWidth
+            case .center: return frame.minX + (frame.width - width) / 2
+            default: return frame.minX + Self.edgeInset
+            }
+        }
     }
 
     /// How the object's clock lays out, or `nil` if it is not drawing one.
@@ -462,8 +444,11 @@ final class WasabiTextMetrics {
         // A skin that sizes the colon's cell is asking for a clock in columns, so the leading field
         // holds room for the two digits it can reach even while it is showing one. Big Bento Modern's
         // elapsed time is the case that shows it: right-aligned, it would otherwise sit hard against
-        // the `/` beside it and then jump a whole digit sideways at 10:00.
-        let leadingRoom = declaredColon == nil ? leadingField : max(leadingField, 2 * digitCell(font))
+        // the `/` beside it and then jump a whole digit sideways at 10:00. A signed field reserves nothing:
+        // in a remaining time the minus takes the second slot, and EI_V2's own screenshot draws its
+        // `-1:16` flush against the box's right edge.
+        let signed = text.hasPrefix("-")
+        let leadingRoom = (declaredColon == nil || signed) ? leadingField : max(leadingField, 2 * digitCell(font))
         return ClockRun(cells: cells, layoutWidth: drawn - leadingField + leadingRoom)
     }
 
@@ -959,13 +944,19 @@ final class WasabiTextMetrics {
         return measuredWidth(of: text, font: font) + padding
     }
 
+    /// The `<bitmapfont>` a text object draws in, or nil for any other font.
+    func bitmapFont(of object: WasabiObject) -> WalResourceDefinition? {
+        guard let fontID = object.attributes["font"],
+              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+              definition.kind == "bitmapfont" else { return nil }
+        return definition
+    }
+
     /// Height of one line of the object's text, in skin pixels — the vertical answer to `width(of:)`,
     /// and what a script's `getAutoHeight()` reads. A bitmap font's atlas states its own cell height;
     /// everything else is the drawing font's line height.
     func lineHeight(of object: WasabiObject) -> CGFloat {
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if let definition = bitmapFont(of: object) {
             let charHeight = Double(definition.attributes["charheight"] ?? "") ?? 0
             let spacing = Double(definition.attributes["vspacing"] ?? "0") ?? 0
             if charHeight > 0 { return CGFloat(charHeight + spacing) }

@@ -2,6 +2,38 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B397 — -Lithium-'s drawer handle — closed 2026-11-09
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B397 | **-Lithium-'s drawer/shade button sends the UI off the right of the screen, and it cannot be brought back without switching skins.** Reported in the intake #8 user round (2026-11-09, reporter driving). The main window is a bar the width of the screen (1792x35 at 766,293 in a debug launch; `DrawerGroup` w set to `getViewPortWidth()` by `scripts/init.m` and `scripts/drawer.m`). `drawer.m`'s `DrawerHandle.onLeftButtonUp` slides `DrawerGroup` to `EndX = getViewPortWidth()-24` with `setTargetX`/`gotoTarget`, and back to its XML `x` on the next press; it reads `getPrivateInt("XMP","eDrawer",1)` but writes section `"Venom"`. In Winamp the bar stays on screen with the 20px handle 24px from its right edge to slide it back. Done when pressing it slides the bar's content and pressing it again brings it back, with the window on screen | -Lithium- | ? | 1 |
+
+**Closed 2026-11-09.** Two causes. `scripts/init.m`'s `mainLayout.resize(getViewportLeft(), getTop(), w, 35)` wrote x=0, and (0, 0) is also what an unhosted layout reports, so a write that read only `getTop()` was taken for a round trip and the bar stayed at the desktop position it opened at, running off the screen; a round trip is now recognised per axis (`WinampModernBorrowedOrigin`). Then the handle sat in the window's fallback close corner, which outranked the scripted layer, so pressing it to bring the bar back quit the app; the corner now yields to an object that takes a press (`hostChromeHit`). Verified live: the bar opens at the screen's left, the handle slides it and a second press slides it back.
+
+## B395 — AR-7's main window right edge — closed 2026-11-09
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B395 | **AR-7's main window cuts its art off at the right edge.** Found in intake #8's visual review (2026-11-09, live census, playing): the layout declares `w="320" h="225"` (`xml/player-normal.xml:1089`) and no script resizes it (log: one `resizeWindow({320, 225}) reason=loadSkin`), while `togglebutton#ml` sits at x=286 w=43 (to 329) and the body art (`background.png` 400x405 at 12,7) runs past 320, so the ML button and the kHz/kbps readout are clipped. No `screenshot.png`; the about pages (`about/page*.png`) are credits. The reporter confirmed it a defect in the intake #8 user round (2026-11-09). Done when AR-7's main window shows its whole body, the ML button and the readout uncut | AR-7 | ? | 2 |
+
+**Closed 2026-11-09.** The layout states only `w`/`h` and a `sysregion` body wider than them. A layout with no `default_*`/`minimum_*`/`background` and shaped by `sysregion` layers now ends where that artwork's opaque pixels do (`shapeFittedSize`), and the main window follows the post-start fit (`contentFit` resize in `WinampModernMainWindowController`). AR-7 opens 362x225 with the ML button and readout whole. Narrowed after the fix check: only art placed from the origin counts (the Miku preferences windows hang a `relatx`/`relaty` character off the far edge on purpose and had grown to 431x435 / 357x364), and only on an axis a visible control overruns (AR-7's ML button; kaza's Miku volume bar, 4px, is a clipped control too).
+
+## B393 — Tokyo_Drift's transport buttons — closed 2026-11-09
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B393 | **Tokyo_Drift's transport buttons do not respond to a click.** Found in intake #8's click smoke (2026-11-09, playing): Back, Stop, Play, Pause, Fwd, EQ, Winshade, PL and ML read `unreachable` (no point in their boxes hit-tests to them), and a real CGEvent click on the drawn Pause button (skin point 258,174, window at 762,293, confirmed on a capture) left the engine `playing` (time 11.3 → 13.3). Suspect: `maingroup` declares `<animatedlayer id="eq.anim" image="eq.anim" frameheight="360" rectrgn="0"/>` with no x/y/w/h after the transport (`xml/player.xml`), so it spans the 480x360 group above every button; `rectrgn="0"` asks for an alpha region, so its transparent pixels should pass the click through. Done when Pause pauses Tokyo_Drift by a real click and the smoke reads the transport as clicked | Tokyo_Drift | ? | 1 |
+
+**Closed 2026-11-09.** `eq.anim` is a full-window animated layer the script fades to `alpha=0` at load; its union-of-frames hit region still covered the buttons. An animated layer at alpha 0 is no longer hit (`object(at:)`), unless a script hooks a press on it: the fix check showed Shield_Amp's `Vis.Animation` (faded out when the vis is off, re-enabled by its own `onLeftButtonDown`) had become unreachable. The click smoke reads Back, Stop, Play, Pause, Fwd and EQ as clicked.
+
+## B394 — sa's EQ band sliders — closed 2026-11-09
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B394 | **sa's ten EQ band sliders do not move the bands.** Found in intake #8's click smoke (2026-11-09, playing): `slider#eq1`…`eq10` (`action="EQ_BAND" param="1"`…`"10"`, `player.mid.drawer` in `xml/player-normal-groups.xml`) are hit and dragged 301→278 and the band checksum stays `b3300`, while `slider#preamp` (`EQ_BAND param="preamp"`) in the same drawer moves preamp 0 → +6 dB, and the script-driven Treble/Bass sliders move bands. The bands draw in the open mid drawer. Done when dragging sa's eq1 changes band 1 and the smoke reads `eq` for all ten | sa | ? | 1 |
+
+**Closed 2026-11-09, not a defect.** In the intake #8 user round (2026-11-09, reporter driving) the reporter found sa's EQ fine. The smoke's band checksum did not move on its drags; that reading is the sweep's, not the skin's.
+
 ## B391 — Winamp-2006's lower-left pane — closed 2026-11-08
 
 | Id | Item | Reach | Effort | Tier |

@@ -110,6 +110,14 @@ final class WinampModernPhase76Tests: XCTestCase {
                                  "the room is two of the widest digit, so a proportional 10 fits inside it")
     }
 
+    /// A remaining time's minus takes the second slot: EI_V2's `-1:16` sits flush against its box.
+    func testASignedLeadingFieldReservesOnlyItsOwnWidth() throws {
+        let font = NSFont.systemFont(ofSize: 20)
+        let readout = try object(attributes: ["display": "time", "timecolonwidth": "5"])
+        let run = try XCTUnwrap(WasabiTextMetrics.clockRun(of: readout, text: "-1:16", font: font))
+        XCTAssertEqual(run.layoutWidth, run.width, accuracy: 0.01)
+    }
+
     func testFixedPitchGivesEveryGlyphItsOwnCell() throws {
         let font = NSFont.systemFont(ofSize: 20)
         let readout = try object(attributes: ["display": "time", "forcefixed": "1",

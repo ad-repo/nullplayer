@@ -100,8 +100,10 @@ extension WinampModernScriptRuntime {
     /// `skin.control.nonPlay`; see `reference/rendering.md` → *A hover reaches `onMouseMove`*.
     func writeGeometry(_ attributes: [(key: String, value: String)], on object: WasabiObject,
                        borrowed: WinampModernBorrowedOrigin.Request? = nil) {
-        let moves = attributes.contains { $0.key == "x" || $0.key == "y" }
-        let reportedBeforeWrite = takeOriginRead(of: object, moves: moves) ? reportedOrigin(of: object, in: .parent) : nil
+        let written = Set(attributes.compactMap { WinampModernBorrowedOrigin.Axis(key: $0.key) })
+        let isRoundTrip = WinampModernBorrowedOrigin.isRoundTrip(
+            written: written, read: takeOriginRead(of: object, moves: !written.isEmpty))
+        let reportedBeforeWrite = isRoundTrip ? reportedOrigin(of: object, in: .parent) : nil
         for (key, value) in floatedToCanvas(attributes, of: object) { _ = object.setAttribute(key, value: value) }
         applyContainerGeometry(object, reportedOrigin: reportedBeforeWrite, borrowed: borrowed)
         noteGeometryChange()
@@ -369,7 +371,15 @@ extension WinampModernScriptRuntime {
         if state.hasTargetA { movedAlpha = object.setAttribute("alpha", value: String(Int(state.currentAlpha.rounded()))) }
 
         if animationReached(state) {
-            if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(state.targetX))) }
+            // A slide to the right comes to rest a pixel short of its target. Authors wrote around it:
+            // MBOS's `LRdoor.m` says "Remember to add 1 to StartX for R, and not to for L", and
+            // Just_Buttons' and MalteseXp's thinger close to `StartX+1` — landed exactly, that drawer
+            // stops a pixel right of where it opened and bares the magenta base beside it.
+            let restingX = state.targetX > state.startX ? state.targetX - 1 : state.targetX
+            if state.hasTargetX { _ = object.moveForTarget("x", to: String(Int(restingX))) }
+            // The slide is done: a later `gotoTarget` that only fades must not see the pixel as a gap
+            // and slide (or snap) it the rest of the way. A new `setTargetX` sets it again.
+            if state.hasTargetX, restingX != state.targetX { _ = object.setAttribute("targetx", value: nil) }
             if state.hasTargetY { _ = object.moveForTarget("y", to: String(Int(state.targetY))) }
             if state.hasTargetW { _ = object.moveForTarget("w", to: String(Int(state.targetW))) }
             if state.hasTargetH { _ = object.moveForTarget("h", to: String(Int(state.targetH))) }

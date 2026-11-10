@@ -41,12 +41,20 @@ extension WinampModernMainView {
     /// What a press at `viewPoint` (this view's own coordinates) means to the host's chrome, or nil
     /// for the contents: the fallback close corner of a scene with no close of its own, or the glass
     /// chrome's close and rim.
+    /// A control by tag, an action, or any press a script binds — a double-click-only handler included.
+    private func takesPress(_ object: WasabiObject) -> Bool {
+        Self.isControl(object) || Self.hasPressCommand(object, scripts: scripts) || scripts.hasPressBinding(for: object)
+    }
+
     func hostChromeHit(at viewPoint: NSPoint) -> HostChromeHit? {
         // The fallback corner is empty space's, never a skin control's: MIDISUI's Media Library
         // layout has no `CLOSE`, and its only way back is a `SWITCH normal` button in that very
-        // corner, so the corner closed the main window — quitting the app — on every press of it.
+        // corner, so the corner closed the main window — quitting the app — on every press of it. A
+        // scripted layer is no control by tag but takes the press all the same: -Lithium-'s drawer
+        // handle slides the bar until only it, 24px from the screen's edge, is left in that corner,
+        // and the press quit the app (B397).
         if FallbackCloseArea.contains(viewPoint, in: self), needsFallbackClose,
-           !(renderer.object(at: skinPoint(viewPoint)).map(Self.isControl) ?? false) { return .close }
+           !(renderer.object(at: skinPoint(viewPoint)).map(takesPress) ?? false) { return .close }
         guard drawsHostChrome else { return nil }
         let point = skinPoint(viewPoint)
         let canvas = CGRect(origin: .zero, size: renderer.canvasSize)

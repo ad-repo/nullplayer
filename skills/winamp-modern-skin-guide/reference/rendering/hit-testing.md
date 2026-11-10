@@ -409,3 +409,8 @@ which moves for anything a script writes; a canvas-sized rebuild per frame is no
 > — hand-drawn layouts carry the rounded alpha in their own PNGs — while `Pledit`, `MLibrary`, `AVS`
 > and `Video` were a flat opaque `rgb(95,110,127)`, `component.bg` through a square corner. Sampling
 > the four corner pixels of every dump is the cheapest test that this still works.
+
+## Cases that look like dead controls (B393, B397)
+
+- An `<animatedlayer>` a script has faded to `alpha="0"` is not hit: its union-of-frames region would otherwise cover whatever is under it (Tokyo_Drift's full-window `eq.anim` over the transport). **Unless a script binds that press on it**: Shield_Amp's faded vis animation is the only way to turn its vis back on.
+- The window's fallback close corner (`hostChromeHit`) yields to any object that takes a press — a control by tag, an action, or any press a script binds, a double-click-only handler included (`takesPress`). A scripted drawer handle ends up in that corner and its press quit the app (-Lithium-).

@@ -30,6 +30,14 @@ extension WasabiSceneRenderer {
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
             if interactiveOnly && !isInteractive(object) { continue }
+            // An animated layer a script has faded to `alpha="0"` paints nothing, and its union-of-frames
+            // region (below) would still cover every frame's artwork: Tokyo_Drift's full-window `eq.anim`
+            // is hidden by `setAlpha(0)` at load and covered all nine transport buttons (B393). It is
+            // visible again the moment the script raises the alpha (`setTargetA`). Unless a script hooks
+            // a press on it: Shield_Amp's vis animation is faded out when the vis is off and its
+            // `onLeftButtonDown` is the only way to turn it back on.
+            if object.tag.is(.animatedLayer), (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0,
+               pressBindingProvider?(object, button) != true { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
             // alpha question, and testing the bitmap anyway contradicts the attribute. Defix's four
@@ -629,7 +637,7 @@ extension WasabiSceneRenderer {
         return region.alpha[y * region.width + x] > 0
     }
 
-    private func isInteractive(_ object: WasabiObject) -> Bool {
+    func isInteractive(_ object: WasabiObject) -> Bool {
         // The button it wraps takes the press, and that button's events reach the wrapper's script.
         if WasabiEmbeddedXUI.wrapsButton(object) { return false }
         // The standard library's `<Wasabi:Button>` and `<Wasabi:ToggleButton>` are buttons too, and

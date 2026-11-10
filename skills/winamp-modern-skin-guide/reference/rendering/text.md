@@ -197,6 +197,12 @@ render is the ground truth for this kind of thing):
   to plain Arial, because the object's `bold="1"` is what decides that. The map only helps a name
   whose face exists on this system: `UNVR67X`, `SUPERGLU`, Calibri and Segoe UI stay substituted and,
   more usefully, stay reported as `.unresolvedFont`.
+- **…and a filename the skin ships is that file** (intake #8, 2026-11-09). When a filename-shaped name
+  (`windowsFontFileStem` strips something) matches no system face, `WasabiTextMetrics.shippedFont`
+  looks for a file of that exact name anywhere in the skin and loads it, as a declared
+  `<truetypefont>` would be. EI_V2 names `font="digital-7 (mono).ttf"` with no declaration and ships
+  the file; drawn in the substitute, its clock overran the display. Nine skins draw differently
+  (Ar-Za-Jo, the DewyTears family, EI_V2, MoonLight, GlassAMP2, Yuki Morikawa).
 - **Text is centred in its box**, not drawn from the top edge that string drawing starts at. On a
   30px-tall readout that is a whole line's leading; on a tight one it is the difference between a
   ticker inside its slot and one sitting on whatever is under it.
@@ -338,8 +344,16 @@ against the edge, the digits land on the slash):
   aligned by the widest thing it can become. A single-digit minute leaves the second digit's room
   empty rather than sitting a column further along and jumping sideways at `10:00`. `ClockRun.width`
   is what is on screen now; `ClockRun.layoutWidth` is the room, and alignment uses the second.
+  **Except a signed field**: a remaining time (`-1:16`) reserves only its own width, the minus
+  taking the second slot. EI_V2's screenshot draws it flush right in its slot; reserving two digits
+  pushed the `-` over the display's left border.
 - **The run keeps `ClockRun.edgeInset` clear** of the edge it aligns against. Centring needs none —
   both edges are already free.
+- **A run the clip would cut shrinks to fit** (intake #8, 2026-11-09). `drawTrueTypeText` refits the
+  font (`floor(size * room / layoutWidth)`, two passes) only when the aligned run would actually
+  start or end outside `horizontalClip`; a run whose `layoutWidth` merely exceeds the box but draws
+  inside the clip is left alone (cPro2 minimal, Winamp 3.0 Default, Hives, Echo, Sony Walkman all
+  have such clocks). EI_V2's `10:23` in `digital-7` cut both its hours and minutes off before.
 
 `getTextWidth()` goes through the same call, because a skin lays out everything beside a readout from
 what it measures. `forcefixed="1"` still gives every glyph the same advance (the widest digit's) via
@@ -475,6 +489,13 @@ The height it takes now is `WasabiTextMetrics.lineHeight(of:)`, which is the sam
 > text objects so that something would draw; 1.4 × 46 is 65 where the skin spaced its rows 42 apart,
 > so the title ran down through the artist. A per-surface height guess anywhere else in the engine is
 > the same bug waiting to happen — auto-sizing belongs here, in the intrinsic-size rules.
+
+**A bitmap-font text with no `fontsize` is at least 13 px tall** (intake #8, 2026-11-09). Its line is
+the sheet's `charheight`, and a 5-px font in a 5-px box sits against the control above it. Lara's
+labels did; 13 was judged live, and Core-X5's shipped `Screenshot.png` confirms it independently
+(playlist title ink rows 9–15, ours 7–13 before, 9–15 after). A `fontsize` is the skin sizing the
+box itself, so LogicallityV1_0's `fontsize="10"` titles keep their line (`WasabiRendererIntrinsicSize`,
+`bitmapFont(of:)`).
 
 Only `<text>` and `<SongTicker>` (a Wasabi text subclass) auto-sizes vertically — CopperdeckII's
 song title is a heightless `<SongTicker>` and drew nothing until it was included. Everything else with no `h` keeps taking its height from its

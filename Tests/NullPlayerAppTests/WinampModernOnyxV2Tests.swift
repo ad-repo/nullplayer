@@ -87,6 +87,17 @@ final class WinampModernOnyxV2Tests: XCTestCase {
         XCTAssertNil(borrowed.match(x: 52, y: nil, writtenOn: vis, current: .zero), "both axes are spent")
     }
 
+    /// A write is a round trip only on axes the script read (B397).
+    func testARoundTripNeedsEveryWrittenAxisRead() {
+        typealias Origin = WinampModernBorrowedOrigin
+        XCTAssertFalse(Origin.isRoundTrip(written: [.x], read: [.y]), "x=0 after getTop() alone is a placement")
+        XCTAssertFalse(Origin.isRoundTrip(written: [.x, .y], read: [.y]), "Lithium: x was never read")
+        XCTAssertTrue(Origin.isRoundTrip(written: [.x, .y], read: [.x, .y]))
+        XCTAssertTrue(Origin.isRoundTrip(written: [.y], read: [.y]))
+        XCTAssertTrue(Origin.isRoundTrip(written: [], read: [.x]), "w/h alone after a read")
+        XCTAssertFalse(Origin.isRoundTrip(written: [], read: []))
+    }
+
     /// A container reads its desktop position, so only Wasabi's ±1 jiggle of it is the idiom; a
     /// different number is a position of its own.
     func testAContainerReadOnlyMatchesWithinAPixel() {

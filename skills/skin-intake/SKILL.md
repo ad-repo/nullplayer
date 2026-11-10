@@ -139,7 +139,7 @@ for every sweep twice. Brief it with the rows, these rules, and `skin-triage` Ph
   winampmodern566, Cpro_Winamp_Modern, Quadelic, CPro_Winamp_for_Mac_Sync, WinampAzenis2,
   4-dreliction, cPro_T2T, Winamp_Single_GUI, LG_Free's clock frame; Symplicipod's `tLayer`;
   hatsune_miku_5's `visual.trigger` aim point; HALOAMP's `cont.clear.*` and `PLEdit` sizes;
-  GlassAMPfinal's `DLibrary` size, 200x152 or 330x220 across dumps of one build;
+  GlassAMPfinal's and GlassAMP2's `DLibrary` size, 200x152 or 330x220 across dumps of one build;
   Official_Honda_Element_Skin's time-of-day seek dial; B296) is noise unless that skin is in the
   batch; where the list names a field, only that field is.
 - Re-check only what a fix touched, with the scan's own tools on only those skins: the smoke for a
@@ -155,6 +155,11 @@ One message to the user: per skin, the scan's verdict in one line, and the few w
 (deferred rows, judgment calls on a sheet, anything the smoke cannot see that the skin leans on).
 **The user is not asked to test every skin.** Their go accepts the batch; a defect they report
 puts that skin back to `filed` with the defect in its note.
+
+**Fixes from the user's round are swept once, together.** Fix each defect as it is reported and
+verify it live on its own skin, then wait for the next report; `wal_fix_check.sh` runs once, when
+the user says the round is done, over every fix since the last check, before promotion. Never a
+check per fix: each costs ~20 minutes (interaction is most of it), and the user is waiting on it.
 
 ## Running it
 

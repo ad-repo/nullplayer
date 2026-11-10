@@ -336,6 +336,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // sized only gets its real minimum once there is content to measure (`contentFittedFloor`),
             // and the first call above ran before any of it existed.
             applyLayoutConstraints()
+            // The same reason, for the size: the content and shape fits measure once the scripts have
+            // run, after `loadSkin` sized the window from the unfitted canvas (AR-7's body is wider
+            // than the `w` it declares, B395).
+            if let window, window.contentLayoutRect.size != view.scaledCanvasSize {
+                resizeWindow(to: view.scaledCanvasSize, reason: "contentFit")
+            }
             // The player's window is on screen from here; the auxiliary ones were ordered out at
             // creation and say so when they open. A skin that starts its animation from
             // `onSetVisible` (Defix's cassette reels) needs to be told.
@@ -1991,6 +1997,11 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             target = nil
         }
         guard let target, let screen = target.screen ?? NSScreen.main else { return }
+        // A script that put its window somewhere has placed it: the first `show()` must not tile it
+        // over. Olimpiadas' opensource_notifier `resize()`s itself to the viewport's corner and then
+        // shows, and its first toast landed in the next tiling slot under the playlist. A pin is the
+        // same case: ONYX V2 pins its visualization over the player's art box, then shows it.
+        if let auxiliary { placedAuxiliaryWindows.insert(auxiliary.containerID) }
         let size = target.frame.size
         let topLeft = WinampModernScreenSpace.cocoaPoint(point, on: screen)
         var origin = NSPoint(x: topLeft.x, y: topLeft.y - size.height)
@@ -2007,9 +2018,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 ? visible.maxY - size.height
                 : min(max(origin.y, visible.minY), visible.maxY - size.height)
         }
-        // A pin places the window relative to another one, so `place` must not tile it afresh when it
-        // first opens: ONYX V2 pins its visualization over the player's art box and then shows it.
-        if pinned, let auxiliary { placedAuxiliaryWindows.insert(auxiliary.containerID) }
         guard origin != target.frame.origin else { return }
         if ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1" {
             // A script parking its own window overrides whatever `place` decided, and legitimately
