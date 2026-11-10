@@ -89,35 +89,49 @@ extension SoniqueSkinPainter {
 
     func mid() {
         picture()
+        // With a track loaded the top window is the vis's, drawn on black (issue #729's captures of
+        // Sonique); with none it is the picture, as the oracle draws it.
+        if host.trackLoaded, let top = scene.region(for: .vis) {
+            context.setFillColor(CGColor(gray: 0, alpha: 1))
+            context.fill(top.rects.map(\.cgRect))
+        }
         litStates(navigator: false)
         knob(control: .volume, strip: .volume, value: host.volume)
         // The shuttle at rest is its first frame (258 mid captures closer than the middle one).
         knob(control: .shuttle, strip: .shuttle, value: 0, opaque: false)
-        ring(.songRing, progress: host.songProgress, colour: .progressColor1)
-        ring(.listRing, progress: host.listProgress, colour: .playListColor1)
+        // The track's ring is a whole turn; the playlist's 270°, leaving the logo's quarter, unless
+        // `mid_playlistmode` is 0 (the default skin's listposring stops at 9 o'clock).
+        ring(.songRing, progress: host.songProgress, sweep: 1, gradient: .track)
+        ring(.listRing, progress: host.listProgress, sweep: skin.settings.midListRingIsWholeTurn ? 1 : 0.75,
+             gradient: .playList)
         songDisplay()
     }
 
-    /// A progress ring: the part come so far in `colour`, clockwise from the top (`mid_playlistmode`
-    /// 0) or across 270° from the bottom left (1). An empty ring is the picture, as the oracle draws it
-    /// (a flat `ProgressBkColor` there made 239 mid captures worse).
-    /// ponytail: the start angle and the fill colour are guesses, since the oracle captures only the
-    /// stopped state, where both rings are empty; measure them from a playing oracle.
-    private func ring(_ control: SoniqueSkinControl, progress: Double, colour key: SoniqueColour) {
-        guard progress > 0, let region = scene.region(for: control) else { return }
+    /// A progress ring, clockwise from 12:00 (issue #731; Sonique's own captures). The skin paints the
+    /// dots in its picture under the ring's region, and Sonique tints them: the part come so far by
+    /// the gradient at each dot's place, the rest by `ProgressBkColor`. With nothing loaded the ring
+    /// is the picture, as the oracle draws it (a flat `ProgressBkColor` there made 239 mid captures worse).
+    private func ring(_ control: SoniqueSkinControl, progress: Double, sweep: Double, gradient: SoniqueProgressGradient) {
+        guard host.trackLoaded, let region = scene.region(for: control) else { return }
         context.saveGState()
         clip(to: region.rects)
-        let b = region.bounds.cgRect
-        // Skin pixels run top-down, so angles grow clockwise; -90° is the top.
-        let (start, sweep) = skin.settings.midRingsFillFromTop
-            ? (-Double.pi / 2, 2 * Double.pi) : (3 * Double.pi / 4, 1.5 * Double.pi)
-        let centre = CGPoint(x: b.midX, y: b.midY)
-        context.move(to: centre)
-        context.addArc(center: centre, radius: max(b.width, b.height), startAngle: start,
-                       endAngle: start + sweep * min(1, progress), clockwise: false)
-        context.closePath()
-        context.setFillColor(colour(key))
-        context.fillPath()
+        context.setBlendMode(.multiply)
+        // Aliased, so neighbouring wedges meet without a seam of untinted picture between them.
+        context.setShouldAntialias(false)
+        let b = region.bounds.cgRect, centre = CGPoint(x: b.midX, y: b.midY), radius = max(b.width, b.height)
+        // Skin pixels run top-down, so angles grow clockwise; -90° is 12:00. One wedge per 2° is
+        // finer than any ring's dots.
+        let slices = Int(180 * sweep), lit = Int((min(1, max(0, progress)) * Double(slices)).rounded(.down))
+        let step = 2 * Double.pi * sweep / Double(slices)
+        for slice in 0..<slices {
+            let start = -Double.pi / 2 + Double(slice) * step
+            context.move(to: centre)
+            context.addArc(center: centre, radius: radius, startAngle: start, endAngle: start + step, clockwise: false)
+            context.closePath()
+            context.setFillColor(slice < lit ? colour(along: gradient, at: Double(slice) / Double(slices - 1))
+                                             : colour(.progressBkColor))
+            context.fillPath()
+        }
         context.restoreGState()
     }
 
@@ -155,9 +169,41 @@ extension SoniqueSkinPainter {
             text(SoniqueSkinText(string: string, x: x + 13, baseline: y + baseline, size: size, colour: .systemColor1)
                 .centred(on: x + 47))
         }
-        titleLine(SoniqueSkinText(string: "NullPlayer", x: x + 13, baseline: y + 41, size: 9, colour: .systemColor1),
-                  centreX: x + 47, right: x + 81)
+        songTitle(in: region, idle: SoniqueSkinText(string: "NullPlayer", x: x + 13, baseline: y + 41, size: 9,
+                                                    colour: .systemColor1))
         context.restoreGState()
+    }
+
+    /// The title under the tab, wrapped to the window's width row by row and centred, 11 px apart down
+    /// to the window's bottom, as Sonique fills its round window (issue #732's captures). A title that
+    /// still does not fit scrolls on the first line instead.
+    private func songTitle(in region: SoniqueSkinRegion, idle: SoniqueSkinText) {
+        // Lines 11 px apart, down to 3 px above the window's bottom; each row's span is read 4 px above
+        // its baseline (mid-letter) and keeps 2 px clear either side.
+        let lineHeight = 11, midLetter = 4, margin = 2, bottomClear = 3
+        let x = region.bounds.left
+        // One span per row the window covers, stopping at the first it does not.
+        var spans: [(left: Int, right: Int, baseline: Int)] = []
+        for baseline in stride(from: idle.baseline, through: region.bounds.bottom - bottomClear, by: lineHeight) {
+            let row = region.rects.filter { $0.top <= baseline - midLetter && $0.bottom > baseline - midLetter }
+            guard let left = row.map(\.left).min(), let right = row.map(\.right).max() else { break }
+            spans.append((left, right, baseline))
+        }
+        var line = idle
+        line.string = host.title
+        // Past the last row everything left goes on one more line, which says it does not fit.
+        let lines = host.title.isEmpty ? [] : wrapped(line) { n in
+            n < spans.count ? CGFloat(spans[n].right - spans[n].left - 2 * margin) : .greatestFiniteMagnitude
+        }
+        guard !lines.isEmpty, lines.count <= spans.count else {
+            return titleLine(idle, centreX: x + 47, right: x + 81)
+        }
+        for (n, string) in lines.enumerated() {
+            line.string = string
+            line.x = spans[n].left + margin
+            line.baseline = spans[n].baseline
+            text(line.centred(on: (spans[n].left + spans[n].right) / 2))
+        }
     }
 
     func small() {

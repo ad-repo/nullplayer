@@ -22,3 +22,7 @@ when a skin or a report reproduces it.
 ## Maintenance
 
 No open rows. S18–S22, filed from the branch's two code reviews, closed 2026-10-18.
+
+| ID | Item | Exit |
+|---|---|---|
+| S23 | **The oracle no longer starts** (2026-11-09). `scripts/sonique_oracle_capture.sh <dir> vertego.sgf` captured nothing: `Sonique.exe` runs, but Wine shows only three hidden 500×500 windows at 0,669 and every `-loadskin`/`-setvolume` call blocks, so the script waits forever (it worked for the 2026-10-17 corpus run). Blocks any new capture, and a playing oracle, which the mid rings, top-window vis and wrapped title (#729, #731, #732) were measured without: they rest on photos of real Sonique (`format.md` § *Mid mode's song window*). Find what changed (Wine, macOS, the prefix, a dialog off screen) | `scripts/sonique_oracle_capture.sh <dir> sonique.sgf` prints `sonique nav=1 mid=1 small=1` and the three captures show Sonique in those modes (the count takes any Wine window); ideally `-play` with a WAV in the prefix too, so the rings can be captured filling |

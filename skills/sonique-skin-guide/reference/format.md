@@ -85,7 +85,7 @@ draws the last drawer in all four measured (8C8-HQ, Danzig, skreen, `_cut_in11`)
 | `/jpeg/navigator`, `/jpeg/midsonique`, `/jpeg/smallstate` | the three mode pictures, buttons drawn unlit |
 | `/jpeg/misc` | every lit button state and the drawer; positions in `[misc locations]` |
 | `/jpeg/extra` | the drawer screen (audio enhancement) |
-| `/jpeg/volumeknob`, `/jpeg/smallknob`, `/jpeg/shuttle`, `/jpeg/nav_volumeknob` | horizontal animation strips; frame width and count in `[misc values]` (volume: 18px × 37) |
+| `/jpeg/volumeknob`, `/jpeg/smallknob`, `/jpeg/shuttle`, `/jpeg/nav_volumeknob` | horizontal animation strips; frame width and count in `[misc values]` (volume: 18px × 37). A navigator without `/jpeg/nav_volumeknob` cuts `/jpeg/volumeknob` at `MISC_VOLUME_KNOB`'s size, not `MISC_NAV_VOLUME_KNOB`'s (the nav size made 120 nav captures worse, bts and alien among them). `Sonique.exe` names only `nav_volumeknob`, so a misspelt strip is not read: vertego's `navvolumeknob` (issue #733) and woody's `navolumeknob` fall back so, so vertego's knob would turn through the wrong art in Sonique too (inferred: the oracle cannot turn a knob) |
 | `/jpeg/skinthumb`, `/jpeg/skinthumbmask` | the thumbnail Sonique's skin browser shows |
 | `/rgn/<mode>/frame` | the window shape |
 | `/rgn/nav/*`, `/rgn/mid/*` | hit shapes: `play`, `pause`, `prev`, `next`, `eject`, `repeat`, `shuffle`, `volume`, `up`, `down`, `display`, `drawer*`, `dknob*`, `shuttle`, `eq`, `top`, `bottom`, `songposring`, `listposring`, `logohref` |
@@ -133,16 +133,34 @@ size (identical in sonique, sTek2k, musicman, k2 and carrot, 86 to 94 px wide), 
 | track number, `000` with nothing loaded | digits y 5–15, centred on x 47 | `SystemColor_1` |
 | elapsed time, `mm:ss.hh` | digits y 19–25 | `SystemColor_1` |
 | status line: the title, `Sonique 1.96` when idle (NullPlayer writes its own name) | y 35–42 | `SystemColor_1` |
+| the title, wrapped: further lines 11 px apart down to the window's bottom, each centred on the window's span on its row | baselines y 41, 52, 63… | `SystemColor_1` |
 
+- **The title wraps before it scrolls.** Sonique fills its round window with the title over several
+  centred lines (issue #732's captures of real Sonique: three lines of `sqdemo.mp3 - mamaSutra /
+  Sonique Theme`). NullPlayer breaks at words where it can, each line no wider than the region's row
+  less 4 px, and scrolls the title on the first line only when the lines would run past the bottom.
 - About 37 skins have a song window too small for that, and Sonique lays them out tighter: Trigun
   (74×26) shows the time alone, centred; CougarKW (59×30) drops the hundredths. Not reproduced: they
   get the full layout cut to the region.
 - In some skins Sonique also draws a `◀ vis ▶` tab at the bottom of `/rgn/mid/top` (sTek2k). Not
   reproduced.
-- **The progress rings** (`songposring`, `listposring`) are the picture while empty, as every
-  stopped capture shows; a flat `ProgressBkColor` there made 239 captures worse. How they fill
-  (start angle, colour, `mid_playlistmode`'s 270° against 360°) needs a playing oracle, which the
-  prefix cannot give: it has no sound device.
+- **The progress rings** (`songposring`, `listposring`) lie over dots the skin paints in its own
+  picture, and Sonique tints them. With nothing loaded a ring is the picture, as every stopped
+  capture shows (a flat `ProgressBkColor` there made 239 captures worse). With a track loaded
+  (issue #729's and #731's photos of real Sonique playing the default skin):
+  - each ring fills clockwise from 12:00; the track ring a whole turn, the playlist ring 270° ending
+    at 9 o'clock beside the logo, as `sonique.sgf`'s `listposring` itself stops there, unless
+    `mid_playlistmode=0` makes it a whole turn too (`misc.txt`: 1 is "regular 270 degree mode");
+  - the part come so far is the picture multiplied by its place's colour along the ring's gradient
+    (the track's `ProgressColor_1`–`_3`, the playlist's `PlayListColor_1`–`_2`, spread over the
+    whole ring as the navigator's dots are), the rest multiplied by `ProgressBkColor`.
+
+  Measured from photographs, not the oracle: the prefix could not play (it has no sound device) and
+  since 2026-11-09 does not start (`tasks/SONIQUE_TASKS.md`).
+- **The top window is the vis.** While a track is loaded Sonique draws its visualization in
+  `/rgn/mid/top` on black, under the window balls (#729's photos); NullPlayer lays the effects
+  surface there (`SoniqueSkinScene.effectsArea`), cut to the region less the balls. With nothing
+  loaded the window is the picture, as the oracle draws it.
 - **The shuttle at rest is the strip's first frame**: 258 mid captures closer than the middle frame.
 
 ## The navigator's status line

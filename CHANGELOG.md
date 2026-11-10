@@ -46,6 +46,11 @@
 - **Sonique's closed EQ drawer no longer shows through the player.** On padd, sonyque, DE_StarTrek-LCARS and other skins, the drawer's sliders and icons showed through the black parts of the player while it was closed; they are black now, as Sonique draws them.
 - **A lit Sonique button draws whole.** zSonique's play/stop and pause buttons no longer show the unlit play or pause symbol through their lit picture while pressed, playing or paused.
 - **Each of the Sonique drawer's 20 EQ sliders moves on its own.** Sonique skins use the 21-band equalizer, so a slider no longer drags its neighbour with it.
+- **Sonique's mid mode plays its visualization in the top circle** while a track is loaded, on black under the window balls, as Sonique did (#729).
+- **Sonique's mid-mode progress rings light the skin's own dots**, clockwise from 12 o'clock, in the skin's progress colours with the rest grey, instead of filling a solid arc; the playlist ring spans 270°, stopping beside the logo (#731).
+- **A long title wraps in Sonique's mid-mode song window**, centred over as many lines as the circle holds, and scrolls only when it still does not fit (#732).
+- **Sonique's progress dots run along the skin's colour gradient**: the playlist row from its first to its second playlist colour, the track row through its three progress colours (#734).
+- **vis_classic's Shadow, Double Shadow, Fade Shadow and Smoke effects show in Sonique's visual mode and in Windows Media Player skins' effects slots.** They were cleared on every frame there, so profiles such as Aurora Borealis lost the smoke they show in the Spectrum Analyzer window (#735).
 
 ## 0.35.0
 

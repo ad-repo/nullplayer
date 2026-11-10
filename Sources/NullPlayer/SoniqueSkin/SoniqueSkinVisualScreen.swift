@@ -44,4 +44,22 @@ extension SoniqueSkinScene {
         guard state.mode == .navigator, state.navScreen == .visualMode else { return nil }
         return skin.display
     }
+
+    /// Where the effects surface sits and the shape it is cut to: the shape's rects less its holes.
+    struct EffectsArea: Equatable {
+        var rect: SoniqueSkinRegion.Rect
+        var shape: [SoniqueSkinRegion.Rect]
+        var holes: [SoniqueSkinRegion.Rect] = []
+    }
+
+    /// The effects surface's area, nil where none shows: the visual mode panel's well cut to the
+    /// display, or mid mode's top window while a track is loaded, where Sonique draws its vis under
+    /// the window balls (issue #729), cut to `/rgn/mid/top` less the balls.
+    var effectsArea: EffectsArea? {
+        if let display = visualScreenDisplay {
+            return EffectsArea(rect: VisualScreen.effects.offset(display.bounds.left, display.bounds.top), shape: display.rects)
+        }
+        guard state.mode == .mid, state.host.trackLoaded, let top = region(for: .vis) else { return nil }
+        return EffectsArea(rect: top.bounds, shape: top.rects, holes: ballRects.map(\.1))
+    }
 }

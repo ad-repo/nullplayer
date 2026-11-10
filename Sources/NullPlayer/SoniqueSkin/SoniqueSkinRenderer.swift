@@ -154,6 +154,31 @@ struct SoniqueSkinPainter {
     }
 
     func colour(_ key: SoniqueColour) -> CGColor { SoniqueSkinRenderer.cgColor(skin.settings.colour(key)) }
+
+    /// The colour `t` (0–1) of the way along `gradient`, its stops spread evenly and mixed channel by
+    /// channel: a progress dot's, by where it sits on its row or ring.
+    func colour(along gradient: SoniqueProgressGradient, at t: Double) -> CGColor {
+        let keys = gradient.stops
+        let x = min(1, max(0, t)) * Double(keys.count - 1), i = min(Int(x), keys.count - 2), f = x - Double(i)
+        let a = skin.settings.colour(keys[i]), b = skin.settings.colour(keys[i + 1])
+        let mix = { (shift: UInt32) -> UInt32 in
+            UInt32((Double(a >> shift & 0xFF) * (1 - f) + Double(b >> shift & 0xFF) * f).rounded()) << shift
+        }
+        return SoniqueSkinRenderer.cgColor(mix(16) | mix(8) | mix(0))
+    }
+}
+
+/// A progress row's or ring's colours, first to last: Sonique's playlist progress runs
+/// `PlayListColor_1` to `_2`, the track's `ProgressColor_1` through `_3`. Always two stops or more.
+enum SoniqueProgressGradient {
+    case playList, track
+
+    var stops: [SoniqueColour] {
+        switch self {
+        case .playList: return [.playListColor1, .playListColor2]
+        case .track: return [.progressColor1, .progressColor2, .progressColor3]
+        }
+    }
 }
 
 extension SoniqueSkinRegion.Rect {
