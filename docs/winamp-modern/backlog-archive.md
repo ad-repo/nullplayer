@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B412 — ChewingAmp does not load: an unclosed `<include>` swallows its main container — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B412 | **ChewingAmp does not load: an unclosed `<include>` swallows its main container.** Found in intake #10's click smoke (2026-11-10): the launch logs `Failed to load 'ChewingAmp.wal': [malformedXML] Winamp Modern skin has no 'main' container layout`. `ChewingAmp/xml/player.xml:2` is `<include file="eq-elements.xml">` with no `/` and no closing tag, so `<container id="main">` and its five layouts parse as children of that include and are dropped. The skin was published, so Winamp's parser tolerates it: an `<include>` is empty, and what follows it is the include's sibling. Done when ChewingAmp loads with its five layouts and a gold+silver render sweep shows no change outside skins whose XML has an unclosed include | ChewingAmp; corpus count of unclosed `<include>` not taken | S | 1 |
+
+**Closed 2026-11-11.** An `<include>` is empty: the lenient XML parser (`WalLenientXMLParser`) no longer pushes an `<include>`/`<elementinclude>` without a `/` onto its open-tag stack, so what follows it is its sibling, and a separate `</include>` is ignored. ChewingAmp loads with its five layouts; smoke: main 9 clicked, library skin-frame closed.
+
 ## B397 — -Lithium-'s drawer handle — closed 2026-11-09
 
 | Id | Item | Reach | Effort | Tier |

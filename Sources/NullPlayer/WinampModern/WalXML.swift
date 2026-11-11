@@ -223,6 +223,8 @@ struct WalLenientXMLParser {
                                                          severity: .warning, location: location))
                     }
                     stack.removeSubrange(match...)
+                } else if ["include", "elementinclude"].contains(name.lowercased()) {
+                    // The close of an empty `<include …>` written with a separate end tag.
                 } else {
                     // A stray `</groupdef>`, `</elements>` or `</WinampAbstractionLayer>` closes nothing.
                     diagnostics.append(WalDiagnostic(.malformedXML, "Unexpected closing tag </\(name)> was ignored.",
@@ -298,7 +300,10 @@ struct WalLenientXMLParser {
             } else {
                 roots.append(node)
             }
-            if !selfClosing {
+            // An `<include>` is empty: ChewingAmp's `<include file="eq-elements.xml">` has no `/`
+            // and no closing tag, and what follows it is its sibling, not its content (B412).
+            let isInclude = ["include", "elementinclude"].contains(name.lowercased())
+            if !selfClosing && !isInclude {
                 stack.append(node)
                 guard stack.count <= maximumDepth else {
                     throw WalFailure(WalDiagnostic(.xmlDepthExceeded, "XML nesting exceeds \(maximumDepth) levels.", location: node.location))

@@ -43,6 +43,16 @@ final class WinampModernPhase63Tests: XCTestCase {
         XCTAssertEqual(warning.location?.line, 2)
     }
 
+    /// B412: an `<include>` is empty, so one written without its `/` does not swallow what follows.
+    func testUnclosedIncludeIsEmptyAndItsSiblingsStayOutside() throws {
+        let parsed = try WalLenientXMLParser()
+            .parse("<include file=\"a.xml\"><container id=\"main\"/><include file=\"b.xml\"></include>", path: "/p.xml")
+
+        XCTAssertEqual(parsed.roots.map { $0.name.lowercased() }, ["include", "container", "include"])
+        XCTAssertTrue(parsed.roots[0].children.isEmpty)
+        XCTAssertTrue(parsed.diagnostics.isEmpty)
+    }
+
     /// Well-formed markup gains nothing: no diagnostic, and the same tree as before.
     func testBalancedMarkupProducesNoDiagnostic() throws {
         let parsed = try WalLenientXMLParser()
