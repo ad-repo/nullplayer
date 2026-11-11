@@ -42,6 +42,10 @@ final class WinampModernCanvas {
         /// Promote every drawn pixel to opaque: the layout has not opted in to per-pixel alpha
         /// (`WasabiSceneRenderer.layoutWantsOpaqueBacking`).
         let promotesAlpha: Bool
+        /// Whether the window's enclosed holes catch a press (`WinampModernHoles`). Not in a
+        /// container a script creates (`dynamic="1"`): those are overlays whose see-through client
+        /// shows a window of ours beneath, ipamp14's `cont.clear.ml` frame over its Media Library.
+        var backsHoles = true
     }
 
     /// What a frame hands back to the main thread.
@@ -51,6 +55,8 @@ final class WinampModernCanvas {
         /// The canvas's alpha as an alpha-only image, when this frame changed it; nil when every
         /// pixel it drew kept its alpha. The window's drop shadow is cut from it.
         let outline: CGImage?
+        /// The outline's enclosed holes, whenever `outline` is set (empty when there are none).
+        let holes: WinampModernHoles?
     }
 
     /// The canvas space for a window or context in `space`: that space when it is an RGB one, which
@@ -132,8 +138,11 @@ final class WinampModernCanvas {
         guard let picture = context.makeImage() else { return nil }
         // A new canvas always reports its outline, even an empty one: the last was another size.
         let changed = job.rects.reduce(fresh) { updateAlpha(data, rect: $1, in: context) || $0 }
-        return Frame(picture: picture, outline: changed ? outlineImage(width: context.width,
-                                                                       height: context.height) : nil)
+        guard changed else { return Frame(picture: picture, outline: nil, holes: nil) }
+        return Frame(picture: picture,
+                     outline: outlineImage(width: context.width, height: context.height),
+                     holes: job.backsHoles
+                        ? WinampModernHoles(alpha: alpha, width: context.width, height: context.height) : nil)
     }
 
     /// `image` in `space`, matched once and kept. An image already in it, or one that is not 8-bit
@@ -284,7 +293,8 @@ extension WasabiSceneRenderer {
         }
         return WinampModernCanvas.Job(pixelWidth: pixelWidth, pixelHeight: pixelHeight, colorSpace: colorSpace,
                                       scale: scale, rects: rects, scene: scene, chrome: chromeList,
-                                      promotesAlpha: layoutWantsOpaqueBacking)
+                                      promotesAlpha: layoutWantsOpaqueBacking,
+                                      backsHoles: container.attributes["dynamic"] != "1")
     }
 
     /// A scene too large for a canvas, drawn straight into `context`: chrome first, then the scene,

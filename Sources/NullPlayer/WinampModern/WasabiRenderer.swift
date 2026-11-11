@@ -960,11 +960,18 @@ final class WasabiSceneRenderer {
         // the switch, keyed by the layout's own object, so a container with three layouts remembers
         // all three.
         canvasSizeByLayout[layout.stableID] = storedCanvasSize
-        let previous = layout
+        // A linked axis comes from the layout being left on **every** entry, not only the first
+        // (B406): the layouts share that axis, so the entered layout's own remembered value is stale
+        // the moment the other was resized. An axis that is not linked keeps the remembered size.
+        var restored = canvasSizeByLayout[next.stableID]
+        let sharesWidth = Self.areLinked(layout, next, by: "linkwidth", among: layouts)
+        let sharesHeight = Self.areLinked(layout, next, by: "linkheight", among: layouts)
+        if sharesWidth || sharesHeight {
+            let own = restored ?? defaultSize(for: next)
+            restored = CGSize(width: sharesWidth ? storedCanvasSize.width : own.width,
+                              height: sharesHeight ? storedCanvasSize.height : own.height)
+        }
         layout = next
-        let restored = canvasSizeByLayout[next.stableID]
-            ?? Self.linkedWidthCarry(into: next, from: previous, width: storedCanvasSize.width,
-                                     height: defaultSize(for: next).height)
         storedCanvasSize = defaultSize(for: next)
         // A size this renderer is *restoring* is not one it chose, so the content fit must leave it
         // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
@@ -983,22 +990,6 @@ final class WasabiSceneRenderer {
     /// The canvas each of this container's layouts was last on. Empty until the first switch, so a
     /// container that never leaves `normal` behaves exactly as it did.
     private var canvasSizeByLayout: [WasabiObjectID: CGSize] = [:]
-
-    /// Wasabi's `linkwidth`: two layouts that name each other share a width, so shading a window
-    /// keeps the width the user gave it and unshading gives it back. cPro's player declares the pair
-    /// (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`). Only consulted for a
-    /// layout being entered for the *first* time — after that its own remembered size is the better
-    /// answer, and it already carries the width.
-    private static func linkedWidthCarry(into next: WasabiObject, from previous: WasabiObject,
-                                         width: CGFloat, height: CGFloat) -> CGSize? {
-        guard let link = next.attributes["linkwidth"], !link.isEmpty,
-              previous.xmlID?.caseInsensitiveCompare(link) == .orderedSame else { return nil }
-        // Height is the entered layout's own business: its declared height, which `resize(to:)`
-        // then clamps to its limits, so `shade`'s `maximum_h="23"` still wins. Carried as 0 and left
-        // to the minimum, a shade that states `h="36"` and no `minimum_h` (CopperdeckII's player and
-        // equalizer) collapsed to a 1px strip.
-        return CGSize(width: width, height: height)
-    }
 
     /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective
     /// minimum below. Every window hosting this renderer takes its `minSize` from here, so a restored

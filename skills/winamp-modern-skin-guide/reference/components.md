@@ -282,12 +282,14 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   top. With LCDx's strips gone it would otherwise run under its own status bar; Celica's playlist
   had been covering its command bar, and Circlo's client now stops above its status text.
 
-**The synthesizer still rejects these frames, and that is now stale.** `usableFrame` asks the
-bytecode whether a frame can build its own client area, so TRON's Media Library — a window *we*
-synthesize — still falls back to NullPlayer's chrome (`library=classic('wasabi.standardframe.statusbar'
-has no frame script that instantiates its content')`) even though the initializer could now fill that
-frame. Unpicked deliberately: it changes the hosted-window catalog for three skins and wants its own
-live QA.
+**The synthesizer takes these frames as a last resort (B366, 2026-11-10).** `usableFrames` still
+prefers a frame whose script builds its client, then the skin's own exemplar layout; only with
+neither does it take a frame that has artwork and no content script (`Frame.filledByInitializer`),
+because the initializer fills that frame's client. The_Official_Sims_Online_Skin's Playlist and
+Library now open in its navy frame instead of NullPlayer's chrome; across gold+silver that adds a
+synthesized Library or Playlist window to 37 skins (58 windows), each in the skin's frame. **The About page
+keeps NullPlayer's chrome there**: the frame's border is unmeasured, the page is a fixed 380x321,
+and pumaSKIN's frame drew its bottom band over the page's version line.
 
 #### A frame may name Winamp's stock `library.content.group` without defining it (B369, 2026-11-05)
 
@@ -570,6 +572,13 @@ while retaining its per-skin value. The `.winampModern` Windows menu also omits 
 `revealEmbeddedSurface` sends the skin `System.onGetCancelComponent(guid, true)` and falls back to
 Wasabi's `windowholder autoopen="1"` — walking up from the holder and un-hiding its ancestors — when
 an explicit request leaves the scene with no visible holder of that kind (B23).
+
+Before that fallback, a holder in **another layout of the same container** is reached by switching to
+it (`revealBySwitchingLayout`), as the skin's own `action="SWITCH"` tab button would. AmpTunes_III's Video
+tab is a layout of its own (`iWinamp Video`), and the `autoopen` walk only searches the active
+layout, so a film started from its Media tab opened in NullPlayer's video window and jumped into the
+tab only when the user picked it (2026-11-10). Not at startup: the launch-only reveal below never
+switches layouts.
 
 The launch-only library reveal is deliberately different (B25): it sends the event but does **not**
 run the `autoopen` fallback. Correct object-typed `NULL` coercion repaired ClassicPro's first tab
@@ -1586,7 +1595,9 @@ not looking at.
 Hosted AppKit surfaces (`WinampModernLibrarySurface`) are **reconciled from `layout()`, never from
 `draw`** — creating and adding a subview inside a draw cycle is a re-entrant hierarchy mutation. A
 script mutating the graph or switching layout sets `needsLayout`, because a script can create or
-reveal a holder.
+reveal a holder. `WinampModernMainView.activateLayout` sets it itself: AppKit runs `layout()` on its
+own only when the frame size changed, and AmpTunes_III's four tab layouts share one size, so a switch
+mounted nothing and every tab's content area stayed black (2026-11-10).
 
 **Hosted surfaces must clip to their holder frame** (`layer.masksToBounds = true`). Without this,
 NSView's default non-clipping layer lets the browser's tab headers ("+ADD", "History", etc.) bleed

@@ -12,7 +12,9 @@
 # launch.sh resolves. The sweep logs `WM-SMOKE|key=value|…` rows; their keys, in the sweep's order,
 # are the TSV's columns after `skin`. The last, `changed`, is the sweep's verdict: what moved
 # (volume, play, position jump, track, eq, layout, windows, main, menu, modal), or `nochange`; a row
-# the sweep did not click reads `-` there and says why in `note` (skip, unreachable).
+# the sweep did not click reads `-` there and says why in `note` (skip, unreachable). A window with
+# see-through holes inside its outline gets one `holes` row: `backed` (a press there stays in the
+# window) or `unbacked` (it would go to the app behind), named in the summary line too.
 # Why: a live pass clicked each control by hand, ~50 tool calls a skin.
 
 set -u -o pipefail
@@ -60,12 +62,13 @@ for SKIN in "${SKINS[@]}"; do
             w = $col["window"]; v = $col["changed"]
             if ($col["idx"] == "open") { opened = $col["note"]; next }
             if ($col["idx"] == "close") { shut = v == "-" ? $col["note"] : v; next }
+            if ($col["idx"] == "holes") { holes = holes "; holes in " w " " v " (" $col["note"] ")"; next }
             if (v == "-") other[w]++; else { clicked[w]++; if (v == "nochange") same[w]++ }
         } END {
             printf "%s: %s, main %d clicked, %d nochange, %d not clicked; library %s", skin, status,
                 clicked["main"], same["main"], other["main"], (opened == "" ? "not reached" : opened)
             if (opened == "skin-frame") printf ", %d clicked, %d nochange, %d not clicked, close %s", clicked["library"], same["library"], other["library"], shut
-            printf "\n"
+            printf "%s\n", holes
         }' "$TSV"
 done
 pkill -x NullPlayer 2>/dev/null || true

@@ -1433,6 +1433,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             return true
         }
         if allowAutoOpenFallback, skinHostsComponent(kind, guid: guid, scripts: scripts) { return true }
+        if allowAutoOpenFallback, revealBySwitchingLayout(kind) { return true }
         guard allowAutoOpenFallback else {
             #if DEBUG
             NSLog("WinampModern reveal %@ guid=%@ handlers=%d (startup; autoopen skipped)",

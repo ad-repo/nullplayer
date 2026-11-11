@@ -309,4 +309,6 @@ derivable from the skin's own numbers, exact at every size, and a provable no-op
 already lands correctly.
 
 Duplicate resource/group/XUI definitions **replace** earlier ones and warn — this is intentional
-override behavior, not an error.
+override behavior, not an error. Two scoped exceptions keep an earlier version: a `<group>` expands the
+groupdef in force where it is written, and in a document declaring a version below 1 a container's
+bitmaps resolve where the container is declared (B401); both in `reference/loading.md`.

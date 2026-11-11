@@ -133,4 +133,45 @@ final class WinampModernCanvasTests: XCTestCase {
         XCTAssertGreaterThan(pixel(15, 10)[2], 200)
         XCTAssertEqual(pixel(25, 10), [0, 0, 0, 0], "past the art: not window")
     }
+
+    /// LiquidStar, 2026-11-10: a click in the see-through star at the centre of its body went to the
+    /// app behind. A transparent pixel the window's edge cannot reach is a hole and catches the press;
+    /// one the edge reaches is outside the window and does not.
+    func testOnlyEnclosedTransparencyIsAHole() {
+        // 5x5, top row first: an opaque ring around one transparent pixel, transparent border column.
+        let rows: [[UInt8]] = [
+            [0, 255, 255, 255, 0],
+            [0, 255, 0, 255, 0],
+            [0, 255, 255, 255, 0],
+            [0, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0],
+        ]
+        let holes = WinampModernHoles(alpha: rows.flatMap { $0 }, width: 5, height: 5)
+        XCTAssertFalse(holes.isEmpty)
+        XCTAssertNotNil(holes.backing)
+        XCTAssertTrue(holes.contains(x: 2, y: 3), "the enclosed pixel (bottom-left origin)")
+        XCTAssertFalse(holes.contains(x: 0, y: 3), "transparent but reached from the edge")
+        XCTAssertFalse(holes.contains(x: 1, y: 3), "opaque")
+
+        let open = WinampModernHoles(alpha: [0, 255, 0, 0, 255, 0], width: 3, height: 2)
+        XCTAssertTrue(open.isEmpty)
+        XCTAssertNil(open.backing)
+    }
+
+    /// ipamp14, 2026-11-10: its script-made `cont.clear.ml` frame lies over the Media Library window,
+    /// and its see-through client is how the library shows and takes clicks. Such a window backs no hole.
+    func testAWindowThatBacksNoHolesReportsNone() throws {
+        // A red ring around a transparent 4x4 centre.
+        let red = CGColor(red: 1, green: 0, blue: 0, alpha: 1)
+        let scene = scene([(CGRect(x: 0, y: 0, width: width, height: 5), red),
+                           (CGRect(x: 0, y: 9, width: width, height: height - 9), red),
+                           (CGRect(x: 0, y: 5, width: 5, height: 4), red),
+                           (CGRect(x: 9, y: 5, width: width - 9, height: 4), red)])
+        var overlay = job(scene)
+        overlay.backsHoles = false
+        let frame = try XCTUnwrap(WinampModernCanvas().render(overlay))
+        XCTAssertNotNil(frame.outline)
+        XCTAssertNil(frame.holes)
+        XCTAssertEqual(try XCTUnwrap(WinampModernCanvas().render(job(scene))).holes?.isEmpty, false)
+    }
 }

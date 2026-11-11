@@ -83,6 +83,7 @@ final class WinampModernDebugClickSweep {
         startLayout = view.renderer.activeLayoutID
         targets = Self.targets(in: view)
         NSLog("WM-SMOKE start layout=%@ targets=%d", startLayout, targets.count)
+        Self.logHoles(in: view, window: Pass.main.rawValue)
         menuObserver = NotificationCenter.default.addObserver(
             forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil
         ) { [weak self] note in
@@ -213,6 +214,17 @@ final class WinampModernDebugClickSweep {
         }.joined(separator: "|"))
     }
 
+    /// One `holes` row per swept window that has see-through holes inside its outline: a skin point in
+    /// one, how many canvas pixels they cover, and `backed` when the backing that keeps a press there
+    /// is up, `unbacked` when a press there would go to the app behind (`WinampModernHoles`).
+    private static func logHoles(in view: WinampModernMainView, window: String) {
+        guard let holes = view.frames.holes, !holes.isEmpty, let pixel = holes.samplePixel else { return }
+        let scale = view.window?.backingScaleFactor ?? 1
+        let skin = view.skinPoint(NSPoint(x: CGFloat(pixel.x) / scale, y: CGFloat(pixel.y) / scale))
+        log(["window": window, "idx": "holes", "point": "\(Int(skin.x)),\(Int(skin.y))",
+             "note": "pixels=\(holes.pixelCount)", "changed": view.showsHoleBacking ? "backed" : "unbacked"])
+    }
+
     private static func quarterPoint(along frame: CGRect) -> CGPoint {
         frame.width >= frame.height ? CGPoint(x: frame.minX + frame.width / 4, y: frame.midY)
             : CGPoint(x: frame.midX, y: frame.minY + frame.height / 4)
@@ -246,6 +258,7 @@ final class WinampModernDebugClickSweep {
                 self.startLayout = skinView.renderer.activeLayoutID
                 self.targets = Self.targets(in: skinView)
                 NSLog("WM-SMOKE library layout=%@ targets=%d", self.startLayout, self.targets.count)
+                Self.logHoles(in: skinView, window: Pass.library.rawValue)
                 self.step(0)
             }
         }

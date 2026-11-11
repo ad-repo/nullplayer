@@ -165,11 +165,26 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// track would.
     func playlistAppend(mediaAt url: URL, play: Bool) {
         let row = engine.playlist.count
-        engine.appendTracks([Track(lightweightURL: url)])
+        // A bare stream address has no file name to title it by — Helloween's nose plays
+        // `http://83.170.113.110:8080` — so the row is named by the address, not left blank. The
+        // title is shown and logged, so it drops user info, query and fragment: a skin's URL can
+        // carry a token there.
+        let named = Track(lightweightURL: url)
+        engine.appendTracks([named.title.isEmpty ? Track(url: url, title: Self.displayAddress(of: url)) : named])
         guard play, row < engine.playlist.count else { return }
         selectedRow = row
         selectedRows = [row]
         engine.playTrack(at: row)
+    }
+
+    /// `url` without its user info, query and fragment, for a title.
+    static func displayAddress(of url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.host ?? "" }
+        parts.user = nil
+        parts.password = nil
+        parts.query = nil
+        parts.fragment = nil
+        return parts.string ?? url.host ?? ""
     }
 
     // MARK: - Saved playlists (`MLPlaylists`)

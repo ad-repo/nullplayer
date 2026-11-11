@@ -909,6 +909,11 @@ no-op**: both methods are void, Winamp ignores a path it cannot play, and raisin
 rest of the caller's handler over one bad string. Refusals print their reason under
 `WINAMP_MODERN_CALL_TRACE=1` and are deliberately not counted as unsupported-method demand.
 
+A row is titled from the URL's file name (`Track(lightweightURL:)`); a bare stream address has none,
+so the bridge's `playlistAppend` titles it with the whole address instead of leaving the row blank.
+Helloween's nose is the case: its `radio.maki` plays `http://83.170.113.110:8080`, a station that no
+longer answers (2026-11-10; the endless buffering is M87, shared playback).
+
 ClassicPro's `clear()` + `enqueueFile` pairing is unaffected: `findFiles`'s bounded `-1` early-returns
 before the `PlEdit.clear()`, so that caller still never runs.
 
@@ -1426,7 +1431,7 @@ byte-identical before and after the fix. `WINAMP_MODERN_RENDER_LAYOUTS` ([harnes
 drives the round trip, and it still will not show you this one: it took an attribute-write trace in
 the **running app** to see `group#centro.playlist1 visible: 1 -> 0` and a stack naming the branch.
 
-### A layout comes back to the canvas it was on, and `linkwidth` pairs two of them
+### A layout comes back to the canvas it was on, and `linkwidth`/`linkheight` share it
 
 `activateLayout` used to reset the canvas to `defaultSize(for:)` on every switch, which throws away
 whatever size the window actually had. For a layout the skin sized itself that is invisible — the
@@ -1442,12 +1447,16 @@ Two rules replace the reset, both Winamp's:
 - **Each layout remembers its own canvas.** Recorded on the way out, restored on the way in, clamped
   by the layout being entered. A container with three layouts remembers three sizes, and one that
   never leaves its opening layout has an empty memory and behaves exactly as before.
-- **`linkwidth` carries the width between two layouts that name each other.** cPro's player is the
-  pair — `one/xml/player-normal.xml` has `linkwidth="shade"`, `player-shade.xml` has
-  `linkwidth="normal"` — so shading keeps the window's width instead of snapping to 500. Consulted
-  only for a layout entered for the *first* time; after that its own remembered size is the better
-  answer and already carries the width. The height stays the entered layout's business, which is what
-  lets shade's `maximum_h="23"` still win.
+- **`linkwidth` and `linkheight` share that axis across every layout a chain of links reaches**,
+  whichever side wrote the link (`WasabiSceneRenderer.areLinked`). cPro's player is a pair —
+  `one/xml/player-normal.xml` has `linkwidth="shade"`, `player-shade.xml` has `linkwidth="normal"` —
+  so shading keeps the window's width instead of snapping to 500. AmpTunes_III is a **ring** on both
+  axes (Media→Visual→Video→Online→Media), and Winamp_Portrait__WMP12 a chain: read as a mutual pair
+  only, entering Visual from Media found no link back and the window jumped to Visual's own default
+  (2026-11-10). A linked axis takes the size the window is leaving on *every* entry, not only the
+  first, so a resize on one tab carries to a tab already seen. An axis that is not linked is the
+  entered layout's own business — its remembered size, or its default — which is what lets shade's
+  `maximum_h="23"` still win.
 
 A restored size is not one the renderer chose, so `autoFit.canvas` is cleared with it and the
 content fit leaves it alone — the same rule `resize(to:)` already relied on.
