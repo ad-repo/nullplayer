@@ -262,6 +262,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             createdView.scriptsDidStart()
             createdView.needsLayout = true
             createdView.layoutSubtreeIfNeeded()
+            growToClientFloor(definition, renderer: renderer, view: createdView, window: window, id: id)
             guard createdView.hasHostedWindowSurface(id) else {
                 throw WalFailure(WalDiagnostic(
                     .unsupportedElement,
@@ -288,6 +289,30 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 location: WalSourceLocation(path: WasabiSurfaceSynthesizer.sourcePath)))
             return nil
         }
+    }
+
+    /// A view with a rigid layout needs its whole design size as client area, and a frame whose
+    /// script draws thicker chrome than its markup declares leaves less (Simple_Amp_'s Studio
+    /// panels overlapped inside it, B415). Measure what the frame left the content and grow the
+    /// canvas by the shortfall.
+    private func growToClientFloor(_ definition: WinampModernHostedWindowDefinition,
+                                   renderer: WasabiSceneRenderer, view: WinampModernMainView,
+                                   window: NSWindow, id: WinampModernHostedWindowID) {
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_CLIENT_FLOOR"] != "0",
+              let floor = definition.clientFloor,
+              let client = renderer.componentHolders().first(where: { $0.hostedWindowID == id })?.frame.size
+        else { return }
+        let shortfall = CGSize(width: max(0, floor.width - client.width),
+                               height: max(0, floor.height - client.height))
+        guard shortfall != .zero else { return }
+        let canvas = renderer.canvasSize
+        _ = renderer.resize(to: CGSize(width: canvas.width + shortfall.width,
+                                       height: canvas.height + shortfall.height))
+        applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
+        window.setContentSize(view.scaledCanvasSize)
+        view.setFrameSize(view.scaledCanvasSize)
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
     }
 
     /// The player's width in skin pixels, which caps how wide a hosted frame may insist on being.

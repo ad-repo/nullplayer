@@ -168,7 +168,8 @@ extension WasabiSceneRenderer {
     func paintedBackingID(of object: WasabiObject) -> String? {
         if object.tag.is(.layout) {
             if object.attributes["drawbackground"] == "0", object.attributes["sysregion"] == "1" { return nil }
-            if object.attributes["desktopalpha"] == "1", let alpha = object.attributes["alphabackground"] {
+            if let alpha = object.attributes["alphabackground"],
+               object.attributes["desktopalpha"] == "1" || hasBlankBackground(object) {
                 return alpha
             }
             return object.attributes["background"]
@@ -176,6 +177,20 @@ extension WasabiSceneRenderer {
         guard let background = object.attributes["background"] else { return nil }
         let flag = object.attributes["drawbackground"]?.lowercased()
         return flag == "0" || flag == "false" || flag == "no" ? nil : background
+    }
+
+    /// A layout that names an `alphabackground` and no `desktopalpha`, whose `background` has no
+    /// opaque pixel at all: the blank is only a placeholder for the window's shape, and the art is
+    /// the `alphabackground`. Danielle_Fishel_Double_Diamond's Photo Extension pairs a fully
+    /// transparent `background` with the hand drawn in its `alphabackground`, and drew nothing
+    /// (B418). Cached by id: `opaqueBounds` draws the whole bitmap.
+    private func hasBlankBackground(_ layout: WasabiObject) -> Bool {
+        guard layout.attributes["desktopalpha"] == nil, let id = layout.attributes["background"] else { return false }
+        if let hit = blankBackgrounds[id] { return hit }
+        let blank = resources.bitmap(background: id, declaredIn: layout.source)
+            .map { WasabiResourceCache.opaqueBounds(of: $0.image) == nil } ?? false
+        blankBackgrounds[id] = blank
+        return blank
     }
 
     enum Backing {

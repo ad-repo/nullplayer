@@ -2117,6 +2117,7 @@ final class WasabiSceneRenderer {
         prescaledCache.removeAll()
         prescaledPixelCost = 0
         cropCache.removeAll()
+        spaceCells.removeAll()
     }
 
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
@@ -2662,6 +2663,10 @@ final class WasabiSceneRenderer {
     /// parent's backing store.
     static let maximumCachedCrops = 512
     var cropCache: [CropKey: (source: CGImage, crop: CGImage)] = [:]
+    /// The space cell per bitmap-font sheet (`spaceCell`); the source is held so an address is never reused.
+    /// Whether a layout's `background` bitmap is fully transparent, by bitmap id (`hasBlankBackground`).
+    var blankBackgrounds: [String: Bool] = [:]
+    var spaceCells: [ObjectIdentifier: (source: CGImage, cell: (Int, Int))] = [:]
 
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
     ///

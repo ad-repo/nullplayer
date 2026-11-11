@@ -119,17 +119,17 @@ enum WasabiSurfaceSynthesizer {
         }
         diagnostics.append(contentsOf: about.diagnostics)
 
-        if let stockLibrary = stockLibraryContentGroup(document: document, definitions: definitions) {
-            let cost = countNodes([stockLibrary])
+        for stock in [stockLibraryContentGroup(document: document, definitions: definitions),
+                      stockColorThemesContentGroup(document: document, definitions: definitions)].compactMap({ $0 }) {
+            let cost = countNodes([stock])
             if cost <= budget {
                 budget -= cost
-                appended.append(stockLibrary)
+                appended.append(stock)
             } else {
                 diagnostics.append(WalDiagnostic(
                     .expandedNodeLimitExceeded,
-                    "Synthesizing the stock library content would exceed the "
-                    + "\(limits.maximumExpandedNodeCount)-node budget; the skin's library window "
-                    + "stays empty.",
+                    "Synthesizing the stock '\(stock.attribute("id") ?? "")' content would exceed the "
+                    + "\(limits.maximumExpandedNodeCount)-node budget; the skin's window stays empty.",
                     severity: .warning, location: WalSourceLocation(path: sourcePath)))
             }
         }
@@ -531,32 +531,57 @@ enum WasabiSurfaceSynthesizer {
                               filledByInitializer: !scripted)
             let entry = (border: Double(frame.chromeInset.width + frame.chromeInset.height),
                          order: order, frame: frame)
+            // The playlist's command bar is a `PE_*` action, or a text showing the playlist's own
+            // information (`display="PE_Info"`, WGlass's status bar, B421).
+            if contains(definition, where: {
+                $0.attribute("action")?.uppercased().hasPrefix("PE_") == true
+                    || $0.attribute("display")?.uppercased().hasPrefix("PE_") == true
+            }) {
+                withPlaylistBar.insert(flavour.groupIdentifier)
+            }
             guard scripted else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
                                + "that instantiates its content")
                 if frame.hasArtwork { filledByInitializer.append(entry) }
                 continue
             }
-            if contains(definition, where: { $0.attribute("action")?.uppercased().hasPrefix("PE_") == true }) {
-                withPlaylistBar.insert(flavour.groupIdentifier)
-            }
             declared.append(entry)
         }
         // A frame that draws Add/Rem/Sel/Misc/List into its own chrome (LG_Free's status-bar frame)
         // is the playlist's; any other window takes a sibling frame when the skin has one.
         // `WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME=1` is the A/B switch: the thinnest frame for all.
+        // A static frame is the skin's fixed-size window (its titlebar group stops short of a
+        // resize edge: Slim's `layout2` ends 72px in), and every window of ours resizes, so it is
+        // taken only when the skin has no other (B417).
         func thinnest(_ frames: [(border: Double, order: Int, frame: Frame)]) -> FrameSelection? {
-            frames.min(by: { ($0.border, $0.order) < ($1.border, $1.order) }).map { .success($0.frame) }
+            func key(_ entry: (border: Double, order: Int, frame: Frame)) -> (Int, Double, Int) {
+                (entry.frame.groupIdentifier == WasabiStandardFrames.Flavour.static.groupIdentifier
+                    && !staticFrameOnAnyWindow ? 1 : 0,
+                 entry.border, entry.order)
+            }
+            return frames.min(by: { key($0) < key($1) }).map { .success($0.frame) }
         }
         let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
         let barred = declared.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }
         let playlist = thinnest(barred.isEmpty || playlistBarOnAnyFrame ? declared : barred)
         let other = thinnest(plain.isEmpty || playlistBarOnAnyFrame ? declared : plain)
         if let playlist, let other { return (playlist, other) }
-        var fallback = exemplarFrame(in: definitions, document: document, reasons: reasons)
-        if case .failure = fallback, let filled = thinnest(filledByInitializer) { fallback = filled }
-        return (playlist ?? fallback, other ?? fallback)
+        let exemplar = exemplarFrame(in: definitions, document: document, reasons: reasons)
+        // The frames the initializer fills follow the same split (WGlass's are all of this kind).
+        func fallback(_ preferred: [(border: Double, order: Int, frame: Frame)]) -> FrameSelection {
+            if case .failure = exemplar,
+               let filled = thinnest(preferred.isEmpty || playlistBarOnAnyFrame ? filledByInitializer : preferred) {
+                return filled
+            }
+            return exemplar
+        }
+        return (playlist ?? fallback(filledByInitializer.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }),
+                other ?? fallback(filledByInitializer.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }))
     }
+
+    /// `WINAMP_MODERN_STATIC_FRAME_ANY_WINDOW=1` is the A/B switch: the thinnest frame wins even when static.
+    private static let staticFrameOnAnyWindow =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_STATIC_FRAME_ANY_WINDOW"] == "1"
 
     private static let playlistBarOnAnyFrame =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_PLAYLIST_BAR_ANY_FRAME"] == "1"
