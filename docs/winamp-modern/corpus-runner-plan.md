@@ -317,6 +317,30 @@ notifier placement), B405 (an animation speed setting, filed from HUD).
 This batch measured that the WAL version is not a Winamp3 marker: 141 of 315 gold+silver skins
 declare `0.8`, so a rule keyed on it must be checked against its whole match set (B401, B411).
 
+### Done: intake #10, promoted to gold (2026-11-11)
+
+50 skins were picked for batch 10 by `wal_intake_pick.sh 50` (cap raised from 25) and scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-10`. 49 were accepted by the user and promoted to gold on
+2026-11-11, with rows on `skin-compatibility.md` (46 B, 3 C, graded from the ledger notes and backlog rows). The per-skin
+record is `intakes/intake-10.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| ChewingAmp | Did not load: an unclosed `<include>` swallowed the main container (B412) | A bare `<include>`/`<elementinclude>` is empty |
+| Tewnz_2.0 | Windows > Library could not re-show the embedded library once the skin hid it (B413) | The holder reopens what the script closed |
+| Blogz, Official_Angel, K-Tech_SFX, Simple_Amp_, Nokia_6600, X_Sphere, Act3scene2 | The EQ Studio opened squeezed, panels overlapping (B415) | A hosted window grows to its client floor |
+| Washed | The ticker drew spaces as boxes (B416) | The space is the font sheet's first blank cell from column 28 |
+| Slim | The title-bar cap stopped short of the right edge (B417) | A `static` frame flavour is taken only when it is the skin's only frame |
+| Danielle_Fishel | The Photo Extension window drew nothing (B418) | A fully blank background yields to the layout's painted backing |
+| Qwest_V2 | Color Themes opened empty (B420) | The stock color-themes group is appended |
+| WGlass | The EQ Studio and Library wore the playlist time (B421) | A frame displaying `PE_*` is the playlist's |
+| BigBerthaSanctuary | The seek thumb was not drawn (B423) | A slider thumb declared `w="0" h="0"` is the whole file |
+| gtutorials.dap.ro | The time readout could not be clicked or dragged (B424) | A slider drawn at alpha 0 no longer claims presses through its thumb's overhang |
+
+Closed as not defects: Wurlitzer_v2's playlist title wrap (B419, the host marquee), Halloween2003's pulse (B425, faint by
+design, confirmed by the user). Held back in silver: Wurlitzer_v2 (B414 its Library in plain chrome, B422 its skin frame
+drawn short on our windows), both open.
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
