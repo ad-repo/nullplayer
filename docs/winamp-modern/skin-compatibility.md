@@ -29,9 +29,11 @@ Media Library in NullPlayer's plain chrome (open B366). Twenty-five more joined 
 intake #8, graded the same way and passed by the user in the app; seven are C for a Media Library in
 NullPlayer's plain chrome (open B366) or no library window of the skin's own. Twenty-five more joined
 on 2026-11-10, corpus intake #9, graded the same way and passed by the user in the app; one is C for a
-Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own).
+Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own). B366's fix moved six intake #8 skins
+(Narnia, Thanog, Lara Flynn Boyle, FreddyvsJason, Fast And The Furious 4, Pax) from C to B: their
+Media Library now opens in the skin's own frame, checked by the user in the app.
 
-Current picture: **251 B · 61 C**, of which 7 letters come from a
+Current picture: **257 B · 55 C**, of which 7 letters come from a
 person using the skin and 305 are provisional (below).
 
 ## How the grades were arrived at, and how far to trust them
@@ -184,11 +186,11 @@ this skin at all — usually because the skin predates the feature, not because 
 | **EW**<br>`EW.wal` | Roberto Cuellar Gamez | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Fanta**<br>`Official_Fantana_Skin.wal` | Adil and Will for Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | open: B382 (declared boxes overlap; B290 fontsize) |
 | **Fast And The Furious**<br>`Tokyo_Drift.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **Fast And The Furious 4**<br>`Fast__Furious_Winamp5_Skin.wal` | — | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Fast And The Furious 4**<br>`Fast__Furious_Winamp5_Skin.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Firefox**<br>`Firefox.wal` | Quadhelix | B<br><sub>provisional</sub> | Fully skinned | 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Foo Fighters**<br>`Official_Foo_Fighter_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `win.center` |
 | **Formamp**<br>`Formamp.wal` | coronerss | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **FreddyvsJason**<br>`Freddy_vs_Jason.wal` | Petrol Designs | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **FreddyvsJason**<br>`Freddy_vs_Jason.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **G2**<br>`G2.wal` | Whatsitsname | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
 | **GGXX WINAMP5 SKIN**<br>`GUILTY_GEAR_XX_WINAMP5_SKIN.wal` | LEGION | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **GlassAMP**<br>`GlassAMP2.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -233,7 +235,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **KrazyPlayer**<br>`krazyPlayer.wal` | Skin Consortium | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `makemeblank0`, `layout.volumebar`; 6 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Kyoko Fukada**<br>`Kyoko_Fukada.wal` | Hikari Hendri | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Lapis Lazuli**<br>`Lapis_Lazuli.wal` | Jamie McDonald | B<br><sub>provisional</sub> | Fully skinned | its song title and the band behind it run past the triangle onto the frame's right arm (open B411) |
-| **Lara Flynn Boyle - The Devil Inside V3**<br>`Lara_Flynn_Boyle_The_D3vil_Inside.wal` | — | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Lara Flynn Boyle - The Devil Inside V3**<br>`Lara_Flynn_Boyle_The_D3vil_Inside.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **LCD_hm1m**<br>`LCD_hm1_m.wal` | Heiko Mamsch | B<br><sub>provisional</sub> | Fully skinned | its video button opens nothing: the skin declares no video window (open B403) |
 | **LCDx**<br>`LCDx.wal` | — | B<br><sub>provisional</sub> | Player skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.button.label.arrow.left`, `wasabi.button.label.arrow.right` |
 | **LexAmp**<br>`The_Official_Lex_Luthor_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | its `switchskin(LexAmp_Win2.wsz)` names a classic skin the archive does not ship (the skin's) |
@@ -277,7 +279,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Multipass**<br>`multipass_1_4_by_rpeterclark_d5lwjv.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Music Show**<br>`MusicshowB_version.wal` | Skin Consortium | B<br><sub>provisional</sub> | Fully skinned | 4 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `onegd`, `resizel`, `resizer` |
 | **My Skin Name**<br>`cPro_SC.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the window census timed out on it (harness, open B396) |
-| **Narnia**<br>`The_Chronicles_of_Narnia.wal` | Petrol Designs | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Narnia**<br>`The_Chronicles_of_Narnia.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **naturallz**<br>`NaturallZ.wal` | DaphatOne and Pimousse38 | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nebular**<br>`Nebular.wal` | Vica. | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
 | **NEO**<br>`NEO.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Player skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `dummy0` |
@@ -297,7 +299,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **OrbFace**<br>`OrbFace.wal` | Michael Kantor | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `studio.config.textbg` |
 | **Overdrive 2**<br>`Overdrive_2.wal` | Ian Novack aka Spoonman aka Novispoon | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.anim.volume`; no library window of its own; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140); 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **PAD**<br>`PAD.wal` | Ryan F. (graphics), iPlayTheSpoons (scripting) | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
-| **Pax**<br>`Pax_Amp.wal` | — | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Pax**<br>`Pax_Amp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **PiOnNeR_AMP2**<br>`PionNer_AMP2.wal` | Marcelo Caetano Martins Muniz | B<br><sub>provisional</sub> | Fully skinned | 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; its synthesized playlist and library windows may draw plain (synthesis reads its standard frame as artwork-less) |
 | **Pixelated**<br>`Pixelated.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | the startup arrangement tiles its notifier, so the playlist opens 27px lower: open B398 |
 | **Pokemon DS**<br>`PokemonDS.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -348,7 +350,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Tekken Lili Winamp Skin**<br>`Tekken Lili.wal` | Maxim Cryseria | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.volpanel` |
 | **Tendency**<br>`Prakrit.wal` | Rohan Prabhu / Tritium SkinZ | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.frame.basetexture` |
 | **Test**<br>`machina.wal` | Jason Lange and Frank Schoenmaker aka vrank | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.resize` |
-| **Thanog**<br>`Thanog_.wal` | Antonio Manna | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Thanog**<br>`Thanog_.wal` | Antonio Manna | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **The Crow**<br>`The_Crow__v1.wal` | ivan gomez | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **The Duk Side**<br>`The_Duk_Side_V3.wal` | Mr Jones | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
 | **The Hives**<br>`Official_The_Hives_Skin.wal` | Taber Buhl | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
