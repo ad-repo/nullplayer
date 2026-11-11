@@ -48,7 +48,10 @@ Two kinds of letter appear in the table and they are not equally good:
   skin engine, and under the staleness rule a grade goes stale when the engine moves under it.
 - **provisional** — derived from a headless pass: the skin is loaded, every container and layout it
   declares is rendered to an image, its scripts are started, and its artwork lookups, unimplemented
-  method calls and surface routing are recorded. No one has clicked anything.
+  method calls and surface routing are recorded. No one has clicked anything. Skins from corpus
+  intake #6 on are the exception: their provisional letter comes from the intake's ledger notes and
+  backlog rows, from a live scripted scan (every main-window control clicked, the Library opened) and
+  the user passing the skin in the app, not from the full live report a **live** letter needs.
 
 **A provisional letter is worth about ±1 letter.** That is measured, not a guess: on the six skins
 that have both, the headless method and the human disagreed four times — three times it was one letter
@@ -217,7 +220,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Hybrid**<br>`Hybridv10.wal` | Flo/Rontz - Idea, Gfx, XML + Scripting | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`; a container it declares has no layout to show, so no window of its own |
 | **Impulse**<br>`impulse_by_a_t_o_m_i_c_d4wcub.wal` | a-t-o-m-i-c | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `window.normal.resizer`; 13 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **iNTELLIdesign**<br>`intellidesign.wal` | SarKnagel (Design) and Deimos, SLoB (Advanced coding) | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
-| **Inter-Pol.info AMP**<br>`ipamp14.wal` | Guljay Sergey Viktorovich aka Serg from Belarus, Mozur | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Inter-Pol.info AMP**<br>`ipamp14.wal` | Guljay Sergey Viktorovich aka Serg from Belarus, Mozur | B<br><sub>provisional</sub> | Fully skinned | its now-playing notifier draws its title, artist and album text out of place (open B309) |
 | **Invicta**<br>`Invicta.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **iPlay**<br>`iPlay.wal` | playboy | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **iSkin**<br>`iCandy-2.wal` | Judge | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`; no window of its own for the library: a NullPlayer window stands in |
@@ -447,7 +450,8 @@ show any of them.
 2. A full-corpus probe pass rendered all **674 layouts** across the 79 archives and recorded, per
    skin, its script programs and their failures, its unimplemented-method calls, its artwork lookups
    and its surface routing. Every provisional grade and every *Known outstanding* entry comes from
-   that pass.
+   that pass, except for skins from corpus intake #6 on, graded from the intake's ledger and backlog
+   rows (above).
 3. Every rendered layout was measured for how much of its canvas it actually paints — which is what
    found the three empty main windows, and what distinguishes them from the irregular silhouettes
    (Bio-Nid 22%, HeadAMP 30%, Ujola Cat 34%) that are meant to look like that.
