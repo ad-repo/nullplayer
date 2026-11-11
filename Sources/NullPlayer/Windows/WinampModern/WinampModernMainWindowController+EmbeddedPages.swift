@@ -73,4 +73,23 @@ extension WinampModernMainWindowController {
         _ = handled
         #endif
     }
+
+    /// A skin can hold a component in another layout of the player rather than in this one:
+    /// AmpTunes_III's Video tab is a layout of its own (`iWinamp Video`), reached by the skin's
+    /// `action="SWITCH"` button. This switches there, as that button does, and the window takes that
+    /// layout's size; left to the `autoopen` fallback, which only searches the active layout, a film
+    /// opened in NullPlayer's own window and jumped into the tab only when the user picked it.
+    func revealBySwitchingLayout(_ kind: WinampModernComponentKind) -> Bool {
+        guard let view = skinView else { return false }
+        func holds(_ object: WasabiObject) -> Bool {
+            (WinampModernComponentRegistry.isHolderElement(object.tag)
+                && WasabiSceneRenderer.componentKind(of: object) == kind)
+                || object.children.contains(where: holds)
+        }
+        let active = view.renderer.layout.stableID
+        guard let target = view.renderer.container.children.first(where: {
+            $0.tag.is(.layout) && $0.stableID != active && holds($0)
+        }), let id = target.xmlID else { return false }
+        return view.activateLayout(id: id) && hasVisibleHolder(kind)
+    }
 }

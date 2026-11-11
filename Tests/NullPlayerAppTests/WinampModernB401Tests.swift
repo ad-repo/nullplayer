@@ -27,7 +27,7 @@ final class WinampModernB401Tests: XCTestCase {
             if object.xmlID == "player.glass" { return try XCTUnwrap(object.attributes["image"]) }
             pending.append(contentsOf: object.children)
         }
-        throw XCTSkip("player.glass not built")
+        return try XCTUnwrap(nil as String?, "player.glass was not built")
     }
 
     private func skinXML(version: String) -> String {

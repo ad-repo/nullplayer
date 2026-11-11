@@ -222,11 +222,7 @@ enum WasabiSurfaceSynthesizer {
         if let declared = containerHosting(group: aboutGroupIdentifier, in: document.roots) {
             return AboutRoute(containerID: declared)
         }
-        // B366's fallback frame draws its border over the bottom of the 380x321 page (pumaSKIN's
-        // version line), so the page keeps NullPlayer's chrome there.
         switch frame {
-        case .success(let frame) where frame.filledByInitializer:
-            return AboutRoute(containerID: aboutContainerIdentifier, nodes: [makeAboutContainer(frame: nil)])
         case .failure(let reason):
             return AboutRoute(containerID: aboutContainerIdentifier,
                               nodes: [makeAboutContainer(frame: nil)],
@@ -236,8 +232,10 @@ enum WasabiSurfaceSynthesizer {
                 + "NullPlayer's own chrome.",
                 severity: .warning, location: WalSourceLocation(path: sourcePath))])
         case .success(let frame):
+            // B366's fallback frame draws its border over the bottom of the 380x321 page (pumaSKIN's
+            // version line), so the page keeps NullPlayer's chrome there.
             return AboutRoute(containerID: aboutContainerIdentifier,
-                              nodes: [makeAboutContainer(frame: frame)])
+                              nodes: [makeAboutContainer(frame: frame.filledByInitializer ? nil : frame)])
         }
     }
 
@@ -381,15 +379,17 @@ enum WasabiSurfaceSynthesizer {
         let clientInsets: ClientInsets?
         /// A frame with artwork and no content script, whose client the initializer fills (B366).
         /// Its border is unmeasured, so a fixed-size page (the About page) is not put inside it.
-        var filledByInitializer = false
+        let filledByInitializer: Bool
 
         init(groupIdentifier: String, xuiTag: String, hasArtwork: Bool,
-             exemplar: FrameExemplar? = nil, clientInsets: ClientInsets? = nil) {
+             exemplar: FrameExemplar? = nil, clientInsets: ClientInsets? = nil,
+             filledByInitializer: Bool = false) {
             self.groupIdentifier = groupIdentifier
             self.xuiTag = xuiTag
             self.hasArtwork = hasArtwork
             self.exemplar = exemplar
             self.clientInsets = clientInsets
+            self.filledByInitializer = filledByInitializer
         }
 
         /// What this frame's border costs the window: the exemplar's own content rect where the skin
@@ -521,20 +521,20 @@ enum WasabiSurfaceSynthesizer {
                                + "tooltip artwork")
                 continue
             }
-            var frame = Frame(groupIdentifier: flavour.groupIdentifier,
+            // A frame builds its client area from `content=` in its own script.
+            let scripted = hasContentScript(definition, definitions: definitions, scriptReader: scriptReader)
+            let frame = Frame(groupIdentifier: flavour.groupIdentifier,
                               xuiTag: flavour.xuiTag,
                               hasArtwork: hasArtwork(definition, definitions: definitions),
                               exemplar: nil,
-                              clientInsets: clientInsets(of: definition, definitions: definitions))
+                              clientInsets: clientInsets(of: definition, definitions: definitions),
+                              filledByInitializer: !scripted)
             let entry = (border: Double(frame.chromeInset.width + frame.chromeInset.height),
                          order: order, frame: frame)
-            // A frame builds its client area from `content=` in its own script.
-            guard hasContentScript(definition, definitions: definitions,
-                                   scriptReader: scriptReader) else {
+            guard scripted else {
                 reasons.append("\(flavour.rawValue): '\(flavour.groupIdentifier)' has no frame script "
                                + "that instantiates its content")
-                frame.filledByInitializer = true
-                if frame.hasArtwork { filledByInitializer.append((entry.border, order, frame)) }
+                if frame.hasArtwork { filledByInitializer.append(entry) }
                 continue
             }
             if contains(definition, where: { $0.attribute("action")?.uppercased().hasPrefix("PE_") == true }) {

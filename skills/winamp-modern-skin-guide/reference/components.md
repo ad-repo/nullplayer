@@ -574,7 +574,7 @@ Wasabi's `windowholder autoopen="1"` — walking up from the holder and un-hidin
 an explicit request leaves the scene with no visible holder of that kind (B23).
 
 Before that fallback, a holder in **another layout of the same container** is reached by switching to
-it (`switchToLayoutHolding`), as the skin's own `action="SWITCH"` tab button would. AmpTunes_III's Video
+it (`revealBySwitchingLayout`), as the skin's own `action="SWITCH"` tab button would. AmpTunes_III's Video
 tab is a layout of its own (`iWinamp Video`), and the `autoopen` walk only searches the active
 layout, so a film started from its Media tab opened in NullPlayer's video window and jumped into the
 tab only when the user picked it (2026-11-10). Not at startup: the launch-only reveal below never

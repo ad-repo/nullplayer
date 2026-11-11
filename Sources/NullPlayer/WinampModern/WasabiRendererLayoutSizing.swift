@@ -520,3 +520,28 @@ extension WasabiSceneRenderer {
         return CGFloat(value)
     }
 }
+
+extension WasabiSceneRenderer {
+    /// Wasabi's `linkwidth`/`linkheight`: a layout names another that shares its width (height), and
+    /// every layout a chain of links reaches shares it too, whichever side wrote the link. cPro's
+    /// player is a pair (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`), so
+    /// shading keeps the width; AmpTunes_III rings its four tabs (Media→Visual→Video→Online→Media,
+    /// width and height), so switching tab keeps the window's size. An axis that is not linked stays
+    /// the entered layout's own business, which `resize(to:)` clamps, so shade's `maximum_h="23"` wins.
+    static func areLinked(_ from: WasabiObject, _ to: WasabiObject, by attribute: String,
+                                  among layouts: [WasabiObject]) -> Bool {
+        func key(_ id: String?) -> String { (id ?? "").lowercased() }
+        var neighbours: [String: Set<String>] = [:]
+        for layout in layouts {
+            guard let link = layout.attributes[attribute], !link.isEmpty else { continue }
+            neighbours[key(layout.xmlID), default: []].insert(key(link))
+            neighbours[key(link), default: []].insert(key(layout.xmlID))
+        }
+        var reached: Set<String> = [key(from.xmlID)]
+        var pending = [key(from.xmlID)]
+        while let current = pending.popLast() {
+            for next in neighbours[current] ?? [] where reached.insert(next).inserted { pending.append(next) }
+        }
+        return key(from.xmlID) != key(to.xmlID) && reached.contains(key(to.xmlID))
+    }
+}

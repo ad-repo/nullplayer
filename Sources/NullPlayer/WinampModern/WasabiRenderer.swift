@@ -960,17 +960,18 @@ final class WasabiSceneRenderer {
         // the switch, keyed by the layout's own object, so a container with three layouts remembers
         // all three.
         canvasSizeByLayout[layout.stableID] = storedCanvasSize
-        let previous = layout
-        let left = storedCanvasSize
-        layout = next
+        // A linked axis comes from the layout being left on **every** entry, not only the first
+        // (B406): the layouts share that axis, so the entered layout's own remembered value is stale
+        // the moment the other was resized. An axis that is not linked keeps the remembered size.
         var restored = canvasSizeByLayout[next.stableID]
-        let sharesWidth = Self.areLinked(previous, next, by: "linkwidth", among: layouts)
-        let sharesHeight = Self.areLinked(previous, next, by: "linkheight", among: layouts)
+        let sharesWidth = Self.areLinked(layout, next, by: "linkwidth", among: layouts)
+        let sharesHeight = Self.areLinked(layout, next, by: "linkheight", among: layouts)
         if sharesWidth || sharesHeight {
             let own = restored ?? defaultSize(for: next)
-            restored = CGSize(width: sharesWidth ? left.width : own.width,
-                              height: sharesHeight ? left.height : own.height)
+            restored = CGSize(width: sharesWidth ? storedCanvasSize.width : own.width,
+                              height: sharesHeight ? storedCanvasSize.height : own.height)
         }
+        layout = next
         storedCanvasSize = defaultSize(for: next)
         // A size this renderer is *restoring* is not one it chose, so the content fit must leave it
         // alone — the same rule `resize(to:)` already relies on. Clamped by the layout being entered,
@@ -989,29 +990,6 @@ final class WasabiSceneRenderer {
     /// The canvas each of this container's layouts was last on. Empty until the first switch, so a
     /// container that never leaves `normal` behaves exactly as it did.
     private var canvasSizeByLayout: [WasabiObjectID: CGSize] = [:]
-
-    /// Wasabi's `linkwidth`/`linkheight`: a layout names another that shares its width (height), and
-    /// every layout a chain of links reaches shares it too, whichever side wrote the link. cPro's
-    /// player is a pair (`normal` has `linkwidth="shade"`, `shade` has `linkwidth="normal"`), so
-    /// shading keeps the width; AmpTunes_III rings its four tabs (Media→Visual→Video→Online→Media,
-    /// width and height), so switching tab keeps the window's size. An axis that is not linked stays
-    /// the entered layout's own business, which `resize(to:)` clamps, so shade's `maximum_h="23"` wins.
-    private static func areLinked(_ from: WasabiObject, _ to: WasabiObject, by attribute: String,
-                                  among layouts: [WasabiObject]) -> Bool {
-        func key(_ id: String?) -> String { (id ?? "").lowercased() }
-        var neighbours: [String: Set<String>] = [:]
-        for layout in layouts {
-            guard let link = layout.attributes[attribute], !link.isEmpty else { continue }
-            neighbours[key(layout.xmlID), default: []].insert(key(link))
-            neighbours[key(link), default: []].insert(key(layout.xmlID))
-        }
-        var reached: Set<String> = [key(from.xmlID)]
-        var pending = [key(from.xmlID)]
-        while let current = pending.popLast() {
-            for next in neighbours[current] ?? [] where reached.insert(next).inserted { pending.append(next) }
-        }
-        return key(from.xmlID) != key(to.xmlID) && reached.contains(key(to.xmlID))
-    }
 
     /// The active layout's own `minimum_w`/`minimum_h`, in skin pixels, raised to the protective
     /// minimum below. Every window hosting this renderer takes its `minSize` from here, so a restored

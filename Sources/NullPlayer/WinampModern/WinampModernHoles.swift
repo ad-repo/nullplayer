@@ -21,7 +21,8 @@ struct WinampModernHoles {
     let backing: CGImage?
 
     var isEmpty: Bool { mask.isEmpty }
-    /// How many canvas pixels are hole.
+    /// How many canvas pixels are hole. This and `samplePixel` are read only by the intake smoke's
+    /// `holes` row (`WinampModernDebugClickSweep`), once per window, never per frame.
     var pixelCount: Int { mask.reduce(0) { $0 + Int($1) } }
     /// A canvas pixel inside a hole, bottom-left origin: the intake smoke's report of where one is.
     var samplePixel: (x: Int, y: Int)? {

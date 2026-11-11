@@ -8261,7 +8261,7 @@ Sweep classification (all 11 opened, 2026-10-31; no regression): HALOAMP `cont.c
 
 | B408 | **AmpTunes_III's video opens in a standalone window, then pops into its tab when the tab is chosen.** Reported in intake #9 (2026-11-10): the reveal found no holder in the active layout and fell back to `autoopen`, though another layout of the same container holds the video component | AmpTunes_III | S | 1 |
 
-**Fixed 2026-11-10 (intake #9 fix pass).** `revealEmbeddedSurface` switches to the container's other layout holding the component (`switchToLayoutHolding`) before the `autoopen` fallback; startup reveals never switch. Live, video opens in the tab.
+**Fixed 2026-11-10 (intake #9 fix pass).** `revealEmbeddedSurface` switches to the container's other layout holding the component (`revealBySwitchingLayout`) before the `autoopen` fallback; startup reveals never switch. Live, video opens in the tab.
 
 | B409 | **Helloween's nose appends a blank playlist entry.** Reported in intake #9 (2026-11-10): the nose calls `System.playFile` with a bare stream URL, and `Track(lightweightURL:)` titles from the file name, which a stream address has none of | Helloween | S | 1 |
 
