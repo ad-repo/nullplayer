@@ -94,9 +94,7 @@ final class WinampModernMainView: NSView {
     private var activeResizeEdges: WasabiResizeEdges?
     private var resizeStartFrame: NSRect = .zero
     private var resizeStartMouse: NSPoint = .zero
-    /// Whether this view is the one currently showing a resize cursor, so leaving a handle puts the
-    /// arrow back without stomping on a cursor somebody else set.
-    private var showsResizeCursor = false
+    private var resizeCursor = ResizeCursorTracker()
     private var lastPlaybackState: PlaybackState = .stopped
 
     /// Last value sent to `onPostedPosition`, so the post happens on change rather than ten times a
@@ -1644,13 +1642,10 @@ final class WinampModernMainView: NSView {
         // interior disabler, a close button on the top strip — are expressed by what lies over that
         // box. Promising a resize cursor where the press does something else is precisely the defect
         // BB21 was filed for.
-        if let edges = renderer.resizeEdges(at: point) {
-            Self.cursor(for: edges).set()
-            showsResizeCursor = true
-        } else if showsResizeCursor {
-            NSCursor.arrow.set()
-            showsResizeCursor = false
-        }
+        resizeCursor.update(renderer.resizeEdges(at: point).flatMap {
+            .resize(horizontal: $0.isHorizontal, vertical: $0.isVertical,
+                    top: $0.contains(.top), left: $0.contains(.left))
+        })
         // The thinger's caption names whichever icon the pointer is over, which is Winamp's own
         // behaviour and the only way a one-icon-wide bucket (Lobe's is 40×25) can be read at all.
         // Before the identity guard below: moving between two icons of the same bucket never changes
@@ -1693,10 +1688,7 @@ final class WinampModernMainView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        if showsResizeCursor {
-            NSCursor.arrow.set()
-            showsResizeCursor = false
-        }
+        resizeCursor.exit()
         if let hoveredObject { _ = try? scripts.dispatch(object: hoveredObject, event: "onleavearea") }
         if let previous = hoveredObject, WasabiMenuBar.isMenu(previous), previous !== openMenuObject {
             WasabiMenuBar.apply(.normal, to: previous)
@@ -2092,22 +2084,6 @@ final class WinampModernMainView: NSView {
         if edges.contains(.left) { origin.x = start.maxX - size.width }
         if edges.contains(.bottom) { origin.y = start.maxY - size.height }
         return NSRect(origin: origin, size: size)
-    }
-
-    /// A corner gets the system's diagonal frame-resize cursor (#601); before macOS 15 there is none,
-    /// so it falls back to the crosshair — the substitution `BorderlessWindow` still makes for the
-    /// other window families.
-    private static func cursor(for edges: WasabiResizeEdges) -> NSCursor {
-        switch (edges.isHorizontal, edges.isVertical) {
-        case (true, true):
-            guard #available(macOS 15, *) else { return .crosshair }
-            let position: NSCursor.FrameResizePosition = edges.contains(.top)
-                ? (edges.contains(.left) ? .topLeft : .topRight)
-                : (edges.contains(.left) ? .bottomLeft : .bottomRight)
-            return .frameResize(position: position, directions: .all)
-        case (true, false): return .resizeLeftRight
-        default: return .resizeUpDown
-        }
     }
 
     override func mouseDragged(with event: NSEvent) {

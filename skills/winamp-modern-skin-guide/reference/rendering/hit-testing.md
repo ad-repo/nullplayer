@@ -263,10 +263,10 @@ Four rules, and the first is what makes the other three cheap:
 
 The cursor comes from the same hit test, set in `mouseMoved` rather than from a cursor rect: a rect
 can only describe the handle's *box*, and the exceptions above live in what covers that box. Promising
-a resize cursor where the press does something else is precisely the BB21 defect. Corners get the
-system's diagonal `NSCursor.frameResize(position:directions:)` (#601). It is macOS 15+, so earlier
-systems fall back to the crosshair, the substitution `BorderlessWindow` still makes for the other
-window families.
+a resize cursor where the press does something else is precisely the BB21 defect. The cursor is
+`NSCursor.resize(horizontal:vertical:top:left:)` through a `ResizeCursorTracker`
+(`Utilities/NSCursor+ResizeEdges.swift`): corners get the system's diagonal frame-resize cursor on
+macOS 15+, the crosshair before it, and every window family uses the same helper (#601, #741).
 
 The size is clamped to the layout's range **before** the origin is derived from the anchored corner.
 Clamping the finished frame instead leaves the origin where the unclamped drag put it, and a window

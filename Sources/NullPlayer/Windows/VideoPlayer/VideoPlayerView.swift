@@ -743,11 +743,10 @@ class VideoPlayerView: NSView {
             NSCursor.resizeLeftRight.set()
         case .top, .bottom:
             NSCursor.resizeUpDown.set()
-        case .topLeft, .bottomRight:
-            // macOS doesn't have diagonal resize cursors built-in, use a workaround
-            NSCursor.crosshair.set()
-        case .topRight, .bottomLeft:
-            NSCursor.crosshair.set()
+        case .topLeft: NSCursor.diagonalResize(top: true, left: true).set()
+        case .topRight: NSCursor.diagonalResize(top: true, left: false).set()
+        case .bottomLeft: NSCursor.diagonalResize(top: false, left: true).set()
+        case .bottomRight: NSCursor.diagonalResize(top: false, left: false).set()
         }
     }
     
