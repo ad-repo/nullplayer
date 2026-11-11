@@ -1444,8 +1444,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // A page the script closed stays closed only for a skin whose script takes part in
         // opening components: with no `onGetCancelComponent` handler nothing else will bring the
         // page back, so a Windows-menu request has to (Tewnz_2.0's own button hid the library, B413).
-        let opened = openHolders(for: kind, in: scripts.loadedSkin.runtime.graph,
-                                 respectingScriptClosed: handled > 0 || !allowAutoOpenFallback)
+        let scriptClosed = handled > 0 ? skinView?.scripts.visibility.scriptClosedObjects ?? [] : []
+        let opened = openHolders(for: kind, in: scripts.loadedSkin.runtime.graph, keepingClosed: scriptClosed)
         closeDisplacedPages(revealing: kind)
         #if DEBUG
         NSLog("WinampModern reveal %@ guid=%@ handlers=%d opened=%d", kind.rawValue, guid, handled, opened)
@@ -1552,7 +1552,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     @discardableResult
     private func openHolders(for kind: WinampModernComponentKind,
                              in graph: WasabiObjectGraph,
-                             respectingScriptClosed: Bool) -> Int {
+                             keepingClosed scriptClosed: Set<WasabiObjectID>) -> Int {
         var opened = 0
         var forced: [WasabiObject] = []
         func isAutoOpen(_ object: WasabiObject) -> Bool {
@@ -1567,7 +1567,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // groups back open on the next reveal — the visualization drawn over the details and cover.
         // An object that merely *starts* `visible="0"` and was never touched is still fair game;
         // that is what the fallback is for.
-        let scriptClosed = respectingScriptClosed ? skinView?.scripts.visibility.scriptClosedObjects ?? [] : []
         func visit(_ object: WasabiObject) {
             if WinampModernComponentRegistry.isHolderElement(object.tag),
                WasabiSceneRenderer.componentKind(of: object) == kind, isAutoOpen(object) {

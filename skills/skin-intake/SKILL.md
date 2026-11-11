@@ -1,6 +1,6 @@
 ---
 name: skin-intake
-description: Processes the .wal candidate corpus in batches of 25 — pick, an automated live scan (main-window controls, the Library, every window's look), one fix pass, the user's go, promote — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the pick and status scripts (scripts/wal_intake_pick.sh, scripts/wal_intake_status.sh), and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
+description: Processes the .wal candidate corpus in batches of 25 (up to 50 on request) — pick, an automated live scan (main-window controls, the Library, every window's look), one fix pass, the user's go, promote — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the pick and status scripts (scripts/wal_intake_pick.sh, scripts/wal_intake_status.sh), and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
 ---
 
 # Processing the corpus
@@ -8,7 +8,7 @@ description: Processes the .wal candidate corpus in batches of 25 — pick, an a
 | Level | Is | Done when | Recorded in |
 |---|---|---|---|
 | **Corpus** | ~750 candidates in Bronze | every candidate is Gold or quarantined | `corpus-manifest.tsv` tiers |
-| **Batch** | 25 skins, one branch, one ledger | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
+| **Batch** | 25 skins by default, up to 50 (`wal_intake_pick.sh <count>`, intake #10 took 50), one branch, one ledger | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
 
 **One batch is open at a time.** The next is picked only when the last is merged.
 
@@ -61,7 +61,7 @@ A stage moves only on its evidence, in the commit that carries it; it moves back
 | `accepted` | **Promote** every skin in one commit, then the pre-PR code-quality review (CLAUDE.md) and the PR | → `promoted` |
 | `promoted` | **Close** once the PR is merged: `rm -rf WinampModernCorpus/runs`, then pick batch n+1 | — |
 
-`wal_intake_pick.sh` takes the next 25 still-bronze skins in the newest `intakes/*.ranking.tsv`'s
+`wal_intake_pick.sh [count]` takes the next 25 (or `count`, at most 50) still-bronze skins in the newest `intakes/*.ranking.tsv`'s
 order. A crawl of *new* candidates still goes through `wal_intake.sh` (about 47 minutes; run it with
 `run_in_background`, check for its `wal_intake: … -> intake.tsv` line, not the exit code), which
 writes a fresh ranking.
@@ -191,7 +191,7 @@ history, never progress.
 
 | When | Edit | Where |
 |---|---|---|
-| A batch is picked | one bullet: rev, the 25 names | §8 *Progress* |
+| A batch is picked | one bullet: rev, the batch's names | §8 *Progress* |
 | A batch is promoted | a *Done: intake #n* block: per skin that needed a fix, what was wrong and the fix; open rows by id | after the last *Done* block |
 | A measurement changes a decision | the decision, measurement, date and rev — **proposed to the user first** | §8 *Decisions* |
 | A parked instrument is built | *Parked* → *Built*; commands in `harness.md` | §7 |

@@ -251,12 +251,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 if lift > 0 { renderer.layoutBoundsDidChange() }
                 let grown = CGSize(width: max(canvas.width, floor.width),
                                    height: max(canvas.height - lift, floor.height))
-                if grown != canvas {
-                    _ = renderer.resize(to: grown)
-                    applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
-                    window.setContentSize(createdView.scaledCanvasSize)
-                    createdView.setFrameSize(createdView.scaledCanvasSize)
-                }
+                if grown != canvas { growCanvas(of: renderer, view: createdView, window: window, to: grown) }
             }
             try testContentInstaller?(createdRoot, id)
             createdView.scriptsDidStart()
@@ -306,13 +301,19 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                                height: max(0, floor.height - client.height))
         guard shortfall != .zero else { return }
         let canvas = renderer.canvasSize
-        _ = renderer.resize(to: CGSize(width: canvas.width + shortfall.width,
-                                       height: canvas.height + shortfall.height))
+        growCanvas(of: renderer, view: view, window: window,
+                   to: CGSize(width: canvas.width + shortfall.width, height: canvas.height + shortfall.height))
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+    }
+
+    /// Resizes a hosted window's canvas and brings its resize limits, window and view along.
+    private func growCanvas(of renderer: WasabiSceneRenderer, view: WinampModernMainView,
+                            window: NSWindow, to size: CGSize) {
+        renderer.resize(to: size)
         applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
         window.setContentSize(view.scaledCanvasSize)
         view.setFrameSize(view.scaledCanvasSize)
-        view.needsLayout = true
-        view.layoutSubtreeIfNeeded()
     }
 
     /// The player's width in skin pixels, which caps how wide a hosted frame may insist on being.

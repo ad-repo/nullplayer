@@ -555,28 +555,31 @@ enum WasabiSurfaceSynthesizer {
         // taken only when the skin has no other (B417).
         func thinnest(_ frames: [(border: Double, order: Int, frame: Frame)]) -> FrameSelection? {
             func key(_ entry: (border: Double, order: Int, frame: Frame)) -> (Int, Double, Int) {
-                (entry.frame.groupIdentifier == WasabiStandardFrames.Flavour.static.groupIdentifier
-                    && !staticFrameOnAnyWindow ? 1 : 0,
-                 entry.border, entry.order)
+                let isStatic = entry.frame.groupIdentifier == WasabiStandardFrames.Flavour.static.groupIdentifier
+                return (isStatic && !staticFrameOnAnyWindow ? 1 : 0, entry.border, entry.order)
             }
             return frames.min(by: { key($0) < key($1) }).map { .success($0.frame) }
         }
-        let plain = declared.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
-        let barred = declared.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }
-        let playlist = thinnest(barred.isEmpty || playlistBarOnAnyFrame ? declared : barred)
-        let other = thinnest(plain.isEmpty || playlistBarOnAnyFrame ? declared : plain)
-        if let playlist, let other { return (playlist, other) }
+        // The playlist's pick and every other window's, from one list: each prefers its own side of
+        // the playlist-bar split and takes the whole list when its side is empty.
+        func split(_ frames: [(border: Double, order: Int, frame: Frame)])
+            -> (playlist: FrameSelection?, other: FrameSelection?) {
+            let barred = frames.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }
+            let plain = frames.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }
+            return (thinnest(barred.isEmpty || playlistBarOnAnyFrame ? frames : barred),
+                    thinnest(plain.isEmpty || playlistBarOnAnyFrame ? frames : plain))
+        }
+        let scripted = split(declared)
+        if let playlist = scripted.playlist, let other = scripted.other { return (playlist, other) }
         let exemplar = exemplarFrame(in: definitions, document: document, reasons: reasons)
-        // The frames the initializer fills follow the same split (WGlass's are all of this kind).
-        func fallback(_ preferred: [(border: Double, order: Int, frame: Frame)]) -> FrameSelection {
-            if case .failure = exemplar,
-               let filled = thinnest(preferred.isEmpty || playlistBarOnAnyFrame ? filledByInitializer : preferred) {
-                return filled
-            }
+        // The frames the initializer fills follow the same split (WGlass's are all of this kind),
+        // after the exemplar.
+        let filled = split(filledByInitializer)
+        func lastResort(_ frame: FrameSelection?) -> FrameSelection {
+            if case .failure = exemplar, let frame { return frame }
             return exemplar
         }
-        return (playlist ?? fallback(filledByInitializer.filter { withPlaylistBar.contains($0.frame.groupIdentifier) }),
-                other ?? fallback(filledByInitializer.filter { !withPlaylistBar.contains($0.frame.groupIdentifier) }))
+        return (scripted.playlist ?? lastResort(filled.playlist), scripted.other ?? lastResort(filled.other))
     }
 
     /// `WINAMP_MODERN_STATIC_FRAME_ANY_WINDOW=1` is the A/B switch: the thinnest frame wins even when static.

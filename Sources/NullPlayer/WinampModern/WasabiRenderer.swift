@@ -2674,9 +2674,10 @@ final class WasabiSceneRenderer {
     /// parent's backing store.
     static let maximumCachedCrops = 512
     var cropCache: [CropKey: (source: CGImage, crop: CGImage)] = [:]
-    /// The space cell per bitmap-font sheet (`spaceCell`); the source is held so an address is never reused.
-    /// Whether a layout's `background` bitmap is fully transparent, by bitmap id (`hasBlankBackground`).
+    /// Whether a layout's `background` bitmap is fully transparent, by declaring file and value
+    /// (`hasBlankBackground`). Kept across a theme switch: a theme recolours, it never changes alpha.
     var blankBackgrounds: [String: Bool] = [:]
+    /// The space cell per bitmap-font sheet (`spaceCell`); the source is held so an address is never reused.
     var spaceCells: [ObjectIdentifier: (source: CGImage, cell: (Int, Int))] = [:]
 
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.

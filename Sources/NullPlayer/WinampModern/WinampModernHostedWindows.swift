@@ -159,7 +159,8 @@ extension WinampModernHostedWindowID {
         // carries across skins and families.
         case .equalizerStudio:
             return hosted("EQ Studio", size: EqualizerStudioView.designSize,
-                          minimum: EqualizerStudioView.designSize, centerStack: false, rigidClient: true,
+                          minimum: EqualizerStudioView.designSize, centerStack: false,
+                          clientFloor: EqualizerStudioView.designSize,
                           EqualizerStudioView(frame: NSRect(origin: .zero, size: EqualizerStudioView.designSize)))
         }
     }
@@ -167,12 +168,12 @@ extension WinampModernHostedWindowID {
     /// One hosted window: its sizes, its place in the centre stack, and the view built, then configured
     /// for hosting, each time a skin mounts it.
     private func hosted(_ title: String, size: CGSize, minimum: CGSize, centerStack: Bool = true,
-                        heightMultiplier: CGFloat = 1, rigidClient: Bool = false,
+                        heightMultiplier: CGFloat = 1, clientFloor: CGSize? = nil,
                         _ view: @escaping @autoclosure () -> NSView & WinampModernHostedSurface)
         -> WinampModernHostedWindowDefinition {
         WinampModernHostedWindowDefinition(
             id: self, title: title, defaultSize: size, minimumSize: minimum, maximumSize: nil,
-            clientFloor: rigidClient ? minimum : nil,
+            clientFloor: clientFloor,
             stackPolicy: WinampModernHostedStackPolicy(participatesInCenterStack: centerStack,
                                                        preferredHeightMultiplier: heightMultiplier),
             makeSurface: { context in
