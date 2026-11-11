@@ -706,6 +706,10 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #9 picked 2026-11-09** (`feat/wal-intake-9`, rev `47b00c7b`) by `wal_intake_pick.sh`, no
   crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 679 bronze, 0 quarantine.** Batch:
   GUILTY_GEAR_XX_WINAMP5_SKIN, _Scythe, Official_Dawsons_Creek_Series_Skin, NaturallZ, IPHONE_THEME_ALBUM_ART_SUPPORT, LCD_hm1_m, Artzar, Jpod, Dr_Who_--_Monsters_and_Villains, Simplistic_Vision_2, MERCURY_1.0F, blackwhite_version1, Minima, AmpTunes_III, Enter_the_Matrix, Official_Go_Army_Winamp5_Skin, Lapis_Lazuli, Nokia_7210_Amp, HUD, Lou_Reed_-_The_Raven, cPro2__HOLOlike, ipamp14, LiquidStar, HardHouseCafeAmp, Helloween (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #10 picked 2026-11-10** (`feat/wal-intake-10`, rev `287eff6f`) by `wal_intake_pick.sh 50`, no
+  crawl: the next 50 bronze of `intake-6.ranking.tsv` (50 at the user's request; the pick's cap is now 50).
+  **83 silver, 629 bronze, 0 quarantine.** Batch:
+  Liverpool_FC_Winamp_3_Skin, The_ATL_Winamp5_Skin, Blogz, absurd_5, Resurgence-2, Halloween2003, Official_Angel_Series_Winamp5_Skin, Washed, Dawn_of_the_Dead, No-Vita, Psonidelic_v2, Dynamic, X_Sphere, AOL_Broadband_Winamp5_Skin_, gtutorials.dap.ro, Bach, Smallville_Digital_Album, Slim, Batman_Begins, K-Tech_SFX_-_201, Quinto, Magic_Snow_Globe, SleekyXtra, Danielle_Fishel_Double_Diamond_1_1, Wurlitzer_v2, Overdrive, Studiosus, The_Official_Slither_Winamp5_Skin, Clean_AMP, Simple_Amp_, miniplayer, BigBerthaSanctuary_1_1_1, GC_Winamp_Skin, ChewingAmp, Nokia_6600_AWK, RemoteSensing, Energy3, Act3scene2_-_prototype, REM_-_Morning_Team_-, Casio-G-Shocked-V2, cd-FALCON, RayPlayer, 3IO, Xbox_Amp, Tewnz_2.0, Qwest_V2, WGlass, Lelouch_of_Code_Geass, Miyabi_Skin, AIRCELDialer_Tunes (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 
