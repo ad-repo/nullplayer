@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B428 — The click smoke's aim search pinned the main thread on Official_Austin_Powers_3_Skin — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B428 | **The click smoke's aim search pinned the main thread on Official_Austin_Powers_3_Skin.** Found in intake #11's click smoke (2026-11-11, reported by the user as a deadlock): `sample` showed the main thread in `WinampModernDebugClickSweep.point(on:in:)` → `WasabiSceneRenderer.object(at:)` → `isClearMousetrap` → `WasabiResourceCache.opaqueBounds(of:)`, 885 of 913 samples. `opaqueBounds` rasterised the whole bitmap into an alpha buffer on every call, and the hit test asks it for every pressable object under the point, so the sweep's per-point search over large artwork never finished. The same uncached call sat on the real hover and click path | Official_Austin_Powers_3_Skin | S | 1 |
+
+**Closed 2026-11-11 (intake #11 scan).** `opaqueBounds` keeps one answer per `CGImage` in an `NSCache`. The skin's smoke now finishes in about 45 s (`main 11 clicked`, Library closed).
+
 ## B421 — WGlass's EQ Studio and Media Library wear its playlist frame, so they show the playlist time (`4:02/19:28`) — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |
