@@ -354,11 +354,22 @@ final class WasabiResourceCache {
     }
 
     func bitmap(identifier: String?) -> WasabiBitmap? {
+        bitmap(identifier: identifier, zeroIsWhole: false)
+    }
+
+    /// A slider's thumb, cut so that a declared `w="0" h="0"` is the whole file (B423). Cached apart
+    /// from the same file read as an ordinary bitmap, which keeps its 1px cut.
+    func thumbBitmap(identifier: String?) -> WasabiBitmap? {
+        bitmap(identifier: identifier, zeroIsWhole: true)
+    }
+
+    private func bitmap(identifier: String?, zeroIsWhole: Bool) -> WasabiBitmap? {
         guard !isTornDown, let identifier, !identifier.isEmpty else { return nil }
-        let key = identifier.lowercased()
+        let key = (zeroIsWhole ? "thumb:" : "") + identifier.lowercased()
         if let hit = cachedBitmap(key) { return hit }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
-              let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs) else { return nil }
+              let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs, zeroIsWhole: zeroIsWhole)
+        else { return nil }
         let width = cropped.width, height = cropped.height
         let declaredGroup = definition.attributes["gammagroup"]
         let image = themed(cropped, transform: themes.transform(
@@ -3350,7 +3361,7 @@ final class WasabiSceneRenderer {
     func sliderThumb(_ object: WasabiObject, pressed: Bool, hovered: Bool) -> WasabiBitmap? {
         let thumb = object.attributes["thumb"]
         let stateThumb = pressed ? object.attributes["downthumb"] : hovered ? object.attributes["hoverthumb"] : nil
-        return resources.bitmap(identifier: stateThumb) ?? resources.bitmap(identifier: thumb)
+        return resources.thumbBitmap(identifier: stateThumb) ?? resources.thumbBitmap(identifier: thumb)
     }
 
     /// Where a slider's thumb is drawn: centred across the slider's axis, placed along it by the value.
