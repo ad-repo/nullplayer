@@ -29,11 +29,12 @@ Media Library in NullPlayer's plain chrome (open B366). Twenty-five more joined 
 intake #8, graded the same way and passed by the user in the app; seven are C for a Media Library in
 NullPlayer's plain chrome (open B366) or no library window of the skin's own. Twenty-five more joined
 on 2026-11-10, corpus intake #9, graded the same way and passed by the user in the app; one is C for a
-Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own). B366's fix moved six intake #8 skins
-(Narnia, Thanog, Lara Flynn Boyle, FreddyvsJason, Fast And The Furious 4, Pax) from C to B: their
-Media Library now opens in the skin's own frame, checked by the user in the app.
+Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own). B366's fix moved twelve earlier skins from C
+to B (intake #8: Narnia, Thanog, Lara Flynn Boyle, FreddyvsJason, Fast And The Furious 4, Pax;
+intakes #6–#7: AniTransformers, Java Duke, NightWing II, Powerade, Star Wars Player, The Sims): their
+Media Library and Playlist now open in the skin's own frame, checked by the user in the app.
 
-Current picture: **257 B · 55 C**, of which 7 letters come from a
+Current picture: **263 B · 49 C**, of which 7 letters come from a
 person using the skin and 305 are provisional (below).
 
 ## How the grades were arrived at, and how far to trust them
@@ -99,7 +100,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Anaheim Player 01**<br>`Anaheim_Player_01.wal` | Anaheim Electronics Japan | B<br><sub>provisional</sub> | Fully skinned | 2 error-severity load finding(s) |
 | **Anexa**<br>`Anexa.wal` | nynako / skin-zone | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Angren Thoron**<br>`Angrenthoron.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **AniTransformers Skin**<br>`AniTransformers.wal` | Jeremy Eble | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **AniTransformers Skin**<br>`AniTransformers.wal` | Jeremy Eble | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Anunaki**<br>`Anunaki.wal` | Leechbite | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`; 29 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Apill**<br>`Apill.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **AR-7**<br>`AR-7.wal` | Metaskins | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -223,7 +224,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **iSkin**<br>`i-Skin.wal` | Judge | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`; no window of its own for the library: a NullPlayer window stands in |
 | **Itemskin**<br>`Itemskin.wal` | — | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `player.main.extras.textbox.left`, `player.songinfo.stereo`, `player.songinfo.stereomono`; unimplemented MAKI: `setchecked` ×4; 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 2 error-severity load finding(s) |
 | **Iwakura Lain the Fourth**<br>`MD_-_Iwakura_Lain_the_Fourth_v1.wal` | Asakura Rantisi Kay | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `eq.ticker`, `thinger.bucket`, `thinger.ticker`, `wasabi.frame.basetexture` |
-| **Java Duke**<br>`Java_Duke.wal` | TheBlackDeath | C<br><sub>provisional</sub> | Partly skinned | Playlist, Media Library and EQ Studio open in NullPlayer's plain chrome: open B366; no seek control (B380, the skin's) |
+| **Java Duke**<br>`Java_Duke.wal` | TheBlackDeath | B<br><sub>provisional</sub> | Fully skinned | no seek control (B380, the skin's) |
 | **Jenna loves Mambo**<br>`Jenna_loves_mambo.wal` | Lucignolo | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.button.close`; no window of its own for the library or the playlist: a NullPlayer window stands in |
 | **JIP**<br>`Ar-Za-Jo.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **JPod**<br>`Jpod.wal` | NeuroSkins | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -285,7 +286,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **NEO**<br>`NEO.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Player skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `dummy0` |
 | **NEO CLASSIC**<br>`NEO_CLASSIC.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `dummy0`, `wasabi.frame.bottom`, `text.vis`, `wasabi.button.close`, `wasabi.button.close.pressed` |
 | **New Night**<br>`New_Night_v_2.wal` | Bahmet | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **NightWing II**<br>`NightWing_II.wal` | Don Johnson | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **NightWing II**<br>`NightWing_II.wal` | Don Johnson | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nokia 5800 XpressMusic**<br>`Nokia_5800_XPressMusic_by_techmafia_1.wal` | The CyberWizard | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nokia 7210 Amp**<br>`Nokia_7210_Amp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | its video button opens nothing: the skin declares no video window (open B403) |
 | **Nokia_5220**<br>`The_Nokia_5220_XpressMusic.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -304,7 +305,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Pixelated**<br>`Pixelated.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | the startup arrangement tiles its notifier, so the playlist opens 27px lower: open B398 |
 | **Pokemon DS**<br>`PokemonDS.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **PokerGods**<br>`PokerRoyalFlush.wal` | DeathBurn | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **Powerade**<br>`Official_Powerade_Skin.wal` | Powerade | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Powerade**<br>`Official_Powerade_Skin.wal` | Powerade | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Project D.U. #3**<br>`Project_DU_Television.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Psonidelic Skin**<br>`Psonidelic.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the archive ships no `player-winshade/` artwork, so the EQ and shade layouts lack their background and buttons (the skin's) |
 | **Puma Skin**<br>`pumaSKIN.wal` | Puma DesignS | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
@@ -338,7 +339,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Sony Walkman Skin**<br>`SONY__WALKMAN.wal` | Saravanan, Balasundarrao | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **SpoonoAmp Modern**<br>`SpoonoAmp_Modern.wal` | Dan Wenner | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Star Trek LCARS AMP PADD II**<br>`StarTrek_LCARS_AMP_PADD_II.wal` | Jason Chiu | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `player.seek.slider`, `wasabi.frame.basetexture` |
-| **Star Wars Player**<br>`Star_Wars_Player.wal` | — | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome, not the skin's frame: open B366 |
+| **Star Wars Player**<br>`Star_Wars_Player.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Stargate:Winamp - SG1 Edition**<br>`Stargate_Winamp_-_SG1_edition.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Study Skinning**<br>`Study Skinning.wal` | Ariszló | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Styx**<br>`Styx.wal` | — | C<br><sub>provisional</sub> | Fully skinned | unimplemented MAKI: `getmode` ×2, `setchecked` ×12; 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 7 error-severity load finding(s) |
@@ -354,7 +355,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **The Crow**<br>`The_Crow__v1.wal` | ivan gomez | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **The Duk Side**<br>`The_Duk_Side_V3.wal` | Mr Jones | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
 | **The Hives**<br>`Official_The_Hives_Skin.wal` | Taber Buhl | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
-| **The Sims**<br>`The_Official_Sims_Online_Skin.wal` | Andy, Adil, Lucas, David S, and jivemouth for Petrol Designs | C<br><sub>provisional</sub> | Partly skinned | Playlist and Media Library open in NullPlayer's plain chrome, not the skin's frame: open B366, B373 |
+| **The Sims**<br>`The_Official_Sims_Online_Skin.wal` | Andy, Adil, Lucas, David S, and jivemouth for Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | its playlist shows neither the playing track nor a selection highlighted (open B373) |
 | **The XP Style WinaMP3 Player**<br>`The_XP_Style_WinaMP3_Player.wal` | Yoann Brosseau | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Tom**<br>`TomK.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | 3 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **TOX Milla Maxwell**<br>`TOX Milla.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.logo` |
