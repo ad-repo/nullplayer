@@ -6808,16 +6808,10 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         switch state {
         case .playing:
             streamingPlaybackConfirmed = true
-            consecutiveTrackLoadFailures = 0  // A stream that plays ends the failure streak too.
             self.state = .playing
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false
             isSeekingStreaming = false  // Clear seeking flag on successful playback
-            
-            // Notify RadioManager that stream connected successfully
-            if RadioManager.shared.isActive {
-                RadioManager.shared.streamDidConnect()
-            }
         case .paused:
             streamingPlaybackConfirmed = false
             self.state = .paused
@@ -6945,6 +6939,14 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
     }
 
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {
+        // The first audio buffer, not `.playing`, is what proves a stream connected: AudioStreaming
+        // reports `.playing` for an address that never answers. Counted there, a queue of dead
+        // streams reset the failure streak on each one and a repeating queue never ended, and a
+        // dead station reset `RadioManager`'s reconnect count on each attempt and never failed.
+        consecutiveTrackLoadFailures = 0
+        if RadioManager.shared.isActive {
+            RadioManager.shared.streamDidConnect()
+        }
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata
         guard let track = currentTrack else { return }
@@ -7012,44 +7014,48 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         handleStreamingErrorFallback(error, errorDescription: errorDescription)
     }
 
+    /// A stream that produced no audio within `timeout` of starting. A radio station goes to
+    /// `RadioManager`, whose reconnect ends in its own `.failed` state.
+    func streamingPlayerDidFailToConnect(after timeout: TimeInterval) {
+        guard isStreamingPlayback, let track = currentTrack else { return }
+        let error = URLError(.timedOut, userInfo: [
+            NSLocalizedDescriptionKey: "The stream didn\u{2019}t answer within \(Int(timeout)) seconds."
+        ])
+        if RadioManager.shared.isActive {
+            RadioManager.shared.streamDidDisconnect(error: error)
+            return
+        }
+        failStreamingTrack(track, error: error, reason: "no answer from the stream")
+    }
+
     private func handleStreamingErrorFallback(_ error: AudioPlayerError, errorDescription: String) {
         let isPacketTableError = errorDescription.contains("packet table")
             || errorDescription.contains("streamParseBytesFailure")
         let isCodecError = errorDescription.contains("codecError")
+        guard isPacketTableError || isCodecError else { return }
+        if isPacketTableError {
+            NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
+        } else {
+            NSLog("AudioEngine: Codec error - file is corrupt or unplayable, advancing")
+        }
+        // AudioStreaming repeats the error; the first one clears `currentTrack`, so the rest stop here.
+        guard let track = currentTrack else { return }
+        failStreamingTrack(track, error: error, reason: "format not supported for streaming")
+    }
 
-        if isPacketTableError || isCodecError {
-            if isPacketTableError {
-                NSLog("AudioEngine: M4A parsing error - file may not be optimized for streaming")
-            } else {
-                NSLog("AudioEngine: Codec error - file is corrupt or unplayable, advancing")
-            }
-
-            // Show error in marquee briefly, then advance to next track
-            if let track = currentTrack {
-                let errorMessage = "Cannot play: \(track.title) (format not supported for streaming)"
-                NotificationCenter.default.post(
-                    name: .audioTrackDidFailToLoad,
-                    object: self,
-                    userInfo: ["track": track, "error": error, "message": errorMessage]
-                )
-            }
-
-            // Advance to next track after a brief delay to let error state settle. A Stop or a
-            // track selection in the meantime moves the token and cancels the advance.
-            let token = deferredLocalTrackLoadToken
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self, self.deferredLocalTrackLoadToken == token else { return }
-                // Only advance if we're still in error/stopped state
-                if self.state == .stopped {
-                    NSLog("AudioEngine: Auto-advancing after streaming error")
-                    self.next()
-                    // The error left `.stopped`, so `next()` only loads. A resolved stream starts
-                    // on load; a placeholder or local file waits for `play()`.
-                    if self.currentTrack != nil, self.state != .playing {
-                        self.play()
-                    }
-                }
-            }
+    /// A stream that cannot play fails as a file that will not open does: the readout says so and,
+    /// half a second later so it can be read, the queue moves on, ending on the "can't be played"
+    /// alert when nothing is left. A Stop or a track selection in that half second moves the token
+    /// and cancels the advance.
+    private func failStreamingTrack(_ track: Track, error: Error, reason: String) {
+        stopPlaybackOnError()
+        notifyTrackLoadFailure(track: track, error: error, message: "Cannot play: \(track.title) (\(reason))")
+        let userRequest = UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
+                                                 fileIsMissing: false)
+        let token = deferredLocalTrackLoadToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.deferredLocalTrackLoadToken == token, self.state == .stopped else { return }
+            self.advancePastFailedTrack(at: self.currentIndex, userRequest: userRequest)
         }
     }
     

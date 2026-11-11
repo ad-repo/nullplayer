@@ -278,8 +278,22 @@ under the error message.
   `currentIndex = -1`, and an advance still armed read that as "the failed track was before row 0"
   and started the new playlist's first entry from a call that promises not to play.
 - **The failure streak is reset by anything that plays**: `commitLoadedLocalTrack` for a local file,
-  the AudioStreaming `.playing` callback for a stream. Without the stream reset, a repeating playlist
-  of streams and a few bad local files kept accumulating across loops and ended the queue early.
+  the first audio buffer for a stream (`streamingPlayerDidDetectFormat`). Without the stream reset, a
+  repeating playlist of streams and a few bad local files kept accumulating across loops and ended
+  the queue early. Not `.playing`: AudioStreaming reports that for an address that never answers, so
+  a repeating queue of dead stations reset the streak on each one and looped forever.
+- **A stream that cannot play fails like a file that will not open**, through one path:
+  `failStreamingTrack` stops, posts the readout and, half a second later, runs
+  `advancePastFailedTrack` with a user request, so the queue moves on and ends on the "can't be
+  played" alert. Two things lead there: a codec or M4A packet-table error
+  (`handleStreamingErrorFallback`), and a stream that never answers (M87). AudioStreaming retries a
+  connection that times out (`RemoteAudioSource.retryOnError`) without limit and reports nothing,
+  so `StreamingAudioPlayer` arms a deadline on `play(url:)` (`connectTimeout`, 15 s). When it
+  passes with no audio buffer yet (`hasReportedFormat`) — paused or not — the player stops and
+  calls `streamingPlayerDidFailToConnect`. A `RadioManager` station goes to `streamDidDisconnect`
+  instead. The log line `First audio N.Ns after play` measures how close a source comes to the
+  deadline. Not covered: the incoming player of a crossfade has no delegate, so a dead one there
+  is stopped silently.
 - **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
   the rule guards its recursive skip. A skip chain that fails through the last row, with no Play Now
   to withdraw, ends the queue (`stopAfterQueueExhausted`, so `.audioQueueDidExhaust` and the sleep
@@ -305,8 +319,9 @@ under the error message.
   minutes for a large playlist. `loadTrack(at:)` stops the outgoing track and makes the placeholder
   current, so the caller's `play()` resolves just that one and starts it — `playTrack(at:)` uses
   the same branch. Skipping it instead left the outgoing track current, and Next resumed it while
-  the highlight moved on (#583). The streaming-error advance calls `play()` after `next()`, since
-  the error left `.stopped` and only a resolved stream starts on load.
+  the highlight moved on (#583). The streaming-failure advance goes through
+  `advanceToLocalTrackAsync`, which calls `play()` after `loadTrack(at:)` for a stream or
+  placeholder, since the failure left `.stopped` and only a resolved stream starts on load.
 
 **Telling the user.** `.audioTrackDidFailToLoad` feeds each skin family's readout — the Classic and
 Original marquees, the `.wal` songticker, and WMP's `player.status` plus `currentMedia.name`. Each host
@@ -316,7 +331,8 @@ Those sit in the player window, which is often behind the library the user click
 play **the user started** also calls the delegate's `audioEngineUserPlayRequestDidFail` (a default
 no-op, so the CLI ignores it) and `AppDelegate` shows an `NSAlert` — the one readout every skin
 system shares. It fires only when playback stops: `playNow` after a rollback, and `playTrack`
-(`userInitiated: true`) when the folder is gone. Automatic advance never calls it, since a disconnected drive would otherwise raise one modal per queued track. The alert
+(`userInitiated: true`) when the folder is gone, and a failed stream when the queue ends on it
+(`failStreamingTrack`; once per chain, not per track). Automatic advance past local files never calls it, since a disconnected drive would otherwise raise one modal per queued track. The alert
 has no "Remove from Library": a missing folder looks exactly like a disconnected NAS.
 
 A reconnected drive plays again only once macOS has remounted the share at the same path; the app
