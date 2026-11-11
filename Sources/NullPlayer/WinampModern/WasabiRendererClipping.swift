@@ -168,8 +168,12 @@ extension WasabiSceneRenderer {
     func paintedBackingID(of object: WasabiObject) -> String? {
         if object.tag.is(.layout) {
             if object.attributes["drawbackground"] == "0", object.attributes["sysregion"] == "1" { return nil }
+            // A blank `background` hands over only to an `alphabackground` that loads: a missing one
+            // would leave `backing(of:)` filling the transparent window with the content colour.
             if let alpha = object.attributes["alphabackground"],
-               object.attributes["desktopalpha"] == "1" || hasBlankBackground(object) {
+               object.attributes["desktopalpha"] == "1"
+                || (hasBlankBackground(object)
+                    && resources.bitmap(background: alpha, declaredIn: object.source) != nil) {
                 return alpha
             }
             return object.attributes["background"]

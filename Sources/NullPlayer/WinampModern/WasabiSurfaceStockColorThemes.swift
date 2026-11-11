@@ -13,8 +13,8 @@ extension WasabiSurfaceSynthesizer {
     private static func isNamed(_ id: String, in nodes: [WalXMLNode]) -> Bool {
         nodes.contains { node in
             let name = node.name.lowercased()
-            let named = (name == "group" ? node.attribute("id") : nil) ?? node.attribute("content")
-            return named.map { fold($0) == fold(id) } == true || isNamed(id, in: node.children)
+            let names = [name == "group" ? node.attribute("id") : nil, node.attribute("content")]
+            return names.contains { $0.map { fold($0) == fold(id) } == true } || isNamed(id, in: node.children)
         }
     }
 

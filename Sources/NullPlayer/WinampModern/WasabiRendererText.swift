@@ -485,7 +485,7 @@ extension WasabiSceneRenderer {
         let charWidth = run.charWidth
         let charHeight = run.charHeight
         let positions = Self.bitmapGlyphPositions
-        let space = spaceCell(in: sheet, charWidth: charWidth, charHeight: charHeight)
+        let space = spaceCell(in: sheet, of: definition, charWidth: charWidth, charHeight: charHeight)
         let width = run.width(of: text)
         var startX: CGFloat
         switch alignment {
@@ -651,11 +651,18 @@ extension WasabiSceneRenderer {
     /// 32-cell sheet need not: Washed's `font1.PNG` draws placeholder boxes at cells 28, 29 and 31
     /// and keeps its only blank at 30, so every space drew as a box (B416). The space is the first
     /// fully transparent cell from 28 on; a sheet with none keeps 29.
-    private func spaceCell(in sheet: WasabiBitmap, charWidth: Int, charHeight: Int) -> (Int, Int) {
-        let key = ObjectIdentifier(sheet.image)
-        if let hit = spaceCells[key] { return hit.cell }
+    ///
+    /// Keyed by the font's file and cell size, never the image: a sheet the bitmap cache evicts and
+    /// reloads is a new image, and two fonts may cut one sheet at different sizes. Alpha survives a
+    /// theme switch, so the answer does too. The scan stops at the sheet's own height — past it
+    /// every pixel reads clear, and a declared `charheight` is the skin's to make absurd.
+    private func spaceCell(in sheet: WasabiBitmap, of definition: WalResourceDefinition,
+                           charWidth: Int, charHeight: Int) -> (Int, Int) {
+        let key = SpaceCellKey(sheet: (definition.attributes["file"] ?? definition.logicalFile ?? "").lowercased(),
+                               charWidth: charWidth, charHeight: charHeight)
+        if let hit = spaceCells[key] { return hit }
         func isBlank(_ column: Int) -> Bool {
-            for y in 0..<charHeight {
+            for y in 0..<min(charHeight, sheet.height) {
                 for x in 0..<charWidth
                 where sheet.alpha(at: CGPoint(x: column * charWidth + x, y: y)) != 0 { return false }
             }
@@ -663,7 +670,7 @@ extension WasabiSceneRenderer {
         }
         let columns = sheet.width / max(1, charWidth)
         let cell = ((28..<max(28, columns)).first(where: isBlank) ?? 29, 0)
-        spaceCells[key] = (sheet.image, cell)
+        spaceCells[key] = cell
         return cell
     }
 

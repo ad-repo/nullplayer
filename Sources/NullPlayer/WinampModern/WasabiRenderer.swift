@@ -365,7 +365,8 @@ final class WasabiResourceCache {
 
     private func bitmap(identifier: String?, zeroIsWhole: Bool) -> WasabiBitmap? {
         guard !isTornDown, let identifier, !identifier.isEmpty else { return nil }
-        let key = (zeroIsWhole ? "thumb:" : "") + identifier.lowercased()
+        // NUL cannot appear in an XML attribute, so a thumb key never meets a skin's own identifier.
+        let key = (zeroIsWhole ? "\u{0}thumb:" : "") + identifier.lowercased()
         if let hit = cachedBitmap(key) { return hit }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
               let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs, zeroIsWhole: zeroIsWhole)
@@ -2677,8 +2678,9 @@ final class WasabiSceneRenderer {
     /// Whether a layout's `background` bitmap is fully transparent, by declaring file and value
     /// (`hasBlankBackground`). Kept across a theme switch: a theme recolours, it never changes alpha.
     var blankBackgrounds: [String: Bool] = [:]
-    /// The space cell per bitmap-font sheet (`spaceCell`); the source is held so an address is never reused.
-    var spaceCells: [ObjectIdentifier: (source: CGImage, cell: (Int, Int))] = [:]
+    /// The space cell per bitmap-font sheet and cell size (`spaceCell`).
+    struct SpaceCellKey: Hashable { let sheet: String; let charWidth: Int; let charHeight: Int }
+    var spaceCells: [SpaceCellKey: (Int, Int)] = [:]
 
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
     ///

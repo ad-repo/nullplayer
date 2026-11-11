@@ -87,10 +87,12 @@ extension WasabiSceneRenderer {
     /// 4-px track would otherwise claim a half-pixel strip the whole length of the track.
     private func lands(_ point: CGPoint, on node: WasabiSceneNode) -> Bool {
         if node.frame.contains(point) { return true }
-        // A slider drawn at `alpha="0"` paints no thumb, so its overhang claims nothing. A hidden seek
+        // A slider drawn at alpha 0 paints no thumb, so its overhang claims nothing. A hidden seek
         // or volume slider parked over a time readout (gtutorials' 40x2 `HiddenSeek`, B424) otherwise
-        // took every press on the readout through its animation strip.
-        guard node.object.tag.is(.slider), !Self.isFullyTransparent(node.object),
+        // took every press on the readout through its animation strip. The alpha is the one drawn:
+        // focus-dependent, and inherited down the tree.
+        guard node.object.tag.is(.slider),
+              Self.alphaFraction(of: node.object, active: isWindowActive) * node.inheritedAlpha > 0,
               let thumb = sliderThumb(node.object, pressed: false, hovered: true)
         else { return false }
         return sliderThumbFrame(node.object, thumb: thumb, in: node.frame).contains(point)

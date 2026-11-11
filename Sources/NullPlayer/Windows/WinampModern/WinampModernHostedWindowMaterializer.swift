@@ -297,12 +297,17 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
               let floor = definition.clientFloor,
               let client = renderer.componentHolders().first(where: { $0.hostedWindowID == id })?.frame.size
         else { return }
-        let shortfall = CGSize(width: max(0, floor.width - client.width),
-                               height: max(0, floor.height - client.height))
+        // The floor is the view's points; the holder is skin pixels, drawn at the UI Size.
+        let scale = max(skinScale(), 0.01)
+        let shortfall = CGSize(width: max(0, floor.width / scale - client.width),
+                               height: max(0, floor.height / scale - client.height))
         guard shortfall != .zero else { return }
         let canvas = renderer.canvasSize
         growCanvas(of: renderer, view: view, window: window,
                    to: CGSize(width: canvas.width + shortfall.width, height: canvas.height + shortfall.height))
+        // The renderer resized before the window, so the window's resize sees no change to report:
+        // frame scripts hear the new geometry here.
+        view.dispatchResizeIfChanged()
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
     }
