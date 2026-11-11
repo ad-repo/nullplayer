@@ -79,8 +79,7 @@ class BorderlessWindow: NSWindow {
         let hasV = edges.contains(.top) || edges.contains(.bottom)
         
         if hasH && hasV {
-            // Corner - use crosshair since macOS doesn't have diagonal resize cursors
-            return NSCursor.crosshair
+            return .diagonalResize(top: edges.contains(.top), left: edges.contains(.left))
         } else if hasH {
             return NSCursor.resizeLeftRight
         } else if hasV {
@@ -176,11 +175,14 @@ class BorderlessWindow: NSWindow {
             }
             let edges = detectResizeEdges(at: windowPoint)
             if !edges.isEmpty {
+                // After the view, whose own mouseMoved may set a cursor: a press here resizes (#741).
+                super.sendEvent(event)
                 cursor(for: edges).set()
+                return
             } else if !isResizing {
                 NSCursor.arrow.set()
             }
-            
+
         default:
             break
         }

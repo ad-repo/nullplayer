@@ -163,8 +163,12 @@ class ResizableWindow: NSWindow {
             }
             
         case .mouseMoved:
+            // The edge cursor goes on after the view's own mouseMoved: a press there resizes (#741).
+            NSCursor.arrow.set()
+            super.sendEvent(event)
             updateResizeCursor(event)
-            
+            return
+
         default:
             break
         }
@@ -222,26 +226,14 @@ class ResizableWindow: NSWindow {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
 
-        if shouldBlockEdgeResize(edges) {
-            NSCursor.arrow.set()
-            return
-        }
-        
-        if edges != .none {
-            // Show appropriate resize cursor
-            switch edges {
-            case .left, .right:
-                NSCursor.resizeLeftRight.set()
-            case .top, .bottom:
-                NSCursor.resizeUpDown.set()
-            case .topLeft, .bottomRight, .topRight, .bottomLeft:
-                // Use crosshair as fallback for diagonal (macOS doesn't expose diagonal cursors easily)
-                NSCursor.crosshair.set()
-            default:
-                NSCursor.arrow.set()
-            }
-        } else {
-            NSCursor.arrow.set()
+        guard edges != .none, !shouldBlockEdgeResize(edges) else { return }
+        switch edges {
+        case .left, .right:
+            NSCursor.resizeLeftRight.set()
+        case .top, .bottom:
+            NSCursor.resizeUpDown.set()
+        default:
+            NSCursor.diagonalResize(top: edges.contains(.top), left: edges.contains(.left)).set()
         }
     }
     

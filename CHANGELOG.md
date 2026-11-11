@@ -86,6 +86,10 @@
   moves on, and the "can't be played" alert appears when nothing is left. A radio station that never
   answers stops retrying after five attempts and shows as failed. A stream whose format can't be
   played ends the same way when nothing is left after it.
+- **Window corners show a diagonal resize cursor in every skin family** on macOS 15 and later —
+  Classic, Original, Windows Media Player skins and the video window, as Modern skins already did —
+  instead of a crosshair (#741). The library browser's corners and edges now show their resize
+  cursor at all, and a Windows Media Player skin's own cursors (such as Compact's size grip) appear.
 
 ## 0.35.0
 

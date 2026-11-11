@@ -968,9 +968,8 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         case .sizeAll: return .openHand
         case .sizeWE: return .resizeLeftRight
         case .sizeNS: return .resizeUpDown
-        // macOS ships no public diagonal resize cursor, so the nearest honest answer is the axis
-        // the drag mostly runs along rather than an invented bitmap.
-        case .sizeNWSE, .sizeNESW: return .crosshair
+        case .sizeNWSE: return .diagonalResize(top: true, left: true)
+        case .sizeNESW: return .diagonalResize(top: true, left: false)
         }
     }
 
@@ -1404,14 +1403,21 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
     private func updateResizeCursor(_ point: NSPoint) {
         let edges = edges(at: point)
+        defer { showsResizeCursor = !edges.isEmpty }
+        // Off the edge the arrow goes back only on leaving it, so a control's cursor rect stands (#741).
         if edges.isEmpty {
-            if scene != nil { NSCursor.arrow.set() }
+            if showsResizeCursor { NSCursor.arrow.set() }
             return
         }
-        // AppKit publishes no diagonal resize cursor, so a corner takes the axis it is widest in.
         let horizontal = edges.contains(.left) || edges.contains(.right)
-        (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
+        let vertical = edges.contains(.top) || edges.contains(.bottom)
+        if horizontal && vertical {
+            NSCursor.diagonalResize(top: edges.contains(.top), left: edges.contains(.left)).set()
+        } else {
+            (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
+        }
     }
+    private var showsResizeCursor = false
 
     private func beginWindowDrag(_ event: NSEvent) {
         guard let window else { return }
