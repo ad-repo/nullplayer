@@ -226,15 +226,10 @@ class ResizableWindow: NSWindow {
         let windowPoint = event.locationInWindow
         let edges = detectEdges(at: windowPoint)
 
-        guard edges != .none, !shouldBlockEdgeResize(edges) else { return }
-        switch edges {
-        case .left, .right:
-            NSCursor.resizeLeftRight.set()
-        case .top, .bottom:
-            NSCursor.resizeUpDown.set()
-        default:
-            NSCursor.diagonalResize(top: edges.contains(.top), left: edges.contains(.left)).set()
-        }
+        guard !shouldBlockEdgeResize(edges) else { return }
+        NSCursor.resize(horizontal: edges.contains(.left) || edges.contains(.right),
+                        vertical: edges.contains(.top) || edges.contains(.bottom),
+                        top: edges.contains(.top), left: edges.contains(.left))?.set()
     }
     
     // MARK: - Resize Logic

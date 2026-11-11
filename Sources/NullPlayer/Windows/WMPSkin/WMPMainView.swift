@@ -157,6 +157,7 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
     /// a drag that could never begin, and every expression-driven layout in the corpus was stuck at
     /// the size its markup opened with.
     private var resizeEdges: WMPWindowEdges = []
+    private var resizeCursor = ResizeCursorTracker()
     /// Whether the drag in flight has a held handler tail to release on the mouse-up (W225).
     ///
     /// It used to mean "this drag came from `view.size(corner)`", which was the only way to get
@@ -623,7 +624,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         updateHover(event)
     }
     override func mouseEntered(with event: NSEvent) { updateHover(event) }
-    override func mouseExited(with event: NSEvent) { setHover(nil) }
+    override func mouseExited(with event: NSEvent) {
+        resizeCursor.exit()
+        setHover(nil)
+    }
 
     // Opening an auxiliary window must not consume the next skin control click just for focus.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -1403,21 +1407,10 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
 
     private func updateResizeCursor(_ point: NSPoint) {
         let edges = edges(at: point)
-        defer { showsResizeCursor = !edges.isEmpty }
-        // Off the edge the arrow goes back only on leaving it, so a control's cursor rect stands (#741).
-        if edges.isEmpty {
-            if showsResizeCursor { NSCursor.arrow.set() }
-            return
-        }
-        let horizontal = edges.contains(.left) || edges.contains(.right)
-        let vertical = edges.contains(.top) || edges.contains(.bottom)
-        if horizontal && vertical {
-            NSCursor.diagonalResize(top: edges.contains(.top), left: edges.contains(.left)).set()
-        } else {
-            (horizontal ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).set()
-        }
+        resizeCursor.update(.resize(horizontal: edges.contains(.left) || edges.contains(.right),
+                                    vertical: edges.contains(.top) || edges.contains(.bottom),
+                                    top: edges.contains(.top), left: edges.contains(.left)))
     }
-    private var showsResizeCursor = false
 
     private func beginWindowDrag(_ event: NSEvent) {
         guard let window else { return }

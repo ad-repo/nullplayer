@@ -81,10 +81,11 @@ a dispatch defect — it is a control the pointer never reached at all.
   as one rect per run of covered pixels per scanline, because `addCursorRect` is a list AppKit scans
   and an arc is ~136 bands where a pixel mask would be thousands. **A new surface that reads
   `hit.frame` to offer the user something inherits this bug** — ask coverage too.
-- **`mouseMoved` must not set the arrow on every move.** It did, so every authored `cursor=` (Compact's
-  `sizenwse` grip) was overwritten the moment the pointer moved and only the arrow was ever seen.
-  `updateResizeCursor` restores the arrow only on leaving the resize band, and a band corner takes
-  `NSCursor.diagonalResize` (#741).
+- **`WMPMainView.mouseMoved` must not set the arrow on every move.** The view's element cursors are
+  cursor rects, and it did, so every authored `cursor=` (Compact's `sizenwse` grip) was overwritten
+  the moment the pointer moved and only the arrow was ever seen. The view's resize band goes through
+  `ResizeCursorTracker` (`Utilities/NSCursor+ResizeEdges.swift`, shared with `.wal`), which restores
+  the arrow only on leaving the band or the view (#741).
 - **A control the pointer is holding is the user's, and the host does not write to it (W151).**
   `WMPPropertyRegistry.positionSliderPaths` gives any slider whose `max` binds to
   `player.currentMedia.duration` an *implicit* `value` binding to `player.controls.currentPosition`

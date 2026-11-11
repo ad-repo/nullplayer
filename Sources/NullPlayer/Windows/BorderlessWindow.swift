@@ -74,18 +74,10 @@ class BorderlessWindow: NSWindow {
     }
     
     /// Get the appropriate cursor for the given resize edges
-    private func cursor(for edges: Set<ResizeEdge>) -> NSCursor {
-        let hasH = edges.contains(.left) || edges.contains(.right)
-        let hasV = edges.contains(.top) || edges.contains(.bottom)
-        
-        if hasH && hasV {
-            return .diagonalResize(top: edges.contains(.top), left: edges.contains(.left))
-        } else if hasH {
-            return NSCursor.resizeLeftRight
-        } else if hasV {
-            return NSCursor.resizeUpDown
-        }
-        return NSCursor.arrow
+    private func cursor(for edges: Set<ResizeEdge>) -> NSCursor? {
+        .resize(horizontal: edges.contains(.left) || edges.contains(.right),
+                vertical: edges.contains(.top) || edges.contains(.bottom),
+                top: edges.contains(.top), left: edges.contains(.left))
     }
     
     // MARK: - Event Handling
@@ -177,7 +169,7 @@ class BorderlessWindow: NSWindow {
             if !edges.isEmpty {
                 // After the view, whose own mouseMoved may set a cursor: a press here resizes (#741).
                 super.sendEvent(event)
-                cursor(for: edges).set()
+                cursor(for: edges)?.set()
                 return
             } else if !isResizing {
                 NSCursor.arrow.set()
