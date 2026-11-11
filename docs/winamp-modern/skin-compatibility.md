@@ -29,13 +29,13 @@ Media Library in NullPlayer's plain chrome (open B366). Twenty-five more joined 
 intake #8, graded the same way and passed by the user in the app; seven are C for a Media Library in
 NullPlayer's plain chrome (open B366) or no library window of the skin's own. Twenty-five more joined
 on 2026-11-10, corpus intake #9, graded the same way and passed by the user in the app; one is C for a
-Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own). B366's fix moved twelve earlier skins from C
+Media Library in NullPlayer's plain chrome (LiquidStar declares no frame of its own). Forty-nine more joined on 2026-11-11, corpus intake #10, graded the same way and passed by the user in the app; three are C for a Media Library in NullPlayer's plain chrome (SleekyXtra, Overdrive, RayPlayer declare no frame of their own). B366's fix moved twelve earlier skins from C
 to B (intake #8: Narnia, Thanog, Lara Flynn Boyle, FreddyvsJason, Fast And The Furious 4, Pax;
 intakes #6–#7: AniTransformers, Java Duke, NightWing II, Powerade, Star Wars Player, The Sims): their
 Media Library and Playlist now open in the skin's own frame, checked by the user in the app.
 
-Current picture: **263 B · 49 C**, of which 7 letters come from a
-person using the skin and 305 are provisional (below).
+Current picture: **309 B · 52 C**, of which 7 letters come from a
+person using the skin and 354 are provisional (below).
 
 ## How the grades were arrived at, and how far to trust them
 
@@ -95,6 +95,9 @@ this skin at all — usually because the skin predates the feature, not because 
 | **28 Days Later**<br>`Official_28_Days_Later_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `win.center` |
 | **3D**<br>`Darjah 1.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `play/on.png` |
 | **Abducted**<br>`Abducted.wal` | SLoB | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `stick.main.plct_joinbarallenbolt` |
+| **absurd**<br>`absurd_5.wal` | Till Haldimann | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Act 3 Scene 2**<br>`Act3scene2_-_prototype.wal` | Skinarmory | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Aircel Skin**<br>`AIRCELDialer_Tunes.wal` | Pradeep.K.R | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **AkbankBuyukEv**<br>`Big_Red_House_.wal` | Ersin Arar | B<br><sub>provisional</sub> | Fully skinned | its shade button names an undeclared layout `pinkmini` (the skin's) |
 | **AlienPADD**<br>`PaddPreview.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `player.normal.button.menu.btn`, `player.shade.shade`; 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Alpha Media Player X5**<br>`Alpha_Media_Player_X5.wal` | Dmitry Pozdniakov | B<br><sub>provisional</sub> | Player skinned | 3 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -102,9 +105,11 @@ this skin at all — usually because the skin predates the feature, not because 
 | **AmpTunes III (WinTunes)**<br>`AmpTunes_III.wal` | Jay Spannerz | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Anaheim Player 01**<br>`Anaheim_Player_01.wal` | Anaheim Electronics Japan | B<br><sub>provisional</sub> | Fully skinned | 2 error-severity load finding(s) |
 | **Anexa**<br>`Anexa.wal` | nynako / skin-zone | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Angel**<br>`Official_Angel_Series_Winamp5_Skin.wal` | Petrol Designs, Kinwashi and Lucas | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Angren Thoron**<br>`Angrenthoron.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **AniTransformers Skin**<br>`AniTransformers.wal` | Jeremy Eble | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Anunaki**<br>`Anunaki.wal` | Leechbite | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`; 29 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **AOL Broadband Winamp5 Skin**<br>`AOL_Broadband_Winamp5_Skin_.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Apill**<br>`Apill.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **AR-7**<br>`AR-7.wal` | Metaskins | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Aria of the Soul**<br>`Aria_of_the_Soul.wal` | Saek | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
@@ -112,14 +117,17 @@ this skin at all — usually because the skin predates the feature, not because 
 | **ARTZAR**<br>`Artzar.wal` | Mike McCaffrey | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **AS Fx21 Skin**<br>`AS-FxS.wal` | — | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **Ashen Player**<br>`Ashen_Player_for_Winamp_1_1.wal` | iron2000 | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
+| **ATL**<br>`The_ATL_Winamp5_Skin.wal` | PetrolDesigns | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Avalon**<br>`Avalon_Winamp_Modern.wal` | Jorge Mancheno | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Ayanami Rei the Fifth**<br>`MD_-_Ayanami_Rei_the_Fifth_v1.wal` | Indra Furatama a.k.a. Asakura Rantisi kay | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `thinger.bucket`, `thinger.bucket.mask`, `thinger.ticker`, `wasabi.frame.basetexture` |
+| **Batmain Movie**<br>`Batman_Begins.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **BattleAMP**<br>`Battlefield_Vietnam.wal` | D4rkchill3r | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Beat-Sugar**<br>`BeatSugar.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `wasabi.frame.basetexture` |
 | **Big Bento Modern**<br>`Big Bento Modern.wal` | Victhor, Martin Pöhlmann, Ben Allison | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.center`, `infocomp.button.icon.bg`, `infocomp.button.icon.lyricfinder`, `infocomp.button.icon.searchvideo`, `player.button.repeat.normal`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `config.button.hover`; 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Big Bento Modern - Windows 10 edition**<br>`Big Bento Modern Windows 10 edition.wal` | Victhor, Martin Pöhlmann, Ben Allison | B<br><sub>provisional</sub> | Fully skinned | 6 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.center`, `infocomp.button.icon.bg`, `infocomp.button.icon.lyricfinder`, `infocomp.button.icon.searchvideo`, `player.button.repeat.normal`, `wtf`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `config.button.hover`; 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Big Bento Modern - Windows 10 edition Light**<br>`Big Bento Modern Windows 10 edition Light.wal` | Victhor, Martin Pöhlmann, Ben Allison | B<br><sub>provisional</sub> | Fully skinned | 6 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.center`, `infocomp.button.icon.bg`, `infocomp.button.icon.lyricfinder`, `infocomp.button.icon.searchvideo`, `player.button.repeat.normal`, `wtf`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `config.button.hover`; 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Big Bento Modern Light**<br>`Big Bento Modern Light.wal` | Victhor, Martin Pöhlmann, Ben Allison | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.center`, `infocomp.button.icon.bg`, `infocomp.button.icon.lyricfinder`, `infocomp.button.icon.searchvideo`, `player.button.repeat.normal`; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `config.button.hover`; 27 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **BigBerthaSanctuary**<br>`BigBerthaSanctuary_1_1_1.wal` | Rukasuzu | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **blackwhite**<br>`blackwhite_version1.wal` | Fabiolo Jose Gatbonton | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **BLAKK**<br>`BLAKK.wal` | Dwight Robinson aka Vica. | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.remote-toggles-ml-text-off`; 5 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **BOOM**<br>`BOOM.wal` | Adil Ait el hassan(gfx) and Will Fisher(coding) | B<br><sub>provisional</sub> | Fully skinned | 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -128,10 +136,12 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Canister 01**<br>`Canister_01.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Canum**<br>`canum_winamp_by_burnsplayguitar_d2xhizu.wal` | burnsplayguitar | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `displayscreen`; no library, playlist window of its own; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140) |
 | **Cardium II**<br>`CardiumII.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `component.region.bottom`, `component.region.top`, `wasabi.frame.basetexture` |
+| **Casio G Shocked**<br>`Casio-G-Shocked-V2.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Catwoman**<br>`Catwoman_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Celica Amp**<br>`Celica_Amp.wal` | James Nikolai | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
 | **Chronabie**<br>`Chronabie.wal` | Vica | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **CircloTroniC**<br>`Circlo_T_roniC.wal` | — | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library or the playlist: a NullPlayer window stands in |
+| **CleanAMP**<br>`Clean_AMP.wal` | ROBO Design | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Clock**<br>`Clock V2.76.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **Compact**<br>`Compact.wal` | PercassoWG | B<br><sub>provisional</sub> | Fully skinned | the skin declares no Media Library frame, so it opens in NullPlayer's own chrome |
 | **Copperdeck II**<br>`CopperdeckII.wal` | Frank Duivenvoorden | B<br><sub>provisional</sub> | Fully skinned | 4 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.scrollbar.vertical.button`, `window.topright.region`, `window.header`, `about.winampbolt`; 3 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -166,6 +176,8 @@ this skin at all — usually because the skin predates the feature, not because 
 | **CyclopVX-1**<br>`Cyclop_VX1.wal` | Boki | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **D-Reliction**<br>`4-drelictionreleasepic.wal` | — | C<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `Layer`, `notifier.bg.inner`, `player.Beat`; unimplemented MAKI: `isobjectvalid` ×6; 30 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 3 error-severity load finding(s) |
 | **D-Shock**<br>`D-Shock.wal` | Robouk + Vica | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
+| **Danielle Fishel: Double Diamond**<br>`Danielle_Fishel_Double_Diamond_1_1.wal` | flatmatt | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Dawn of the Dead**<br>`Dawn_of_the_Dead.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Dawson's Creek**<br>`Official_Dawsons_Creek_Series_Skin.wal` | — | B<br><sub>provisional</sub> | Fully skinned | its video button opens nothing: the skin declares no video window (open B403) |
 | **DDTank Glass**<br>`DDtank_Glass_Winamp_Skin.wal` | Donny Indrapati | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `Close2.base_i`, `avs.bg.fill`, `avs.bg.middle`, `back`, `seeker.bg.vertical.right` |
 | **Defix Hi-End 200**<br>`Defix Hi-END 200.WAL` | Tankevich Denis | **B**<br><sub>live, as of 2026-08-18</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `FRAMING_GLASS.window`, `Lighting.Element`; 14 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -176,6 +188,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Dr Who - Monsters and Villains**<br>`Dr_Who_--_Monsters_and_Villains.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Draculas Helmet**<br>`Draculas_Helmet.wal` | -=RoNtZ=- | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `frame.button.close`, `wasabi.frame.basetexture` |
 | **Drone**<br>`Dronev11.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 5 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **DYNAMIC**<br>`Dynamic.wal` | Sinan | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Ebonite**<br>`Ebonite_2_1.wal` | WinstonGFX and SLoB | C<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `brightness.bg1`; unimplemented MAKI: `enumgammagroup` ×2, `setchecked` ×2; 7 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 4 error-severity load finding(s) |
 | **Ebonite**<br>`Ebonitefix.wal` | Mike Winston aka WinstonGFX and SLoB | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Echo**<br>`Echo.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -183,11 +196,13 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Electrolium**<br>`Electrolium.wal` | jsosic | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **EMP - Evolved Media Player**<br>`EMP.wal` | Andrew Mackowski | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **EMP - Evolved Media Player**<br>`EMP2.wal` | Andrew Mackowski | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
+| **Energy3**<br>`Energy3.wal` | mc^^^^ - Michael McBriar | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Enkera**<br>`Enkera.wal` | 883 | B<br><sub>provisional</sub> | Fully skinned | 4 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Enter the Matrix**<br>`Enter_the_Matrix.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Enya**<br>`Enya_Winamp_3_Skin.wal` | Jim Joiver Torres | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **EPS (Egor Petrov Systems)**<br>`EPS_High-End_System_v1_test.wal` | Egor Petrov | C<br><sub>provisional</sub> | Player skinned | 9 bitmap id(s) it references do not resolve, leaving a visible gap: `meterback`, `pausetip`, `peak`, `playtip`, `shade.bg.met`, `speaker3`…; unimplemented MAKI: `setchecked` ×2; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140); 13 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 1 error-severity load finding(s) |
 | **EW**<br>`EW.wal` | Roberto Cuellar Gamez | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **falcon**<br>`cd-FALCON.wal` | DEMONA EVILIVANO | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Fanta**<br>`Official_Fantana_Skin.wal` | Adil and Will for Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | open: B382 (declared boxes overlap; B290 fontsize) |
 | **Fast And The Furious**<br>`Tokyo_Drift.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Fast And The Furious 4**<br>`Fast__Furious_Winamp5_Skin.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -195,7 +210,9 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Foo Fighters**<br>`Official_Foo_Fighter_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `win.center` |
 | **Formamp**<br>`Formamp.wal` | coronerss | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **FreddyvsJason**<br>`Freddy_vs_Jason.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **G-tutorials.dap.ro**<br>`gtutorials.dap.ro.wal` | Priscu Vlad | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **G2**<br>`G2.wal` | Whatsitsname | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
+| **GC-Skin**<br>`GC_Winamp_Skin.wal` | MinneMedia.com (design), Rontz (coding) | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **GGXX WINAMP5 SKIN**<br>`GUILTY_GEAR_XX_WINAMP5_SKIN.wal` | LEGION | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **GlassAMP**<br>`GlassAMP2.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **GlassAMP**<br>`GlassAMPfinal.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `displayBGWHITE`, `eq.normal.Balance.Label`; open: B309 (the notifier's cover and text sit 11 px up-left of the panel) |
@@ -204,8 +221,10 @@ this skin at all — usually because the skin predates the feature, not because 
 | **GoldenBeauty**<br>`GoldenBeauty.wal` | Aimz | B<br><sub>provisional</sub> | Fully skinned | open: B327 (floating text below the main window, not reproduced) |
 | **Graviton**<br>`-Graviton-.wal` | Infinil-Daniel Mauch | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
 | **GrayZ**<br>`Metaskins_net_-_GrayZ.wal` | VAG - Design -- Flo - XML + Scripting | B<br><sub>provisional</sub> | Fully skinned | open: B381 (the skin's `onVolumeChanged` stores 0 during its own mute) |
+| **GWlass**<br>`WGlass.wal` | lypnjtu | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **H2O Liquid**<br>`Metaskins_net_-_H2O_Liquid.wal` | VAG, FrisbeeMonkey and -=RoNtZ=- | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Hal's Eye**<br>`1-Hal__s_Eye_v1_2.wal` | -=RoNtZ=- | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `about.bg`; 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **Halloween2003**<br>`Halloween2003.wal` | R. Peter Clark | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **HALO**<br>`HALOAMP.wal` | JJ.Ying | B<br><sub>provisional</sub> | Fully skinned | 18 bitmap id(s) it references do not resolve, leaving a visible gap: `background.display.left.outline`, `background.display.middle`, `background.display.right.outline`, `border.bottom.left`, `border.bottom.middle`, `border.bottom.right`… |
 | **HardHouseCafeAmp**<br>`HardHouseCafeAmp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Hatsune Miku 5 Winamp Skin**<br>`hatsune_miku_5_winamp_by_kaza_sou_d6izotp.wal` | kazasou feat. msdzero | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -232,9 +251,11 @@ this skin at all — usually because the skin predates the feature, not because 
 | **JIP**<br>`Ar-Za-Jo.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **JPod**<br>`Jpod.wal` | NeuroSkins | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **JRS**<br>`JRS.wal` | mc^^^^ - Michael McBriar | B<br><sub>provisional</sub> | Fully skinned | 6 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **JSB**<br>`Bach.wal` | NA broths | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Just Buttons**<br>`Just_Buttons.wal` | Phil Atkin | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **JVC Tape**<br>`jvc.tape.v0.5.wal` | — | C<br><sub>provisional</sub> | Partly skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `pl.button.bg`, `pl.button.small`; no library window of its own; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140); 3 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **K-jr**<br>`K-jr.wal`<br><sub>also installed as `k_jr_winamp_skin_by_marisa85_d329ymw.wal`</sub> | Marisa85 | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `img/bt_crf.png`, `img/bt_none.png` |
+| **K-Tech SFX - 201**<br>`K-Tech_SFX_-_201.wal` | Tibi Ardelean | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Kepler**<br>`Kepler_1.1.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **KrazyPlayer**<br>`krazyPlayer.wal` | Skin Consortium | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `makemeblank0`, `layout.volumebar`; 6 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Kyoko Fukada**<br>`Kyoko_Fukada.wal` | Hikari Hendri | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -242,10 +263,12 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Lara Flynn Boyle - The Devil Inside V3**<br>`Lara_Flynn_Boyle_The_D3vil_Inside.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **LCD_hm1m**<br>`LCD_hm1_m.wal` | Heiko Mamsch | B<br><sub>provisional</sub> | Fully skinned | its video button opens nothing: the skin declares no video window (open B403) |
 | **LCDx**<br>`LCDx.wal` | — | B<br><sub>provisional</sub> | Player skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.button.label.arrow.left`, `wasabi.button.label.arrow.right` |
+| **LelouchvB**<br>`Lelouch_of_Code_Geass.wal` | rainbowxtina | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **LexAmp**<br>`The_Official_Lex_Luthor_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | its `switchskin(LexAmp_Win2.wsz)` names a classic skin the archive does not ship (the skin's) |
 | **LG Cookie**<br>`LG_Free_touch_the_music_.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **LiquidStar**<br>`LiquidStar.wal` | Cory MAnthei | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome: the skin declares no frame of its own |
 | **Lithium**<br>`-Lithium-.wal` | Quadhelix | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Liverpool F.C.**<br>`Liverpool_FC_Winamp_3_Skin.wal` | Richard Lee | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **LOBE**<br>`Lobe.wal` | graphics and coding: boostr29 | **C**<br><sub>live, as of 2026-08-21</sub> | Fully skinned | 14 bitmap id(s) it references do not resolve, leaving a visible gap: `border`, `drawer.left.bg`, `drawer.right.bg`, `main.00002`, `main.attatchment`, `main.glass.lower`…; 1 hover/pressed-state bitmap(s) do not resolve, so those controls give no visual feedback: `thinger.over`; 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Logicallity**<br>`LogicallityV1_0.wal` | Slobodan Pejic (Slobo972) | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Lou Reed -The Raven-**<br>`Lou_Reed_-_The_Raven.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -269,8 +292,10 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Midnight Club 2**<br>`Official_Midnight_Club_2_skin.wal` | Jake King, Jerry Luna, Jeff Williams | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
 | **Minima**<br>`Minima.wal` | PercassoWG | B<br><sub>provisional</sub> | Fully skinned | its display panel is black where its screenshot shows navy (open B404) |
 | **MiniModern**<br>`MiniModern.wal` | Walter Mulder | B<br><sub>provisional</sub> | Fully skinned | no EQ, playlist or library toggles on the main layout (the skin's) |
+| **miniPlayer**<br>`miniplayer.wal` | Skin Consortium | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Minus**<br>`Minus.wal` | Graphics: Skryingbreath --- Coding: Rohan Prabhu, Martin Poehlmann, SLoB, NickMikh | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **MiPod**<br>`MIPOD.wal` | SkinConsortium | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Miyabiskin**<br>`Miyabi_Skin.wal` | Nur Akbar Mappaleo (http://metalgrin.fluxide.com) For my lovely Elistia | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **MMD3**<br>`MMD3-4-5.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `pledit.buttonbg.add`, `pledit.buttonbg.misc`, `pledit.buttonbg.options`, `pledit.buttonbg.rem`, `pledit.buttonbg.sel`; 22 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **MMD3**<br>`mmd3.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 23 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Moon Groove**<br>`Moon_Groove_1-1.wal` | Pascal Getreuer | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.frame.basetexture` |
@@ -290,7 +315,9 @@ this skin at all — usually because the skin predates the feature, not because 
 | **NEO CLASSIC**<br>`NEO_CLASSIC.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `dummy0`, `wasabi.frame.bottom`, `text.vis`, `wasabi.button.close`, `wasabi.button.close.pressed` |
 | **New Night**<br>`New_Night_v_2.wal` | Bahmet | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **NightWing II**<br>`NightWing_II.wal` | Don Johnson | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **no-vita**<br>`No-Vita.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nokia 5800 XpressMusic**<br>`Nokia_5800_XPressMusic_by_techmafia_1.wal` | The CyberWizard | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Nokia 6600 Skin**<br>`Nokia_6600_AWK.wal` | Wali "KAKAR" | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nokia 7210 Amp**<br>`Nokia_7210_Amp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | its video button opens nothing: the skin declares no video window (open B403) |
 | **Nokia_5220**<br>`The_Nokia_5220_XpressMusic.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Nullsoft Winamp 2000 SP4**<br>`Nullsoft.Winamp.2000.SP4.Lite.wal` | Initial Graphics by Zsolt Vajda // Coding by Victor Brocaz // Modified by Gordon Freeman | B<br><sub>provisional</sub> | Fully skinned | 7 bitmap id(s) it references do not resolve, leaving a visible gap: `window.normal.left2`, `window.normal.middle2`, `window.plvis.display.bg`, `window.shade.region.bottom.left`, `window.shade.region.bottom.right`, `window.shade.region.top.left`…; 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -301,9 +328,11 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Olimpiadas**<br>`Olimpiadas.wal` | Matt Adams aka Sunshine (GFX and CODING) | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Onyx**<br>`ONYX V2.wal` | Parisienne17 | C<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `compact.equalizer.led.off`; unimplemented MAKI: `oneqchanged` ×6; 1 error-severity load finding(s) |
 | **OrbFace**<br>`OrbFace.wal` | Michael Kantor | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `studio.config.textbg` |
+| **Overdrive**<br>`Overdrive.wal` | Ian Novack aka Spoonman aka Novispoon | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome: the skin declares no frame of its own |
 | **Overdrive 2**<br>`Overdrive_2.wal` | Ian Novack aka Spoonman aka Novispoon | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.anim.volume`; no library window of its own; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140); 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **PAD**<br>`PAD.wal` | Ryan F. (graphics), iPlayTheSpoons (scripting) | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
 | **Pax**<br>`Pax_Amp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **PDU Blog**<br>`Blogz.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **PiOnNeR_AMP2**<br>`PionNer_AMP2.wal` | Marcelo Caetano Martins Muniz | B<br><sub>provisional</sub> | Fully skinned | 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; its synthesized playlist and library windows may draw plain (synthesis reads its standard frame as artwork-less) |
 | **Pixelated**<br>`Pixelated.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | the startup arrangement tiles its notifier, so the playlist opens 27px lower: open B398 |
 | **Pokemon DS**<br>`PokemonDS.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -311,15 +340,22 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Powerade**<br>`Official_Powerade_Skin.wal` | Powerade | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Project D.U. #3**<br>`Project_DU_Television.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Psonidelic Skin**<br>`Psonidelic.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the archive ships no `player-winshade/` artwork, so the EQ and shade layouts lack their background and buttons (the skin's) |
+| **Psonidelic Skin**<br>`Psonidelic_v2.wal` | gisleo | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Puma Skin**<br>`pumaSKIN.wal` | Puma DesignS | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **Pure Inspired for Winamp**<br>`Pure Inspired.wal`<br><sub>also installed as `pure_inspired_for_winamp_by_marisa85_d35ix2r.wal`</sub> | Marisa85 | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `img/bt_caN.png` |
 | **Quadelic**<br>`Quadelic.wal` | takanory | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Queen eLisabeth II**<br>`QL2.wal` | ANIEL SHRI | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `component.region.bottom.left`, `component.region.bottom.right`, `component.region.right`, `component.region.top.right`, `m06` |
+| **Quinto**<br>`Quinto.wal` | peter_ka | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Qwest**<br>`Qwest_V2.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Rammstein**<br>`Rammstein_Reise_Reise.wal` | La Matrake | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Ray Skin**<br>`RayPlayer.wal` | Hareesh.N.Nampoothiri | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome: the skin declares no frame of its own |
 | **RazorEdge V1**<br>`RazorEdge_V1.wal` | Daniel B | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.frame.basetexture` |
 | **Rectangular**<br>`Rectangular.wal` | Thomas Michgelsen | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Red Alert 2**<br>`CC_Red_Aler_2.wal` | 2good4you | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **REM**<br>`REM_-_Morning_Team_-.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Remote**<br>`remote.wal` | nkj | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
+| **Remote Sensing**<br>`RemoteSensing.wal` | Mike McCaffrey | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Resurgence**<br>`Resurgence-2.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **RODE 3 Lite**<br>`RODE_3_Lite.wal` | ROBO Design | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.bottom-right-resize`, `studio.config.textbg` |
 | **S7Reflex**<br>`S7Reflex.wal` | daniel sioneanu | B<br><sub>provisional</sub> | Fully skinned | 22 bitmap id(s) it references do not resolve, leaving a visible gap: `drawer.button.close.bg`, `player.button.repeat.bg`, `player.button.shuffle.bg`, `player.display.bg.center`, `player.display.bg.left`, `player.display.bg.right`…; 6 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Scythe**<br>`_Scythe.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -333,17 +369,25 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Side Amp**<br>`sa.wal` | Graphics: Quadhelix - Ralph .:::. Coder: mc^^^^ - Michael McBriar | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **SILVERSKIN3**<br>`Silverskin_3.wal` | Martin P. alias bigHIPPIE | B<br><sub>provisional</sub> | Fully skinned | open: B282 (frame titles wider than their windows lose both ends) |
 | **Simple**<br>`Simple.wal` | R. Peter Clark | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `studio.basetexture`, `component.basetexture` |
+| **Simple Amp**<br>`Simple_Amp_.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Simplistic Vision**<br>`Simplistic_Vision_2.wal` | DrunkenMaster | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Sing it, Kitty**<br>`SingItKitty.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Sleeky Xtra**<br>`SleekyXtra.wal` | Hareesh.N.Nampoothiri | C<br><sub>provisional</sub> | Partly skinned | Media Library opens in NullPlayer's plain chrome: the skin declares no frame of its own |
+| **Slim**<br>`Slim.wal` | Graphics, Design, Scripting by ASTRI001 | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **SLIMLINE**<br>`Slimline_XP_final.wal` | E-Blackadder | C<br><sub>provisional</sub> | Partly skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.button.close`; no window of its own for the library or the playlist: a NullPlayer window stands in |
+| **Slither**<br>`The_Official_Slither_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Smallville Digital Album**<br>`Smallville_Digital_Album.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Snapxynith**<br>`Tuneup_v1.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the skin declares no Media Library frame, so it opens in NullPlayer's own chrome |
+| **Snoe Globe X-Mas Skin**<br>`Magic_Snow_Globe.wal` | Martin Poehlmann, Michael Winston, Ralph Barber | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Software**<br>`Software.wal` | Chimpzilla | B<br><sub>provisional</sub> | Fully skinned | open: B389 (the volume bar draws past the art that should clip it) |
 | **Sony**<br>`Sony_Walkman.wal` | Petrol Designs | C<br><sub>provisional</sub> | Partly skinned | no library, playlist window of its own; 8 NullPlayer-owned window(s) open in the plain frame — no reusable standard frame (B110/B140); 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
+| **Sony STR VA 555**<br>`3IO.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Sony Walkman Skin**<br>`SONY__WALKMAN.wal` | Saravanan, Balasundarrao | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **SpoonoAmp Modern**<br>`SpoonoAmp_Modern.wal` | Dan Wenner | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Star Trek LCARS AMP PADD II**<br>`StarTrek_LCARS_AMP_PADD_II.wal` | Jason Chiu | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `player.seek.slider`, `wasabi.frame.basetexture` |
 | **Star Wars Player**<br>`Star_Wars_Player.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Stargate:Winamp - SG1 Edition**<br>`Stargate_Winamp_-_SG1_edition.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
+| **Studiosus**<br>`Studiosus.wal` | Thomas Michgelsen | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Study Skinning**<br>`Study Skinning.wal` | Ariszló | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Styx**<br>`Styx.wal` | — | C<br><sub>provisional</sub> | Fully skinned | unimplemented MAKI: `getmode` ×2, `setchecked` ×12; 2 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; 7 error-severity load finding(s) |
 | **Symplicipod**<br>`Symplicipod.wal` | Sharkwork | B<br><sub>provisional</sub> | Fully skinned | 4 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
@@ -354,6 +398,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Tekken Lili Winamp Skin**<br>`Tekken Lili.wal` | Maxim Cryseria | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `player.volpanel` |
 | **Tendency**<br>`Prakrit.wal` | Rohan Prabhu / Tritium SkinZ | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `wasabi.frame.basetexture` |
 | **Test**<br>`machina.wal` | Jason Lange and Frank Schoenmaker aka vrank | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.resize` |
+| **Tewnz**<br>`Tewnz_2.0.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Thanog**<br>`Thanog_.wal` | Antonio Manna | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **The Crow**<br>`The_Crow__v1.wal` | ivan gomez | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
 | **The Duk Side**<br>`The_Duk_Side_V3.wal` | Mr Jones | C<br><sub>provisional</sub> | Partly skinned | no window of its own for the library: a NullPlayer window stands in |
@@ -374,6 +419,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Vocaloid Love is War: Hatsune Miku x Megurine Luka**<br>`Hatsune Miku x Megurine Luka.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Warp**<br>`warp.wal` | QuadHelix (Graphx and Design) and Leechbite (Coding) | B<br><sub>provisional</sub> | Fully skinned | open: B375 (timer holds ~30 ms; VU volatility) |
 | **wasabi.player base skin**<br>`wasabi_player_skin.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 3 bitmap id(s) it references do not resolve, leaving a visible gap: `about.bg`, `player.status.play`, `wasabi.frame.basetexture` |
+| **Washed**<br>`Washed.wal` | Isaac Eckert (IceMan) | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **WeeAmp**<br>`WeeAmp_2.wal` | Andreas Svensson and James Hewitt | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Wiimote**<br>`Wiimote.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Winamp 2006**<br>`Winamp-2006.wal` | — | B<br><sub>provisional</sub> | Fully skinned | the skin declares no Media Library frame, so it opens in NullPlayer's own chrome; its MSPP settings page is for a Windows add-on that cannot run here |
@@ -392,9 +438,12 @@ this skin at all — usually because the skin predates the feature, not because 
 | **WINyaMP3**<br>`WINyaMP3.wal` | ROBO Design | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **WooHooFer**<br>`METASKINS-WooHoo-FER.wal` | VAG design (GFX) | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **WoopieAMP**<br>`WoopieAMP3.wal` | Brian M. Sperlongano, '02 EE | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `right-up` |
+| **Wrigley's Chewing Amp**<br>`ChewingAmp.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **wTunes**<br>`wTunes.wal` | capnkyle | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `window.region.topright`; 7 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Wurlitzer One More Time**<br>`W%C3%83%C2%BCrlitzer_V3_1.wal` | Corwin of Amber | B<br><sub>provisional</sub> | Fully skinned | open: B392 (high CPU while playing) |
+| **X Sphere**<br>`X_Sphere.wal` | SBSM | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **X-Theme**<br>`X-Theme.wal` | Eps | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |
+| **Xbox Amp**<br>`Xbox_Amp.wal` | Alex Kronish | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **XENERGY**<br>`XENERGY1.wal` | daniel sioneanu | B<br><sub>provisional</sub> | Fully skinned | 16 bitmap id(s) it references do not resolve, leaving a visible gap: `player.button.repeat.bg`, `player.button.shuffle.bg`, `player.display.bg.center`, `player.display.bg.left`, `player.display.bg.right`, `player.display.center`…; 5 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click |
 | **Xenon**<br>`Xenon.wal` | Naos | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Yo-Yo-Boy**<br>`The_Official_YoYoBoy_Skin.wal` | Ben Tjibe | B<br><sub>provisional</sub> | Player skinned | nothing outstanding that a headless pass can see |

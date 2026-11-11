@@ -354,11 +354,23 @@ final class WasabiResourceCache {
     }
 
     func bitmap(identifier: String?) -> WasabiBitmap? {
+        bitmap(identifier: identifier, zeroIsWhole: false)
+    }
+
+    /// A slider's thumb, cut so that a declared `w="0" h="0"` is the whole file (B423). Cached apart
+    /// from the same file read as an ordinary bitmap, which keeps its 1px cut.
+    func thumbBitmap(identifier: String?) -> WasabiBitmap? {
+        bitmap(identifier: identifier, zeroIsWhole: true)
+    }
+
+    private func bitmap(identifier: String?, zeroIsWhole: Bool) -> WasabiBitmap? {
         guard !isTornDown, let identifier, !identifier.isEmpty else { return nil }
-        let key = identifier.lowercased()
+        // NUL cannot appear in an XML attribute, so a thumb key never meets a skin's own identifier.
+        let key = (zeroIsWhole ? "\u{0}thumb:" : "") + identifier.lowercased()
         if let hit = cachedBitmap(key) { return hit }
         guard let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
-              let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs) else { return nil }
+              let cropped = Self.cutImage(of: definition, in: loadedSkin.vfs, zeroIsWhole: zeroIsWhole)
+        else { return nil }
         let width = cropped.width, height = cropped.height
         let declaredGroup = definition.attributes["gammagroup"]
         let image = themed(cropped, transform: themes.transform(
@@ -2117,6 +2129,7 @@ final class WasabiSceneRenderer {
         prescaledCache.removeAll()
         prescaledPixelCost = 0
         cropCache.removeAll()
+        spaceCells.removeAll()
     }
 
     private func append(object: WasabiObject, frame parentFrame: CGRect, clip parentClip: CGRect,
@@ -2662,6 +2675,12 @@ final class WasabiSceneRenderer {
     /// parent's backing store.
     static let maximumCachedCrops = 512
     var cropCache: [CropKey: (source: CGImage, crop: CGImage)] = [:]
+    /// Whether a layout's `background` bitmap is fully transparent, by declaring file and value
+    /// (`hasBlankBackground`). Kept across a theme switch: a theme recolours, it never changes alpha.
+    var blankBackgrounds: [String: Bool] = [:]
+    /// The space cell per bitmap-font sheet and cell size (`spaceCell`).
+    struct SpaceCellKey: Hashable { let sheet: String; let charWidth: Int; let charHeight: Int }
+    var spaceCells: [SpaceCellKey: (Int, Int)] = [:]
 
     /// `<vis mode>` — which visualization the skin wants in this box, and whether it wants one at all.
     ///
@@ -3345,7 +3364,7 @@ final class WasabiSceneRenderer {
     func sliderThumb(_ object: WasabiObject, pressed: Bool, hovered: Bool) -> WasabiBitmap? {
         let thumb = object.attributes["thumb"]
         let stateThumb = pressed ? object.attributes["downthumb"] : hovered ? object.attributes["hoverthumb"] : nil
-        return resources.bitmap(identifier: stateThumb) ?? resources.bitmap(identifier: thumb)
+        return resources.thumbBitmap(identifier: stateThumb) ?? resources.thumbBitmap(identifier: thumb)
     }
 
     /// Where a slider's thumb is drawn: centred across the slider's axis, placed along it by the value.

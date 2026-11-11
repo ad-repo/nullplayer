@@ -251,17 +251,13 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 if lift > 0 { renderer.layoutBoundsDidChange() }
                 let grown = CGSize(width: max(canvas.width, floor.width),
                                    height: max(canvas.height - lift, floor.height))
-                if grown != canvas {
-                    _ = renderer.resize(to: grown)
-                    applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
-                    window.setContentSize(createdView.scaledCanvasSize)
-                    createdView.setFrameSize(createdView.scaledCanvasSize)
-                }
+                if grown != canvas { growCanvas(of: renderer, view: createdView, window: window, to: grown) }
             }
             try testContentInstaller?(createdRoot, id)
             createdView.scriptsDidStart()
             createdView.needsLayout = true
             createdView.layoutSubtreeIfNeeded()
+            growToClientFloor(definition, renderer: renderer, view: createdView, window: window, id: id)
             guard createdView.hasHostedWindowSurface(id) else {
                 throw WalFailure(WalDiagnostic(
                     .unsupportedElement,
@@ -288,6 +284,41 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 location: WalSourceLocation(path: WasabiSurfaceSynthesizer.sourcePath)))
             return nil
         }
+    }
+
+    /// A view with a rigid layout needs its whole design size as client area, and a frame whose
+    /// script draws thicker chrome than its markup declares leaves less (Simple_Amp_'s Studio
+    /// panels overlapped inside it, B415). Measure what the frame left the content and grow the
+    /// canvas by the shortfall.
+    private func growToClientFloor(_ definition: WinampModernHostedWindowDefinition,
+                                   renderer: WasabiSceneRenderer, view: WinampModernMainView,
+                                   window: NSWindow, id: WinampModernHostedWindowID) {
+        guard ProcessInfo.processInfo.environment["WINAMP_MODERN_CLIENT_FLOOR"] != "0",
+              let floor = definition.clientFloor,
+              let client = renderer.componentHolders().first(where: { $0.hostedWindowID == id })?.frame.size
+        else { return }
+        // The floor is the view's points; the holder is skin pixels, drawn at the UI Size.
+        let scale = max(skinScale(), 0.01)
+        let shortfall = CGSize(width: max(0, floor.width / scale - client.width),
+                               height: max(0, floor.height / scale - client.height))
+        guard shortfall != .zero else { return }
+        let canvas = renderer.canvasSize
+        growCanvas(of: renderer, view: view, window: window,
+                   to: CGSize(width: canvas.width + shortfall.width, height: canvas.height + shortfall.height))
+        // The renderer resized before the window, so the window's resize sees no change to report:
+        // frame scripts hear the new geometry here.
+        view.dispatchResizeIfChanged()
+        view.needsLayout = true
+        view.layoutSubtreeIfNeeded()
+    }
+
+    /// Resizes a hosted window's canvas and brings its resize limits, window and view along.
+    private func growCanvas(of renderer: WasabiSceneRenderer, view: WinampModernMainView,
+                            window: NSWindow, to size: CGSize) {
+        renderer.resize(to: size)
+        applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
+        window.setContentSize(view.scaledCanvasSize)
+        view.setFrameSize(view.scaledCanvasSize)
     }
 
     /// The player's width in skin pixels, which caps how wide a hosted frame may insist on being.

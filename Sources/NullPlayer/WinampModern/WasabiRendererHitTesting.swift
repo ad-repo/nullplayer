@@ -36,7 +36,7 @@ extension WasabiSceneRenderer {
             // visible again the moment the script raises the alpha (`setTargetA`). Unless a script hooks
             // a press on it: Shield_Amp's vis animation is faded out when the vis is off and its
             // `onLeftButtonDown` is the only way to turn it back on.
-            if object.tag.is(.animatedLayer), (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0,
+            if object.tag.is(.animatedLayer), Self.isFullyTransparent(object),
                pressBindingProvider?(object, button) != true { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
@@ -87,9 +87,20 @@ extension WasabiSceneRenderer {
     /// 4-px track would otherwise claim a half-pixel strip the whole length of the track.
     private func lands(_ point: CGPoint, on node: WasabiSceneNode) -> Bool {
         if node.frame.contains(point) { return true }
-        guard node.object.tag.is(.slider), let thumb = sliderThumb(node.object, pressed: false, hovered: true)
+        // A slider drawn at alpha 0 paints no thumb, so its overhang claims nothing. A hidden seek
+        // or volume slider parked over a time readout (gtutorials' 40x2 `HiddenSeek`, B424) otherwise
+        // took every press on the readout through its animation strip. The alpha is the one drawn:
+        // focus-dependent, and inherited down the tree.
+        guard node.object.tag.is(.slider),
+              Self.alphaFraction(of: node.object, active: isWindowActive) * node.inheritedAlpha > 0,
+              let thumb = sliderThumb(node.object, pressed: false, hovered: true)
         else { return false }
         return sliderThumbFrame(node.object, thumb: thumb, in: node.frame).contains(point)
+    }
+
+    /// Whether a declared `alpha` of 0 makes the object paint nothing.
+    private static func isFullyTransparent(_ object: WasabiObject) -> Bool {
+        (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0
     }
 
     /// A layer whose artwork is clear in every pixel, with a press a script hooks on it: an empty

@@ -317,6 +317,30 @@ notifier placement), B405 (an animation speed setting, filed from HUD).
 This batch measured that the WAL version is not a Winamp3 marker: 141 of 315 gold+silver skins
 declare `0.8`, so a rule keyed on it must be checked against its whole match set (B401, B411).
 
+### Done: intake #10, promoted to gold (2026-11-11)
+
+50 skins were picked for batch 10 by `wal_intake_pick.sh 50` (cap raised from 25) and scanned live (`wal_live_smoke.sh` with its
+Library pass, `window-census.sh --shots`) on `feat/wal-intake-10`. 49 were accepted by the user and promoted to gold on
+2026-11-11, with rows on `skin-compatibility.md` (46 B, 3 C, graded from the ledger notes and backlog rows). The per-skin
+record is `intakes/intake-10.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| ChewingAmp | Did not load: an unclosed `<include>` swallowed the main container (B412) | A bare `<include>`/`<elementinclude>` is empty |
+| Tewnz_2.0 | Windows > Library could not re-show the embedded library once the skin hid it (B413) | The holder reopens what the script closed |
+| Blogz, Official_Angel, K-Tech_SFX, Simple_Amp_, Nokia_6600, X_Sphere, Act3scene2 | The EQ Studio opened squeezed, panels overlapping (B415) | A hosted window grows to its client floor |
+| Washed | The ticker drew spaces as boxes (B416) | The space is the font sheet's first blank cell from column 28 |
+| Slim | The title-bar cap stopped short of the right edge (B417) | A `static` frame flavour is taken only when it is the skin's only frame |
+| Danielle_Fishel | The Photo Extension window drew nothing (B418) | A fully blank background yields to the layout's painted backing |
+| Qwest_V2 | Color Themes opened empty (B420) | The stock color-themes group is appended |
+| WGlass | The EQ Studio and Library wore the playlist time (B421) | A frame displaying `PE_*` is the playlist's |
+| BigBerthaSanctuary | The seek thumb was not drawn (B423) | A slider thumb declared `w="0" h="0"` is the whole file |
+| gtutorials.dap.ro | The time readout could not be clicked or dragged (B424) | A slider drawn at alpha 0 no longer claims presses through its thumb's overhang |
+
+Closed as not defects: Wurlitzer_v2's playlist title wrap (B419, the host marquee), Halloween2003's pulse (B425, faint by
+design, confirmed by the user). Held back in silver: Wurlitzer_v2 (B414 its Library in plain chrome, B422 its skin frame
+drawn short on our windows), both open.
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
@@ -706,6 +730,10 @@ so a corpus run can't lose lines, not *what* is measured.
 - **Intake #9 picked 2026-11-09** (`feat/wal-intake-9`, rev `47b00c7b`) by `wal_intake_pick.sh`, no
   crawl: the next 25 bronze of `intake-6.ranking.tsv`. **58 silver, 679 bronze, 0 quarantine.** Batch:
   GUILTY_GEAR_XX_WINAMP5_SKIN, _Scythe, Official_Dawsons_Creek_Series_Skin, NaturallZ, IPHONE_THEME_ALBUM_ART_SUPPORT, LCD_hm1_m, Artzar, Jpod, Dr_Who_--_Monsters_and_Villains, Simplistic_Vision_2, MERCURY_1.0F, blackwhite_version1, Minima, AmpTunes_III, Enter_the_Matrix, Official_Go_Army_Winamp5_Skin, Lapis_Lazuli, Nokia_7210_Amp, HUD, Lou_Reed_-_The_Raven, cPro2__HOLOlike, ipamp14, LiquidStar, HardHouseCafeAmp, Helloween (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #10 picked 2026-11-10** (`feat/wal-intake-10`, rev `287eff6f`) by `wal_intake_pick.sh 50`, no
+  crawl: the next 50 bronze of `intake-6.ranking.tsv` (50 at the user's request; the pick's cap is now 50).
+  **83 silver, 629 bronze, 0 quarantine.** Batch:
+  Liverpool_FC_Winamp_3_Skin, The_ATL_Winamp5_Skin, Blogz, absurd_5, Resurgence-2, Halloween2003, Official_Angel_Series_Winamp5_Skin, Washed, Dawn_of_the_Dead, No-Vita, Psonidelic_v2, Dynamic, X_Sphere, AOL_Broadband_Winamp5_Skin_, gtutorials.dap.ro, Bach, Smallville_Digital_Album, Slim, Batman_Begins, K-Tech_SFX_-_201, Quinto, Magic_Snow_Globe, SleekyXtra, Danielle_Fishel_Double_Diamond_1_1, Wurlitzer_v2, Overdrive, Studiosus, The_Official_Slither_Winamp5_Skin, Clean_AMP, Simple_Amp_, miniplayer, BigBerthaSanctuary_1_1_1, GC_Winamp_Skin, ChewingAmp, Nokia_6600_AWK, RemoteSensing, Energy3, Act3scene2_-_prototype, REM_-_Morning_Team_-, Casio-G-Shocked-V2, cd-FALCON, RayPlayer, 3IO, Xbox_Amp, Tewnz_2.0, Qwest_V2, WGlass, Lelouch_of_Code_Geass, Miyabi_Skin, AIRCELDialer_Tunes (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 

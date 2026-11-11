@@ -28,8 +28,8 @@ python3 -I - "$dir/intake-$ranking.ranking.tsv" docs/winamp-modern/corpus-manife
 import os, shutil, sys
 
 ranking, manifest, root, skins, ledger, count, rev, today = sys.argv[1:9]
-if not count.isdigit() or not 1 <= int(count) <= 25:
-    sys.exit(f"wal_intake_pick: count must be 1-25, got {count}")
+if not count.isdigit() or not 1 <= int(count) <= 50:
+    sys.exit(f"wal_intake_pick: count must be 1-50, got {count}")
 rows = [line.split("\t") for line in open(manifest).read().splitlines()]
 at = {fields[0]: i for i, fields in enumerate(rows)}
 order = [line.split("\t")[1] for line in open(ranking).read().splitlines()[1:]]

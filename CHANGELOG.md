@@ -4,14 +4,19 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **50 more skins checked** (corpus intakes eight and nine): AmpTunes III, AR-7, Artzar, blackwhite,
-  Catwoman, cPro: Wii, cPro SC, CyclopVX-1, Dawson's Creek, Dr Who, EIV2, Enter the Matrix, Fast And
-  The Furious, Fast And The Furious 4, FreddyvsJason, GlassAMP, Go Army, Guilty Gear XX,
-  HardHouseCafeAmp, Helloween, Heroes, HOLO like, HUD, iPAMP, iPhone Theme, Jpod, Just Buttons, Lapis
-  Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1, Lithium, LiquidStar, Lou Reed - The Raven,
-  MacOSesque, Mercury, Minima, Narnia, NaturallZ, Nokia 5800 XpressMusic, Nokia 7210, Olimpiadas,
-  Pax, Pixelated, PokerGods, Remote, Scythe, Side Amp, Simplistic Vision 2, Thanog, Turner Classic
-  Movies.
+- **99 more skins checked** (corpus intakes eight to ten): absurd, Act 3 Scene 2, Aircel, AmpTunes
+  III, Angel, AOL Broadband, AR-7, Artzar, ATL, Batman Begins, Big Bertha Sanctuary, blackwhite, Casio
+  G Shocked, Catwoman, CleanAMP, cPro SC, cPro: Wii, CyclopVX-1, Danielle Fishel: Double Diamond, Dawn
+  of the Dead, Dawson's Creek, Dr Who, Dynamic, EIV2, Energy3, Enter the Matrix, Falcon, Fast And The
+  Furious, Fast And The Furious 4, FreddyvsJason, G-tutorials, GC-Skin, GlassAMP, Go Army, Guilty Gear
+  XX, Halloween 2003, HardHouseCafeAmp, Helloween, Heroes, HOLO like, HUD, iPAMP, iPhone Theme, Jpod,
+  JSB, Just Buttons, K-Tech SFX 201, Lapis Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1,
+  Lelouch, LiquidStar, Lithium, Liverpool F.C., Lou Reed - The Raven, MacOSesque, Mercury, Minima,
+  miniPlayer, Miyabi, Narnia, NaturallZ, No-Vita, Nokia 5800 XpressMusic, Nokia 6600, Nokia 7210,
+  Olimpiadas, Overdrive, Pax, PDU Blog, Pixelated, PokerGods, Psonidelic, Quinto, Qwest, Ray Skin,
+  REM, Remote, Remote Sensing, Resurgence, Scythe, Side Amp, Simple Amp, Simplistic Vision 2, Sleeky
+  Xtra, Slim, Slither, Smallville Digital Album, Snow Globe X-Mas, Sony STR VA 555, Studiosus, Tewnz,
+  Thanog, Turner Classic Movies, Washed, WGlass, Wrigley's Chewing Amp, X Sphere, Xbox Amp.
 
 #### Windows and layouts
 
@@ -30,6 +35,13 @@
   and from the Windows menu.
 - **Video opens in the skin's own video tab** when another layout of the window holds it, instead of
   a separate window first.
+- **A skin's Equalizer Studio opens tall enough for its panels**, so they no longer overlap or lose
+  their labels.
+- **The Windows menu brings back a library the skin's own button hid** (Tewnz).
+- **A skin frame's title bar reaches the window's right edge** (Slim).
+- **A skin's Color Themes window lists its themes** (Qwest).
+- **Only the playlist window shows the playlist's running time** (WGlass).
+- **A skin with an unclosed include loads** (Wrigley's Chewing Amp).
 
 #### Drawing
 
@@ -43,6 +55,11 @@
   against.**
 - **Animations a skin plays over a frame range keep looping** until the skin stops them, unless the
   layer says `autoreplay="0"` (Hitchhikers_Guide's robot, jvc.tape, Shield_Amp, MBOS and more).
+- **Bitmap-font text draws spaces as spaces**, not boxes (Washed).
+- **A window whose declared background is blank shows the art painted beside it** (Danielle Fishel's
+  Photo Extension).
+- **A slider thumb declared with no size draws its whole image**, so Big Bertha Sanctuary's seek bar
+  shows.
 
 #### Clicks and controls
 
@@ -55,6 +72,8 @@
   entry.
 - **A skin hears the user's layout switches** (`onSwitchToLayout`), and `getObject` answers the nearest
   object with an id first, so Kepler_1.1's volume bars follow the volume.
+- **An invisible slider no longer takes clicks meant for what is under it**, so G-tutorials' time
+  display switches to remaining time and drags the window.
 
 #### Visualizations
 

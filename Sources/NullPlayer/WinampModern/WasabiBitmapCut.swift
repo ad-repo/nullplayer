@@ -8,17 +8,19 @@ import ImageIO
 extension WasabiResourceCache {
     /// A `<bitmap>` definition's file, decoded and cut. Nil for one with no file (`$solid`), or
     /// whose file cannot be read.
-    static func cutImage(of definition: WalResourceDefinition, in vfs: WalVirtualFileSystem) -> CGImage? {
+    static func cutImage(of definition: WalResourceDefinition, in vfs: WalVirtualFileSystem,
+                         zeroIsWhole: Bool = false) -> CGImage? {
         guard definition.kind == "bitmap", let path = definition.logicalFile,
               let data = try? vfs.data(at: path, location: definition.source),
               let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        return cut(image, attributes: definition.attributes)
+        return cut(image, attributes: definition.attributes, zeroIsWhole: zeroIsWhole)
     }
 
     /// The part of `image` a `<bitmap>` with these attributes names. `w`/`h` default to the rest of
-    /// the image and are clamped to it; nil when the cut falls outside the image.
-    static func cut(_ image: CGImage, attributes: [String: String]) -> CGImage? {
+    /// the image and are clamped to it; nil when the cut falls outside the image. `zeroIsWhole` reads
+    /// a declared 0 as "the rest of the image" (see `declaredSize`).
+    static func cut(_ image: CGImage, attributes: [String: String], zeroIsWhole: Bool = false) -> CGImage? {
         var fullImage = image
         // A negative offset reaches **before** the image: the rect starts in transparent space.
         // hm_Touch ships its timer digits as a one-row sheet and declares it `y="-30" h="60"`, so
@@ -30,8 +32,10 @@ extension WasabiResourceCache {
         }
         let x = max(0, pixels(attributes["x"]) ?? 0)
         let topY = max(0, pixels(attributes["y"]) ?? 0)
-        let width = max(1, min(fullImage.width - x, pixels(attributes["w"]) ?? fullImage.width - x))
-        let height = max(1, min(fullImage.height - topY, pixels(attributes["h"]) ?? fullImage.height - topY))
+        let width = max(1, min(fullImage.width - x,
+                               declaredSize(attributes["w"], zeroIsWhole: zeroIsWhole) ?? fullImage.width - x))
+        let height = max(1, min(fullImage.height - topY,
+                                declaredSize(attributes["h"], zeroIsWhole: zeroIsWhole) ?? fullImage.height - topY))
         // `CGImage.cropping(to:)` addresses raw pixel data, whose origin is the image's TOP-left —
         // the same convention Wasabi's `y=` uses. Converting to a bottom-left origin here mirrored
         // every sprite's source rect about the sheet's centreline, so each element was cut from the
@@ -60,6 +64,16 @@ extension WasabiResourceCache {
         // CGContext is bottom-left origin: the image's top edge sits `top` rows below the canvas top.
         context.draw(image, in: CGRect(x: left, y: 0, width: image.width, height: image.height))
         return context.makeImage()
+    }
+
+    /// A declared `w`/`h`. For a slider thumb (`zeroIsWhole`) a zero is "no size", the same as an
+    /// absent one, so the cut runs to the edge of the file: BigBertha's `m_seek` is `w="0" h="0"` over
+    /// a 72x59 file and its thumb is that file (B423). Anywhere else a zero stays a 1px cut, which is
+    /// what the window pieces that declare one have always drawn (S7Reflex's `player.main.center` is
+    /// placed by its layout and is wrong at full size).
+    private static func declaredSize(_ value: String?, zeroIsWhole: Bool) -> Int? {
+        guard let size = pixels(value), size != 0 || !zeroIsWhole else { return nil }
+        return size
     }
 
     /// A geometry attribute as whole pixels: nil when absent, unparsable or not finite, and clamped

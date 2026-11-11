@@ -223,8 +223,9 @@ struct WalLenientXMLParser {
                                                          severity: .warning, location: location))
                     }
                     stack.removeSubrange(match...)
-                } else {
+                } else if !Self.isEmptyElement(name) {
                     // A stray `</groupdef>`, `</elements>` or `</WinampAbstractionLayer>` closes nothing.
+                    // (An include's own end tag closes the empty element and is silent.)
                     diagnostics.append(WalDiagnostic(.malformedXML, "Unexpected closing tag </\(name)> was ignored.",
                                                      severity: .warning, location: location))
                 }
@@ -298,7 +299,7 @@ struct WalLenientXMLParser {
             } else {
                 roots.append(node)
             }
-            if !selfClosing {
+            if !selfClosing && !Self.isEmptyElement(name) {
                 stack.append(node)
                 guard stack.count <= maximumDepth else {
                     throw WalFailure(WalDiagnostic(.xmlDepthExceeded, "XML nesting exceeds \(maximumDepth) levels.", location: node.location))
@@ -331,6 +332,12 @@ struct WalLenientXMLParser {
     /// How far past `&` a `;` may sit and still close an entity: `#x10FFFF;` is the longest form, so
     /// a bare `&` in running text never swallows the next sentence's semicolon.
     private static let maximumEntityLength = 10
+
+    /// An `<include>` is empty: ChewingAmp's `<include file="eq-elements.xml">` has no `/` and no
+    /// closing tag, and what follows it is its sibling, not its content (B412).
+    private static func isEmptyElement(_ name: String) -> Bool {
+        ["include", "elementinclude"].contains(name.lowercased())
+    }
 
     /// One pass, so `&amp;#09;` stays the literal `&#09;`. Numeric references matter: the
     /// Winamp 5 menu cfgattribs are named `Equalizer&#09;Alt+G` in markup and `"Equalizer\tAlt+G"`

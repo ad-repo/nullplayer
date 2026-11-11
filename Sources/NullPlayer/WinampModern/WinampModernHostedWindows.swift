@@ -97,6 +97,10 @@ struct WinampModernHostedWindowDefinition {
     let defaultSize: CGSize
     let minimumSize: CGSize
     let maximumSize: CGSize?
+    /// The client area this window's view cannot be laid out inside without overlapping itself. A
+    /// frame whose script draws chrome thicker than it declares leaves less, and the window grows
+    /// by the shortfall (the EQ Studio in a thick frame, B415). Nil: the view scales or scrolls.
+    let clientFloor: CGSize?
     let stackPolicy: WinampModernHostedStackPolicy
     let makeSurface: (WinampModernHostedSurfaceContext) -> WinampModernHostedSurface
 }
@@ -156,6 +160,7 @@ extension WinampModernHostedWindowID {
         case .equalizerStudio:
             return hosted("EQ Studio", size: EqualizerStudioView.designSize,
                           minimum: EqualizerStudioView.designSize, centerStack: false,
+                          clientFloor: EqualizerStudioView.designSize,
                           EqualizerStudioView(frame: NSRect(origin: .zero, size: EqualizerStudioView.designSize)))
         }
     }
@@ -163,11 +168,12 @@ extension WinampModernHostedWindowID {
     /// One hosted window: its sizes, its place in the centre stack, and the view built, then configured
     /// for hosting, each time a skin mounts it.
     private func hosted(_ title: String, size: CGSize, minimum: CGSize, centerStack: Bool = true,
-                        heightMultiplier: CGFloat = 1,
+                        heightMultiplier: CGFloat = 1, clientFloor: CGSize? = nil,
                         _ view: @escaping @autoclosure () -> NSView & WinampModernHostedSurface)
         -> WinampModernHostedWindowDefinition {
         WinampModernHostedWindowDefinition(
             id: self, title: title, defaultSize: size, minimumSize: minimum, maximumSize: nil,
+            clientFloor: clientFloor,
             stackPolicy: WinampModernHostedStackPolicy(participatesInCenterStack: centerStack,
                                                        preferredHeightMultiplier: heightMultiplier),
             makeSurface: { context in

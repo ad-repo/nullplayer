@@ -56,6 +56,16 @@ final class WinampModernLayoutBackingTests: XCTestCase {
         XCTAssertEqual(padded.width, 4)
     }
 
+    /// B423: a slider thumb declared `w="0" h="0"` is the whole file; any other bitmap keeps its 1px cut.
+    func testAZeroSizeThumbIsTheWholeFile() throws {
+        let image = try XCTUnwrap(Self.image(width: 6, height: 4, rgba: Self.red))
+        let zero = ["x": "0", "y": "0", "w": "0", "h": "0"]
+        let thumb = try XCTUnwrap(WasabiResourceCache.cut(image, attributes: zero, zeroIsWhole: true))
+        XCTAssertEqual([thumb.width, thumb.height], [6, 4])
+        let plain = try XCTUnwrap(WasabiResourceCache.cut(image, attributes: zero))
+        XCTAssertEqual([plain.width, plain.height], [1, 1])
+    }
+
     // MARK: - Fixture
 
     private struct Pixels {

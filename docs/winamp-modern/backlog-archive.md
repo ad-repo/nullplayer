@@ -2,6 +2,78 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B421 — WGlass's EQ Studio and Media Library wear its playlist frame, so they show the playlist time (`4:02/19:28`) — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B421 | **WGlass's EQ Studio and Media Library wear its playlist frame, so they show the playlist time (`4:02/19:28`).** Found in intake #10's visual review (2026-11-11). WGlass's `wasabi.standardframe.statusbar` carries `<text display="PE_Info">`, and `usableFrames` (`WasabiSurfaceSynthesizer.swift`) treats a frame as the playlist's only when it holds an `action="PE_*"` control (B305's rule), so the status-bar frame stays in the pool for every window, although the skin also declares `.nostatusbar`. Done when a frame whose texts show `PE_*` information counts as the playlist's, WGlass's EQ Studio and Library wear `.nostatusbar`, and the gold+silver render diff shows no other skin's windows changed frame unexpectedly | WGlass | S | 2 |
+
+**Closed 2026-11-11.** A frame whose texts show `PE_*` information (`display="PE_Info"`) counts as the playlist's, as one holding `PE_*` actions does, and the split also applies to the frames the initializer fills (WGlass's are all unscripted, so the first version of the rule never ran for it). EQ Studio and Library no longer show `4:02/19:28`; the playlist keeps it.
+
+## B420 — Qwest_V2's Color Themes window opens at launch, empty — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B420 | **Qwest_V2's Color Themes window opens at launch, empty.** Found in intake #10's visual review (2026-11-11): container `colorthemes` (`xml/color-themes.xml`) says `default_visible="0"`, yet the window (300x325) is open at launch before any click. Its content is `<group id="colorthemes.titlebox.content">`, which the skin never defines; Winamp's own skin supplies that group (its color-theme list), so in Winamp the window lists the skin's 4 `gammaset`s (`Default`, `Purple`, `Red`, `Green`), and ours is a black box. Done when the window stays closed at launch and, when opened, lists the four themes and applies the one picked | Qwest_V2 | ? | 2 |
+
+**Closed 2026-11-11.** The stock `colorthemes.titlebox.content` group (a `<ColorThemes:List>` and a Switch button) is appended for a skin that names it and does not define it (`WasabiSurfaceStockColorThemes.swift`); Qwest_V2's window lists Default, Purple, Red, Green. The open-at-launch half was not a defect: `default_visible=0` is honoured, and the window opened only from a remembered state the intake smoke's own `ct` click had stored (`_nullplayer_windows.colorthemes = 1`); with that cleared a launch opens the playlist only.
+
+## B419 — Wurlitzer_v2's jukebox playlist draws "Hackbeat" over its first row, whose own text shows only `1. Kevin Macl` — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B419 | **Wurlitzer_v2's jukebox playlist draws "Hackbeat" over its first row, whose own text shows only `1. Kevin Macl`.** Found in intake #10's visual review (2026-11-11, live census): rows 2–6 read `2. Kevin MacLeod - Volitile R…` across the list's width, but row 1 has the bare title `Hackbeat` at its left and `1. Kevin Macl` squeezed between that and the time. Not yet known whether a skin text sits over the list or the list draws the playing row differently. Done when row 1 reads like the other rows, or the overlay is shown to be the skin's design | Wurlitzer_v2 | ? | 1 |
+
+**Closed 2026-11-11.** By design, not a defect. The playing row is drawn with the host's marquee (as every family's playlist scrolls its playing row), so mid-scroll the wrapped repeat of the title tail (`Hackbeat`) shows at the row's left beside the head of the same string; a later census shows the row normally. The skin's own `Hackbeat` ticker text sits above the list. No change.
+
+## B418 — Danielle_Fishel_Double_Diamond's Photo Extension window draws nothing, so the hand reaching above the diamond is missing — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B418 | **Danielle_Fishel_Double_Diamond's Photo Extension window draws nothing, so the hand reaching above the diamond is missing.** Found in intake #10's visual review (2026-11-11): container `extension` ("Photo Extension (Desktop Alpha required)", `default_visible="1"`) opens at the player's place (368x398), but its capture is empty. Its layout is `background="ext.photo.1.ext.blank"` (`main/photo1_extension_blank.png`, fully transparent) `alphabackground="ext.photo.1.ext"` (`main/photo1_extension.png`, 2181 opaque px at 241,1–282,116, the arm above the frame). With desktop alpha on, Winamp draws the `alphabackground`; we draw the blank `background`. Done when that window shows `photo1_extension.png`, and the rule for choosing `alphabackground` over `background` is stated with the gold+silver render diff classified | Danielle_Fishel_Double_Diamond_1_1 | ? | 2 |
+
+**Closed 2026-11-11.** A layout that names an `alphabackground`, no `desktopalpha`, and a `background` with no opaque pixel paints the `alphabackground` (`paintedBackingID`, `hasBlankBackground`). The Photo Extension window now shows `photo1_extension.png` (the arm above the diamond).
+
+## B417 — Slim's frame draws its title bar's right cap about 80 pt short of the window's right edge, with the close button outside it — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B417 | **Slim's frame draws its title bar's right cap about 80 pt short of the window's right edge, with the close button outside it.** Found in intake #10's visual review (2026-11-11, EQ Studio 718 pt wide, Media Library 668 pt): the blue title bar and its rounded pink/green cap end about 80 pt in, and the close `x` sits alone on the pink background at the edge. `Slim/standardframe/standardframe.xml` anchors the cap pieces with `relatx="1"` (`x="-34"`, `x="-42"`) inside `wasabi.titlebar`, which is placed `w="0" relatw="1"`, so the cap belongs at the right edge, where the close button (`x="-15" relatx="1"`) already is. The narrow Playlist looks right. Done when the cap meets the right edge on the EQ Studio and the Library | Slim | ? | 1 |
+
+**Closed 2026-11-11.** A skin's `static` standard frame is no longer taken for our windows while another flavour exists (`WasabiSurfaceSynthesizer.usableFrames`; `WINAMP_MODERN_STATIC_FRAME_ANY_WINDOW=1` is the A/B switch). Slim's static frame is `layout2`, whose titlebar group is `w=-72`, a fixed-size window's shape; EQ Studio and Library now wear the `nostatusbar` frame and the title bar's cap meets the right edge.
+
+## B416 — Washed's song ticker draws each space as a box — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B416 | **Washed's song ticker draws each space as a box.** Found in intake #10's visual review (2026-11-11): the main window reads `KEVIN□MACLEOD□-□HACKBEAT`, where `screenshot.png` shows `MINISTRY OF SOUND - LET IT RAIN` with real spaces. The ticker's font is `player.songticker.font`, a bitmap font on `player/songtickerfont.png` (320x63, `charwidth="10" charheight="21"`): three rows in Winamp's text-font order, 32 cells a row; row 0 is `A`–`Z`, `"`, `@`, then two empty cells (30 and 31) where the classic layout keeps the space. We pick a cell that is not empty for the space character. Done when Washed's title shows spaces as blank cells, with the rule for a 32-column bitmap font stated, and the gold+silver render diff over bitmap-font skins classified | Washed | S | 1 |
+
+**Closed 2026-11-11.** A bitmap font's space is now the sheet's first fully transparent cell from column 28 on (`spaceCell`), not a fixed cell 29. Washed's ticker sheet (`font1.PNG`, 8x12 cells) draws placeholder boxes at cells 28, 29 and 31 and keeps its only blank at 30. The title reads KEVIN MACLEOD - HACKBEAT with real spaces. A sheet with no blank cell keeps 29.
+
+## B415 — The EQ Studio is squeezed inside a thick skin frame: the LEFT panel's frequency labels run under the RIGHT panel, and the RIGHT panel's labels are cut off at the bottom — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B415 | **The EQ Studio is squeezed inside a thick skin frame: the LEFT panel's frequency labels run under the RIGHT panel, and the RIGHT panel's labels are cut off at the bottom.** Found in intake #10's visual review (2026-11-11, live census, playing). The window opens at about 688x518 pt whatever the frame's chrome, so the frame's client area is shorter than the Studio's content: Simple_Amp_ worst (the panels overlap and the labels spill below the frame; the census reported a 7050 px enclosed hole there), K-Tech_SFX_-_201 (the LEFT scale and labels cut), Blogz, Official_Angel_Series_Winamp5_Skin and Nokia_6600_AWK (labels under the next panel or cut), X_Sphere and Act3scene2_-_prototype mildly. A thin frame (cd-FALCON, Studiosus) has room. Done when the EQ Studio opens with its client area at least as tall as its content in every one of those skins (the window grows by the frame's chrome), checked with the census on them | Simple_Amp_, K-Tech_SFX_-_201, Blogz, Official_Angel_Series_Winamp5_Skin, Nokia_6600_AWK, X_Sphere, Act3scene2_-_prototype | ? | 1 |
+
+**Closed 2026-11-11.** The hosted EQ Studio declares `clientFloor` (its design size) and `WinampModernHostedWindowMaterializer.growToClientFloor` measures the client area the frame's script left it after the scripts started, then grows the canvas by the shortfall (`WINAMP_MODERN_CLIENT_FLOOR=0` is the A/B switch). Census on all 50 batch skins that open the Studio: no panels overlap and no labels are cut (Simple_Amp_ opens 788x651, was 688x518); thin frames (cd-FALCON, Studiosus) are unchanged.
+
+## B413 — Tewnz_2.0: once its own `media` button hides the embedded library, Windows → Library cannot bring it back — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B413 | **Tewnz_2.0: once its own `media` button hides the embedded library, Windows → Library cannot bring it back.** Found in intake #10's click smoke (2026-11-10, playing): the library is the `lib` group inside the main window (`XML/groups.xml:143`, `guid:{6B0EDF80-…}`, `surfaces … library=embedded`), shown and hidden by `scripts/help.m`'s `display()`. The sweep's `button#media` click hid it; the Library open from the Windows menu then logs `reveal library … handlers=0 opened=0` and the smoke reads `not-opened`. Done when Windows → Library shows the embedded `lib` group however the skin's script left it (or the decision that the skin's own button is the only route is recorded with why) | Tewnz_2.0 | ? | 2 |
+
+**Closed 2026-11-11.** A page the skin's script closed is no longer kept closed against a Windows-menu request when the skin has no `onGetCancelComponent` handler (`openHolders(respectingScriptClosed:)`): nothing else would ever reopen it. Tewnz_2.0's smoke reads `library embedded` after its own `media` button hid the group. Skins with a handler keep the earlier rule (Big Bento's file-info page).
+
+## B412 — ChewingAmp does not load: an unclosed `<include>` swallows its main container — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B412 | **ChewingAmp does not load: an unclosed `<include>` swallows its main container.** Found in intake #10's click smoke (2026-11-10): the launch logs `Failed to load 'ChewingAmp.wal': [malformedXML] Winamp Modern skin has no 'main' container layout`. `ChewingAmp/xml/player.xml:2` is `<include file="eq-elements.xml">` with no `/` and no closing tag, so `<container id="main">` and its five layouts parse as children of that include and are dropped. The skin was published, so Winamp's parser tolerates it: an `<include>` is empty, and what follows it is the include's sibling. Done when ChewingAmp loads with its five layouts and a gold+silver render sweep shows no change outside skins whose XML has an unclosed include | ChewingAmp; corpus count of unclosed `<include>` not taken | S | 1 |
+
+**Closed 2026-11-11.** An `<include>` is empty: the lenient XML parser (`WalLenientXMLParser`) no longer pushes an `<include>`/`<elementinclude>` without a `/` onto its open-tag stack, so what follows it is its sibling, and a separate `</include>` is ignored. ChewingAmp loads with its five layouts; smoke: main 9 clicked, library skin-frame closed.
+
 ## B397 — -Lithium-'s drawer handle — closed 2026-11-09
 
 | Id | Item | Reach | Effort | Tier |
@@ -8270,3 +8342,15 @@ Sweep classification (all 11 opened, 2026-10-31; no regression): HALOAMP `cont.c
 | B410 | **A see-through hole inside a skin's outline passes the click to the app behind, and the intake does not find such holes.** Reported in intake #9 (2026-11-10) on LiquidStar's centre star | LiquidStar | M | 1 |
 
 **Fixed 2026-11-10 (intake #9 fix pass).** `WinampModernHoles` finds alpha-0 regions enclosed by the window's outline and backs them, so a press there stays in the window (`reference/rendering/hit-testing.md`); the live smoke writes a `holes` row per window (`backed`/`unbacked`) and names it in the summary line (`skin-intake` § The scan).
+
+| B423 | **A `<bitmap>` declaring `w="0" h="0"` draws nothing: BigBerthaSanctuary's seek thumb is missing.** Found by the user at the intake #10 hand-over (2026-11-11). `xml/player.xml:38-39` declares `m_seek`/`m_seekp` `w="0" h="0"` over a 72x59 file, used as the thumb of `Seeker`; a zero was cut as a 1 px transparent corner | BigBerthaSanctuary_1_1_1 (silver) | S | 1 |
+
+**Fixed 2026-11-11 (intake #10 fix pass 2).** A slider's thumb declared `w="0" h="0"` is the whole file (`WasabiRenderer.thumbBitmap`, `WasabiResourceCache.cut(_:attributes:zeroIsWhole:)`). An ordinary bitmap keeps its 1 px cut: the corpus's other zero-size declarations (S7Reflex's `player.main.center`, the standard-frame region pieces) are placed by their layout and draw wrong at full size, which was measured. Corpus match set: 38 zero-size `<bitmap>` declarations in 17 skins; the thumb rule reaches two, BigBertha and Canister_01's `player.eq.slider.ghostThumb`, which now draws a 7x7 block where a 1 px line was drawn (the render diff, judged by the author's own bitmap size, not a reference). Verified on screen: the seek thumb draws and moves while a track plays. Volume, the user's question: dragging the thumb sets the engine volume (0.38, then 0.75 on a drag back); the thumb is the skin's design (`m_vol` is 72 px in a 76 px slider, about 4 px of travel) and matches the `Vol` thumb in `screenshot.png`.
+
+| B424 | **gtutorials.dap.ro's time readout is not clickable or draggable: a hidden seek slider takes the press.** Found by the user at the intake #10 hand-over (2026-11-11). `skin.xml:162`: `HiddenSeek` is a 40x2 slider at `0,0` with `alpha="0"` and the 379x889 `animatie.seek.png` as its thumb; the thumb's overhang claimed every press over the readout, so a click sought (it did not flip elapsed/remaining) and a press did not drag the window | gtutorials.dap.ro (silver) | S | 1 |
+
+**Fixed 2026-11-11 (intake #10 fix pass 2).** `lands(_:on:)` no longer lets a slider drawn at `alpha="0"` claim a press through its thumb's overhang (`WasabiSceneRenderer.isFullyTransparent`, shared with the animated-layer rule). Verified on screen: a click on the readout flips to remaining and shows `-3:56` with the minus; a drag from it moves the window (762 to 800 pt); a click on the seek bar still seeks (4.5 s to 125.9 s). The minus was never missing from the drawing; the earlier "no minus" was the seek. The clock fit still shrinks the 26 pt face to about 18 pt in the 16 px box (the existing rule). Fix-check: 62 after-vs-base differences that were stable across two runs of the same build, in 15 skins: gtutorials' DrawerButton goes from covered to works, and the rest are probe-point moves (the same verdict at a new point) or changed-count differences on controls that a hidden slider had covered (EPS, Alpha_Media_Player_X5). Those last are not verified on screen; see the batch's ledger row.
+
+| B425 | **Halloween2003's player pulse effect never shows.** Found by the user at the intake #10 hand-over (2026-11-11). `scripts/lights.m`: a 50 ms timer reads `System.getLeftVuMeter()` and, when it exceeds `player.background.light`'s alpha, `setAlpha(v)` then `setTargetA(0)`, `setTargetSpeed(0.5)`, `gotoTarget()` on the layer (`xml/player-normal-groups.xml:4`, `alpha="0" ghost="1"`), unless `intCurrentPulseDisabled` (options checkbox `DisablePulse`, default 0). Not yet looked at on screen: find which link fails (timer, VU value, the private-int read, `setAlpha` on that layer, or the fade). Done when the light glows with the music and fades, with music playing | Halloween2003 (silver) | ? | 1 | **Fix pass 2 (2026-11-11), left open:** no failing link on this build. Measured: the 50 ms timer runs, `getLeftVUMeter()` answers 67–199 while Hackbeat plays, and `setalpha`/`settargeta`/`gototarget` run on `player.background.light` every tick (`CALL-TRACE`). The disc brightens with the music (a disc-shaped rise of about 50 per channel at peaks over the stopped frame, zero when stopped), so the pulse is drawn; it is subtle because the disc is the ball's own orange. Not reproduced as missing: needs the reporter's look at the disc on their machine with `DisablePulse` unset.
+
+**Closed 2026-11-11 as working (intake #10 user review).** The pulse runs: the 50 ms timer reads `getLeftVuMeter()` (67-199 while playing) and fades `player.background.light` with `setAlpha`/`gotoTarget`. The light is the ball's own orange, so the effect is faint; the user confirmed the faint pulse in the app.

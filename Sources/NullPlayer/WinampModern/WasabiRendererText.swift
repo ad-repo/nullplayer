@@ -485,6 +485,7 @@ extension WasabiSceneRenderer {
         let charWidth = run.charWidth
         let charHeight = run.charHeight
         let positions = Self.bitmapGlyphPositions
+        let space = spaceCell(in: sheet, of: definition, charWidth: charWidth, charHeight: charHeight)
         let width = run.width(of: text)
         var startX: CGFloat
         switch alignment {
@@ -517,7 +518,7 @@ extension WasabiSceneRenderer {
         for origin in [CGFloat.zero] + repeats {
             var x = startX + origin
             for character in text.lowercased() {
-                let (column, row) = positions[character] ?? positions[" "] ?? (0, 0)
+                let (column, row) = character == " " ? space : positions[character] ?? space
                 // Top-left origin: `cropping(to:)` indexes pixel rows directly (see `bitmap(identifier:)`).
                 let cropRect = CGRect(x: CGFloat(column * charWidth), y: CGFloat(row * charHeight),
                                       width: CGFloat(charWidth), height: CGFloat(charHeight))
@@ -643,20 +644,49 @@ extension WasabiSceneRenderer {
     /// Ticker scroll speed, in skin pixels per second.
     private static let tickerSpeed: Double = 30
 
+    /// Where a sheet keeps its space, in cells of row 0.
+    ///
+    /// Winamp's text-font order ends row 0 (`a`–`z`, `"`, `@`) with cells left for the space, and a
+    /// 31-cell classic sheet leaves them all blank, so the old fixed cell 29 was as good as any. A
+    /// 32-cell sheet need not: Washed's `font1.PNG` draws placeholder boxes at cells 28, 29 and 31
+    /// and keeps its only blank at 30, so every space drew as a box (B416). The space is the first
+    /// fully transparent cell from 28 on; a sheet with none keeps 29.
+    ///
+    /// Keyed by the font's file and cell size, never the image: a sheet the bitmap cache evicts and
+    /// reloads is a new image, and two fonts may cut one sheet at different sizes. Alpha survives a
+    /// theme switch, so the answer does too. The scan stops at the sheet's own height — past it
+    /// every pixel reads clear, and a declared `charheight` is the skin's to make absurd.
+    private func spaceCell(in sheet: WasabiBitmap, of definition: WalResourceDefinition,
+                           charWidth: Int, charHeight: Int) -> (Int, Int) {
+        let key = SpaceCellKey(sheet: (definition.attributes["file"] ?? definition.logicalFile ?? "").lowercased(),
+                               charWidth: charWidth, charHeight: charHeight)
+        if let hit = spaceCells[key] { return hit }
+        func isBlank(_ column: Int) -> Bool {
+            for y in 0..<min(charHeight, sheet.height) {
+                for x in 0..<charWidth
+                where sheet.alpha(at: CGPoint(x: column * charWidth + x, y: y)) != 0 { return false }
+            }
+            return true
+        }
+        let columns = sheet.width / max(1, charWidth)
+        let cell = ((28..<max(28, columns)).first(where: isBlank) ?? 29, 0)
+        spaceCells[key] = cell
+        return cell
+    }
+
     /// Where each character sits in a bitmap-font sheet, as `(column, row)`.
     ///
     /// Winamp's sheet is three rows of glyphs. The accented row used to be appended to the second
     /// one, which put it past column 32 — outside every real sheet, so those glyphs cropped out of
     /// bounds and drew nothing.
     ///
-    /// The two trailing spaces on the first row are load-bearing: they map the space character onto
-    /// a blank cell of that row rather than onto the fallback, glyph (0, 0).
+    /// The space is not here: `spaceCell` finds the sheet's blank cell.
     ///
     /// Built once. It was built per call — a three-row `[Character]` array and the derived
     /// dictionary, per string per frame — in the path a bitmap-font skin takes for every playlist
     /// row.
     private static let bitmapGlyphPositions: [Character: (Int, Int)] = {
-        let rows = [Array("abcdefghijklmnopqrstuvwxyz\"@  "),
+        let rows = [Array("abcdefghijklmnopqrstuvwxyz\"@"),
                     Array("0123456789….:()-'!_+\\/[]^&%,=$#"),
                     Array("âöä?*")]
         var positions: [Character: (Int, Int)] = [:]
