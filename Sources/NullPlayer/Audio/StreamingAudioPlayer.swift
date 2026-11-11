@@ -14,6 +14,8 @@ protocol StreamingAudioPlayerDelegate: AnyObject {
     func streamingPlayerDidUpdateFullStereoPCM(left: [Float], right: [Float], sampleRate: Double)
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int)
     func streamingPlayerDidEncounterError(_ error: AudioPlayerError)
+    /// No audio arrived within `connectTimeout` of `play(url:)`; the player has been stopped.
+    func streamingPlayerDidFailToConnect()
     func streamingPlayerDidReceiveMetadata(_ metadata: [String: String])
 }
 
@@ -86,6 +88,13 @@ class StreamingAudioPlayer {
     
     /// Whether we've reported format info for the current track
     private var hasReportedFormat: Bool = false
+
+    /// AudioStreaming never reports a connection that does not answer: `RemoteAudioSource` retries
+    /// on every URLSession timeout, forever, so a dead address sat in `bufferring` at 0:00 with no
+    /// error (M87). A stream that has produced no audio this long after `play(url:)` is failed here.
+    static let defaultConnectTimeout: TimeInterval = 15
+    var connectTimeout = defaultConnectTimeout
+    private var connectWatchdog: DispatchWorkItem?
     
     /// Pre-computed frequency weights for spectrum analyzer (light compensation)
     private static let spectrumFrequencyWeights: [Float] = {
@@ -341,10 +350,32 @@ class StreamingAudioPlayer {
         bpmDetector.reset()         // Reset BPM for new track
         pausedSeekTime = nil
         player.play(url: url)
+        armConnectWatchdog(for: url)
+    }
+
+    private func armConnectWatchdog(for url: URL) {
+        connectWatchdog?.cancel()
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            NSLog("StreamingAudioPlayer: No audio %.0fs after starting %@ — failing it",
+                  self.connectTimeout, url.redacted)
+            self.connectWatchdog = nil
+            self.player.stop()
+            self.delegate?.streamingPlayerDidFailToConnect()
+        }
+        connectWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + connectTimeout, execute: watchdog)
+    }
+
+    private func cancelConnectWatchdog() {
+        connectWatchdog?.cancel()
+        connectWatchdog = nil
     }
     
     /// Pause playback
     func pause() {
+        // A pause while connecting drops the deadline; resume does not re-arm it.
+        cancelConnectWatchdog()
         player.pause()
     }
     
@@ -361,6 +392,7 @@ class StreamingAudioPlayer {
     /// Stop playback
     func stop() {
         pausedSeekTime = nil
+        cancelConnectWatchdog()
         player.stop()
         _hasQueuedTrack = false  // Queue is cleared on stop
         clearSpectrum()
@@ -480,6 +512,7 @@ class StreamingAudioPlayer {
             let sampleRate = Int(buffer.format.sampleRate)
             let channels = Int(buffer.format.channelCount)
             DispatchQueue.main.async { [weak self] in
+                self?.cancelConnectWatchdog()  // The first buffer is the stream's proof of life.
                 self?.delegate?.streamingPlayerDidDetectFormat(sampleRate: sampleRate, channels: channels)
             }
         }

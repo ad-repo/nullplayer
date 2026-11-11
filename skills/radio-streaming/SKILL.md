@@ -123,6 +123,10 @@ Radio stations often use `.pls`/`.m3u`/`.m3u8` playlist URLs. Always check `Cast
 2. If `manualStopRequested == false` and `autoReconnectEnabled == true`: exponential backoff (2s, 4s, 8s, 16s, 32s), max 5 attempts
 3. After max attempts → `.failed`
 
+A station that never answers at all reaches step 1 through the stream connect deadline: no audio
+15 s after `play(url:)` counts as a disconnect, so each attempt waits that long before its backoff.
+See `audio-system` § *A Local Track That Will Not Open* (M87).
+
 Manual stop (user pressing Stop, loading non-radio content, switching stations) sets `manualStopRequested = true` and does **not** trigger reconnect.
 
 ### Stream Metadata (ICY + Soma Fallback)

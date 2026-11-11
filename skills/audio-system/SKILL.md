@@ -278,8 +278,19 @@ under the error message.
   `currentIndex = -1`, and an advance still armed read that as "the failed track was before row 0"
   and started the new playlist's first entry from a call that promises not to play.
 - **The failure streak is reset by anything that plays**: `commitLoadedLocalTrack` for a local file,
-  the AudioStreaming `.playing` callback for a stream. Without the stream reset, a repeating playlist
-  of streams and a few bad local files kept accumulating across loops and ended the queue early.
+  the first audio buffer for a stream (`streamingPlayerDidDetectFormat`). Without the stream reset, a
+  repeating playlist of streams and a few bad local files kept accumulating across loops and ended
+  the queue early. Not `.playing`: AudioStreaming reports that for an address that never answers, so
+  a repeating queue of dead stations reset the streak on each one and looped forever.
+- **A stream that never answers fails like a file that will not open** (M87). AudioStreaming
+  retries a connection that times out (`RemoteAudioSource.retryOnError`) without limit and reports
+  nothing, so `StreamingAudioPlayer` arms a deadline on `play(url:)` (`defaultConnectTimeout`,
+  15 s) that the first audio buffer, `stop()` or `pause()` cancels. When it passes, the player
+  stops and calls `streamingPlayerDidFailToConnect`, and `AudioEngine` runs
+  `advancePastFailedTrack` with a user request, so the queue moves on and ends on the "can't be
+  played" alert. A `RadioManager` station goes to `streamDidDisconnect` instead. Not covered: a
+  pause while connecting drops the deadline and resume does not re-arm it, and the incoming player
+  of a crossfade has no delegate, so a dead one there is stopped silently.
 - **Synchronous** (`loadTrack(at:)`, used by `playNow`, `next()`, `previous()` and the browsers):
   the rule guards its recursive skip. A skip chain that fails through the last row, with no Play Now
   to withdraw, ends the queue (`stopAfterQueueExhausted`, so `.audioQueueDidExhaust` and the sleep

@@ -6808,7 +6808,6 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         switch state {
         case .playing:
             streamingPlaybackConfirmed = true
-            consecutiveTrackLoadFailures = 0  // A stream that plays ends the failure streak too.
             self.state = .playing
             playbackStartDate = Date()
             suspendedLocalPlaybackClockForSleep = false
@@ -6945,6 +6944,10 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
     }
 
     func streamingPlayerDidDetectFormat(sampleRate: Int, channels: Int) {
+        // The first audio buffer, not `.playing`, ends the failure streak for a stream:
+        // AudioStreaming reports `.playing` for an address that never answers, so a queue of dead
+        // stations reset the streak on each one and the repeat loop never ended.
+        consecutiveTrackLoadFailures = 0
         // Update current track with format info detected from the stream
         // This fills in sample rate for Plex tracks which don't have it in metadata
         guard let track = currentTrack else { return }
@@ -7010,6 +7013,32 @@ extension AudioEngine: StreamingAudioPlayerDelegate {
         }
 
         handleStreamingErrorFallback(error, errorDescription: errorDescription)
+    }
+
+    /// A stream that produced no audio within `StreamingAudioPlayer.defaultConnectTimeout`. It fails as a
+    /// file that will not open does: the readout says so and the queue moves on, ending on the
+    /// "can't be played" alert when nothing is left. A radio station goes to `RadioManager`, whose
+    /// reconnect ends in its own `.failed` state.
+    func streamingPlayerDidFailToConnect() {
+        guard isStreamingPlayback, let track = currentTrack else { return }
+        let seconds = Int(StreamingAudioPlayer.defaultConnectTimeout)
+        let error = URLError(.timedOut, userInfo: [
+            NSLocalizedDescriptionKey: "The stream didn\u{2019}t answer within \(seconds) seconds."
+        ])
+        if RadioManager.shared.isActive {
+            RadioManager.shared.streamDidDisconnect(error: error)
+            return
+        }
+        stopPlaybackOnError()
+        notifyTrackLoadFailure(track: track, error: error,
+                               message: "Cannot play: \(track.title) (no answer from the stream)")
+        let userRequest = UserPlayRequestFailure(failure: TrackLoadFailure(track: track, error: error),
+                                                 fileIsMissing: false)
+        let token = deferredLocalTrackLoadToken
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.deferredLocalTrackLoadToken == token, self.state == .stopped else { return }
+            self.advancePastFailedTrack(at: self.currentIndex, userRequest: userRequest)
+        }
     }
 
     private func handleStreamingErrorFallback(_ error: AudioPlayerError, errorDescription: String) {
