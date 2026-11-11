@@ -8,6 +8,15 @@ final class StreamConnectTimeoutTests: XCTestCase, StreamingAudioPlayerDelegate 
     private var failed: XCTestExpectation?
 
     func testStreamThatSendsNothingFailsAtTheDeadline() throws {
+        try playSilentStream(pausingWhileConnecting: false)
+    }
+
+    /// A pause does not make an address answer, so it must not drop the deadline.
+    func testPauseWhileConnectingStillFailsAtTheDeadline() throws {
+        try playSilentStream(pausingWhileConnecting: true)
+    }
+
+    private func playSilentStream(pausingWhileConnecting: Bool) throws {
         // A listening socket nobody accepts on: the kernel completes the TCP handshake from the
         // backlog, and the HTTP request then waits for an answer that never comes.
         let fd = socket(AF_INET, SOCK_STREAM, 0)
@@ -30,11 +39,12 @@ final class StreamConnectTimeoutTests: XCTestCase, StreamingAudioPlayerDelegate 
         player.connectTimeout = 1
         failed = expectation(description: "stream reported as failing to connect")
         player.play(url: URL(string: "http://127.0.0.1:\(port)/stream")!)
+        if pausingWhileConnecting { player.pause() }
         wait(for: [failed!], timeout: 5)
         player.stop()
     }
 
-    func streamingPlayerDidFailToConnect() { failed?.fulfill() }
+    func streamingPlayerDidFailToConnect(after timeout: TimeInterval) { failed?.fulfill() }
 
     func streamingPlayerDidChangeState(_ state: AudioPlayerState) {}
     func streamingPlayerDidFinishPlaying() {}

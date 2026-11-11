@@ -83,7 +83,9 @@
 - **A stream address that never answers fails instead of buffering forever.** A dead station or URL
   — such as the one behind the Helloween skin's nose — used to sit at 0:00 with no error. After 15
   seconds without audio it now fails like a file that won't play: the readout says so, the playlist
-  moves on, and the "can't be played" alert appears when nothing is left.
+  moves on, and the "can't be played" alert appears when nothing is left. A radio station that never
+  answers stops retrying after five attempts and shows as failed. A stream whose format can't be
+  played ends the same way when nothing is left after it.
 
 ## 0.35.0
 

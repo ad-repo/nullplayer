@@ -91,7 +91,7 @@ RadioManager integrates with AudioEngine through delegate callbacks:
 
 | Callback | Purpose |
 |----------|---------|
-| `streamDidConnect()` | Called when stream starts playing |
+| `streamDidConnect()` | Called on the stream's first audio buffer (not `.playing`, which AudioStreaming reports for a dead address too); resets the reconnect count |
 | `streamDidDisconnect(error:)` | Called on stream end/error, triggers reconnect |
 | `streamDidReceiveMetadata(_:)` | Receives ICY metadata for display |
 
@@ -124,8 +124,10 @@ Radio stations often use `.pls`/`.m3u`/`.m3u8` playlist URLs. Always check `Cast
 3. After max attempts → `.failed`
 
 A station that never answers at all reaches step 1 through the stream connect deadline: no audio
-15 s after `play(url:)` counts as a disconnect, so each attempt waits that long before its backoff.
-See `audio-system` § *A Local Track That Will Not Open* (M87).
+15 s after `play(url:)` counts as a disconnect, so each attempt waits that long before its backoff,
+and after the fifth the station is `.failed` (about 2.5 minutes). That depends on
+`streamDidConnect()` firing only on real audio: called on `.playing`, it reset the attempt count on
+every try and the station never failed. See `audio-system` § *A Local Track That Will Not Open* (M87).
 
 Manual stop (user pressing Stop, loading non-radio content, switching stations) sets `manualStopRequested = true` and does **not** trigger reconnect.
 
