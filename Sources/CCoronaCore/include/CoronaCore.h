@@ -21,7 +21,7 @@ void CoronaCore_destroy(CoronaCore *core);
 /// host spectrum); `elapsedMs` is the time since the last update. Returns `width * height`
 /// pixels, R,G,B,A bytes in memory, row 0 at the bottom. The buffer belongs to the core and is
 /// valid until the next call.
-const uint32_t *CoronaCore_update(CoronaCore *core, const uint8_t *spectrum, unsigned elapsedMs);
+const uint32_t *CoronaCore_update(CoronaCore *core, const uint8_t spectrum[512], unsigned elapsedMs);
 
 /// Fades (or, with `fade` 0, switches) to palette `index` and holds it: Corona stops picking
 /// its own.

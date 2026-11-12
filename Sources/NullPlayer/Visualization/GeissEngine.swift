@@ -58,6 +58,7 @@ final class GeissEngine: VisualizationEngine {
     private var vbo: GLuint = 0
     private var indicesUniform: GLint = -1
     private var paletteUniform: GLint = -1
+    private var shrinkUniform: GLint = -1
 
     // MARK: - Init / cleanup
 
@@ -283,6 +284,7 @@ final class GeissEngine: VisualizationEngine {
         glActiveTexture(GLenum(GL_TEXTURE1))
         glBindTexture(GLenum(GL_TEXTURE_2D), paletteTex)
         glUniform1i(paletteUniform, 1)
+        glUniform1i(shrinkUniform, (width, height) == viewport ? 0 : 1)
 
         glBindVertexArray(vao)
         glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
@@ -312,15 +314,16 @@ final class GeissEngine: VisualizationEngine {
         out vec4 frag;
         uniform sampler2D u_indices;
         uniform sampler2D u_palette;
+        uniform bool u_shrink;
         vec4 colour(vec2 uv) {
             float idx = texture(u_indices, uv).r;
             int paletteIndex = clamp(int(round(idx * 255.0)), 0, 255);
             return texelFetch(u_palette, ivec2(paletteIndex, 0), 0);
         }
-        // A 3x3 grid across this screen pixel's footprint, each sample through the palette: the
-        // canvas can be larger than the viewport (SoftwareCanvas), and indices cannot be filtered.
-        // At 1:1 every sample lands in the same texel, so the picture is unchanged.
+        // When the canvas is larger than the viewport (SoftwareCanvas), a 3x3 grid across this
+        // screen pixel's footprint, each sample through the palette: indices cannot be filtered.
         void main() {
+            if (!u_shrink) { frag = colour(v_uv); return; }
             vec2 footprint = vec2(dFdx(v_uv.x), dFdy(v_uv.y));
             vec4 sum = vec4(0.0);
             for (int y = -1; y <= 1; y++)
@@ -336,6 +339,7 @@ final class GeissEngine: VisualizationEngine {
         program = prog
         indicesUniform = glGetUniformLocation(program, "u_indices")
         paletteUniform = glGetUniformLocation(program, "u_palette")
+        shrinkUniform = glGetUniformLocation(program, "u_shrink")
 
         // Index texture (R8).
         glGenTextures(1, &indexTex)

@@ -74,7 +74,7 @@ void CoronaCore_destroy(CoronaCore *core) {
 	delete core;
 }
 
-const uint32_t *CoronaCore_update(CoronaCore *core, const uint8_t *spectrum, unsigned elapsedMs) {
+const uint32_t *CoronaCore_update(CoronaCore *core, const uint8_t spectrum[512], unsigned elapsedMs) {
 	memcpy(core->level.frequency[0], spectrum, 512);
 	memcpy(core->level.frequency[1], spectrum, 512);
 	core->level.timeStamp += elapsedMs;

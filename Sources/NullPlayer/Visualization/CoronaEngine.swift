@@ -36,6 +36,8 @@ final class CoronaEngine: NSObject, VisualizationEngine {
 
     // Render thread only.
     private var core: OpaquePointer?
+    /// The spectrum copied out of `spectrum` byte for byte, so the audio thread never pays for a
+    /// copy-on-write of an array the render thread still holds.
     private var frameSpectrum = [UInt8](repeating: 0, count: 512)
     private var viewport = (width: 1, height: 1)
     private var coreSize = (width: 0, height: 0)
@@ -50,6 +52,9 @@ final class CoronaEngine: NSObject, VisualizationEngine {
         glGenFramebuffers(1, &framebuffer)
         isAvailable = true
     }
+
+    /// The C core needs no GL, so an engine released without `cleanup()` still frees it.
+    deinit { CoronaCore_destroy(core) }
 
     /// Called on the render thread with the GL context current.
     func cleanup() {
@@ -92,6 +97,8 @@ final class CoronaEngine: NSObject, VisualizationEngine {
             lastUpdate = now
             update(width: width, height: height, elapsedMs: UInt32(min(elapsed, 1) * 1000))
         }
+        // No core (it failed to start): the texture may have no storage to blit.
+        guard coreSize == (width, height) else { return }
 
         // Corona's row 0 is the bottom, as GL's is: no flip.
         var previousRead: GLint = 0
