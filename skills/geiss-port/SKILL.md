@@ -61,8 +61,14 @@ Mirrors upstream `main.cpp:3756 render1()`:
 ### Swift side (`GeissEngine`)
 
 - 256-entry RGBA palette texture (`256x1 GL_RGBA8`, LINEAR filter)
+- The core's canvas is the viewport raised to `SoftwareCanvas.minWidth` (400 px) wide at its aspect
+  when narrower: Geiss draws in pixels, so in a skin's small effects slot (Sonique's top circle,
+  182×176 px) its waveform used to run off both edges. The canvas is `width`/`height`; the viewport
+  is drawn at `viewport`.
 - `width × height` index texture (`GL_R8`, NEAREST filter, written via `glTexSubImage2D` each frame)
-- Fullscreen-quad GLSL: `frag = texture(palette, vec2(texture(indices, uv).r, 0.5))`
+- Fullscreen-quad GLSL: one palette lookup per pixel when the canvas is the viewport's size; when
+  it is larger (`u_shrink`), each screen pixel averages a 3×3 grid of samples across its footprint
+  (`dFdx`/`dFdy` of the UV), each looked up through the palette, since indices cannot be filtered.
 - Vertex layout flips V so framebuffer y=0 is at top of screen
 
 ## Audio path
@@ -76,7 +82,7 @@ Mirrors upstream `main.cpp:3756 render1()`:
 Geiss has no internal FFT — upstream consumes spectrum from the Winamp host. The Swift side computes it:
 
 - `VisualizationGLView` allocates one Accelerate FFT setup per view: `vDSP_create_fftsetup(log2N=9, kFFTRadix2)`, plus a Hann window and split-complex scratch buffers (size 256 each), all reused — no per-frame allocation.
-- 256-bin magnitude spectrum from a 512-sample real FFT via `vDSP_fft_zrip`. Magnitudes normalized with `2/N` scaling (`geissSpectrumScale = 2.0/512.0`), then a `sqrt` response curve so quiet treble stays visible without clipping bass peaks.
+- 256-bin magnitude spectrum from a 512-sample real FFT via `vDSP_fft_zrip`. Magnitudes normalized with `2/N` scaling (`hostSpectrumScale = 2.0/512.0`), then a `sqrt` response curve so quiet treble stays visible without clipping bass peaks.
 - `projectMPCMGain` is applied **before** the FFT, so the existing audio-sensitivity control affects Geiss too.
 - Push happens from the audio callback only when `currentEngineType == .geiss`. The push uses `engineLock.try()` to avoid blocking the audio thread behind render or engine-swap work; on contention, Geiss keeps its previous host spectrum until the next callback.
 

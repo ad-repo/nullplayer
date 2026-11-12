@@ -86,6 +86,23 @@ extension VisualizationEngine {
     }
 }
 
+/// The canvas a software engine (Geiss, AVS, Corona) renders for a viewport. Their effects are
+/// sized in pixels, so a small canvas shows a coarse close-up of the scene: in a skin's effects
+/// slot (Sonique's top circle is 182x176 px) Geiss's waveform ran off both edges. Below
+/// `minWidth` the canvas is scaled up, at the viewport's aspect, and the engine shrinks it to fit.
+/// The scaled height stops at `maxScaledHeight` (a 1x600 viewport would ask for 400x240,000), so
+/// only a viewport over 4:1 tall and under 400 px wide is drawn at another aspect.
+enum SoftwareCanvas {
+    static let minWidth = 400
+    static let maxScaledHeight = 4 * minWidth
+
+    static func atLeastMinimum(width: Int, height: Int) -> (width: Int, height: Int) {
+        let width = max(1, width), height = max(1, height)
+        guard width < minWidth else { return (width, height) }
+        return (minWidth, min(height * minWidth / width, max(height, maxScaledHeight)))
+    }
+}
+
 /// Available visualization engine types
 ///
 /// Used to identify and switch between different visualization engines.
@@ -104,6 +121,12 @@ enum VisualizationType: String, CaseIterable, Codable {
 
     /// Goom (j3k0/goom's Goom2k26 C core; the `goom-port` skill)
     case goom = "Goom"
+
+    /// Corona (libvisual's port of the Sonique visualizer; the `corona-port` skill)
+    case corona = "Corona"
+
+    /// Engines fed the host spectrum (`VisualizationEngine.setSpectrum`) from the audio thread.
+    var consumesHostSpectrum: Bool { self == .geiss || self == .corona }
 
     /// Human-readable display name
     var displayName: String {

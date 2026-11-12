@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS and Goom (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom and Corona (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -503,14 +503,14 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Goom/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Met visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
 (Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
 ### Every engine's menu
-ProjectM, Geiss, Tripex, AVS and Goom share one right-click menu, in the Visualizations window, a
+ProjectM, Geiss, Tripex, AVS, Goom and Corona share one right-click menu, in the Visualizations window, a
 `.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
 but Goom): the current preset,
 **Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
@@ -560,6 +560,15 @@ launches, while everything else keeps moving with the music.
 Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (five petals),
 **Heart**, whose ripples are heart-shaped and whose audio scope becomes a pair of pink hearts, and
 **Pentagram**, whose ripples are star-shaped and whose scope becomes a star inside a circle.
+
+### Corona
+The Sonique-era Corona visualizer, from the right-click **Visualization Engine** submenu: flames of
+particles that swirl and leap on the beat over a rippling reflection. Its presets are 31 palettes
+(Fire, Ice, Night Sky, Pastel Rainbow, Sepia and more), which it fades between; right-click for the
+same preset and auto-cycle controls every engine has. Corona starts on Auto-Random; with Manual
+Only it stays on the palette you pick, across launches. **Blaze**, Corona's own item in the same
+menu, draws the particles three times a frame for brighter, streakier flames; it is remembered
+across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's visual mode.
 
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
@@ -665,7 +674,7 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -711,6 +720,14 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The effect list is in the right-click context menu.
+
+### Corona
+- **→ / ←**: Next / Previous palette
+- **R**: Random palette
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The palette list and **Blaze** are in the right-click context menu.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

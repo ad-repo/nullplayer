@@ -221,7 +221,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-            case .projectM, .geiss, .tripex, .avs:
+            case .projectM, .geiss, .tripex, .avs, .corona:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
@@ -327,7 +327,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard isActive else { return }
         switch effect.style {
         case .bars, .spikes, .ambience: if levels.isEmpty { return }
-        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs: break
+        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs, .corona: break
         }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
@@ -373,7 +373,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
-        case .projectM, .geiss, .tripex, .avs: drawOffscreenEngine()
+        case .projectM, .geiss, .tripex, .avs, .corona: drawOffscreenEngine()
         }
     }
 
@@ -557,7 +557,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     // MARK: - Keyboard
 
     /// **The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ pick the effect, ⌘→/⌘← move
-    /// inside it.** The catalogue is two levels deep — eight effects, and most of them carry a list
+    /// inside it.** The catalogue is two levels deep — ten effects, and most of them carry a list
     /// of their own (ProjectM's presets, Geiss's and Tripex's effects, vis_classic's profiles,
     /// Cava's mono/stereo) — so the axes are split the way a two-level list reads: **down is the
     /// next effect** and up the previous, left/right step within whatever is now selected. An effect
@@ -587,7 +587,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func stepWithinEffect(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
         switch effect.style {
-        case .projectM, .geiss, .tripex, .avs:
+        case .projectM, .geiss, .tripex, .avs, .corona:
             guard let count = presetCount(), count > 0 else { return false }
             let current = selection.preset % count
             selection.setPreset(((current + delta) % count + count) % count)
@@ -642,7 +642,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
-        case .projectM, .geiss, .tripex, .avs:
+        case .projectM, .geiss, .tripex, .avs, .corona:
             // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
             // view already conforms to — the same presets, cycling and sensitivity items the
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's

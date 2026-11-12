@@ -39,8 +39,10 @@ final class GeissEngine: VisualizationEngine {
     private let coreLock = NSLock()
 
     private var core: OpaquePointer?
+    /// The canvas Geiss renders (`SoftwareCanvas`); the shader shrinks it to the viewport.
     private var width: Int = 0
     private var height: Int = 0
+    private var viewport = (width: 1, height: 1)
 
     /// CPU-side index buffer the C core writes into each frame.
     private var indexBuf: [UInt8] = []
@@ -56,12 +58,13 @@ final class GeissEngine: VisualizationEngine {
     private var vbo: GLuint = 0
     private var indicesUniform: GLint = -1
     private var paletteUniform: GLint = -1
+    private var shrinkUniform: GLint = -1
 
     // MARK: - Init / cleanup
 
     init(width: Int, height: Int) {
-        self.width = max(1, width)
-        self.height = max(1, height)
+        viewport = (max(1, width), max(1, height))
+        (self.width, self.height) = SoftwareCanvas.atLeastMinimum(width: width, height: height)
         self.indexBuf = Array(repeating: 0, count: self.width * self.height)
 
         guard let handle = GeissCore_create(Int32(self.width), Int32(self.height)) else {
@@ -100,10 +103,10 @@ final class GeissEngine: VisualizationEngine {
     // MARK: - VisualizationEngine API
 
     func setViewportSize(width: Int, height: Int) {
-        let newW = max(1, width)
-        let newH = max(1, height)
+        let (newW, newH) = SoftwareCanvas.atLeastMinimum(width: width, height: height)
         coreLock.lock()
         defer { coreLock.unlock() }
+        viewport = (max(1, width), max(1, height))
         guard newW != self.width || newH != self.height else { return }
         self.width = newW
         self.height = newH
@@ -268,7 +271,7 @@ final class GeissEngine: VisualizationEngine {
         }
 
         // Draw.
-        glViewport(0, 0, GLsizei(width), GLsizei(height))
+        glViewport(0, 0, GLsizei(viewport.width), GLsizei(viewport.height))
         glClearColor(0, 0, 0, 1)
         glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
 
@@ -281,6 +284,7 @@ final class GeissEngine: VisualizationEngine {
         glActiveTexture(GLenum(GL_TEXTURE1))
         glBindTexture(GLenum(GL_TEXTURE_2D), paletteTex)
         glUniform1i(paletteUniform, 1)
+        glUniform1i(shrinkUniform, (width, height) == viewport ? 0 : 1)
 
         glBindVertexArray(vao)
         glDrawArrays(GLenum(GL_TRIANGLE_STRIP), 0, 4)
@@ -310,10 +314,22 @@ final class GeissEngine: VisualizationEngine {
         out vec4 frag;
         uniform sampler2D u_indices;
         uniform sampler2D u_palette;
-        void main() {
-            float idx = texture(u_indices, v_uv).r;
+        uniform bool u_shrink;
+        vec4 colour(vec2 uv) {
+            float idx = texture(u_indices, uv).r;
             int paletteIndex = clamp(int(round(idx * 255.0)), 0, 255);
-            frag = texelFetch(u_palette, ivec2(paletteIndex, 0), 0);
+            return texelFetch(u_palette, ivec2(paletteIndex, 0), 0);
+        }
+        // When the canvas is larger than the viewport (SoftwareCanvas), a 3x3 grid across this
+        // screen pixel's footprint, each sample through the palette: indices cannot be filtered.
+        void main() {
+            if (!u_shrink) { frag = colour(v_uv); return; }
+            vec2 footprint = vec2(dFdx(v_uv.x), dFdy(v_uv.y));
+            vec4 sum = vec4(0.0);
+            for (int y = -1; y <= 1; y++)
+                for (int x = -1; x <= 1; x++)
+                    sum += colour(v_uv + footprint * vec2(x, y) / 3.0);
+            frag = sum / 9.0;
         }
         """
 
@@ -323,6 +339,7 @@ final class GeissEngine: VisualizationEngine {
         program = prog
         indicesUniform = glGetUniformLocation(program, "u_indices")
         paletteUniform = glGetUniformLocation(program, "u_palette")
+        shrinkUniform = glGetUniformLocation(program, "u_shrink")
 
         // Index texture (R8).
         glGenTextures(1, &indexTex)

@@ -75,6 +75,8 @@ enum VisualizationContextMenu {
                 TripexMenuBuilder.addTripexConfigMenuItems(to: menu, target: target, visualizationView: glView)
             case .avs:
                 (glView.currentEngine as? AvsEngine)?.addMenuItems(to: menu)
+            case .corona:
+                (glView.currentEngine as? CoronaEngine)?.addMenuItems(to: menu)
             }
             if menu.numberOfItems > extrasStart { menu.addItem(.separator()) }
         }

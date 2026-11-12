@@ -24,6 +24,7 @@ final class VisualizationCycleSettingsTests: XCTestCase {
         XCTAssertEqual(VisualizationCycleSettings.mode(for: .tripex, defaults: defaults), .cycle)
         XCTAssertEqual(VisualizationCycleSettings.mode(for: .geiss, defaults: defaults), .random)
         XCTAssertEqual(VisualizationCycleSettings.mode(for: .goom, defaults: defaults), .random)
+        XCTAssertEqual(VisualizationCycleSettings.mode(for: .corona, defaults: defaults), .random)
         XCTAssertEqual(VisualizationCycleSettings.interval(for: .geiss, defaults: defaults), 30.0, accuracy: 0.001)
     }
 

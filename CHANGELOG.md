@@ -126,6 +126,18 @@
   instead of a crosshair (#741). The library browser's corners and edges now show their resize
   cursor at all, and a Windows Media Player skin's own cursors (such as Compact's size grip) appear.
 
+### Visualizations
+
+- **Corona is a visualization engine** (Visualization Engine ▸ Corona), the Sonique-era visualizer:
+  flames of particles that swirl and leap on the beat over a rippling reflection. Its presets are 31
+  palettes, fire, ice, night sky and more, which it fades between (Auto-Random every 30 seconds by
+  default); right-click to pick one, and → / ← / R step through them. **Blaze**, in the same menu,
+  draws brighter, streakier flames. It also plays in a Windows Media Player skin's effects area
+  and in Sonique's visual mode and mid-mode circle.
+- **Geiss and AVS show their whole picture in a skin's small effects area**, as in the
+  Visualizations window, instead of a coarse close-up: in Sonique's top circle Geiss's waveform
+  ran off both sides and AVS's lines and glows came out twice as thick. Corona does the same.
+
 ## 0.35.0
 
 ### App
