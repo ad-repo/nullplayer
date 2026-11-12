@@ -241,9 +241,9 @@ public struct SkinElements {
             case "#":
                 row = 1; col = 30
             case "?":
-                row = 2; col = 0
+                row = 2; col = 3
             case "*":
-                row = 2; col = 1
+                row = 2; col = 4
             default:
                 row = 0; col = 29  // Default to space
             }

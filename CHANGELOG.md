@@ -147,6 +147,11 @@
   menu offered both **Effect** and **Visualization Engine** for the same choice (and the second
   listed Goom, which did nothing there); only **Effect** is left.
 
+### Classic skins
+
+- **`?` and `*` in the scrolling title use the skin's own glyphs**, instead of its `Å` and `Ö`
+  (Militarized showed "FREE?" as "FREE8") (#755).
+
 ## 0.35.0
 
 ### App
