@@ -80,8 +80,12 @@ least 1,000, and 750 ms after the last. `elapsedMs` (the time since the previous
   half of it scaled up, showed a coarse close-up; the 400 px canvas is shrunk into the slot instead.
 - The shim maps the 8-bit surface through the current palette into RGBA; Swift uploads it and blits
   it with `GL_LINEAR`. Corona's row 0 is the bottom, as GL's is, so the blit is not flipped (Goom's is).
-- A new canvas size makes a new core (as `lv_corona_dimension` does), then reapplies palette and Blaze.
-- `lock` guards the core, spectrum, palette and Blaze (audio thread, render thread, main's menu).
+- A new canvas size makes a new core (as `lv_corona_dimension` does), then reapplies palette and
+  Blaze; a core that fails to start is tried again on the next frame.
+- **The core is the render thread's alone.** `lock` guards only what the others hand it: the audio
+  thread's spectrum and main's palette and Blaze, flagged `settingsChanged`. The render thread copies
+  them out under the lock, applies a change, and renders outside it, so a menu click or the preset
+  cycler never waits on a frame.
   Cores are independent instances; the only shared state is libc `rand()`, so two hosts may both run
   Corona (unlike Geiss's one-owner core).
 

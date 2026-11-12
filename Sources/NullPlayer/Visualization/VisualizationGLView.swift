@@ -119,18 +119,19 @@ class VisualizationGLView: NSOpenGLView {
 
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
 
-    /// Winamp-compatible host spectrum for Geiss (256 bins from a 512-sample real FFT).
-    private let geissFFTSize = 512
-    private let geissSpectrumBinCount = 256
-    private let geissFFTLog2N = vDSP_Length(9)
-    private let geissSpectrumScale: Float = 2.0 / 512.0
-    private nonisolated(unsafe) var geissFFTSetup: FFTSetup?
-    private nonisolated(unsafe) var geissFFTWindow: [Float] = Array(repeating: 0, count: 512)
-    private nonisolated(unsafe) var geissFFTInput: [Float] = Array(repeating: 0, count: 512)
-    private nonisolated(unsafe) var geissFFTReal: [Float] = Array(repeating: 0, count: 256)
-    private nonisolated(unsafe) var geissFFTImag: [Float] = Array(repeating: 0, count: 256)
-    private nonisolated(unsafe) var geissSpectrumScratch: [Float] = Array(repeating: 0, count: 256)
-    private let geissFFTLock = NSLock()
+    /// Winamp-compatible host spectrum for the engines that read one (`consumesHostSpectrum`: Geiss,
+    /// Corona): 256 bins from a 512-sample real FFT.
+    private let hostFFTSize = 512
+    private let hostSpectrumBinCount = 256
+    private let hostFFTLog2N = vDSP_Length(9)
+    private let hostSpectrumScale: Float = 2.0 / 512.0
+    private nonisolated(unsafe) var hostFFTSetup: FFTSetup?
+    private nonisolated(unsafe) var hostFFTWindow: [Float] = Array(repeating: 0, count: 512)
+    private nonisolated(unsafe) var hostFFTInput: [Float] = Array(repeating: 0, count: 512)
+    private nonisolated(unsafe) var hostFFTReal: [Float] = Array(repeating: 0, count: 256)
+    private nonisolated(unsafe) var hostFFTImag: [Float] = Array(repeating: 0, count: 256)
+    private nonisolated(unsafe) var hostSpectrumScratch: [Float] = Array(repeating: 0, count: 256)
+    private let hostFFTLock = NSLock()
     
     /// Frame counter for frame skipping (renders at 30fps instead of 60fps to save CPU)
     private var frameCounter: UInt64 = 0
@@ -246,7 +247,7 @@ class VisualizationGLView: NSOpenGLView {
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
-        setupGeissFFT()
+        setupHostFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow — the view must be in a real window
         // before CVDisplayLinkSetCurrentCGDisplay is called, otherwise the GPU driver can panic
@@ -270,7 +271,7 @@ class VisualizationGLView: NSOpenGLView {
         loadScopedSettings(for: currentEngineType)
 
         setupOpenGL()
-        setupGeissFFT()
+        setupHostFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow (see above)
     }
@@ -291,9 +292,9 @@ class VisualizationGLView: NSOpenGLView {
         NSOpenGLContext.clearCurrentContext()
         engineLock.unlock()
 
-        if let geissFFTSetup {
-            vDSP_destroy_fftsetup(geissFFTSetup)
-            self.geissFFTSetup = nil
+        if let hostFFTSetup {
+            vDSP_destroy_fftsetup(hostFFTSetup)
+            self.hostFFTSetup = nil
         }
     }
     
@@ -327,10 +328,10 @@ class VisualizationGLView: NSOpenGLView {
         glClearColor(0.0, 0.0, 0.0, 1.0)
     }
 
-    private func setupGeissFFT() {
-        guard geissFFTSetup == nil else { return }
-        geissFFTSetup = vDSP_create_fftsetup(geissFFTLog2N, FFTRadix(kFFTRadix2))
-        vDSP_hann_window(&geissFFTWindow, vDSP_Length(geissFFTSize), Int32(vDSP_HANN_DENORM))
+    private func setupHostFFT() {
+        guard hostFFTSetup == nil else { return }
+        hostFFTSetup = vDSP_create_fftsetup(hostFFTLog2N, FFTRadix(kFFTRadix2))
+        vDSP_hann_window(&hostFFTWindow, vDSP_Length(hostFFTSize), Int32(vDSP_HANN_DENORM))
     }
     
     private func cleanupOpenGL() {
@@ -755,16 +756,16 @@ class VisualizationGLView: NSOpenGLView {
 
     private func updateHostSpectrumFromPCM(_ pcm: [Float]) {
         guard currentEngineType.consumesHostSpectrum else { return }
-        guard geissFFTSetup != nil else { return }
+        guard hostFFTSetup != nil else { return }
 
-        geissFFTLock.lock()
-        defer { geissFFTLock.unlock() }
+        hostFFTLock.lock()
+        defer { hostFFTLock.unlock() }
 
-        computeGeissSpectrumLocked(from: pcm)
+        computeHostSpectrumLocked(from: pcm)
         dataLock.withLock {
-            let copied = min(geissSpectrumScratch.count, localSpectrum.count)
+            let copied = min(hostSpectrumScratch.count, localSpectrum.count)
             for i in 0..<copied {
-                localSpectrum[i] = geissSpectrumScratch[i]
+                localSpectrum[i] = hostSpectrumScratch[i]
             }
         }
 
@@ -775,37 +776,37 @@ class VisualizationGLView: NSOpenGLView {
         defer { engineLock.unlock() }
 
         guard let engine, engine.isAvailable else { return }
-        engine.setSpectrum(geissSpectrumScratch)
+        engine.setSpectrum(hostSpectrumScratch)
     }
 
-    private func computeGeissSpectrumLocked(from pcm: [Float]) {
-        guard let setup = geissFFTSetup else {
-            for i in 0..<geissSpectrumScratch.count {
-                geissSpectrumScratch[i] = 0
+    private func computeHostSpectrumLocked(from pcm: [Float]) {
+        guard let setup = hostFFTSetup else {
+            for i in 0..<hostSpectrumScratch.count {
+                hostSpectrumScratch[i] = 0
             }
             return
         }
 
         let gain = pcmGain
-        let copied = min(pcm.count, geissFFTSize)
+        let copied = min(pcm.count, hostFFTSize)
         for i in 0..<copied {
             let sample = max(-1.0, min(1.0, pcm[i] * gain))
-            geissFFTInput[i] = sample * geissFFTWindow[i]
+            hostFFTInput[i] = sample * hostFFTWindow[i]
         }
-        if copied < geissFFTSize {
-            for i in copied..<geissFFTSize {
-                geissFFTInput[i] = 0
+        if copied < hostFFTSize {
+            for i in copied..<hostFFTSize {
+                hostFFTInput[i] = 0
             }
         }
 
-        geissFFTInput.withUnsafeBufferPointer { inputPtr in
-            inputPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: geissSpectrumBinCount) { complexPtr in
-                geissFFTReal.withUnsafeMutableBufferPointer { realPtr in
-                    geissFFTImag.withUnsafeMutableBufferPointer { imagPtr in
+        hostFFTInput.withUnsafeBufferPointer { inputPtr in
+            inputPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: hostSpectrumBinCount) { complexPtr in
+                hostFFTReal.withUnsafeMutableBufferPointer { realPtr in
+                    hostFFTImag.withUnsafeMutableBufferPointer { imagPtr in
                         var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
-                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(geissSpectrumBinCount))
-                        vDSP_fft_zrip(setup, &split, 1, geissFFTLog2N, FFTDirection(FFT_FORWARD))
-                        vDSP_zvabs(&split, 1, &geissSpectrumScratch, 1, vDSP_Length(geissSpectrumBinCount))
+                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(hostSpectrumBinCount))
+                        vDSP_fft_zrip(setup, &split, 1, hostFFTLog2N, FFTDirection(FFT_FORWARD))
+                        vDSP_zvabs(&split, 1, &hostSpectrumScratch, 1, vDSP_Length(hostSpectrumBinCount))
                     }
                 }
             }
@@ -813,9 +814,9 @@ class VisualizationGLView: NSOpenGLView {
 
         // Convert the FFT's linear magnitudes into Winamp-style normalized bins.
         // The square-root curve keeps quiet treble visible without clipping bass hits.
-        for i in 0..<geissSpectrumBinCount {
-            let scaled = min(1.0, max(0.0, geissSpectrumScratch[i] * geissSpectrumScale))
-            geissSpectrumScratch[i] = sqrtf(scaled)
+        for i in 0..<hostSpectrumBinCount {
+            let scaled = min(1.0, max(0.0, hostSpectrumScratch[i] * hostSpectrumScale))
+            hostSpectrumScratch[i] = sqrtf(scaled)
         }
     }
 

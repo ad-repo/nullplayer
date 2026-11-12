@@ -23,18 +23,20 @@ final class CoronaEngine: NSObject, VisualizationEngine {
     let displayName = "Corona"
     private(set) var isAvailable = false
 
-    /// Guards `core`, `spectrum`, `palette` and `blaze`: audio thread, render thread and main's
-    /// menu all reach them.
+    /// Guards what the audio thread and main hand the render thread: the spectrum and the
+    /// settings. The core is the render thread's alone, so a menu click never waits on a frame.
     private let lock = NSLock()
-    private var core: OpaquePointer?
-    /// Applied again to every new core (a resize makes one).
-    private var palette = (UserDefaults.standard.object(forKey: CoronaEngine.paletteKey) as? Int)
-        .flatMap { (0..<CoronaEngine.presetCount).contains($0) ? $0 : nil } ?? 0
-    private var blaze = UserDefaults.standard.bool(forKey: CoronaEngine.blazeKey)
     /// Sonique's 512-bin host spectrum, 0...255.
     private var spectrum = [UInt8](repeating: 0, count: 512)
+    /// Applied again to every new core (a resize makes one).
+    private var palette = CoronaEngine.savedPalette
+    private var blaze = UserDefaults.standard.bool(forKey: CoronaEngine.blazeKey)
+    /// Set by main when `palette` or `blaze` changes; the render thread applies them and clears it.
+    private var settingsChanged = false
 
     // Render thread only.
+    private var core: OpaquePointer?
+    private var frameSpectrum = [UInt8](repeating: 0, count: 512)
     private var viewport = (width: 1, height: 1)
     private var coreSize = (width: 0, height: 0)
     private var texture: GLuint = 0
@@ -53,10 +55,8 @@ final class CoronaEngine: NSObject, VisualizationEngine {
     func cleanup() {
         guard isAvailable else { return }
         isAvailable = false
-        lock.withLock {
-            CoronaCore_destroy(core)
-            core = nil
-        }
+        CoronaCore_destroy(core)
+        core = nil
         if framebuffer != 0 { glDeleteFramebuffers(1, &framebuffer); framebuffer = 0 }
         if texture != 0 { glDeleteTextures(1, &texture); texture = 0 }
     }
@@ -106,33 +106,47 @@ final class CoronaEngine: NSObject, VisualizationEngine {
     }
 
     /// Runs one Corona step and uploads it. A new canvas size starts a new core, as libvisual's
-    /// `lv_corona_dimension` does.
+    /// `lv_corona_dimension` does; a core that fails to start is tried again next frame.
     private func update(width: Int, height: Int, elapsedMs: UInt32) {
         glBindTexture(GLenum(GL_TEXTURE_2D), texture)
-        lock.withLock {
-            if coreSize != (width, height) {
-                CoronaCore_destroy(core)
-                core = CoronaCore_create(Int32(width), Int32(height))
-                coreSize = (width, height)
-                if let core {
-                    CoronaCore_setPalette(core, Int32(palette), 0)
-                    CoronaCore_setBlaze(core, blaze ? 1 : 0)
-                }
-                glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGB8, GLsizei(width), GLsizei(height), 0,
-                             GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil)
-            }
-            guard let core,
-                  let frame = spectrum.withUnsafeBufferPointer({ CoronaCore_update(core, $0.baseAddress, elapsedMs) })
-            else { return }
-            glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0, GLsizei(width), GLsizei(height),
-                            GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), frame)
+        defer { glBindTexture(GLenum(GL_TEXTURE_2D), 0) }
+        var isNewCore = false
+        if coreSize != (width, height) {
+            CoronaCore_destroy(core)
+            core = CoronaCore_create(Int32(width), Int32(height))
+            guard core != nil else { coreSize = (0, 0); return }
+            coreSize = (width, height)
+            isNewCore = true
+            glTexImage2D(GLenum(GL_TEXTURE_2D), 0, GL_RGB8, GLsizei(width), GLsizei(height), 0,
+                         GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), nil)
         }
-        glBindTexture(GLenum(GL_TEXTURE_2D), 0)
+        guard let core else { return }
+
+        let (palette, blaze, changed) = lock.withLock {
+            frameSpectrum.withUnsafeMutableBytes { dst in spectrum.withUnsafeBytes { dst.copyMemory(from: $0) } }
+            defer { settingsChanged = false }
+            return (self.palette, self.blaze, settingsChanged)
+        }
+        if isNewCore || changed {
+            // A new core starts on the held palette; a change fades to it.
+            CoronaCore_setPalette(core, Int32(palette), isNewCore ? 0 : 1)
+            CoronaCore_setBlaze(core, blaze ? 1 : 0)
+        }
+
+        guard let frame = frameSpectrum.withUnsafeBufferPointer({ CoronaCore_update(core, $0.baseAddress, elapsedMs) })
+        else { return }
+        glTexSubImage2D(GLenum(GL_TEXTURE_2D), 0, 0, 0, GLsizei(width), GLsizei(height),
+                        GLenum(GL_RGBA), GLenum(GL_UNSIGNED_BYTE), frame)
     }
 
     // MARK: - Presets (the palettes)
 
     static let presetCount = Int(CORONA_CORE_PALETTE_COUNT)
+
+    private static var savedPalette: Int {
+        let saved = UserDefaults.standard.integer(forKey: paletteKey)
+        return (0..<presetCount).contains(saved) ? saved : 0
+    }
 
     static func presetName(at index: Int) -> String { String(cString: CoronaCore_paletteName(Int32(index))) }
 
@@ -149,16 +163,16 @@ final class CoronaEngine: NSObject, VisualizationEngine {
         }
     }
 
-    /// Holds the palette `pick` chooses from the held one, read and applied under one lock so the
-    /// render thread cannot change it in between. Corona fades to it.
+    /// Holds the palette `pick` chooses from the held one; the render thread fades to it.
     private func select(_ pick: (_ current: Int) -> Int) {
-        lock.withLock {
+        let chosen: Int? = lock.withLock {
             let index = pick(palette)
-            guard (0..<Self.presetCount).contains(index) else { return }
+            guard (0..<Self.presetCount).contains(index) else { return nil }
             palette = index
-            if let core { CoronaCore_setPalette(core, Int32(palette), 1) }
-            UserDefaults.standard.set(palette, forKey: Self.paletteKey)
+            settingsChanged = true
+            return index
         }
+        if let chosen { UserDefaults.standard.set(chosen, forKey: Self.paletteKey) }
     }
 
     // MARK: - Menu
@@ -171,10 +185,11 @@ final class CoronaEngine: NSObject, VisualizationEngine {
     }
 
     @objc private func toggleBlazeAction() {
-        lock.withLock {
-            blaze.toggle()
-            if let core { CoronaCore_setBlaze(core, blaze ? 1 : 0) }
-            UserDefaults.standard.set(blaze, forKey: Self.blazeKey)
+        let blaze: Bool = lock.withLock {
+            self.blaze.toggle()
+            settingsChanged = true
+            return self.blaze
         }
+        UserDefaults.standard.set(blaze, forKey: Self.blazeKey)
     }
 }
