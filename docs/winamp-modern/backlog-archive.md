@@ -2,6 +2,22 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B437 — VISION_WINAMP_SKIN_'s slide show and picture buttons do nothing visible — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B437 | **VISION_WINAMP_SKIN_'s slide show and picture buttons do nothing visible.** Reported by the user (reported by the user at the intake #11 hand-over (2026-11-11): dead buttons, `togglebutton#slide`, "the pictures do not cycle"). Measured 2026-11-11 with `WINAMP_MODERN_CALL_TRACE=1`: `slide`'s click runs `pic.maki` (`isrunning()` 0 then `start()`), and each tick and each press of `next_pic`/`prev_pic` calls `setxmlparam(image,picN)` on `LAYER#face_pic` for pic2..pic6. Those bitmaps are `file="c:/vision/pic1.jpg"` … `pic5.jpg` (`player-elements.xml:14-18`), the author's own disk; the archive ships only `player/picST.jpg` (pic1), so there is nothing to cycle to and the face keeps showing it (checked on a shot after `next_pic`). `param="ps"` names no container, group or window: the toggle's job is the script on the button. The other `unreachable` smoke rows are the skin's duplicates: `SeekGhost` sits under `seeker` (same action, `seeker` seeks), and `slider#Volume` is `w=0 h=0` with the `vol` layer taking the press (`volume` changes). No engine defect | VISION_WINAMP_SKIN_ | - | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Not an engine defect: the scripts run and swap `face_pic` to bitmaps the archive does not contain. Nothing to change; the skin's `c:/vision/` pictures are the author's.
+
+## B435 — Akbank's and New_York_Minute_Winamp5_Skin's spectrum draws outside the player — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B435 | **Akbank's and New_York_Minute_Winamp5_Skin's spectrum draws outside the player, off its left side.** Found by the user (reported by the user at the intake #11 hand-over (2026-11-11)); census shots measured 2026-11-11. Both skins' `pink.xml` hold `<group id="vis.group.pink" x="30" y="140" background="pink.vis">` with a full-size `<vis w="0" relatw="1" h="0" relath="1">` inside; `pink.vis` is a 221x114 skyline whose alpha (bbox 6,14..209,111) is the vis's window. A group clips its children to its own box, and to its `background`'s alpha only when that background is not painted (`groupRegionMask`), so the bars filled the whole 221x114 rectangle and ran out over the oval's bottom-left rim. Done when the bars show only inside the skyline | Akbank, New_York_Minute_Winamp5_Skin | S | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** A group with a painted `background` that directly holds a `<vis>` now clips it to that background's alpha (`groupRegionMask`); other painted groups keep their box. `WINAMP_MODERN_VIS_GROUP_UNMASKED=1` is the A/B switch. Census shots of both skins: the bars no longer cross the oval. Not swept over the corpus; any other skin with a vis in a painted group is affected.
+
 ## B433 — T3-Amp's PL, EQ, TH and ML toggles and seek bar read unreachable in the click smoke — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |

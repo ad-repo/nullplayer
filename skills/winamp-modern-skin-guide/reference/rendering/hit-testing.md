@@ -399,6 +399,8 @@ none.
 
 **A wrapper restores a leaf's artwork shape, not its box** (B429, 2026-11-11). heart_'s `player.main` holds the heart as one 310x280 layer with clear corners above the lobes; restored as a box it put the player back over the config drawer's background texture, which the drawer's own `sysregion="-1"` silhouettes had just cut, and a teal slab showed behind the heart. A leaf with a bitmap contributes that bitmap's shape (`WasabiRegionMark`, half coverage like every cut); a leaf without one still counts as its box. `WINAMP_MODERN_REGION_BOX_MARKS=1` is the A/B switch.
 
+**A painted background shapes the `<vis>` its group holds** (B435, 2026-11-11). `groupRegionMask` used to apply only to a `drawbackground="0"` group; Akbank's and New_York_Minute's `vis.group.pink` paints a skyline `background` and holds a full-size `<vis>`, which ran out over the player's oval when clipped to the box. A painted group that directly holds a `<vis>` now masks to its background's alpha too; any other painted group keeps its box. `WINAMP_MODERN_VIS_GROUP_UNMASKED=1` is the A/B switch.
+
 **A cut is not content, and a wrapper with no content is its box** (2026-10-24). Big Bento Modern's
 `window.background.regions` is a full-window `sysregion="1"` group holding nothing but four 3x3
 `regionop="-2"` corner silhouettes; its frame artwork sits beside it with a *positive* `regionop`,
