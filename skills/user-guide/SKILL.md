@@ -570,6 +570,16 @@ Only it stays on the palette you pick, across launches. **Blaze**, Corona's own 
 menu, draws the particles three times a frame for brighter, streakier flames; it is remembered
 across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's visual mode.
 
+### Smear
+The Sonique-era Smear visualizer, from the right-click **Visualization Engine** submenu, in the
+style of G-Force: the picture flows through a scripted move map while waveforms and particles are
+drawn into it and a scripted colour scheme tints it. Its presets are its 60 move scripts (Starwave,
+Disco Ball, Sunburst and more); right-click for the same preset and auto-cycle controls every
+engine has. Smear starts on Auto-Random; with Manual Only it stays on the move you pick, across
+launches, and only re-rolls that move's own variations. The colour schemes, waveforms and particles
+change by themselves. A new move takes a moment to build before it fades in. Smear also plays in a
+`.wmz` skin's effects area and Sonique's visual mode.
+
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 
@@ -674,7 +684,7 @@ across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom, Corona), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -728,6 +738,14 @@ across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The palette list and **Blaze** are in the right-click context menu.
+
+### Smear
+- **→ / ←**: Next / Previous move
+- **R**: Random move
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The move list is in the right-click context menu.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist
