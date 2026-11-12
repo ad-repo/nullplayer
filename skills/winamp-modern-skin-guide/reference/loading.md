@@ -881,6 +881,15 @@ instead: an axis is grown only when
   of the scene, a black pane and the command bar. AVS's 2px sliver still grows
   (`testAShortButAuthoredComponentBoxIsNotGrown`).
 
+**A holder whose box resolves negative counts as degenerate** (B430, 2026-11-11). A negative box is
+dropped from the scene, so the measurement found no holder at all and the axis stayed. mcgen v1.2's
+`Pledit` is `h="-120" relath="1"` in a frame whose client is 117 tall at its 200 floor: -3, a white
+panel with no list. `negativeHolderExtent` probes the canvas grown by `componentRoomExtent` on each
+axis and calls the holder degenerate on the one whose growth brings it back. That holder lives in a
+content group the skin's MAKI builds when the layout is first shown, after the window exists, so the
+fit that finds it lands on a window that is already 350x200: `WasabiSceneRenderer.autoFitDidChange`
+(set for auxiliary windows) carries it to `applyCanvasResize`.
+
 It is then grown to give the component 250px, which reproduces stock Winamp Modern's own 354×280
 visualization window rather than inventing a number. Across the corpus as it then stood — 69 skins, 590 rendered
 layouts — **exactly one** holder meets all three, and the sweep diff is one PNG.

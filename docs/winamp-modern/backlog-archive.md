@@ -2,6 +2,38 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B433 — T3-Amp's PL, EQ, TH and ML toggles and seek bar read unreachable in the click smoke — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B433 | **T3-Amp's PL, EQ, TH and ML buttons and its seek bar cannot be clicked: something above them takes the press.** Found in intake #11's click smoke (2026-11-11, playing): `togglebutton#player.button.playlist`, `.equalizer`, `.thinger`, `.medialibrary` and `layer#player.background.seek.track` all read `unreachable` though the main window's shot draws them in the display (`player.normal.group.display.contents`, `xml/player-normal.xml:104-110`). Done when each toggles its window and the seek track takes a drag | T3-Amp | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Not an app defect. On a fresh launch a click at each control's centre reaches it (`WINAMP_MODERN_DEBUG_CLICK` logged `togglebutton#player.button.playlist`, `.equalizer`, `.thinger`, `.medialibrary` and `layer#player.background.seek.track`). The smoke's first row, `button#player.button.switch` (Switch Mode, `behaviors.m:144-150`), swaps `player.normal.group.display.contents` for its oversized twin, so the five controls it holds were off screen when the walk reached them. The sweep now presses a control back when its click took later targets off screen (`WinampModernDebugClickSweep`, note `pressed-back`): T3-Amp reads `main 12 clicked, 2 not clicked` (Minimize and Eject, skipped by design) where it read `7 clicked, 7 not clicked`.
+
+## B432 — sucksdotcomwinamp's and sx-2's Library opens with no close control — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B432 | **sucksdotcomwinamp's and sx-2's Library opens with no close control.** Found in intake #11's click smoke (2026-11-11, playing): `library skin-frame, … close no-close-control` on both; the surfaces line reads `library=synthesized:nullplayer.library`. Their census shots show the Library (and the EQ Studio) as a bare dark box with no title bar. Done when the synthesized Library carries a close the user can press, or the frame choice is recorded with why | sucksdotcomwinamp, sx-2 | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Their standard frames carry no `CLOSE` art (sx-2's `pledit.exit` button is commented out in `standardframe.xml`), so the window closes from the base rule's invisible corner (`FallbackCloseArea`, `needsFallbackClose`). A real click in the corner of sx-2's Library closed it (`winhelper click`), and the smoke now presses that corner through `hostChromeHit` when no `CLOSE` is on screen and logs `fallback-corner`: both skins read `close closed`. The frame choice stands: nothing in either skin draws a close for the Library, so none is invented.
+
+## B430 — mcgen v1.2's Playlist Editor shows no tracks: its white panel is empty — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B430 | **mcgen v1.2's Playlist Editor shows no tracks: its white panel is empty.** Found in intake #11's visual review (2026-11-11, playing; no ref). `xml/pledit.xml`: `Pledit` holds the playlist component at `x=20 y=80 w=-40 h=-120` relative, inside `Wasabi:StandardFrame:NoStatus` with `content="pledit.content.group"`, on a 350x200 window; the surfaces line reads `playlist=declared:Pledit`. Its shot has no glyph pixels in the component's box at all (all white but the art), so the list is not drawn there, not merely low-contrast (the skin's `studio.list.text` is 200,200,200 and its list plate, `wasabi.edit.background` and `studio.list.background`, white). Done when the six rows show in the panel, legible | mcgen v1.2 | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** The list was there but its box was negative: `h="-120" relath="1"` in a frame whose client is 117 tall at the skin's 200 px floor, and a negative box is dropped from the scene, which also hid the holder from the component-room fit. `holderExtent` now counts a holder that only exists on a grown canvas as degenerate on that axis (`negativeHolderExtent`, `WasabiRendererLayoutSizing.swift`), and the fit's result reaches a window built before the frame's content existed (`WasabiSceneRenderer.autoFitDidChange`, set for auxiliary windows). The Playlist Editor opens 350x450 with the six rows legible (the list plate falls back to black through `listPlate`, white text on it).
+
+## B429 — heart_'s main window draws a teal slab behind the top half of the heart — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B429 | **heart_'s main window draws a teal slab behind the top half of the heart: its config drawer's frame background, which the skin cuts away.** Found in intake #11's visual review (2026-11-11, playing; no ref). `player.normal.drawer` (`xml/configdrawer.xml:844`, placed `y=-263 relaty=1 sysregion=1` by `player-normal-group.xml:338`) has `background="wasabi.frame.basetexture"` (`window/background.png`, teal 93,195,203), and its first layer `drawer.window.left.bottom.region` lays `drawer_bg_regions.png` with `sysregion="-1"`: opaque everywhere but the drawer panel's own outline, so everything else of the group comes off the window. We draw the background across the window's full 555 px width and about 125 px down, under the heart and the EQ drawer. The skin wraps everything in `Wasabi:MainFrame:NoStatus` (`sysregion=1` on the frame group), so the order rule in `regionCuts` (S7Reflex: a later positive restores an earlier cut) is the likely suspect. Also: its `button#pl`/`button#ml` and `slider#Seeker` read `unreachable` in the smoke. Done when the main window shows the heart and the drawer panel with no teal slab, and pl/ml are reachable or why not is recorded | heart_ | S? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** The `regionCuts` order rule was right; the restore was too wide. `player.main` is a `sysregion="1"` wrapper, and what it puts back after the drawer's cut was the *box* of each leaf it holds, so the heart layer's 310x280 box restored the drawer's background over the clear corners above the lobes. A leaf with artwork now restores its artwork's shape (`WasabiRegionMark`, `fillMarks`); a leaf without keeps its box. `WINAMP_MODERN_REGION_BOX_MARKS=1` is the A/B switch back. The slab is gone from the census shot; `ml` now answers in the smoke. `Seeker` is covered by its own duplicate `SeekerGhost` (same box and action, declared after, takes the press and seeks), the skin's design; `pl` is filed as B434.
+
 ## B428 — The click smoke's aim search pinned the main thread on Official_Austin_Powers_3_Skin — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |

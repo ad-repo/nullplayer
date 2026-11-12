@@ -136,6 +136,10 @@ final class WinampModernDebugClickSweep {
         return nil
     }
 
+    private static func isOnScreen(_ object: WasabiObject, in view: WinampModernMainView) -> Bool {
+        view.renderer.sceneNodes().contains { $0.object === object }
+    }
+
     private func step(_ index: Int) {
         guard let view, index < targets.count else { return pass == .main ? openLibrary() : closeLibrary() }
         let target = targets[index]
@@ -147,6 +151,8 @@ final class WinampModernDebugClickSweep {
             return step(index + 1)
         }
         let before = snapshot(view)
+        // What is on screen to click before this press, so a press that hides some of it can be told.
+        let laterOnScreen = targets[(index + 1)...].filter { Self.isOnScreen($0.object, in: view) }
         menuOpened = false
         modalOpened = false
         // A popped menu or a modal alert holds the main thread inside `debugClick`, and GCD does not
@@ -175,6 +181,13 @@ final class WinampModernDebugClickSweep {
             if before.play == "playing", after.play != "playing" {
                 main.host.play()
                 notes.append("resumed")
+            }
+            // **A press that hides later controls is half of a state pair, and is pressed back.**
+            // T3-Amp's Switch Mode swaps the display for its oversized twin, and with it the five
+            // controls the walk was still to reach (B433). The twin's own press restores the state.
+            if laterOnScreen.contains(where: { !Self.isOnScreen($0.object, in: view) }) {
+                view.debugClick(atSkinPoint: point)
+                notes.append("pressed-back")
             }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
@@ -271,9 +284,24 @@ final class WinampModernDebugClickSweep {
               // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
               let (close, point) = targets.lazy.filter({ $0.action == "CLOSE" })
                   .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first else {
-            Self.log(["window": "library", "idx": "close", "note": "no-close-control", "changed": "-"])
-            if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
-            return finish()
+            // A frame with no `CLOSE` art closes from the base rule's invisible corner (B432); press
+            // that, through the same chrome hit the window takes.
+            guard let view = self.view, let window = view.window, view.needsFallbackClose,
+                  case let corner = FallbackCloseArea.rect(in: view.bounds, flipped: view.isFlipped),
+                  view.hostChromeHit(at: NSPoint(x: corner.midX, y: corner.midY)) == .close else {
+                Self.log(["window": "library", "idx": "close", "note": "no-close-control", "changed": "-"])
+                if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+                return finish()
+            }
+            view.requestClose()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+                let closed = !window.isVisible || window.alphaValue == 0
+                Self.log(["window": "library", "idx": "close", "object": "fallback-corner", "action": "CLOSE",
+                          "note": "fallback-corner", "changed": closed ? "closed" : "nochange"])
+                if !closed, manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
+                self?.finish()
+            }
+            return
         }
         view.debugClick(atSkinPoint: point)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in

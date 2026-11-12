@@ -619,6 +619,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             self?.resize(window: auxWindow, to: size)
             self?.applyLayoutConstraints()
         }
+        renderer.autoFitDidChange = { [weak view] size in view?.applyCanvasResize(size) }
         // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
         // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
         // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted

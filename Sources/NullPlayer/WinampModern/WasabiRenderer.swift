@@ -1038,7 +1038,15 @@ final class WasabiSceneRenderer {
         autoFit.canvas = size
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+        // A fit that lands after the window was built (a frame's content is instantiated when its
+        // layout is first shown) is a canvas the window has not heard of (B430).
+        if loadedSkin.runtime.hasStartedScripts, let autoFitDidChange {
+            DispatchQueue.main.async { autoFitDidChange(size) }
+        }
     }
+
+    /// Set by a window that built its view before its content existed, so it can follow a later fit.
+    var autoFitDidChange: ((CGSize) -> Void)?
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
     /// `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h`.

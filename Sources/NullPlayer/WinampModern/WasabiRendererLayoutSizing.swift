@@ -245,13 +245,29 @@ extension WasabiSceneRenderer {
     /// `nil` when it has none — what the component-room fit measures the window's shortfall from.
     /// Visible only: a player parks holders it is not showing.
     private func holderExtent(atCanvas canvas: CGSize) -> CGSize? {
-        let holders = sceneNodes(canvas: canvas).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag)
+        func holders(at canvas: CGSize) -> [WasabiSceneNode] {
+            sceneNodes(canvas: canvas).filter { WinampModernComponentRegistry.isHolderElement($0.object.tag) }
         }
-        guard !holders.isEmpty else { return nil }
-        return holders.reduce(CGSize.zero) {
+        let found = holders(at: canvas)
+        guard !found.isEmpty else { return negativeHolderExtent(atCanvas: canvas, holders: holders) }
+        return found.reduce(CGSize.zero) {
             CGSize(width: max($0.width, $1.frame.width), height: max($0.height, $1.frame.height))
         }
+    }
+
+    /// A holder whose box resolves **negative** is dropped from the scene, so the measurement above
+    /// finds none and the window opens with no list in it. mcgen v1.2's playlist is
+    /// `h="-120" relath="1"` in a frame whose client is 117 tall at the skin's 200 floor, so its box
+    /// is -3 and the panel stayed empty (B430). Such a holder is degenerate on the axis whose growth
+    /// brings it back, and absent on the other, which must not grow for it.
+    private func negativeHolderExtent(atCanvas canvas: CGSize,
+                                      holders: (CGSize) -> [WasabiSceneNode]) -> CGSize? {
+        let room = Self.componentRoomExtent
+        let needsWidth = !holders(CGSize(width: canvas.width + room, height: canvas.height)).isEmpty
+        let needsHeight = !holders(CGSize(width: canvas.width, height: canvas.height + room)).isEmpty
+        guard needsWidth || needsHeight else { return nil }
+        return CGSize(width: needsWidth ? 0 : CGFloat.greatestFiniteMagnitude,
+                      height: needsHeight ? 0 : CGFloat.greatestFiniteMagnitude)
     }
 
     /// The window width at which the holder gets the room its component asks for

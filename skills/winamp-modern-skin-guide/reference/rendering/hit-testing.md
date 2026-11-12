@@ -397,6 +397,8 @@ the whole window by its positive declarations moved 87 corpus images, and counti
 (not `background` groups) still erased Formamp's and Ebonite's client areas. The shipped rule moved
 none.
 
+**A wrapper restores a leaf's artwork shape, not its box** (B429, 2026-11-11). heart_'s `player.main` holds the heart as one 310x280 layer with clear corners above the lobes; restored as a box it put the player back over the config drawer's background texture, which the drawer's own `sysregion="-1"` silhouettes had just cut, and a teal slab showed behind the heart. A leaf with a bitmap contributes that bitmap's shape (`WasabiRegionMark`, half coverage like every cut); a leaf without one still counts as its box. `WINAMP_MODERN_REGION_BOX_MARKS=1` is the A/B switch.
+
 **A cut is not content, and a wrapper with no content is its box** (2026-10-24). Big Bento Modern's
 `window.background.regions` is a full-window `sysregion="1"` group holding nothing but four 3x3
 `regionop="-2"` corner silhouettes; its frame artwork sits beside it with a *positive* `regionop`,
