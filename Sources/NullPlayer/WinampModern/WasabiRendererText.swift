@@ -8,6 +8,8 @@ import Foundation
 /// out of `WasabiRenderer.swift`; see
 /// `skills/winamp-modern-skin-guide/reference/rendering/text.md`.
 extension WasabiSceneRenderer {
+    static let clipsClockToBox = ProcessInfo.processInfo.environment["WINAMP_MODERN_CLOCK_BOX_CLIP"] == "1"
+
     func drawText(_ object: WasabiObject, frame: CGRect, context: WasabiDrawList) {
         // Content resolution (`display=`, a songticker's implicit track title, `setAlternateText`)
         // is shared with the measurement a script's `getAutoWidth()` gets — see `WasabiTextMetrics`.
@@ -121,8 +123,16 @@ extension WasabiSceneRenderer {
             if !visible.isNull, drawFrame.minX >= visible.maxX - 1 { return }
         }
 
-        let clip = horizontalClip(of: object, text: text, measured: measured, frame: frame,
+        // **A clock taller than its box is not scissored to it** (B441). EI's timer is a 35px face in
+        // `h="18"`, and its own screenshot shows the whole 22px of every digit; scissored at the box
+        // the top seven rows of each were gone. Only a clock: a ticker or label is bounded by its box
+        // (BB27). `WINAMP_MODERN_CLOCK_BOX_CLIP=1` is the A/B switch.
+        let verticalBand = clock != nil && size > frame.height && !Self.clipsClockToBox
+            ? frame.insetBy(dx: 0, dy: -(size - frame.height)) : frame
+
+        var clip = horizontalClip(of: object, text: text, measured: measured, frame: frame,
                                   scrolls: scroll != nil, wraps: wraps, context: context)
+        clip = CGRect(x: clip.minX, y: verticalBand.minY, width: clip.width, height: verticalBand.height)
         context.saveGState()
         context.clip(to: clip)
         context.translateBy(x: 0, y: frame.midY)
@@ -146,8 +156,8 @@ extension WasabiSceneRenderer {
             // the string out of it — a line taller than its box is centred, so half its overflow is
             // above the box, and scissoring at the shifted rect would carry the cut up there with it.
             // BB27's rule is that the box bounds the string vertically, so that is the rect.
-            context.clip(to: CGRect(x: clip.minX, y: frame.minY,
-                                    width: clip.width, height: frame.height))
+            context.clip(to: CGRect(x: clip.minX, y: verticalBand.minY,
+                                    width: clip.width, height: verticalBand.height))
         }
         // Where a line's baseline sits inside `drawFrame`, and the one piece of vertical arithmetic
         // the conversion needs. All three branches share it: a clock cell and a ticker use the same
@@ -181,8 +191,8 @@ extension WasabiSceneRenderer {
             // scissor above: `drawFrame` is shifted by the centring, so a font taller than its box
             // (TOX Milla's Impact 24 in a 15px timer) lost the bottom of every digit to it.
             for cell in clock.cells {
-                let cellFrame = CGRect(x: origin, y: frame.minY,
-                                       width: cell.width, height: frame.height)
+                let cellFrame = CGRect(x: origin, y: verticalBand.minY,
+                                       width: cell.width, height: verticalBand.height)
                 let glyphWidth = resources.textWidth(of: cell.text, font: font)
                 let x = cell.centred ? cellFrame.minX + (cellFrame.width - glyphWidth) / 2
                                      : cellFrame.minX

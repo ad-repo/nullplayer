@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B441 — EI's timer is cut off at the top — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B441 | **EI's timer is cut off at the top (and bottom).** Reported by the user (reported by the user at the intake #11 hand-over (2026-11-11)); measured 2026-11-11 on a census shot. `<text id="timer" display="time" x="30" y="24" w="80" h="18" font="player.arial" fontsize="35" align="right">`: the face is 35 px in an 18 px box, and `drawTrueTypeText` scissors a string to its own box vertically (BB27), so the digits showed rows 24.0..41.5 only, flat top and bottom. The author's `screenshot.png` shows the whole digit, 22 rows (29..50), beyond the box bottom at 42. Done when the digits are whole | EI | S | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** A `display="time"` clock taller than its box is no longer scissored to the box vertically (`verticalBand` in `drawTrueTypeText`, both the line clip and the per-cell clip); tickers and labels keep BB27's box. EI's census shot shows the whole `-3:46`. `WINAMP_MODERN_CLOCK_BOX_CLIP=1` is the A/B switch. Other skins whose clock face is taller than its box (TOX Milla's Impact 24 in a 15 px timer) now draw whole too; not swept.
+
 ## B440 — cPro skins open maximized at 1800x1130; the intake smoke put them there — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |
