@@ -50,9 +50,12 @@ Geiss, AVS and Corona render on the CPU in pixel units, so a small canvas shows 
 of the scene. `SoftwareCanvas.atLeastMinimum` (`VisualizationEngine.swift`) raises a viewport
 narrower than 400 px to that width at its aspect, and each engine shrinks its frame into the
 viewport: a skin's effects slot (Sonique's top circle is 182×176 px) shows the whole scene small.
+The scaled height stops at `maxScaledHeight` (1,600 px), so a viewport over 4:1 tall is drawn at
+another aspect rather than as a 400×240,000 canvas (a 1×600 viewport).
 Measured 2026-11-12 offscreen at 182 and 400 px with the same audio and preset: Geiss's waveform
 ran off both edges at 182, and AVS's strokes were twice as thick. ProjectM and Tripex are
-resolution-independent and Goom is not offered to skins; none of them uses it.
+resolution-independent and Goom is not offered to the `.wmz` / Sonique effects surface (a `.wal`
+visualization box hosts the user's engine, Goom included); none of them uses it.
 
 ## Standard keys: one seam
 

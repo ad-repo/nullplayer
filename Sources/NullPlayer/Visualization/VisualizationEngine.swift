@@ -90,13 +90,16 @@ extension VisualizationEngine {
 /// sized in pixels, so a small canvas shows a coarse close-up of the scene: in a skin's effects
 /// slot (Sonique's top circle is 182x176 px) Geiss's waveform ran off both edges. Below
 /// `minWidth` the canvas is scaled up, at the viewport's aspect, and the engine shrinks it to fit.
+/// The scaled height stops at `maxScaledHeight` (a 1x600 viewport would ask for 400x240,000), so
+/// only a viewport over 4:1 tall and under 400 px wide is drawn at another aspect.
 enum SoftwareCanvas {
     static let minWidth = 400
+    static let maxScaledHeight = 4 * minWidth
 
     static func atLeastMinimum(width: Int, height: Int) -> (width: Int, height: Int) {
         let width = max(1, width), height = max(1, height)
         guard width < minWidth else { return (width, height) }
-        return (minWidth, max(1, height * minWidth / width))
+        return (minWidth, min(height * minWidth / width, max(height, maxScaledHeight)))
     }
 }
 

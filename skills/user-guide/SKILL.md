@@ -561,6 +561,15 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 **Heart**, whose ripples are heart-shaped and whose audio scope becomes a pair of pink hearts, and
 **Pentagram**, whose ripples are star-shaped and whose scope becomes a star inside a circle.
 
+### Corona
+The Sonique-era Corona visualizer, from the right-click **Visualization Engine** submenu: flames of
+particles that swirl and leap on the beat over a rippling reflection. Its presets are 31 palettes
+(Fire, Ice, Night Sky, Pastel Rainbow, Sepia and more), which it fades between; right-click for the
+same preset and auto-cycle controls every engine has. Corona starts on Auto-Random; with Manual
+Only it stays on the palette you pick, across launches. **Blaze**, Corona's own item in the same
+menu, draws the particles three times a frame for brighter, streakier flames; it is remembered
+across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's visual mode.
+
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
 
@@ -665,7 +674,7 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -711,6 +720,14 @@ Five are NullPlayer's own: **Spiral**, **Vortex** (a whirlpool), **Flower** (fiv
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The effect list is in the right-click context menu.
+
+### Corona
+- **→ / ←**: Next / Previous palette
+- **R**: Random palette
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The palette list and **Blaze** are in the right-click context menu.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

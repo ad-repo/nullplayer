@@ -9,7 +9,8 @@
  * $Id: corona.cpp,v 1.10 2006/02/05 18:47:26 synap Exp $
  *
  * Modified for NullPlayer (2026-11-12): libvisual dependency removed (the MMX blur
- * branch, which only ran on x86); the destructor frees the particles and the reflection array.
+ * branch, which only ran on x86); the destructor frees the particles and the reflection array;
+ * every allocation is checked, and setUpSurface returns false when one fails.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
@@ -67,6 +68,8 @@ Corona::Corona()
 	m_waveloop      = 0.0;
 
 	m_particles = (Particle*)calloc (nbParticules, sizeof(Particle));
+	// None yet if that failed: setUpSurface allocates them again, and fails if it cannot.
+	if (m_particles == 0) nbParticules = 0;
 	// Create particles in random positions
 	for (int i = nbParticules - 1; i >= 0; --i)
 	{
@@ -97,9 +100,12 @@ double Corona::random(double min, double max) const {
 
 bool Corona::setUpSurface(int width, int height) {
 	// Delete any image that might have previously been allocated
-	if (m_real_image) free(m_real_image);
-	if (m_deltafield) free(m_deltafield);
-	if (m_reflArray)  free(m_reflArray);
+	free(m_real_image);
+	free(m_deltafield);
+	free(m_reflArray);
+	m_real_image = 0;
+	m_deltafield = 0;
+	m_reflArray  = 0;
 
 	// Fill in the size details in the BitmapInfo structure
 	m_width  = width;
@@ -111,9 +117,11 @@ bool Corona::setUpSurface(int width, int height) {
 	if (m_real_image == 0) return false;
 	m_image      = m_real_image + m_width * (m_real_height - m_height);
 	m_reflArray  = (int*)malloc((m_real_height - m_height) * sizeof(*m_reflArray));
+	if (m_reflArray == 0) return false;
 
 	// Allocate the delta-field memory, and initialise it
 	m_deltafield = (unsigned char**)malloc(m_width * m_height * sizeof(unsigned char*));
+	if (m_deltafield == 0) return false;
 
 	for (int x = 0; x < m_width; ++x) {
 		for (int y = 0; y < m_height; ++y) {
@@ -125,8 +133,10 @@ bool Corona::setUpSurface(int width, int height) {
 	int newsize = (int) (::sqrt(m_width * m_height) * 3.0);
 	if (newsize < 2000) newsize = 2000;
 	int oldsize = (int) nbParticules;
+	Particle *particles = (Particle*)realloc (m_particles, sizeof(Particle) * newsize);
+	if (particles == 0) return false;
+	m_particles = particles;
 	nbParticules = newsize;
-	m_particles = (Particle*)realloc (m_particles, sizeof(Particle) * newsize);
 	for (int i = oldsize; i < newsize; ++i) {
 		m_particles[i].x = random(0, 1);
 		m_particles[i].y = random(0, 1);

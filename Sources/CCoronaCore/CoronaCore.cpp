@@ -21,6 +21,7 @@
  */
 
 #include "CoronaCore.h"
+#include <new>
 
 #include <cstdlib>
 #include <cstring>
@@ -57,7 +58,13 @@ struct CoronaCore {
 
 CoronaCore *CoronaCore_create(int width, int height) {
 	if (width < 32 || height < 32) return nullptr;
-	CoronaCore *core = new CoronaCore();
+	// No C++ exception may cross into Swift; PaletteCollection's own `new` can throw too.
+	CoronaCore *core;
+	try {
+		core = new CoronaCore();
+	} catch (const std::bad_alloc &) {
+		return nullptr;
+	}
 	core->level.state = normal_state;
 	core->size = width * height;
 	core->rgba = (uint32_t *)malloc(sizeof(uint32_t) * core->size);

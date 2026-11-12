@@ -37,7 +37,9 @@ Each edited file carries a dated "Modified for NullPlayer" notice under its `$Id
 1. libvisual removed: `visual_mem_*` → `memset`/`memcpy`, `updateVisPalette` gone (the shim reads
    `getPalette()`), and the x86 MMX branch of `blurImage` dropped (its C loop is what ran on arm64).
 2. `~Corona` also frees `m_particles` and `m_reflArray`, which upstream leaked; the engine recreates
-   the core on every resize.
+   the core on every resize. Every allocation is checked (upstream wrote through a failed one):
+   `setUpSurface` returns false, and `CoronaCore_create` catches `std::bad_alloc` (it may come from
+   `PaletteCollection`'s own `new`), so no C++ exception reaches Swift.
 3. `Corona::setPreset`/`getPreset`: libvisual never let a host leave `PRESET_CORONA`.
 4. `PaletteCycler::holdPalette(i, fade)`: fades (or switches) to palette `i` and stops the random
    palette changes in `update`. `startPaletteTransition` takes its target instead of rolling it.
