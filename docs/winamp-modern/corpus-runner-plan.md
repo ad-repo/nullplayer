@@ -341,6 +341,30 @@ Closed as not defects: Wurlitzer_v2's playlist title wrap (B419, the host marque
 design, confirmed by the user). Held back in silver: Wurlitzer_v2 (B414 its Library in plain chrome, B422 its skin frame
 drawn short on our windows), both open.
 
+### Done: intake #11, promoted to gold (2026-11-11)
+
+50 skins were picked for batch 11 by `wal_intake_pick.sh 50` and scanned live (`wal_live_smoke.sh` with its Library pass,
+`window-census.sh --shots`) on `feat/wal-intake-11`. All 50 were accepted by the user, five of them with open rows, and
+promoted to gold on 2026-11-11, with rows on `skin-compatibility.md` (49 B, 1 C, graded from the ledger notes and backlog
+rows). The per-skin record is `intakes/intake-11.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Official_Austin_Powers_3_Skin | The click smoke hung the app: the aim search pinned the main thread in `opaqueBounds` (B428) | `opaqueBounds` keeps one answer per `CGImage` in an `NSCache` |
+| heart_ | A teal slab drew behind the heart: the drawer's frame background (B429) | A `sysregion` wrapper restores a leaf's artwork shape, not its box |
+| mcgen v1.2 | The Playlist Editor showed no tracks: the list's box was negative (B430) | A holder that only exists on a grown canvas counts as degenerate on that axis (`negativeHolderExtent`); the fit's result reaches an already-built window |
+| sucksdotcomwinamp, sx-2 | The Library opened with no close control (B432) | Their frames carry no `CLOSE` art: the window closes from the base rule's fallback corner, and the smoke presses it |
+| T3-Amp | PL, EQ, TH, ML and the seek bar read unreachable (B433) | Not an app defect: Switch Mode swapped the display group; the smoke presses a control back when its click took later targets off screen |
+| Akbank, New_York_Minute | The spectrum drew outside the player, off its left side (B435) | A painted group that directly holds a `<vis>` clips it to the background's alpha (`groupRegionMask`) |
+| VISION_WINAMP_SKIN_ | The slide show and picture buttons showed nothing (B437) | Not an engine defect: the scripts run, but the pictures are `c:/vision/` files the archive does not ship |
+| nine cPro skins (Candeo, Expensive_Hi_Fi, WinampVista, smplwhite, Windows_XP, cirQ, cMP10, cMP11, Blue_Green_Whale_Amp) | The smoke maximized the window and the skin persisted it, so the next launch opened at 1800x1130 (B440) | The sweep restores the skin's stored settings when it finishes, and presses back a click that resizes the window |
+| EI | The clock was cut off at the top and bottom of its 18 px box (B441) | A `display="time"` clock taller than its box is not scissored to it vertically (`verticalBand`); tickers and labels keep the box |
+
+Open, promoted with the skin: B431 (VISION_WINAMP_SKIN_'s Playlist Editor rows too big), B434 (heart_'s `button#pl` takes no
+press), B436 (Austin Powers' drawer opens on black, its video is not played), B438 (iTunes_Mini_PowerMetal2's buttons
+reported off the art, not reproduced), B439 (Skimple's spectrum sits left of its well); also B396 (the census hangs on
+the nine cPro skins) and B403 (Auriga_V5 and Buffy_the_vampire_slayer__the_codex declare no video surface).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
