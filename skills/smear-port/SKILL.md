@@ -56,7 +56,11 @@ further edit. `fnlist.{c,h}` and `eruntime.h`'s layout are otherwise upstream's.
 4. Bugs fixed: `array.c` zeroed `sizeof(double)` bytes of a grown array instead of all of it; a
    token, the function list and the variable table could overrun (variables past 256 share
    `eOverflow`); EXECUTE/LOOP/WHILE returned uninitialised values; `TimedRunForLine` used its
-   resume column before resetting it; `effectsDrawLine` shifted negative values. Allocations
+   resume column before resetting it; `effectsDrawLine` shifted negative values; `/` evaluated its
+   divisor twice; `WRAP` looped forever on an infinite or huge value (now `fmod`); `%=` added the
+   remainder instead of storing it; a new argument slot was uninitialised and an array index could
+   compile to no argument; waveforms capped at 15 paths and never reached `$Step` 1 or the last PCM
+   sample; a particle's height scaled with X and its width with Y. Allocations
    are checked: a map or screen buffer that cannot be had makes `SmearCore_render` return NULL
    (that frame is skipped, the next one tries again), and an array that cannot grow reads as
    out of range.

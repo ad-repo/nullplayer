@@ -6,7 +6,9 @@
 // TimedRunForLine's statics belong to the Environment's Smear
 // (e->eState); 32-bit maps and colormaps; TimedRunForLine resets its
 // resume column before using it; the line-based RunForLine and
-// ClearAudioData, which nothing called, are gone; snprintf for sprintf.
+// ClearAudioData, which nothing called, are gone; snprintf for sprintf;
+// all 16 waveform paths draw; $Step and the PCM index reach their ends;
+// a particle's height scales with Y and its width with X.
 //
 //////////////////////////////////////////////////////////////////////
 
@@ -373,8 +375,8 @@ SetupForWaveForm(Environment *e)
 	if (e->eRuntime.reWaveform.numPaths <= 0)
 		e->eRuntime.reWaveform.numPaths = 1;
 
-	if (e->eRuntime.reWaveform.numPaths >= MAX_WAVEFORM_PATHS)
-		e->eRuntime.reWaveform.numPaths = MAX_WAVEFORM_PATHS - 1;
+	if (e->eRuntime.reWaveform.numPaths > MAX_WAVEFORM_PATHS)
+		e->eRuntime.reWaveform.numPaths = MAX_WAVEFORM_PATHS;
 
 	e->eRuntime.reWaveform.numSteps = (int)GetVariable(e, "Steps");
 	if (e->eRuntime.reWaveform.numSteps == 0)
@@ -470,8 +472,8 @@ RunForWaveForm(Environment *e, int width, int height, int whichDraw)
 
 	for (i = 0; i < e->eRuntime.reWaveform.numSteps; i++)
 	{
-		*(e->eRuntime.reWaveform.pStep) = (double)i / (double)e->eRuntime.reWaveform.numSteps;
-		pos = (i * WAVE_DATA_SIZE) / e->eRuntime.reWaveform.numSteps;
+		*(e->eRuntime.reWaveform.pStep) = (double)i / (double)(e->eRuntime.reWaveform.numSteps - 1);
+		pos = (i * (WAVE_DATA_SIZE - 1)) / (e->eRuntime.reWaveform.numSteps - 1);
 		
 		*(e->eRuntime.reWaveform.pLeft) = (double)(e->eState->audioData.pLeftData[pos]) / 128.0;
 		*(e->eRuntime.reWaveform.pRight) = (double)(e->eState->audioData.pRightData[pos]) / 128.0;
@@ -652,8 +654,8 @@ RunForParticle(Environment *e, int width, int height, double fade)
 		xend = (int)(*(e->eRuntime.reParticle.pXend) * Xdivisor + (double)width / 2.0);
 		yend = (int)(*(e->eRuntime.reParticle.pYend) * Ydivisor + (double)height / 2.0);
 
-		h = (int)(*(e->eRuntime.reParticle.pSize) * Xdivisor * 256.0);
-		w = (int)(*(e->eRuntime.reParticle.pSize) * Ydivisor * 256.0);
+		h = (int)(*(e->eRuntime.reParticle.pSize) * Ydivisor * 256.0);
+		w = (int)(*(e->eRuntime.reParticle.pSize) * Xdivisor * 256.0);
 
 		effectsDrawParticle(e->eState, x, y, xend, yend, h, w, colo, (int)(*(e->eRuntime.reParticle.pStyle)), e->eRuntime.reParticle.useBlendType);
 	}

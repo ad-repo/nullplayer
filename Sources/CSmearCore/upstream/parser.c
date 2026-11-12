@@ -13,7 +13,9 @@
 // thread, so two Smears can load at once; a token, a function list and
 // a variable table stop at their sizes instead of running past them
 // (variables past MAX_VARIABLES share eOverflow); errors go to stderr
-// rather than a message box; an Environment starts zeroed.
+// rather than a message box; an Environment starts zeroed; a new
+// argument slot starts zeroed; an array index must compile to exactly
+// one argument.
 //
 //////////////////////////////////////////////////////////////////////
 
@@ -272,6 +274,8 @@ NewArguement(CompiledCommand *ccp)
 	if (ccp->ccArguments == (CompiledArgument *)0)
 		return (CompiledArgument *)0;
 
+	memset(&ccp->ccArguments[ccp->ccArgumentCount], 0,
+	       sizeof(CompiledArgument));
 	return &(ccp->ccArguments[ccp->ccArgumentCount++]);
 }
 
@@ -367,9 +371,11 @@ CompileArgument(Environment *e, FILE *fp, CompiledCommand *ccp)
 
 		memset(&tempCC, 0, sizeof(CompiledCommand));
 
-		if (CompileArgument(e, fp, &tempCC) != 0)
+		if (CompileArgument(e, fp, &tempCC) != 0 ||
+		    tempCC.ccArgumentCount != 1)
 		{
 			CompileError("Invalid Array specification");
+			free(tempCC.ccArguments);
 			return -1;
 		}
 

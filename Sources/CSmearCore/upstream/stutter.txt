@@ -209,7 +209,7 @@ Execution Flow:
 
 Function        Usage                   Notes
 --------        ----------------------- --------------------------------------
-declare         (delcare name [arg      Declare a function for use by the
+declare         (declare name [arg      Declare a function for use by the
                     ...])               program.  The arguments are evaluated
                                         in turn.  No value is returned from a
                                         declare statement.  It can only be the
@@ -420,7 +420,7 @@ Special Variable:       $PI             The value of PI (3.14159265358979323)
 ==============================================================================
 Function:               init
 Variables Supplied:     none
-Variables Returned:     $NumPaths       The number of separate waveforms to
+Variables Returned:     $Paths          The number of separate waveforms to
                                         draw.  There can be a maximum of 16
                                         paths.  The value defaults to 1
 Called:                 Called when the waveform is about to be called for
@@ -458,23 +458,23 @@ Variables Supplied:     $Time,          These are the same as in the newline
                                         is in the range 0 to 1.
                         $Left, $Right,  The waveform data for the left and
                           $Mid          right channel, as well as the average.
-Variables Returned:     $X0, $Y0,       For each path (from 0 to $NumPaths - 1)
+Variables Returned:     $X0, $Y0,       For each path (from 0 to $Paths - 1)
                           $X1, $Y1, ... you need to supply the X and Y points
                                         for the waveform at this step.
                         $Fade0, $Fade1, The color to draw the line in.  See
                           ...           the special variables below.
-Called:                 Once for each step (see $NumSteps below) in the
+Called:                 Once for each step (see $Steps below) in the
                         waveform.  Each call is expected to work out the x
                         and y coordinates for each of the paths.
 ------------------------------------------------------------------------------
-Special Variable:       $NumPaths       The number of separate waveform paths
+Special Variable:       $Paths          The number of separate waveform paths
                                         to display.
 ------------------------------------------------------------------------------
-Special Variable:       $NumSteps       The number of steps along the
+Special Variable:       $Steps          The number of steps along the
                                         waveform.  The default value is 256.
                                         The data supplied is limited to 512
                                         pieces of data, so the maximum value
-                                        for $NumSteps is 512.  Minimum 2.
+                                        for $Steps is 512.  Minimum 2.
 ------------------------------------------------------------------------------
 Special Variable:       $Loop0,         For each of the paths if the $Loopn
                           $Loop1, ...   is True, then a line is draw from the

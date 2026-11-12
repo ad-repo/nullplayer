@@ -503,7 +503,7 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window

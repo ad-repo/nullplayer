@@ -1,7 +1,9 @@
 // Modified for NullPlayer (2026-11-12): the audio data and the 3D
 // matrix belong to the Environment's Smear (e->eState); EXECUTE, LOOP
 // and WHILE return 0 when they run nothing; RND draws from the Smear's
-// own generator.  See LICENSE.TXT.
+// own generator; / evaluates its divisor once; WRAP reduces by fmod
+// (its loops never ended on an infinite or huge value); %= stores the
+// remainder rather than adding it.  See LICENSE.TXT.
 
 #include "smear.h"
 
@@ -45,7 +47,7 @@ flFuncDeclare(fnDivide)
 		return 0.0;
 	}
 
-	return flArgument(0) / flArgument(1);
+	return flArgument(0) / d;
 }
 
 
@@ -211,11 +213,16 @@ flFuncDeclare(fnWrap)
 			h = 1.0;
 	}
 
-	while (d > h)
-		d -= (h - l);
+	if (isinf(d))
+		return l;
 
-	while (d < l)
-		d += (h - l);
+	if (d > h || d < l)
+	{
+		d = fmod(d - l, h - l);
+		if (d < 0.0)
+			d += (h - l);
+		d += l;
+	}
 
 	return d;
 }
@@ -615,7 +622,7 @@ flFuncDeclare(fnSetMod)
 	if ((lv = flLValue(0)) == (double *)0)
 		return 0.0;
 
-	return *lv +=
+	return *lv =
 		(double)((int)(*lv) % l);
 }
 
