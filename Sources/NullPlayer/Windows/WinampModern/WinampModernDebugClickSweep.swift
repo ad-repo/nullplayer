@@ -36,6 +36,7 @@ final class WinampModernDebugClickSweep {
         let layout: String
         let windows: [ObjectIdentifier: String]
         let mainOnScreen: Bool
+        let windowSize: CGSize
     }
 
     /// The keys of a `WM-SMOKE|` row, in order. A row the sweep did not click carries the first three
@@ -192,7 +193,11 @@ final class WinampModernDebugClickSweep {
             // **A press that hides later controls is half of a state pair, and is pressed back.**
             // T3-Amp's Switch Mode swaps the display for its oversized twin, and with it the five
             // controls the walk was still to reach (B433). The twin's own press restores the state.
-            if laterOnScreen.contains(where: { !Self.isOnScreen($0.object, in: view) }) {
+            // A press that resizes the window is pressed back as well (B440): cPro's title bar
+            // maximizes on a double-click and `main.goBig` does, the skin persists it, and the walk
+            // ended on a window it had just grown to the whole screen.
+            if after.windowSize != before.windowSize
+                || laterOnScreen.contains(where: { !Self.isOnScreen($0.object, in: view) }) {
                 view.debugClick(atSkinPoint: point)
                 notes.append("pressed-back")
             }
@@ -351,7 +356,8 @@ final class WinampModernDebugClickSweep {
         return Snapshot(volume: view.host.volume, play: "\(view.host.playbackState)",
                         position: view.host.currentTime, track: track.isEmpty ? "-" : track, eq: eq,
                         layout: view.renderer.activeLayoutID,
-                        windows: windows, mainOnScreen: main?.isVisible == true && (main?.alphaValue ?? 0) > 0)
+                        windows: windows, mainOnScreen: main?.isVisible == true && (main?.alphaValue ?? 0) > 0,
+                        windowSize: view.window?.frame.size ?? .zero)
     }
 
     private func finish() {
