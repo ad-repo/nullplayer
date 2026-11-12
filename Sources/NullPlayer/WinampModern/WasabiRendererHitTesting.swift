@@ -299,8 +299,16 @@ extension WasabiSceneRenderer {
         for mark in marks {
             context.saveGState()
             context.clip(to: mark.clip)
-            if !Self.boxesWrapperMarks, let id = mark.bitmapID, let bitmap = resources.bitmap(identifier: id) {
-                draw(bitmap, object: mark.object, frame: mark.frame, context: context)
+            // The shape is wherever the artwork has **any** alpha: a faint shadow or glow is painted,
+            // so it is window (S7Reflex's player body, RODE_3_Lite's glass), where a half-coverage cut
+            // would take it away. Only an image stretched to its box has a shape to read that way.
+            if !Self.boxesWrapperMarks, let id = mark.bitmapID, let bitmap = resources.bitmap(identifier: id),
+               mark.object.attributes["tile"] != "1", mark.object.attributes["tilex"] != "1",
+               mark.object.attributes["tiley"] != "1", centeredImageRect(bitmap, object: mark.object, in: mark.frame) == nil,
+               let mask = resources.alphaMask(bitmapID: id) {
+                context.clip(to: mark.frame, mask: mask)
+                context.setFillColor(gray: 1, alpha: 1)
+                context.fill([mark.frame])
             } else {
                 context.setFillColor(gray: 1, alpha: 1)
                 context.fill([mark.frame])

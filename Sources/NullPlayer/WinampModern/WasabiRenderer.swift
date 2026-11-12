@@ -470,6 +470,18 @@ final class WasabiResourceCache {
         return image
     }
 
+    /// `alphaMask(background:declaredIn:)` for a bitmap already resolved by id: in wherever it has
+    /// any alpha at all, so a faint shadow is still part of the shape (B429).
+    func alphaMask(bitmapID: String) -> CGImage? {
+        guard !isTornDown else { return nil }
+        let key = "alphaid:" + bitmapID.lowercased()
+        if let cached = regionMasks[key] { return cached }
+        guard let artwork = bitmap(identifier: bitmapID)?.image,
+              let image = Self.binaryMask(of: artwork, inside: { _, alpha in alpha > 0 }) else { return nil }
+        cacheMask(image, key: key)
+        return image
+    }
+
     private func cacheMask(_ mask: CGImage, key: String) {
         if regionMasks.count >= Self.maximumCachedRegionMasks { regionMasks.removeAll() }
         regionMasks[key] = mask
