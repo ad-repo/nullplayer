@@ -4,19 +4,27 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **99 more skins checked** (corpus intakes eight to ten): absurd, Act 3 Scene 2, Aircel, AmpTunes
-  III, Angel, AOL Broadband, AR-7, Artzar, ATL, Batman Begins, Big Bertha Sanctuary, blackwhite, Casio
-  G Shocked, Catwoman, CleanAMP, cPro SC, cPro: Wii, CyclopVX-1, Danielle Fishel: Double Diamond, Dawn
-  of the Dead, Dawson's Creek, Dr Who, Dynamic, EIV2, Energy3, Enter the Matrix, Falcon, Fast And The
-  Furious, Fast And The Furious 4, FreddyvsJason, G-tutorials, GC-Skin, GlassAMP, Go Army, Guilty Gear
-  XX, Halloween 2003, HardHouseCafeAmp, Helloween, Heroes, HOLO like, HUD, iPAMP, iPhone Theme, Jpod,
-  JSB, Just Buttons, K-Tech SFX 201, Lapis Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1,
-  Lelouch, LiquidStar, Lithium, Liverpool F.C., Lou Reed - The Raven, MacOSesque, Mercury, Minima,
-  miniPlayer, Miyabi, Narnia, NaturallZ, No-Vita, Nokia 5800 XpressMusic, Nokia 6600, Nokia 7210,
-  Olimpiadas, Overdrive, Pax, PDU Blog, Pixelated, PokerGods, Psonidelic, Quinto, Qwest, Ray Skin,
-  REM, Remote, Remote Sensing, Resurgence, Scythe, Side Amp, Simple Amp, Simplistic Vision 2, Sleeky
-  Xtra, Slim, Slither, Smallville Digital Album, Snow Globe X-Mas, Sony STR VA 555, Studiosus, Tewnz,
-  Thanog, Turner Classic Movies, Washed, WGlass, Wrigley's Chewing Amp, X Sphere, Xbox Amp.
+- **149 more skins checked** (corpus intakes eight to eleven): absurd, Act 3 Scene 2, Aircel, Alien
+  Skin, AmpTunes III, Angel, AOL Broadband, AR-7, Artzar, ATL, Auriga V5, Austin Powers in
+  Goldmember, Axess, Batman Begins, Batman on the Move, Big Bertha Sanctuary, blackwhite, Blink
+  182 - Feel This, Buffy the Vampire Slayer: The Codex, Calm Mind, Candeo, Cannes, Casio G Shocked,
+  Catwoman, CleanAMP, Control Panel, cPro Blue Green Whale Amp, cPro CirQ, cPro cMP10, cPro cMP11,
+  cPro Expensive HiFi, cPro SC, cPro smplwhite, cPro WinampVista, cPro Windows XP, cPro: Wii,
+  Crystal, CSL, CyclopVX-1, Danielle Fishel: Double Diamond, Dawn of the Dead, Dawson's Creek,
+  Doublehelix, Dr Who, Dynamic, E_I, EIV2, Energy3, Enter the Matrix, Falcon, Fast And The Furious,
+  Fast And The Furious 4, fnk 32, FreddyvsJason, Fuzzy Muffins, G-tutorials, GC-Skin, GlassAMP, Go
+  Army, Guilty Gear XX, Hal's Eye, Halloween 2003, HardHouseCafeAmp, Helloween, Heroes, HOLO like,
+  HUD, Inima, iPAMP, iPhone Theme, iPod Skin, iTunes PowerMetal2, Jpod, JSB, Just Buttons, K-Tech
+  SFX 201, Kaskus, Keep on Truckin', Lapis Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1,
+  Lelouch, LiquidStar, Lithium, Liverpool F.C., Lou Reed - The Raven, MacOSesque, Mercury, mGen,
+  Minima, Minime2 - Reloaded, miniPlayer, Miyabi, Multiplastic, Narnia, NaturallZ, New York Minute,
+  No-Vita, Nokia 5800 XpressMusic, Nokia 6600, Nokia 7210, Non Step, Oddworld Stranger's Wrath,
+  Olimpiadas, Overdrive, Pax, PDU Blog, PiOnNeR AMP3, Pixelated, PokerGods, Psonidelic, Puma,
+  Quinto, Qwest, Ray Skin, REM, Remote, Remote Sensing, Resurgence, Sailor Moon Modern, Scooby
+  Doo 2, Scythe, Side Amp, Simple Amp, Simplistic Vision 2, Skimple, Sleeky Xtra, Slim, Slither,
+  Smallville Digital Album, Snow Globe X-Mas, Sony STR VA 555, Studiosus, sucks.com, sx.pink,
+  T3-Amp, Te iubesc, Tessa, Tewnz, Thanog, The Hobbit, Turner Classic Movies, Venus, Vision, Washed,
+  WGlass, Wrigley's Chewing Amp, X Sphere, Xbox Amp.
 
 #### Windows and layouts
 
@@ -42,6 +50,10 @@
 - **A skin's Color Themes window lists its themes** (Qwest).
 - **Only the playlist window shows the playlist's running time** (WGlass).
 - **A skin with an unclosed include loads** (Wrigley's Chewing Amp).
+- **A playlist the skin places outside its own window opens tall enough to show its tracks**
+  (mGen).
+- **A drawer's background the skin cuts out of the window stays cut out**, so Inima's heart no longer
+  sits on a teal slab, and RODE 3 Lite's style panel and Freddy vs Jason's status bar show their art.
 
 #### Drawing
 
@@ -60,6 +72,7 @@
   Photo Extension).
 - **A slider thumb declared with no size draws its whole image**, so Big Bertha Sanctuary's seek bar
   shows.
+- **A clock in a font taller than its box shows its whole digits** (E_I, Psonidelic and more).
 
 #### Clicks and controls
 
@@ -74,6 +87,8 @@
   object with an id first, so Kepler_1.1's volume bars follow the volume.
 - **An invisible slider no longer takes clicks meant for what is under it**, so G-tutorials' time
   display switches to remaining time and drags the window.
+- **Hovering and clicking stay quick on skins with large artwork**: the app no longer re-reads a
+  whole image to test each press (Austin Powers in Goldmember stalled).
 
 #### Visualizations
 
@@ -85,6 +100,7 @@
 - **Wurlitzer's visualization stays under the jukebox grille**, showing through its holes with the
   ironwork over it: it opens there, moves and docks with the player, survives a restore and a shade,
   and the shade button closes it. Its cover window's title ticker sits beside the transport buttons.
+- **A spectrum inside a shaped panel stays inside its shape** (Axess, New York Minute).
 
 ### Sonique skins
 
