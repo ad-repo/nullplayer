@@ -115,7 +115,7 @@ The engine takes the full-rate stereo feed itself:
 
 ## Rendering
 
-- **Frame size:** the viewport divided by the smallest whole number that brings it to 800 px wide or less, rounded down to libavs's 4×2 grain. AVS presets were written for a few hundred pixels.
+- **Frame size:** the viewport, first raised to `SoftwareCanvas.minWidth` (400 px) wide at its aspect when narrower, then divided by the smallest whole number that brings it to 800 px wide or less, rounded down to libavs's 4×2 grain. AVS presets were written for a few hundred pixels, so a skin's small effects slot (Sonique's top circle is 182×176 px) gets the 400 px frame shrunk instead of strokes and glows twice as thick.
 - **Upload:** `AVS_PIXEL_RGB0_8` (0x00RRGGBB, little-endian) goes up as `GL_BGRA` into `GL_RGB8` storage. The zero alpha is dropped there; otherwise it would make the surface transparent.
 - **Blit:** `glBlitFramebuffer` from a read framebuffer into whatever draw framebuffer the host has bound, flipped, because AVS row 0 is the top.
   - That is the window's own framebuffer, or the `.wal` and `.wmz` offscreen one.

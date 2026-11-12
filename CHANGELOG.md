@@ -134,6 +134,9 @@
   default); right-click to pick one, and → / ← / R step through them. **Blaze**, in the same menu,
   draws brighter, streakier flames. It also plays in a Windows Media Player skin's effects area
   and in Sonique's visual mode and mid-mode circle.
+- **Geiss and AVS show their whole picture in a skin's small effects area**, as in the
+  Visualizations window, instead of a coarse close-up: in Sonique's top circle Geiss's waveform
+  ran off both sides and AVS's lines and glows came out twice as thick. Corona does the same.
 
 ## 0.35.0
 

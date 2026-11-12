@@ -86,6 +86,20 @@ extension VisualizationEngine {
     }
 }
 
+/// The canvas a software engine (Geiss, AVS, Corona) renders for a viewport. Their effects are
+/// sized in pixels, so a small canvas shows a coarse close-up of the scene: in a skin's effects
+/// slot (Sonique's top circle is 182x176 px) Geiss's waveform ran off both edges. Below
+/// `minWidth` the canvas is scaled up, at the viewport's aspect, and the engine shrinks it to fit.
+enum SoftwareCanvas {
+    static let minWidth = 400
+
+    static func atLeastMinimum(width: Int, height: Int) -> (width: Int, height: Int) {
+        let width = max(1, width), height = max(1, height)
+        guard width < minWidth else { return (width, height) }
+        return (minWidth, max(1, height * minWidth / width))
+    }
+}
+
 /// Available visualization engine types
 ///
 /// Used to identify and switch between different visualization engines.

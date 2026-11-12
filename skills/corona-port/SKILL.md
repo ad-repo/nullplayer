@@ -74,7 +74,10 @@ least 1,000, and 750 ms after the last. `elapsedMs` (the time since the previous
 ## Rendering and threading
 
 - One update per 1/60 s at most (`updateInterval`): upstream moves the particles one fixed step per
-  call. The canvas is half the drawable, at most 1,024 wide and at least 32×32.
+  call. The canvas is the drawable's own size raised to `SoftwareCanvas.minWidth` (400 px) when
+  narrower, at most 1,024 wide — not half of it as Goom renders. Corona draws in pixels (1 px
+  particles, at least 2,000; a 1 px blur), so in Sonique's 182×176 px circle a canvas that size, or
+  half of it scaled up, showed a coarse close-up; the 400 px canvas is shrunk into the slot instead.
 - The shim maps the 8-bit surface through the current palette into RGBA; Swift uploads it and blits
   it with `GL_LINEAR`. Corona's row 0 is the bottom, as GL's is, so the blit is not flipped (Goom's is).
 - A new canvas size makes a new core (as `lv_corona_dimension` does), then reapplies palette and Blaze.

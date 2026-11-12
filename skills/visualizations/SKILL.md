@@ -44,6 +44,16 @@ block.
 - Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss, Goom and Corona Auto-Random
   (they used to switch on their own); 30 s. Tests: `VisualizationCycleSettingsTests`.
 
+## Software engines' canvas: one rule
+
+Geiss, AVS and Corona render on the CPU in pixel units, so a small canvas shows a coarse close-up
+of the scene. `SoftwareCanvas.atLeastMinimum` (`VisualizationEngine.swift`) raises a viewport
+narrower than 400 px to that width at its aspect, and each engine shrinks its frame into the
+viewport: a skin's effects slot (Sonique's top circle is 182×176 px) shows the whole scene small.
+Measured 2026-11-12 offscreen at 182 and 400 px with the same audio and preset: Geiss's waveform
+ran off both edges at 182, and AVS's strokes were twice as thick. ProjectM and Tripex are
+resolution-independent and Goom is not offered to skins; none of them uses it.
+
 ## Standard keys: one seam
 
 Every window that shows a visualization answers the same keys, defined once in

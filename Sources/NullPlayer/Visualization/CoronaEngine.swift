@@ -10,7 +10,9 @@ import CCoronaCore
 /// (`VisualizationPresetCycler`) and the user are the only things that change it. Blaze is its
 /// own menu item.
 final class CoronaEngine: NSObject, VisualizationEngine {
-    /// Half the drawable, at most this wide, as Goom renders.
+    /// The drawable's own size (`SoftwareCanvas`, so never less than its minimum), at most this
+    /// wide. Not half of it as Goom does: Corona draws in fixed pixel sizes (1 px particles, at
+    /// least 2,000 of them, a 1 px blur), so a half-size canvas scaled up reads as a close-up.
     private static let maxRenderWidth = 1024
     /// Corona advances its particles one step per update, with no time scaling.
     private static let updateInterval = 1.0 / 60.0
@@ -80,8 +82,9 @@ final class CoronaEngine: NSObject, VisualizationEngine {
 
     func renderFrame() {
         guard isAvailable else { return }
-        let width = min(max(viewport.width / 2, 32), Self.maxRenderWidth)
-        let height = max(width * viewport.height / viewport.width, 32)
+        let canvas = SoftwareCanvas.atLeastMinimum(width: viewport.width, height: viewport.height)
+        let width = min(canvas.width, Self.maxRenderWidth)
+        let height = max(width * canvas.height / canvas.width, 32)
 
         let now = CACurrentMediaTime()
         if coreSize != (width, height) || now - lastUpdate >= Self.updateInterval {

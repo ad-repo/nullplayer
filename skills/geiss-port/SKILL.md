@@ -61,8 +61,14 @@ Mirrors upstream `main.cpp:3756 render1()`:
 ### Swift side (`GeissEngine`)
 
 - 256-entry RGBA palette texture (`256x1 GL_RGBA8`, LINEAR filter)
+- The core's canvas is the viewport raised to `SoftwareCanvas.minWidth` (400 px) wide at its aspect
+  when narrower: Geiss draws in pixels, so in a skin's small effects slot (Sonique's top circle,
+  182×176 px) its waveform used to run off both edges. The canvas is `width`/`height`; the viewport
+  is drawn at `viewport`.
 - `width × height` index texture (`GL_R8`, NEAREST filter, written via `glTexSubImage2D` each frame)
-- Fullscreen-quad GLSL: `frag = texture(palette, vec2(texture(indices, uv).r, 0.5))`
+- Fullscreen-quad GLSL: each screen pixel averages a 3×3 grid of samples across its footprint
+  (`dFdx`/`dFdy` of the UV), each looked up through the palette, since indices cannot be filtered.
+  At 1:1 every sample lands in the same texel, so a canvas the viewport's size draws as before.
 - Vertex layout flips V so framebuffer y=0 is at top of screen
 
 ## Audio path

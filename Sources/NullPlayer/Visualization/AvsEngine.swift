@@ -13,7 +13,8 @@ import OpenGL.GL3
 final class AvsEngine: NSObject, VisualizationEngine {
     private static let audioConsumerID = "avsEngine"
     /// AVS presets were written for a few hundred pixels across, and the renderer is software: a
-    /// viewport wider than this renders at an integer fraction of it and is scaled up.
+    /// viewport wider than this renders at an integer fraction of it and is scaled up; one
+    /// narrower than `SoftwareCanvas.minWidth` renders at that width and is shrunk.
     private static let maxRenderWidth = 800
 
     let displayName = "AVS"
@@ -113,9 +114,10 @@ final class AvsEngine: NSObject, VisualizationEngine {
 
     func renderFrame() {
         guard isAvailable, let core else { return }
-        let divisor = (viewport.width + Self.maxRenderWidth - 1) / Self.maxRenderWidth
-        let width = (viewport.width / divisor) & ~3
-        let height = (viewport.height / divisor) & ~1
+        let canvas = SoftwareCanvas.atLeastMinimum(width: viewport.width, height: viewport.height)
+        let divisor = (canvas.width + Self.maxRenderWidth - 1) / Self.maxRenderWidth
+        let width = (canvas.width / divisor) & ~3
+        let height = (canvas.height / divisor) & ~1
         guard width > 0, height > 0 else { return }
         if pixels.count != width * height { pixels = [UInt32](repeating: 0, count: width * height) }
         guard pixels.withUnsafeMutableBufferPointer({
