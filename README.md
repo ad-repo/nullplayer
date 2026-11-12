@@ -86,7 +86,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 
 ### Unique Nullplayer Windows
 
-- Visualizations -  ProjectM (100 presets included), Geiss, Tripex, AVS (with preset editor) and Goom ports, Art window with album art effects, and spectrum analyzer
+- Visualizations -  ProjectM (100 presets included), Geiss, Tripex, AVS (with preset editor), Goom and Corona ports, Art window with album art effects, and spectrum analyzer
 - Audio Analysis window — oscilloscope, stereo peak/RMS meters, scrolling Metal spectrogram
 - Cava spectrum analyzer — bar spectrum with mono/stereo modes, gradient presets, and configurable smoothing
 - PeppyMeter — skinnable analog VU meter with 25 templates and auto-switch mode
@@ -107,6 +107,7 @@ NullPlayer's visualizations span its windows, from the in-skin main-window displ
 - **Tripex** — Winamp-era 3D visualization port
 - **AVS (Advanced Visualization Studio)** — Winamp's AVS engine (libavs) with 35 bundled presets, your own `.avs` preset folder, auto-cycle, and a preset editor (**Edit Preset…**) that changes the running preset live: add, remove, reorder and toggle effects, edit every parameter and EEL code, save as `.avs` or export JSON
 - **Goom** — the classic XMMS-era Goom visualizer (Goom2k26 core): fifteen zoom effects it picks from the music, or you pick from the right-click menu (→ / ← / R step) and keep with **Hold Effect**. Five are new to NullPlayer: Spiral, Vortex, Flower, Heart (pink heart scopes in heart-shaped ripples) and Pentagram (a star in a circle, in star-shaped ripples)
+- **Corona** — the Sonique-era visualizer: particle flames that swirl and leap on the beat over a rippling reflection, in 31 palettes (the presets) plus a brighter **Blaze** mode
 - **Cast Visualization** — right-click the Visualizations window → **Cast Visualization** to play ProjectM, Geiss, Tripex, AVS or Goom on a Chromecast or DLNA TV, with the music; the window keeps its menu for switching engines and presets while the TV plays
 - **Album Art Visualizer** — 30 audio-reactive effects (Core Image) transforming album art in the Art window
 - **Winamp Modern (`.wal`) skins** — the skin draws its own in-skin visualizations, including workscope/oscilloscope analyzers and custom engine visuals (e.g. the MMD3 and ClassicPro beat visualizers) 
@@ -752,6 +753,7 @@ Bundled third-party components:
 - **Tripex** (MIT) — Winamp-era visualization port by Ben Marsh
 - **Advanced Visualization Studio / libavs** (BSD-3) — AVS engine, from [grandchild/vis_avs](https://github.com/grandchild/vis_avs), with its vendored **EEL2** (Zlib), **nlohmann/json** (MIT), **stb_image** (MIT), and **pevents** (MIT); **sse2neon** (MIT) for arm64
 - **Goom** (LGPL-2.1) — the Goom2k26 visualizer core, from [j3k0/goom](https://github.com/j3k0/goom); Goom by Jean-Christophe Hoelt and Guillaume Borios
+- **Corona** (GPL-2.0-or-later) — libvisual's port of the Sonique visualizer, from [Libvisual/libvisual](https://github.com/Libvisual/libvisual); Corona by Richard Ashburn, libvisual port by Jean-Christophe Hoelt and Dennis Smit
 - **FaceKit** (GPL-3.0-or-later) — Panic's Audion face viewer, adapted
 - **Nullsoft FFT** (BSD-3) — spectrum analysis
 

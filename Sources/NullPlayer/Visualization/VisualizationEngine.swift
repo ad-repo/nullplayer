@@ -105,6 +105,12 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Goom (j3k0/goom's Goom2k26 C core; the `goom-port` skill)
     case goom = "Goom"
 
+    /// Corona (libvisual's port of the Sonique visualizer; the `corona-port` skill)
+    case corona = "Corona"
+
+    /// Engines fed the host spectrum (`VisualizationEngine.setSpectrum`) from the audio thread.
+    var consumesHostSpectrum: Bool { self == .geiss || self == .corona }
+
     /// Human-readable display name
     var displayName: String {
         switch self {

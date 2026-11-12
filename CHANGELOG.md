@@ -126,6 +126,14 @@
   instead of a crosshair (#741). The library browser's corners and edges now show their resize
   cursor at all, and a Windows Media Player skin's own cursors (such as Compact's size grip) appear.
 
+### Visualizations
+
+- **Corona is a visualization engine** (Visualization Engine ▸ Corona), the Sonique-era visualizer:
+  flames of particles that swirl and leap on the beat over a rippling reflection. Its presets are 31
+  palettes, fire, ice, night sky and more, which it fades between (Auto-Random every 30 seconds by
+  default); right-click to pick one, and → / ← / R step through them. **Blaze**, in the same menu,
+  draws brighter, streakier flames.
+
 ## 0.35.0
 
 ### App

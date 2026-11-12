@@ -22,12 +22,13 @@ enum VisualizationCycleSettings {
     static let intervals: [TimeInterval] = [5, 10, 20, 30, 60, 120]
     static let defaultInterval: TimeInterval = 30
 
-    /// Geiss, Goom and Tripex used to change effects by themselves, so they start out cycling.
+    /// Geiss, Goom, Corona (its palettes) and Tripex used to change effects by themselves, so they
+    /// start out cycling.
     static func defaultMode(for engine: VisualizationType) -> VisualizationCycleMode {
         switch engine {
         case .projectM, .avs: return .off
         case .tripex: return .cycle
-        case .geiss, .goom: return .random
+        case .geiss, .goom, .corona: return .random
         }
     }
 
@@ -64,6 +65,7 @@ enum VisualizationCycleSettings {
         case .tripex: return "tripex"
         case .avs: return "avs"
         case .goom: return "goom"
+        case .corona: return "corona"
         }
     }
 }

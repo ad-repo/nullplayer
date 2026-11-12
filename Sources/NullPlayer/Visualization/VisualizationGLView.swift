@@ -443,6 +443,9 @@ class VisualizationGLView: NSOpenGLView {
 
         case .goom:
             return GoomEngine(width: width, height: height)
+
+        case .corona:
+            return CoronaEngine(width: width, height: height)
         }
     }
 
@@ -747,11 +750,11 @@ class VisualizationGLView: NSOpenGLView {
             }
         }
 
-        updateGeissSpectrumFromPCM(data)
+        updateHostSpectrumFromPCM(data)
     }
 
-    private func updateGeissSpectrumFromPCM(_ pcm: [Float]) {
-        guard currentEngineType == .geiss else { return }
+    private func updateHostSpectrumFromPCM(_ pcm: [Float]) {
+        guard currentEngineType.consumesHostSpectrum else { return }
         guard geissFFTSetup != nil else { return }
 
         geissFFTLock.lock()
@@ -767,13 +770,12 @@ class VisualizationGLView: NSOpenGLView {
 
         // The audio callback should not wait behind a render or engine swap.
         // If the render thread owns the engine this tick, the next PCM update
-        // will refresh the spectrum; Geiss keeps the last host spectrum.
+        // will refresh the spectrum; the engine keeps the last host spectrum.
         guard engineLock.try() else { return }
         defer { engineLock.unlock() }
 
-        guard let geiss = engine as? GeissEngine,
-              geiss.isAvailable else { return }
-        geiss.setSpectrum(geissSpectrumScratch)
+        guard let engine, engine.isAvailable else { return }
+        engine.setSpectrum(geissSpectrumScratch)
     }
 
     private func computeGeissSpectrumLocked(from pcm: [Float]) {

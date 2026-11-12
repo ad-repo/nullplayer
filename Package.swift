@@ -184,6 +184,15 @@ let package = Package(
             cSettings: [.headerSearchPath("upstream"),
                         .unsafeFlags(["-O2", "-Wno-gnu-designator", "-Wno-absolute-value"])]
         ),
+        // Corona: libvisual's GPL-2.0-or-later port of the Sonique visualizer; skills/corona-port.
+        .target(
+            name: "CCoronaCore",
+            dependencies: [],
+            path: "Sources/CCoronaCore",
+            publicHeadersPath: "include",
+            // -O2 in debug too: a software renderer, like CGoomCore.
+            cxxSettings: [.headerSearchPath("upstream"), .unsafeFlags(["-O2"])]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -232,6 +241,7 @@ let package = Package(
                 "CTripexCore",
                 "CAvsCore",
                 "CGoomCore",
+                "CCoronaCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "AudioStreaming",

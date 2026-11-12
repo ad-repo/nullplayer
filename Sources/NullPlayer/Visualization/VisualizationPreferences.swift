@@ -110,6 +110,8 @@ enum VisualizationPreferences {
             "geiss.autoSwitchSeconds",
             "geiss.visMode",
             GoomEngine.heldEffectKey,
+            CoronaEngine.paletteKey,
+            CoronaEngine.blazeKey,
             "viz.legacyMigrationV1",
             "projectMPCMGain",
             "projectMLowPowerMode",
