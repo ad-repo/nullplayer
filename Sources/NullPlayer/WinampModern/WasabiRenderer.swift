@@ -1051,7 +1051,11 @@ final class WasabiSceneRenderer {
         // A fit that lands after the window was built (a frame's content is instantiated when its
         // layout is first shown) is a canvas the window has not heard of (B430).
         if loadedSkin.runtime.hasStartedScripts, let autoFitDidChange {
-            DispatchQueue.main.async { autoFitDidChange(size) }
+            DispatchQueue.main.async { [weak self] in
+                // A canvas that moved on since is announced by its own change.
+                guard self?.storedCanvasSize == size else { return }
+                autoFitDidChange(size)
+            }
         }
     }
 

@@ -147,6 +147,22 @@ final class WinampModernDebugClickSweep {
         Set(view.renderer.sceneNodes().map { ObjectIdentifier($0.object) })
     }
 
+    /// Runs one press with the unblock timer armed: a popped menu or a modal alert holds the main
+    /// thread inside the press, and GCD does not run during menu tracking; a timer in the common
+    /// modes (event tracking, modal panel) does.
+    private func pressUnblocked(_ press: () -> Void) {
+        let unblock = Timer(timeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.openMenu?.cancelTracking()
+            if NSApp.modalWindow != nil {
+                self?.modalOpened = true
+                NSApp.abortModal()
+            }
+        }
+        RunLoop.main.add(unblock, forMode: .common)
+        press()
+        unblock.invalidate()
+    }
+
     private func step(_ index: Int) {
         guard let view, index < targets.count else { return pass == .main ? openLibrary() : closeLibrary() }
         let target = targets[index]
@@ -163,19 +179,11 @@ final class WinampModernDebugClickSweep {
         let later = targets[(index + 1)...].filter { visibleBefore.contains(ObjectIdentifier($0.object)) }
         menuOpened = false
         modalOpened = false
-        // A popped menu or a modal alert holds the main thread inside `debugClick`, and GCD does not
-        // run during menu tracking; a timer in the common modes (event tracking, modal panel) does.
-        let unblock = Timer(timeInterval: 1.0, repeats: false) { [weak self] _ in
-            self?.openMenu?.cancelTracking()
-            if NSApp.modalWindow != nil {
-                self?.modalOpened = true
-                NSApp.abortModal()
-            }
-        }
-        RunLoop.main.add(unblock, forMode: .common)
         let dragEnd = target.object.tag.is(.slider)
             ? view.renderer.frame(of: target.object).map(Self.quarterPoint) : nil
-        if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
+        pressUnblocked {
+            if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self, let view = self.view, let main = self.main else { return self?.finish() ?? () }
             let after = self.snapshot(view)
@@ -198,9 +206,9 @@ final class WinampModernDebugClickSweep {
             // ended on a window it had just grown to the whole screen.
             // Not a slider: a press at its point would seek or move the volume, not undo the drag.
             let visibleAfter = Self.onScreen(in: view)
-            if dragEnd == nil, after.windowSize != before.windowSize
+            if dragEnd == nil, (view.window?.frame.size ?? .zero) != before.windowSize
                 || later.contains(where: { !visibleAfter.contains(ObjectIdentifier($0.object)) }) {
-                view.debugClick(atSkinPoint: point)
+                pressUnblocked { view.debugClick(atSkinPoint: point) }
                 notes.append("pressed-back")
             }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in

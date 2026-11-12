@@ -13,21 +13,31 @@ extension WasabiSceneRenderer {
     /// slab showed behind the heart (B429).
     struct WasabiRegionMark: Equatable {
         let node: WasabiSceneNode
+        /// The attributes `regionShape` reads, as they were when the mark was collected: a script
+        /// can set `tile` or `center_image`, which changes the shape without moving the node.
+        private let shapeAttributes: [String?]
+
+        init(node: WasabiSceneNode) {
+            self.node = node
+            shapeAttributes = ["tile", "tilex", "tiley", "center_image"].map { node.object.attributes[$0] }
+        }
 
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.node.object === rhs.node.object && lhs.node.frame == rhs.node.frame
                 && lhs.node.clip == rhs.node.clip && lhs.node.bitmapID == rhs.node.bitmapID
+                && lhs.shapeAttributes == rhs.shapeAttributes
         }
     }
 
     /// Wherever the artwork has **any** alpha: a faint shadow or glow is painted, so it is window
     /// (S7Reflex's player body, RODE_3_Lite's glass), where a half-coverage cut would take it away.
-    /// Nil for a tiled or centred image, which has no such shape, and for a leaf with no artwork.
+    /// Nil for a tiled or centred image, which has no such shape, for an animated layer (its sprite
+    /// sheet is not the frame it draws), and for a leaf with no artwork.
     /// Read when the region is built, not when the marks are collected: that runs on every frame as
     /// the cache key, and rasterises nothing the region does not use.
     private func regionShape(of node: WasabiSceneNode) -> CGImage? {
         let attributes = node.object.attributes
-        guard let id = node.bitmapID, let bitmap = resources.bitmap(identifier: id),
+        guard !node.object.tag.is(.animatedLayer), let id = node.bitmapID, let bitmap = resources.bitmap(identifier: id),
               attributes["tile"] != "1", attributes["tilex"] != "1", attributes["tiley"] != "1",
               centeredImageRect(bitmap, object: node.object, in: node.frame) == nil
         else { return nil }

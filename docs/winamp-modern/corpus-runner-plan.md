@@ -361,8 +361,9 @@ rows). The per-skin record is `intakes/intake-11.tsv`; the row ids are in `backl
 | EI | The clock was cut off at the top and bottom of its 18 px box (B441) | A `display="time"` clock taller than its box is not scissored to it vertically (`band`); tickers and labels keep the box |
 
 The fixes (B429, B435, B441 among them) were swept over the corpus on 2026-11-11/12: render, interaction and motion against an
-`origin/main` 4d139aba baseline, every diff classified clean; the render after the B429 alpha fix had 29 image diffs, all
-intended or justified, and two interaction flips were noise in fresh re-runs.
+`origin/main` 4d139aba baseline, every diff classified clean except one: Draculas_Helmet's library lost a 1x399 px column at x=698, cause not
+confirmed; the render after the B429 alpha fix had 29 image diffs, all intended or justified, and two interaction flips
+were noise in fresh re-runs.
 
 Open, promoted with the skin: B431 (VISION_WINAMP_SKIN_'s Playlist Editor rows too big), B434 (heart_'s `button#pl` takes no
 press), B436 (Austin Powers' drawer opens on black, its video is not played), B438 (iTunes_Mini_PowerMetal2's buttons
