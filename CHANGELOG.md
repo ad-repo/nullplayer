@@ -138,6 +138,11 @@
   Visualizations window, instead of a coarse close-up: in Sonique's top circle Geiss's waveform
   ran off both sides and AVS's lines and glows came out twice as thick. Corona does the same.
 
+### Classic skins
+
+- **`?` and `*` in the scrolling title use the skin's own glyphs**, instead of its `Å` and `Ö`
+  (Militarized showed "FREE?" as "FREE8") (#755).
+
 ## 0.35.0
 
 ### App
