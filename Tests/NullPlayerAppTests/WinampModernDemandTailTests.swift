@@ -261,14 +261,23 @@ final class WinampModernDemandTailTests: XCTestCase {
         var events: [String] = []
         runtime.dispatchObserver = { event, _, _ in events.append(event) }
 
+        // The play head is a function of the clock. At a frame per 1000 s it never moves by itself;
+        // the test moves it a frame at a time by moving the start back, so a late timer tick on a
+        // busy machine cannot skip a frame.
+        let period = 1_000.0
         _ = try call(runtime, program, knob, "setStartFrame", [.integer(0)])
         _ = try call(runtime, program, knob, "setEndFrame", [.integer(2)])
-        _ = try call(runtime, program, knob, "setSpeed", [.integer(10)])
+        _ = try call(runtime, program, knob, "setSpeed", [.integer(Int32(period * 1_000))])
         _ = try call(runtime, program, knob, "play")
-        let deadline = Date().addingTimeInterval(2)
-        while !events.contains("onstop"), Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        func step(to frame: Int, until expected: [String]) {
+            _ = knob.setAttribute("animstart", value: String(WasabiAnimation.now() - (Double(frame) + 0.5) * period))
+            let deadline = Date().addingTimeInterval(5)
+            while events != expected, Date() < deadline {
+                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            }
         }
+        step(to: 1, until: ["onframe"])
+        step(to: 2, until: ["onframe", "onframe", "onstop"])
         XCTAssertEqual(events, ["onframe", "onframe", "onstop"])
     }
 
