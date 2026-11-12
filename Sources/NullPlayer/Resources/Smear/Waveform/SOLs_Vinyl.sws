@@ -1,0 +1,59 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//				SOLs Vinyl
+// Create by Brad Anderson for G-Force
+//e-mail: javalizard@mac.com
+//I was really bored one early early Saturday morning after a night of fun and wrote a
+//few waveshapes
+
+//Sound of Lights Record
+//looks like Vinyl, almost
+
+(declare init
+ (set $paths 4)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $noLines0 1)
+ (set $noLines1 1)
+ (set $noLines2 1)
+ (set $noLines3 1)
+ (set $a0 (trunc (sqrt 512)))
+ // Let A1 be our "a", the angle difference from the camera view plane to the spinning plane.
+ (set $a1 (sin (* (- 0 3.14) .35)))
+ (set $a2 (cos (* (- 0 3.14) .35)))
+ (set $a3 (+ 2 (rnd 2))) // This mixes up the perspective distortion
+ (set $a4 (* $a3 (+ .4 (rnd .5)))) // This mixes up the total size
+ (set $a5 (+ .3 (rnd .3)))  // Choose a random grid rotation speed
+)
+
+(declare newline)
+
+(declare waveform
+ // Rotation angle for the grid
+ (set $b0 (sin (* $time $a5)))
+ (set $b1 (cos (* $time $a5)))
+
+ // Let (C0, C1, 0) be (x', y', z')  (as s goes from 0 to 1, a grid is stepped out)
+ (set $c0 (* (* 3 (+ (* $mid  .35) .4)) (cos (* $step 6.28318530)))) // x', x
+ (set $c1 (* (* 3 (+ (* $mid  .35) .4)) (sin (* $step 6.28318530)))) // y'
+ // z' is 0
+ (set $c2 (- (* $c0 $b1) (* $c1 $b0)))
+ (set $c3 (+ (* $c0 $b0) (* $c1 $b1)))
+ (set $c4 (* $c3 $a2)) // y
+ (set $c5 (- $a3 (* $c3 $a1))) // z
+ (set $c6 (- $a3 (* $c3 (* .95 $a1))))
+ (set $c7 (- $a3 (* $c3 (* .9 $a1))))
+ (set $c8 (- $a3 (* $c3 (* .85 $a1))))
+ (set $c9 (- $a3 (* $c3 (* .8 $a1))))
+
+// Now transform them to the camera's cord system
+ (set $x0 (* $a4 (/ $c2 $c5)))
+ (set $y0 (- 0 (* $a4 (/ $c4 $c5))))
+ (set $x1 (* $a4 (* $c2 (/ .95 $c6))))
+ (set $y1 (- 0 (* $a4 (* $c4 (/ .95 $c6)))))
+ (set $x2 (* $a4 (* $c2 (/ .9 $c7))))
+ (set $y2 (- 0 (* $a4 (* $c4 (/ .9 $c7)))))
+ (set $x3 (* $a4 (* $c2 (/ .85 $c8))))
+ (set $y3 (- 0 (* $a4 (* $c4 (/ .85 $c8)))))
+)

@@ -1,0 +1,11 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+// Inspired by:	Geiss
+
+(declare init
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius (* $Radius (/ (- 10 $y) 10)))
+)

@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Simple Sine-Sphere
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (+ $radius (* .04 (sin (* 6.2831853 $radius)))))
+ (set $srcTheta (+ $theta .015))
+)

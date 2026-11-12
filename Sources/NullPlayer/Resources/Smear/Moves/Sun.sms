@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Author:	xplo@xplo.org
+// Inspired by:	G-Force
+//		Sunburst - Many
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 0)
+ (set $a0 (* (trunc (+ 8 (rnd 5))) 3.141592653))
+)
+
+(declare move
+ (set $srcRadius (* $radius (+ .92 (* .06 (* .5 (+ 1 (sin (* $a0 $theta))))))))
+ (set $srcTheta $theta)
+)

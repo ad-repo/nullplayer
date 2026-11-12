@@ -1,0 +1,18 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				(DJK)Lemming's Water
+// Original Info:
+// By DJKnowone
+
+(declare init
+ (set $useAspect 1)
+ (set $ta0 14)
+ (set $ta1 .08)
+ (set $ta2 (+ 3 (rnd 3)))
+ (set $ta3 .01)
+)
+
+(declare move
+ (set $srcX (+ $x (* $ta1 (sin (* $ta2 $y)))))
+ (set $srcY (+ $y (* $ta3 (sin (* $ta0 $x)))))
+)

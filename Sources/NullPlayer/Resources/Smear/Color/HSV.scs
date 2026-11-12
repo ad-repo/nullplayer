@@ -1,0 +1,18 @@
+// Smear Color Script
+// Author:	mykel@earthling.net
+// Inspired by:	starwave
+//
+// Just a simple colormap
+
+(declare init
+ (set $useHSV 1)
+ (set $useTime 1)
+ (set $off (rnd))
+)
+
+(declare color
+ (set $h (+ $off (* $time 0.05)))
+ (set $v (* $value 2.0))
+ (set $s (* 2 (- 1 $value)))
+)
+

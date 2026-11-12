@@ -86,7 +86,7 @@ extension VisualizationEngine {
     }
 }
 
-/// The canvas a software engine (Geiss, AVS, Corona) renders for a viewport. Their effects are
+/// The canvas a software engine (Geiss, AVS, Corona, Smear) renders for a viewport. Their effects are
 /// sized in pixels, so a small canvas shows a coarse close-up of the scene: in a skin's effects
 /// slot (Sonique's top circle is 182x176 px) Geiss's waveform ran off both edges. Below
 /// `minWidth` the canvas is scaled up, at the viewport's aspect, and the engine shrinks it to fit.
@@ -125,8 +125,11 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Corona (libvisual's port of the Sonique visualizer; the `corona-port` skill)
     case corona = "Corona"
 
+    /// Smear (mykel and xplo's Sonique visualizer; the `smear-port` skill)
+    case smear = "Smear"
+
     /// Engines fed the host spectrum (`VisualizationEngine.setSpectrum`) from the audio thread.
-    var consumesHostSpectrum: Bool { self == .geiss || self == .corona }
+    var consumesHostSpectrum: Bool { self == .geiss || self == .corona || self == .smear }
 
     /// Human-readable display name
     var displayName: String {

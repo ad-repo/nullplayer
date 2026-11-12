@@ -1,0 +1,28 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//			SpinIt
+//			By Jay jasonmcbride@mac.com, modified by Andy O'Meara
+
+(declare init
+ (set $paths 3)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+ (set $noLines1 0)
+ (set $rot (+ .25 (rnd .4)))
+)
+
+(declare newline)
+
+(declare waveform
+ (set $tb0 (cos (* $rot $time)))
+ (set $tb1 (sin (* $rot $time)))
+ (set $tc0 (- (* 2 $step) 1))
+ (set $tc1 (* (* $mid .6) $tc0))
+ (set $x0 (- (* (- 0 $tb0) $tc0) (* $tb1 $tc1)))
+ (set $y0 (- (* $tb0 $tc1) (* $tb1 $tc0)))
+ (set $x1 (+ (* (- 0 $tb0) $tc0) (* $tb1 $tc1)))
+ (set $y1 (+ (* $tb0 $tc1) (* $tb1 $tc0)))
+)

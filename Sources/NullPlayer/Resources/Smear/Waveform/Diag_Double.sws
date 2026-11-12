@@ -1,0 +1,32 @@
+// Smear Waveform Script
+// Author: xplo@xplo.org
+// Description: Two waveforms diagonal over the screen
+
+(declare init
+ (set $paths 2)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $useLoop0 0)
+ (set $noLines0 1)
+ (set $useLoop1 0)
+ (set $noLines1 1)
+ (set $tr (trunc (* 10 (rnd .2))))
+ (set $ta0 (* $Pi .25))
+ (if (<= $tr 0) (block (set $ta0 (* $Pi -.25))))
+ (if (>= $tr 1) (block (set $ta0 (* $Pi .25))))
+ (set $ta1 (cos $ta0))
+ (set $ta2 (sin $ta0))
+)
+
+(declare newline)
+
+(declare waveform
+ (set $tb0 (+ (* $left .3) .25))
+ (set $tc0 (+ (* $right .3) .25))
+ (set $tc1 (* 2.5 (- $step .5)))
+ (set $x0 (+ (* $ta1 $tc1) (* $ta2 $tc0)))
+ (set $y0 (+ (* (- 0 $ta1) $tc0) (* $ta2 $tc1)))
+ (set $x1 (- (* $ta1 $tc1) (* $ta2 $tb0)))
+ (set $y1 (+ (* $ta1 $tb0) (* $ta2 $tc1)))
+)

@@ -1,6 +1,6 @@
 ---
 name: visualizations
-description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, Goom, Corona, vis_classic, Metal mode internals).
+description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, Goom, Corona, Smear, vis_classic, Metal mode internals).
 ---
 
 # NullPlayer Visualization Systems — Index
@@ -21,10 +21,12 @@ adds its cases there.
 `VisualizationContextMenu.build` gives every engine in every host the same menu: `Preset: name
 (i/n)`, Next / Previous / Random (R) and the Presets list (built from the seam above), then Manual
 Only / Auto-Cycle (C) / Auto-Random / Cycle Interval, then **that engine's own items**, then
-Visualization Engine, Audio Sensitivity, Quality, Fullscreen, Close. An engine's own items are only
+Visualization Engine, Audio Sensitivity, Quality, Fullscreen, Close. A host with its own engine
+picker leaves Visualization Engine out (`Options.showsEnginePicker`): the `.wmz` / Sonique slot,
+whose Effect menu lists the engines among its own effects, once showed both. An engine's own items are only
 what no other engine has: ProjectM's default / rating / favorites (its preset titles carry stars),
 Geiss's config (`GeissMenuBuilder`), Tripex's settings (`TripexMenuBuilder`), AVS's editor and
-folder (`AvsEngine.addMenuItems`), Corona's Blaze (`CoronaEngine.addMenuItems`), nothing for Goom. A new engine needs no menu code for the shared
+folder (`AvsEngine.addMenuItems`), Corona's Blaze (`CoronaEngine.addMenuItems`), nothing for Goom or Smear. A new engine needs no menu code for the shared
 block.
 
 - **The shared block targets the `VisualizationGLView`** (`nextPresetMenuAction` etc., in
@@ -39,14 +41,14 @@ block.
   `.wmz` / Sonique surface never starts a display link, so it calls `presetCycler.start()` itself.
 - **Every engine's own switching is held at creation** (`VisualizationGLView.createEngine`): Tripex
   `setHold(true)`, Geiss `modeLocked = true`, Goom always held on its chosen effect, Corona always
-  held on its chosen palette. Manual Only
+  held on its chosen palette, Smear on its chosen move script. Manual Only
   therefore means the engine stays put; there are no per-engine Hold / Mode Lock / Auto-Switch items.
-- Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss, Goom and Corona Auto-Random
+- Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss, Goom, Corona and Smear Auto-Random
   (they used to switch on their own); 30 s. Tests: `VisualizationCycleSettingsTests`.
 
 ## Software engines' canvas: one rule
 
-Geiss, AVS and Corona render on the CPU in pixel units, so a small canvas shows a coarse close-up
+Geiss, AVS, Corona and Smear render on the CPU in pixel units, so a small canvas shows a coarse close-up
 of the scene. `SoftwareCanvas.atLeastMinimum` (`VisualizationEngine.swift`) raises a viewport
 narrower than 400 px to that width at its aspect, and each engine shrinks its frame into the
 viewport: a skin's effects slot (Sonique's top circle is 182×176 px) shows the whole scene small.
@@ -115,6 +117,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [avs-port](../avs-port/SKILL.md) | AVS (grandchild/vis_avs libavs) — CAvsCore, EEL2 JIT, stereo feed, presets, every host |
 | [goom-port](../goom-port/SKILL.md) | Goom (j3k0/goom Goom2k26 C core) — CGoomCore shim, RGBA blit, 30/s cadence, forced effects, the port's own effects (Heart, Pentagram etc.) |
 | [corona-port](../corona-port/SKILL.md) | Corona (libvisual's port of the Sonique visualizer) — CCoronaCore shim, host spectrum, RGBA blit, palettes as presets, Blaze |
+| [smear-port](../smear-port/SKILL.md) | Smear (mykel and xplo's Sonique visualizer) — CSmearCore Stutter interpreter and renderer, bundled scripts, move scripts as held presets |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
 | [metal-gotchas](../metal-gotchas/SKILL.md) | Metal command-encoder pitfalls, render-to-texture y-flip, spectrum jitter |
 | [visualization-cast](../visualization-cast/SKILL.md) | **Cast Visualization ▸** — the Visualizations window's picture and the app's audio live to a Chromecast or DLNA TV; the GL readback seam, encoder, playlist, quality limits |
@@ -138,6 +141,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **AVS** — Winamp's Advanced Visualization Studio presets (`.avs`), scripted effects included
 - **Goom** — the XMMS-era zoom/tentacle/star-field effect that picks its own look from the music
 - **Corona** — Sonique-era particle flames swirling over a rippling reflection, in 31 palettes
+- **Smear** — Sonique-era G-Force-style feedback: 60 scripted move maps, with scripted colours, waveforms and particles
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
 - **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window

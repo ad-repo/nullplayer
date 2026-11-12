@@ -1,0 +1,33 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//				NPTU Squared
+// Original Info:
+// "NPTU Squared" by Andy
+
+(declare init
+ (set $paths 4)
+ (set $steps 100)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $a0 (+ .2 (rnd .6))) // radius
+ (set $a1 (* .4 $a0)) // audio scale factor
+)
+
+(declare newline)
+
+(declare waveform
+ (set $b0 (cos (* $time .18)))
+ (set $b1 (sin (* $time .18)))
+
+ (set $c0 (+ (* $a1 $mid) $a0))
+ (set $c1 (* 2 (* $a0 (- $step .5))))
+
+ (set $x0 (+ (* $b0 $c1) (* $b1 $c0)))
+ (set $y0 (+ (* (- 0 $b0) $c0) (* $b1 $c1)))
+ (set $x1 (- (* $b0 $c1) (* $b1 $c0)))
+ (set $y1 (+ (* $b0 $c0) (* $b1 $c1)))
+ (set $x2 (+ (* (- 0 $b0) $c0) (* $b1 $c1)))
+ (set $y2 (- (* (- 0 $b0) $c1) (* $b1 $c0)))
+ (set $x3 (+ (* $b0 $c0) (* $b1 $c1)))
+ (set $y3 (+ (* (- 0 $b0) $c1) (* $b1 $c0)))
+)

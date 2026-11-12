@@ -1,0 +1,24 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+// 			Particle Pulse
+
+(declare init
+ (set $paths 1)
+ (set $steps 251)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useTime 1)
+ (set $useLoop0 0)
+ (set $noLines0 1)
+ (set $tv1 (+ (rnd 3) 1))
+)
+
+(declare newline)
+
+(declare waveform
+ (set $tv2 (* $time .0003))
+ (set $tv3 (+ (* (abs $mid) .85) .05))
+ (set $tv4 (- (* $step 43.766877) $tv2))
+ (set $x0 (* $tv3 (cos $tv4)))
+ (set $y0 (* $tv3 (sin $tv4)))
+)

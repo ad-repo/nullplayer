@@ -1,0 +1,15 @@
+// Smear Color Script
+// Translated from:	G-Force
+//				Psycho
+// Original Info:
+// "Psycho" by Cameron
+
+(declare init
+ (set $useHSV 1)
+)
+
+(declare color
+ (set $h (* .766 (pow $value 1.2)))
+ (set $s 2.3)
+ (set $v (pow $value .1))
+)

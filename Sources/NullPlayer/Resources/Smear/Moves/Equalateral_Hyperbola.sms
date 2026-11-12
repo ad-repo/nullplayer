@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Equalateral Hyperbola
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (- $radius (* .18 (* $x $y))))
+ (set $srcTheta (- $theta .005))
+)

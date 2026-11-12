@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Author:	mykel@earthling.net
+//
+// Simple rotation to test polar move map
+
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (- $radius .01))
+ (set $srcTheta $theta)
+)

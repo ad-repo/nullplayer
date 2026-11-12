@@ -1,0 +1,21 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				SOLs Waves
+//Original Info:
+// Create by Brad Anderson for G-Force
+//e-mail: javalizard@mac.com
+//This one was a procrastination from class, :P
+
+//Sound of Lights Waves
+//Looks like a reflection in the waves...  or from underneath the ocean?
+
+(declare init
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcX (* $x .97))
+ (set $srcY (- $y (/ (+ (cos (* (pow (+ $y 1) 2.7) 10)) 1.5) 40)))
+ // once you figure out how to flip them correctly, set first - to + and fix.
+ //srcY="y + ( cos( ((y+1)^2.7) * 10 ) + 1.5) / 40",
+)

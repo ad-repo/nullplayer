@@ -1,0 +1,33 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//				Zoomed Square
+// Original Info:
+//Created by Justin Swidler
+//Code editted from Hortizontal Sweep and changed to add a vertical sweep as well.
+
+(declare init
+ (set $paths 4)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $noLines0 0)
+ (set $useTime 1)
+ (set $a0 (+ (rnd 3) 1))
+)
+
+(declare newline
+ (set $b0 (* .7 (sin (* .5 $time))))
+)
+
+(declare waveform
+ (set $c0 (- (* 2 $step) 1))
+ (set $c1 (+ $b0 (* $mid .25)))
+ (set $x0 $c1)
+ (set $y0 $c0)
+ (set $x1 (- 0 $c1))
+ (set $y1 $c0)
+ (set $x2 $c0)
+ (set $y2 (- 0 $c1))
+ (set $x3 (- 0 $c0))
+ (set $y3 $c1)
+)

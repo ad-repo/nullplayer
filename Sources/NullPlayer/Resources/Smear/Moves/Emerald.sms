@@ -1,0 +1,14 @@
+// Smear Moves Script
+// Author:	xplo@xplo.org
+// Description: umm.... well Looks like inside an emerald palace, right?
+
+(declare init
+ (set $useAspect 1)
+ (set $tv1 (* 2 (+ 2 (rnd 12))))
+ (set $tv2 (+ .01 (rnd .03)))
+)
+
+(declare move
+ (set $srcX (* (+ $x $tv2) (cos (* $tv1 $x))))
+ (set $srcY (* (+ $y $tv2) (cos (* $tv1 $y))))
+)

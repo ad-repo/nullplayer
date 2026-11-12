@@ -1,0 +1,17 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				The MAW
+// Original Info:
+// The MAW   v1.0
+// BlackHole express
+// By Steve Steve Wheeler
+// E-mail: stevewheeler@mac.com
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius (+ $radius .0119))
+ (set $srcTheta (- $theta (* (* .055 (- $radius .324)) (+ $radius .279))))
+)

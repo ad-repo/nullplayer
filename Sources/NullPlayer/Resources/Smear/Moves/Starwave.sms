@@ -1,0 +1,17 @@
+// Smear Moves Script
+// Author:	xplo@xplo.org
+//
+// Similar move map to starwave
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+ (set $a0 (+ 2 (rnd 16)))
+ (set $a1 (+ .002 (rnd .02)))
+ (set $a2 (+ .002 (rnd .006)))
+)
+
+(declare move
+ (set $srcRadius (pos (- $radius $a2)))
+ (set $srcTheta (+ $theta (* $a1 (sin (* $a0 $radius)))))
+)

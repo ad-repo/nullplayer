@@ -1,0 +1,12 @@
+// Smear Moves Script
+// Author:	CoR wenzel.robert@gmx.de
+
+(declare init
+ (set $useAspect 1)
+ (set $gridSize (trunc (+ (rnd 8.0) 5)))
+)
+
+(declare move
+ (set $srcX (+ (/ (sin (* $x (* $pi $gridSize))) 145.0) $x))
+ (set $srcY (+ (/ (sin (* $y (* $pi $gridSize))) 145.0) $y))
+)

@@ -1,0 +1,18 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				ONE
+//Original Info:
+// ONE   v1.1
+// Paint on acid
+// By Steve Steve Wheeler
+// E-mail: stevewheeler@mac.com
+
+(declare init
+ (set $useAspect 0)
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius (sin $radius))
+ (set $srcTheta (- $theta (* (- $radius .042) (rnd .09))) )
+)

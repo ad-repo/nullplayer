@@ -1,0 +1,15 @@
+// Smear Move Script
+// Author:      frumbert@hotmail.com
+// Description: cocentric circles that change size with the volume (beat)
+
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 0)
+)
+
+(declare move
+ (set $srcTheta (* (rnd 4) $midpeak))
+)
+
+

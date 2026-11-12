@@ -1,0 +1,12 @@
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+ (set $a0 (rnd .1))
+ (set $a1 (+ 3 (rnd 7)))
+ (set $a2 (+ .9 (rnd .3)))
+)
+
+(declare move
+ (set $srcRadius (* $radius (+ 1 (* .13 (- $radius $a2)))))
+ (set $srcTheta (+ $theta (* $a0 (sin (* $a1 $radius)))))
+)

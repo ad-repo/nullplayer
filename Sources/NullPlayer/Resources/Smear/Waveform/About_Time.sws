@@ -1,0 +1,36 @@
+// Smear Waveform Script
+// Author:	xplo@xplo.org
+// Description: Based on gforces Radar
+
+(declare init
+ (set $paths 3)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $z0rot (+ .7 (rnd 1.1)))
+ (set $z1rot (+ .7 (rnd (- 0 1.8) 1.1)))
+ (set $z2rot (+ .7 (rnd (- 0 1.8) 1.1)))
+)
+
+(declare newline)
+
+(declare waveform 
+ (set $c0 (* $mid (* .4 $step)))
+ (set $c1 (* $left (* .4 $step)))
+ (set $c2 (* $right (* .4 $step)))
+
+ (set $b0 (cos (* $time $z0rot)))
+ (set $b1 (sin (* $time $z0rot)))
+ (set $x0 (- (* (- 0 $b0) $step) (* $b1 $c0)))
+ (set $y0 (- (* $b0 $c0) (* $b1 $step)))
+
+ (set $b0 (cos (* $time $z1rot)))
+ (set $b1 (sin (* $time $z1rot)))
+ (set $x1 (- (* (- 0 $b0) $step) (* $b1 $c1)))
+ (set $y1 (- (* $b0 $c1) (* $b1 $step)))
+
+ (set $b0 (cos (* $time $z2rot)))
+ (set $b1 (sin (* $time $z2rot)))
+ (set $x2 (- (* (- 0 $b0) $step) (* $b1 $c2)))
+ (set $y2 (- (* $b0 $c2) (* $b1 $step)))
+)

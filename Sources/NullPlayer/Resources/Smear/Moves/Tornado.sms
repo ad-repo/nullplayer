@@ -1,0 +1,9 @@
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (* 0.96 $radius))
+ (set $srcTheta (+ $theta (/ 0.025 (+ (* $radius $radius) 0.01))))
+)

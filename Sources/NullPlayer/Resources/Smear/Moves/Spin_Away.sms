@@ -1,0 +1,14 @@
+// Smear Moves Script
+// Author:	mykel@earthling.net
+//
+// Another simple polar map
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (* $radius 1.02))
+ (set $srcTheta (+ 0.04 $theta))
+)

@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Linear Spread
+
+(declare init
+ (set $usePolar 0)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $tv1 (* .93 $x))
+ (set $tv2 (* .93 $y))
+ (set $srcX (- (+ $tv1 (rnd .008)) .004))
+ (set $srcY (- (+ $tv2 (rnd .008)) .004))
+)

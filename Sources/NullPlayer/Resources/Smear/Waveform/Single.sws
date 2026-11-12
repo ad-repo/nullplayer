@@ -1,0 +1,20 @@
+// Smear Waveform Script
+// Author:	mykel@earthling.net
+//
+// The simplest of single waveforms
+
+(declare init
+ (set $paths 1)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+)
+
+(declare newline)
+
+(declare waveform
+ (set $x0 (- (* $step 2.0) 1.0))
+ (set $y0 $mid)
+)

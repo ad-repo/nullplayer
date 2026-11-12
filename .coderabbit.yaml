@@ -1,0 +1,5 @@
+# Bundled script data is not reviewed: Smear's 111 Stutter scripts are upstream's, and counting
+# them put a PR over the plan's 100-file limit.
+reviews:
+  path_filters:
+    - "!Sources/NullPlayer/Resources/Smear/*/**"

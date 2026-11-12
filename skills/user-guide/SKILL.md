@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom and Corona (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -503,19 +503,19 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
 (Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
 ### Every engine's menu
-ProjectM, Geiss, Tripex, AVS, Goom and Corona share one right-click menu, in the Visualizations window, a
+ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear share one right-click menu, in the Visualizations window, a
 `.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
 but Goom): the current preset,
 **Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
 with a **Cycle Interval** (5 s to 2 min), then that engine's own options, then **Visualization
-Engine**, **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
+Engine** (in a `.wmz` / Sonique effects area the **Effect** menu at the top picks it instead), **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
 own cycle setting; with Manual Only an engine stays on the preset you chose. **C** steps the cycle
 setting in any engine.
 
@@ -569,6 +569,16 @@ same preset and auto-cycle controls every engine has. Corona starts on Auto-Rand
 Only it stays on the palette you pick, across launches. **Blaze**, Corona's own item in the same
 menu, draws the particles three times a frame for brighter, streakier flames; it is remembered
 across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's visual mode.
+
+### Smear
+The Sonique-era Smear visualizer, from the right-click **Visualization Engine** submenu, in the
+style of G-Force: the picture flows through a scripted move map while waveforms and particles are
+drawn into it and a scripted colour scheme tints it. Its presets are its 60 move scripts (Starwave,
+Disco Ball, Sunburst and more); right-click for the same preset and auto-cycle controls every
+engine has. Smear starts on Auto-Random; with Manual Only it stays on the move you pick, across
+launches, and only re-rolls that move's own variations. The colour schemes, waveforms and particles
+change by themselves. A new move takes a moment to build before it fades in. Smear also plays in a
+`.wmz` skin's effects area and Sonique's visual mode.
 
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
@@ -674,7 +684,7 @@ across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom, Corona), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -728,6 +738,14 @@ across launches. Corona also plays in a `.wmz` skin's effects area and Sonique's
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The palette list and **Blaze** are in the right-click context menu.
+
+### Smear
+- **→ / ←**: Next / Previous move
+- **R**: Random move
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The move list is in the right-click context menu.
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

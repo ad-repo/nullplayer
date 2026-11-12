@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Sunburst - Many
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 0)
+ (set $tv1 (* (trunc (+ 8 (rnd 5))) 3.14))
+)
+
+(declare move
+ (set $tv2 (+ 1 (sin (* $tv1 $theta))))
+ (set $srcRadius (* $radius (+ (* $tv2 (* .5 .06)) .92)))
+ (set $srcTheta $theta)
+)

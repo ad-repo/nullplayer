@@ -1,0 +1,19 @@
+//Smear color script
+//Author aSSTaRD Rasher8940@aol.com
+
+(declare init
+ (set $useHSV 1)
+ (set $usetime 1)
+)
+
+(declare color
+ (set $h (rnd))
+ (set $s (rnd))
+ (set $v $value)
+ (if (> $value 0.9)
+  (block (set $h 0)
+         (set $s 0)
+         (set $v 1)
+  )
+ )
+)

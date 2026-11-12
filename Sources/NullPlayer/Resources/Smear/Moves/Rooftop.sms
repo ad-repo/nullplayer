@@ -1,0 +1,10 @@
+(declare init
+ (set $useAspect 1)
+ (set $tv1 (+ 2 (rnd 16)))
+ (set $tv2 (+ .01 (rnd .05)))
+)
+
+(declare move
+ (set $srcX (+ $x (* $tv2 (sin (* $tv1 $y)))))
+ (set $srcY (+ $y (* $tv2 (sin (* $tv1 $x)))))
+)

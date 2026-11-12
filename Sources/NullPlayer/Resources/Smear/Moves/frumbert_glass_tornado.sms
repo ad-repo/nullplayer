@@ -1,0 +1,21 @@
+// Smear Move Script
+// Author:      frumbert@hotmail.com
+// Description: looking down a swirly glass tornado
+// use tan instead of cos for a glittery diamond effect
+
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 0)
+ (set $a0 (* (trunc (+ 6 (rnd 3))) 3.141592653))
+ (set $speed .000001)
+)
+
+(declare move
+ (set $srcRadius (* $radius (+ .92 (* .06 (* .5 (+ 1 (cos (* $a0 $theta))))))))
+ (set $srcTheta (+ $theta (/ 0.25 (+ (* $radius $radius) 0.1))))
+ (set $x (+ $x 0.5))
+ (set $srcX (* (sign $x) (pow (abs $x) (/ (+ $speed (abs $y)) $speed))))
+ (set $y (+ $y 0.25))
+ (set $srcY (* (sign $y) (pow (abs $y) (/ (+ $speed (abs $x)) $speed))))
+)

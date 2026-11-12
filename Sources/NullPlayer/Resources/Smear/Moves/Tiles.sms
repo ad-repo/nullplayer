@@ -1,0 +1,14 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Tiles
+
+(declare init
+ (set $useAspect 1)
+ (set $a0 (* 1.9 (+ 1 (rnd 2)))) // Tile Size
+ (set $a1 (* .005 (+ 1 (rnd 1)))) // Tile flow speed
+)
+
+(declare move
+ (set $srcX (+ $x (* $a1 (- (* 2 (% (* (+ $y 1) $a0) 2)) 1))))
+ (set $srcY (+ $y (* $a1 (- (* 2 (% (* (+ $x 1) $a0) 2)) 1))))
+)

@@ -1,0 +1,34 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//			3D Cylinder
+
+(declare init
+ (set $paths 1)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+ (set $trunner 0)
+ (set $ta5 (+ .3 (rnd .3)) )
+ (set $ta3 (+ 2 (rnd 2)) )
+ (set $ta4 (* $ta3 (+ .7 (rnd .3))) )
+)
+
+(declare newline
+ (set $trunner (+ $trunner 1))
+)
+
+(declare waveform
+ (set $ta0 0)
+ (set $ta1 (sin (* -3.14 .4)) )
+ (set $ta2 (cos (* -3.14 .4)) )
+ (set $tb0 (* $trunner $ta5) )
+ (set $tc0 (cos (+ (* 6.28 $step) $tb0)) )
+ (set $tc1 (sin (+ (* 6.28 $step) $tb0)) )
+ (set $tc2 (* .5 $mid) )
+ (set $tc3 (+ (* $tc1 $ta2) (* $tc2 $ta1)) )
+ (set $tc4 (- (+ $ta3 (* $tc2 $ta2)) (* $tc3 $ta1)) )
+ (set $x0 (/ (* $ta4 $tc0) $tc4))
+ (set $y0 (/ (* $ta4 $tc3) $tc4))
+)
