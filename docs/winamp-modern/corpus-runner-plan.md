@@ -358,7 +358,11 @@ rows). The per-skin record is `intakes/intake-11.tsv`; the row ids are in `backl
 | Akbank, New_York_Minute | The spectrum drew outside the player, off its left side (B435) | A painted group that directly holds a `<vis>` clips it to the background's alpha (`groupRegionMask`) |
 | VISION_WINAMP_SKIN_ | The slide show and picture buttons showed nothing (B437) | Not an engine defect: the scripts run, but the pictures are `c:/vision/` files the archive does not ship |
 | nine cPro skins (Candeo, Expensive_Hi_Fi, WinampVista, smplwhite, Windows_XP, cirQ, cMP10, cMP11, Blue_Green_Whale_Amp) | The smoke maximized the window and the skin persisted it, so the next launch opened at 1800x1130 (B440) | The sweep restores the skin's stored settings when it finishes, and presses back a click that resizes the window |
-| EI | The clock was cut off at the top and bottom of its 18 px box (B441) | A `display="time"` clock taller than its box is not scissored to it vertically (`verticalBand`); tickers and labels keep the box |
+| EI | The clock was cut off at the top and bottom of its 18 px box (B441) | A `display="time"` clock taller than its box is not scissored to it vertically (`band`); tickers and labels keep the box |
+
+The fixes (B429, B435, B441 among them) were swept over the corpus on 2026-11-11/12: render, interaction and motion against an
+`origin/main` 4d139aba baseline, every diff classified clean; the render after the B429 alpha fix had 29 image diffs, all
+intended or justified, and two interaction flips were noise in fresh re-runs.
 
 Open, promoted with the skin: B431 (VISION_WINAMP_SKIN_'s Playlist Editor rows too big), B434 (heart_'s `button#pl` takes no
 press), B436 (Austin Powers' drawer opens on black, its video is not played), B438 (iTunes_Mini_PowerMetal2's buttons

@@ -72,6 +72,7 @@ final class WinampModernConfiguration {
 
     private var namespacePrefix: String { "\(Self.keyPrefix)\(namespace)." }
 
+    #if DEBUG
     /// Everything this skin has stored, for a harness that clicks every control and must put the
     /// skin's settings back (the smoke: its `main.goBig` press persists `cPro.maximized=1` and every
     /// later launch of the skin opens maximized, B439).
@@ -85,6 +86,7 @@ final class WinampModernConfiguration {
         }
         for (key, value) in snapshot { defaults.set(value, forKey: key) }
     }
+    #endif
 
     private func sectionPrefix(_ section: String) -> String {
         namespacePrefix + Self.safeComponent(section).lowercased() + "."

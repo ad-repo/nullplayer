@@ -259,7 +259,7 @@ extension WasabiSceneRenderer {
         /// For a positive, artwork-less group whose descendants declare their own region: what it
         /// holds — its visible leaves, and any group inside that paints a `background`. Such a group
         /// reaches that far, not as far as its own box. Nil for anything else.
-        let contentBoxes: [WasabiRegionMark]?
+        let marks: [WasabiRegionMark]?
         /// Drawn at `alpha="0"`, itself or by a group above it. Part of the cache key, because a
         /// script shows such an object by raising its alpha (Clock V2.76's calendar).
         let hidden: Bool
@@ -267,53 +267,7 @@ extension WasabiSceneRenderer {
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.object === rhs.object && lhs.frame == rhs.frame && lhs.clip == rhs.clip
                 && lhs.bitmapID == rhs.bitmapID && lhs.additive == rhs.additive
-                && lhs.contentBoxes == rhs.contentBoxes && lhs.hidden == rhs.hidden
-        }
-    }
-
-    /// One thing a wrapper group holds, as the region sees it: a leaf with artwork is its artwork's
-    /// shape, anything else its box.
-    ///
-    /// heart_'s `player.main` holds the heart as one layer, a bitmap of 310x280 whose corners above
-    /// the lobes are clear. As a box it put the player back over the config drawer's whole background
-    /// texture, which the drawer's own `sysregion="-1"` silhouettes had just cut away, and a teal
-    /// slab showed behind the heart (B429).
-    struct WasabiRegionMark: Equatable {
-        let object: WasabiObject
-        let frame: CGRect
-        let clip: CGRect
-        let bitmapID: String?
-
-        static func == (lhs: Self, rhs: Self) -> Bool {
-            lhs.object === rhs.object && lhs.frame == rhs.frame && lhs.clip == rhs.clip
-                && lhs.bitmapID == rhs.bitmapID
-        }
-    }
-
-    /// `WINAMP_MODERN_REGION_BOX_MARKS=1` restores the box a wrapper's artwork leaf used to count as,
-    /// for an A/B against the shape (B429).
-    private static let boxesWrapperMarks = ProcessInfo.processInfo.environment["WINAMP_MODERN_REGION_BOX_MARKS"] != nil
-
-    /// Put a wrapper's content back into the window region being built.
-    private func fillMarks(_ marks: [WasabiRegionMark], in context: WasabiDrawList) {
-        for mark in marks {
-            context.saveGState()
-            context.clip(to: mark.clip)
-            // The shape is wherever the artwork has **any** alpha: a faint shadow or glow is painted,
-            // so it is window (S7Reflex's player body, RODE_3_Lite's glass), where a half-coverage cut
-            // would take it away. Only an image stretched to its box has a shape to read that way.
-            if !Self.boxesWrapperMarks, let id = mark.bitmapID, let bitmap = resources.bitmap(identifier: id),
-               mark.object.attributes["tile"] != "1", mark.object.attributes["tilex"] != "1",
-               mark.object.attributes["tiley"] != "1", centeredImageRect(bitmap, object: mark.object, in: mark.frame) == nil,
-               let mask = resources.alphaMask(bitmapID: id) {
-                context.clip(to: mark.frame, mask: mask)
-                context.setFillColor(gray: 1, alpha: 1)
-                context.fill([mark.frame])
-            } else {
-                context.setFillColor(gray: 1, alpha: 1)
-                context.fill([mark.frame])
-            }
-            context.restoreGState()
+                && lhs.marks == rhs.marks && lhs.hidden == rhs.hidden
         }
     }
 
@@ -365,7 +319,7 @@ extension WasabiSceneRenderer {
         // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
         // every frame as the cache key, so the content walk below is only paid for one that cuts.
         let cuts = declared.contains { !$0.additive }
-        let contentBoxes = cuts ? wrapperContentBoxes(nodes: nodes, declared: declared) : [:]
+        let marksByWrapper = cuts ? wrapperMarks(nodes: nodes, declared: declared) : [:]
         func cutParent(_ entry: (node: WasabiSceneNode, additive: Bool)) -> ObjectIdentifier? {
             entry.node.object.parent.map(ObjectIdentifier.init).flatMap { cutParents.contains($0) ? $0 : nil }
         }
@@ -391,14 +345,14 @@ extension WasabiSceneRenderer {
             let hidden = Self.alphaFraction(of: object) * entry.node.inheritedAlpha == 0
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
-                                   contentBoxes: contentBoxes[ObjectIdentifier(object)], hidden: hidden)
+                                   marks: marksByWrapper[ObjectIdentifier(object)], hidden: hidden)
         }
     }
 
-    /// `WasabiRegionCut.contentBoxes` for every positive, artwork-less group with a region object
+    /// `WasabiRegionCut.marks` for every positive, artwork-less group with a region object
     /// beneath it, keyed by that group.
-    private func wrapperContentBoxes(nodes: [WasabiSceneNode],
-                                     declared: [(node: WasabiSceneNode, additive: Bool)])
+    private func wrapperMarks(nodes: [WasabiSceneNode],
+                              declared: [(node: WasabiSceneNode, additive: Bool)])
         -> [ObjectIdentifier: [WasabiRegionMark]] {
         func ancestors(of object: WasabiObject) -> [ObjectIdentifier] {
             var result: [ObjectIdentifier] = []
@@ -427,8 +381,7 @@ extension WasabiSceneRenderer {
             let box = node.frame.intersection(node.clip)
             guard !box.isNull, !box.isEmpty else { continue }
             for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
-                boxes[ancestor]?.append(WasabiRegionMark(object: node.object, frame: node.frame, clip: node.clip,
-                                                         bitmapID: node.bitmapID))
+                boxes[ancestor]?.append(WasabiRegionMark(node: node))
             }
         }
         // A wrapper that holds no content is its box, like any other artwork-less group.
@@ -609,12 +562,12 @@ extension WasabiSceneRenderer {
                 draw(backing, object: layout, frame: CGRect(x: 0, y: 0, width: width, height: height), context: context)
             }
             for cut in cuts {
-                guard let contentBoxes = cut.contentBoxes else { continue }
+                guard let marks = cut.marks else { continue }
                 context.saveGState()
                 context.clip(to: cut.clip)
                 context.clear(cut.frame)
+                fillMarks(marks, in: context)
                 context.restoreGState()
-                fillMarks(contentBoxes, in: context)
             }
             for cut in drawnCuts {
                 context.saveGState()
@@ -633,7 +586,7 @@ extension WasabiSceneRenderer {
                     // window contributes. Only additive, because a *negative* object with no bitmap
                     // has no silhouette to cut with, and taking its whole rect would remove
                     // everything it happens to span.
-                    if let marks = cut.contentBoxes {
+                    if let marks = cut.marks {
                         fillMarks(marks, in: context)
                     } else {
                         context.setFillColor(gray: 1, alpha: 1)

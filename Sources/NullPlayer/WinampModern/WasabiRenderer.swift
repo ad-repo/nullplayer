@@ -461,22 +461,20 @@ final class WasabiResourceCache {
     /// A group background's coverage as a clip mask: in wherever its artwork has any alpha (B249).
     /// Keyed by the declaring file as well as the name: a path background resolves relative to it.
     func alphaMask(background: String, declaredIn location: WalSourceLocation) -> CGImage? {
-        guard !isTornDown else { return nil }
-        let key = "alpha:" + location.path + "|" + background.lowercased()
-        if let cached = regionMasks[key] { return cached }
-        guard let artwork = bitmap(background: background, declaredIn: location)?.image,
-              let image = Self.binaryMask(of: artwork, inside: { _, alpha in alpha > 0 }) else { return nil }
-        cacheMask(image, key: key)
-        return image
+        alphaMask(key: "alpha:" + location.path + "|" + background.lowercased()) {
+            bitmap(background: background, declaredIn: location)?.image
+        }
     }
 
-    /// `alphaMask(background:declaredIn:)` for a bitmap already resolved by id: in wherever it has
-    /// any alpha at all, so a faint shadow is still part of the shape (B429).
+    /// The same for a bitmap already resolved by id, so a faint shadow is still part of the shape (B429).
     func alphaMask(bitmapID: String) -> CGImage? {
+        alphaMask(key: "alphaid:" + bitmapID.lowercased()) { bitmap(identifier: bitmapID)?.image }
+    }
+
+    private func alphaMask(key: String, artwork: () -> CGImage?) -> CGImage? {
         guard !isTornDown else { return nil }
-        let key = "alphaid:" + bitmapID.lowercased()
         if let cached = regionMasks[key] { return cached }
-        guard let artwork = bitmap(identifier: bitmapID)?.image,
+        guard let artwork = artwork(),
               let image = Self.binaryMask(of: artwork, inside: { _, alpha in alpha > 0 }) else { return nil }
         cacheMask(image, key: key)
         return image
@@ -1058,6 +1056,10 @@ final class WasabiSceneRenderer {
     }
 
     /// Set by a window that built its view before its content existed, so it can follow a later fit.
+    ///
+    /// The fit lands inside a scene build, so the renderer's canvas is updated at once and the view
+    /// is told one main-queue turn later: resizing the view re-enters the renderer, which cannot
+    /// happen mid-build. Until then `canvasSize` is ahead of the view's frame.
     var autoFitDidChange: ((CGSize) -> Void)?
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of

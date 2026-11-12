@@ -48,8 +48,6 @@ struct WasabiClip {
 /// not paint, and the aperture a target animation slides a child within — the region a script gives
 /// one object, and the backing an object paints.
 extension WasabiSceneRenderer {
-    static let masksVisualizationGroups =
-        ProcessInfo.processInfo.environment["WINAMP_MODERN_VIS_GROUP_UNMASKED"] != "1"
     static let cullsBeforeGroupOrigin =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_GROUP_NO_ORIGIN_CULL"] != "1"
 
@@ -110,15 +108,18 @@ extension WasabiSceneRenderer {
     /// `vis.group.pink` is a skyline `background` with a full-size `<vis>` inside: the author's
     /// silhouette is the vis's window, and clipped only to the box the bars ran out over the player's
     /// oval. Only a group that directly holds a `<vis>`: any other painted group keeps its box.
-    /// `WINAMP_MODERN_VIS_GROUP_UNMASKED=1` is the A/B switch.
     func groupRegionMask(of object: WasabiObject, frame: CGRect) -> WasabiMaskClip? {
-        guard object.tag.is(.group), !frame.isEmpty,
-              paintedBackingID(of: object) == nil
-                || (Self.masksVisualizationGroups && object.children.contains(where: \.isVisualizationHandle)),
+        guard object.tag.is(.group), !frame.isEmpty, shapesItsContent(object),
               let background = object.attributes["background"],
               let mask = resources.alphaMask(background: background, declaredIn: object.source)
         else { return nil }
         return WasabiMaskClip(mask: mask, rect: frame)
+    }
+
+    /// Whether a group's `background` is its content's window: an unpainted one always, a painted one
+    /// only for a `<vis>` it directly holds.
+    private func shapesItsContent(_ group: WasabiObject) -> Bool {
+        paintedBackingID(of: group) == nil || group.children.contains(where: \.isVisualizationHandle)
     }
 
     /// Clip one object to the region a script gave it, if any.
