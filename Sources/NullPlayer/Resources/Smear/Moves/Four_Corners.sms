@@ -1,0 +1,14 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+
+(declare init
+ (set $useAspect 0)
+ (set $speed (rnd 2 8))
+)
+
+(declare move
+ (set $x (+ $x 0.001))
+ (set $y (+ $y 0.001))
+ (set $srcX (* (sign $x) (pow (abs $x) (/ (+ $speed (abs $y)) $speed))))
+ (set $srcY (* (sign $y) (pow (abs $y) (/ (+ $speed (abs $x)) $speed))))
+)

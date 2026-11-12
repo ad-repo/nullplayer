@@ -1,0 +1,18 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Paint
+// Original Info:
+// Paint   v1.0
+// You won't find this @ the Home Depot
+// By Steve Steve Wheeler 
+// E-mail: stevewheeler@mac.com
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius $radius)
+ (set $srcTheta (- $theta (* .078 (rnd .1570796325))))
+)

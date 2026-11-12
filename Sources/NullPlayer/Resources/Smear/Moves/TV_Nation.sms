@@ -1,0 +1,16 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+
+(declare init
+ (set $useAspect 1)
+ (set $lastY -99)
+ (set $way 0)
+)
+
+(declare move
+ (if (!= $lastY $y)
+  (block (set $way (! $way))
+  	 (set $lastY $y)))
+
+ (set $srcx (+ $x (if $way .003 -.003)))
+)

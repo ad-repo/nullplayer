@@ -1,0 +1,24 @@
+// Smear Waveform Script
+// Author:	mykel@earthling.net
+//
+// Testing the (polar) and (cart) functions.  Spin the waveform 'simple.sws'
+// around an angle
+
+(declare init
+ (set $paths 1)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+ (set $angle (rnd $pi))
+)
+
+(declare newline
+ (set $angle (+ $angle 0.015))
+)
+
+(declare waveform
+ (polar $radius $theta (- (* $step 2.0) 1.0) $mid)
+ (cart $x0 $y0 $radius (+ $theta $angle))
+)

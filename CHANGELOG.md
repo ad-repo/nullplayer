@@ -134,9 +134,18 @@
   default); right-click to pick one, and → / ← / R step through them. **Blaze**, in the same menu,
   draws brighter, streakier flames. It also plays in a Windows Media Player skin's effects area
   and in Sonique's visual mode and mid-mode circle.
+- **Smear is a visualization engine** (Visualization Engine ▸ Smear), the Sonique visualizer in the
+  style of G-Force: the picture flows through a scripted move map while waveforms and particles are
+  drawn into it and a scripted colour scheme tints it. Its presets are its 60 move scripts
+  (Auto-Random every 30 seconds by default; right-click to pick one, → / ← / R step through them);
+  the colour schemes, waveforms and particles change by themselves. It also plays in a Windows
+  Media Player skin's effects area and in Sonique's visual mode and mid-mode circle.
 - **Geiss and AVS show their whole picture in a skin's small effects area**, as in the
   Visualizations window, instead of a coarse close-up: in Sonique's top circle Geiss's waveform
-  ran off both sides and AVS's lines and glows came out twice as thick. Corona does the same.
+  ran off both sides and AVS's lines and glows came out twice as thick. Corona and Smear do the same.
+- **A Windows Media Player or Sonique skin's effects area has one effect picker.** Its right-click
+  menu offered both **Effect** and **Visualization Engine** for the same choice (and the second
+  listed Goom, which did nothing there); only **Effect** is left.
 
 ## 0.35.0
 

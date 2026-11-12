@@ -1,0 +1,22 @@
+// Smear Waveform Script
+// Author: 	mykel@earthling.net
+//
+// Simple 2 waveforms (left/right channel)
+
+(declare init
+ (set $paths 2)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+)
+
+(declare newline)
+
+(declare waveform
+ (set $x0 (- (* $step 2.0) 1.0))
+ (set $y0 (+ $left 0.3))
+ (set $x1 $x0)
+ (set $y1 (- $right 0.3))
+)

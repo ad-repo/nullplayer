@@ -120,7 +120,7 @@ class VisualizationGLView: NSOpenGLView {
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
 
     /// Winamp-compatible host spectrum for the engines that read one (`consumesHostSpectrum`: Geiss,
-    /// Corona): 256 bins from a 512-sample real FFT.
+    /// Corona, Smear): 256 bins from a 512-sample real FFT.
     private let hostFFTSize = 512
     private let hostSpectrumBinCount = 256
     private let hostFFTLog2N = vDSP_Length(9)
@@ -447,6 +447,10 @@ class VisualizationGLView: NSOpenGLView {
 
         case .corona:
             return CoronaEngine(width: width, height: height)
+
+        case .smear:
+            let smear = SmearEngine(width: width, height: height)
+            return smear.isAvailable ? smear : nil
         }
     }
 

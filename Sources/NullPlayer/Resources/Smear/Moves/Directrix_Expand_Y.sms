@@ -1,0 +1,17 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Directrix Expand - Y
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 0)
+ (set $tv1 (rnd .0045))
+ (set $tv2 (+ .1 (rnd .06)))
+ (set $tv3 (+ .003 (rnd .006)))
+)
+
+(declare move
+ (set $tv4 (- .99 (* $tv2 (pow (abs $y) 1.3))))
+ (set $srcRadius (* (- $radius (rnd $tv1)) $tv4))
+ (set $srcTheta (+ $theta $tv3))
+)

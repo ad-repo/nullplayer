@@ -1,0 +1,25 @@
+// Smear Color Script
+// Author:	mykel@earthling.net
+
+(declare init)
+
+(declare color
+ (if (> $value .8)
+  (block (set $t (/ (- $value .8) .2))
+	 (set $b $t)
+  	 (set $r $t)
+	 (set $g 1)
+  )
+  (if (> $value .5)
+   (block (set $t ( / (- $value .5) .6))
+          (set $b (- .5 $t))
+	  (set $r 0)
+	  (set $g (+ .5 $t))
+   )
+   (block (set $b $value)
+	  (set $r 0)
+	  (set $g $value)
+   )
+  )
+ )
+)

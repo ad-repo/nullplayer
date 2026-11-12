@@ -1,0 +1,13 @@
+// Smear Color Script
+// Author:	mykel@earthling.net
+
+(declare init
+ (set $useHSV 1)
+ (set $hue (rnd))
+)
+
+(declare color
+ (set $H $hue)
+ (set $S (- 1 $value))
+ (set $V (* $value (+ (/ (cos (* (- 1 $value) (* 8 $pi))) 2) .5)))
+)

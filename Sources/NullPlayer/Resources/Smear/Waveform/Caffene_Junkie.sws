@@ -1,0 +1,20 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//				Caffene Junkie
+
+(declare init
+ (set $paths 1)
+ (set $steps 151)
+ (set $fade 0.0)
+ (set $useAspect 0)
+ (set $a0 (+ (rnd 3) 1))
+)
+
+(declare newline)
+(declare waveform
+ (set $b0 (* $time .0003))
+ (set $c0 (+ (* (abs $mid) .85) .05))
+ (set $c1 (- (* $step 43.766877) $b0))
+ (set $x0 (* $c0 (cos $c1)))
+ (set $y0 (* $c0 (sin $c1)))
+)

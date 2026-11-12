@@ -1,0 +1,17 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+ (set $ringmul (rnd 10 20))
+ (set $dis (rnd .015 .035))
+ (set $dir (rnd))
+)
+
+(declare move
+ (if (> $dir .5)
+ (set $srcRadius (+ $radius (* (* $radius (+ (abs (sin (* $radius $ringmul))) .1)) $dis)))
+ (set $srcRadius (+ $radius (* (* $radius (- 0 (+ (abs (sin (* $radius $ringmul))) .1))) $dis)))
+ )
+)

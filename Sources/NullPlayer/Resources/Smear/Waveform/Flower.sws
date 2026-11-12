@@ -1,0 +1,17 @@
+//Smear ALPHA Waveform Script
+//Author: aSSTaRD (Rasher8940@aol.com)
+
+(declare init
+ (set $useblendtype 2)
+ (set $numsteps 512)
+ (set $useaspect 1)
+)
+
+(declare newline)
+
+(declare waveform
+ (set $Theta0 (- (* $Step 6.3) 3.15))
+ (set $Radius0 (+ $mid 0.1))
+ (set $Fade0 (- 0.25 (abs $Radius0)))
+ (cart $X0 $Y0 $Radius0 $Theta0)
+)

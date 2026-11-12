@@ -13,6 +13,7 @@ extension VisualizationGLView {
         case .avs: return (currentEngine as? AvsEngine)?.presets.count ?? 0
         case .goom: return GoomEngine.effectCount
         case .corona: return CoronaEngine.presetCount
+        case .smear: return SmearEngine.presetCount
         }
     }
 
@@ -28,6 +29,7 @@ extension VisualizationGLView {
         case .avs: index = (currentEngine as? AvsEngine)?.currentIndex
         case .goom: index = (currentEngine as? GoomEngine)?.currentEffect
         case .corona: index = (currentEngine as? CoronaEngine)?.currentPreset
+        case .smear: index = (currentEngine as? SmearEngine)?.currentPreset
         }
         return index.flatMap { (0..<enginePresetCount).contains($0) ? $0 : nil }
     }
@@ -42,6 +44,7 @@ extension VisualizationGLView {
             return presets[index].deletingPathExtension().lastPathComponent
         case .goom: return GoomEngine.effectName(at: index)
         case .corona: return CoronaEngine.presetName(at: index)
+        case .smear: return SmearEngine.presetName(at: index)
         }
     }
 
@@ -53,6 +56,7 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.selectPreset(at: index)
         case .goom: (currentEngine as? GoomEngine)?.selectEffect(at: index)
         case .corona: (currentEngine as? CoronaEngine)?.selectPreset(at: index)
+        case .smear: (currentEngine as? SmearEngine)?.selectPreset(at: index)
         }
         enginePresetDidChange?()
     }
@@ -67,6 +71,7 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.step(by: delta > 0 ? 1 : -1)
         case .goom: (currentEngine as? GoomEngine)?.step(by: delta > 0 ? 1 : -1)
         case .corona: (currentEngine as? CoronaEngine)?.step(by: delta > 0 ? 1 : -1)
+        case .smear: (currentEngine as? SmearEngine)?.step(by: delta > 0 ? 1 : -1)
         }
         enginePresetDidChange?()
     }
@@ -79,6 +84,7 @@ extension VisualizationGLView {
         case .avs: (currentEngine as? AvsEngine)?.selectRandomPreset()
         case .goom: (currentEngine as? GoomEngine)?.selectRandomEffect()
         case .corona: (currentEngine as? CoronaEngine)?.selectRandomPreset()
+        case .smear: (currentEngine as? SmearEngine)?.selectRandomPreset()
         }
         enginePresetDidChange?()
     }

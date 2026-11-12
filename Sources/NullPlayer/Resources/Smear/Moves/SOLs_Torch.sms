@@ -1,0 +1,19 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				SOLs Torch
+//Original Info:
+// Create by Brad Anderson for G-Force
+//e-mail: javalizard@mac.com
+//I was really bored one early early Saturday morning after a night of fun and wrote a
+//few new delta fields
+//Sound of Lights Torch
+//Trys to look like a flame
+
+(declare init
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcX (- (+ $x (rnd .014)) .007) )
+ (set $srcY (+ $y (rnd .06)) )
+)

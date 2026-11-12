@@ -1,0 +1,33 @@
+// Smear Waveform Script
+// Author: xplo@xplo.org
+// Description: A few of you might know these circular waveforms from SFO-vis I released earlier.
+
+(declare init
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useTime 1)
+ (set $paths 2)
+ (set $noLines0 1)
+ (set $noLines1 1)
+ (set $scale (rnd 2 3))
+)
+
+(declare newline)
+ 
+(declare waveform
+ (set $tv0 (+ (* (* (cos (/ $time 1.23455)) 85) (sin $time)) 50))
+ (set $tv1 (+ (* (* (sin (/ $time 1.23455)) 85) (cos $time)) 50))
+ (set $tcx0 (/ $tv0 100))
+ (set $tcy0 (/ $tv1 100))
+ (set $tcx1 (- 1 $tcx0))
+ (set $tcy1 (- 1 $tcy0))
+ (set $vl (+ (* $left .5) 1))
+ (set $vr (+ (* $right .5) 1))
+ (cart $xl $yl (* $vl (* $leftPeak $scale)) (* $step 6.283185307))
+ (cart $xr $yr (* $vr (* $rightPeak $scale)) (* $step 6.283185307))
+ (set $x0 (- (+ $xl $tcx0) .5))
+ (set $y0 (- (+ $yl $tcy0) .5))
+ (set $x1 (- (+ $xr $tcx1) .5))
+ (set $y1 (- (+ $yl $tcy1) .5))
+)

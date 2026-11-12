@@ -58,6 +58,7 @@ final class SkinEffectSelection {
             case .tripex: return .tripex
             case .avs: return .avs
             case .corona: return .corona
+            case .smear: return .smear
             case .bars, .spikes, .ambience, .cava, .visClassic: return nil
             }
         }
@@ -69,16 +70,16 @@ final class SkinEffectSelection {
     }
 
     enum NativeStyle: String {
-        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex, avs, corona
+        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex, avs, corona, smear
     }
 
     /// Posted, with the selection as its object, when the selected effect or preset changes, so
     /// every surface on that selection follows one choice.
     static let didChange = Notification.Name("SkinEffectSelectionDidChange")
 
-    /// **Ten effects, all rendering the same way in the rect** (W140). The first five are drawn
-    /// by the surface itself; ProjectM, Geiss, Tripex, AVS and Corona render offscreen and are
-    /// presented as an image. Spikes stays first because it is what a skin that selects nothing shows.
+    /// **Eleven effects, all rendering the same way in the rect** (W140). The first five are drawn
+    /// by the surface itself; ProjectM, Geiss, Tripex, AVS, Corona and Smear render offscreen and
+    /// are presented as an image. Spikes stays first because it is what a skin that selects nothing shows.
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
         Effect(id: "bars", title: "Bars", style: .bars),
@@ -89,7 +90,8 @@ final class SkinEffectSelection {
         Effect(id: "geiss", title: "Geiss", style: .geiss),
         Effect(id: "tripex", title: "Tripex", style: .tripex),
         Effect(id: "avs", title: "AVS", style: .avs),
-        Effect(id: "corona", title: "Corona", style: .corona)
+        Effect(id: "corona", title: "Corona", style: .corona),
+        Effect(id: "smear", title: "Smear", style: .smear)
     ]
 
     private(set) var index: Int

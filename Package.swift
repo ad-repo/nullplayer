@@ -193,6 +193,17 @@ let package = Package(
             // -O2 in debug too: a software renderer, like CGoomCore.
             cxxSettings: [.headerSearchPath("upstream"), .unsafeFlags(["-O2"])]
         ),
+        // Smear 1.2 (BSD-style licence with a source-access clause, accepted 2026-11-12): the
+        // Sonique visualizer's C renderer and Stutter script interpreter; skills/smear-port.
+        .target(
+            name: "CSmearCore",
+            dependencies: [],
+            path: "Sources/CSmearCore",
+            exclude: ["upstream/LICENSE.TXT", "upstream/stutter.txt"],
+            publicHeadersPath: "include",
+            // -O2 in debug too: a software renderer, like CGoomCore.
+            cSettings: [.headerSearchPath("upstream"), .unsafeFlags(["-O2"])]
+        ),
         // Lightweight core library containing model types
         // Unit tests depend only on this target for fast compilation
         .target(
@@ -242,6 +253,7 @@ let package = Package(
                 "CAvsCore",
                 "CGoomCore",
                 "CCoronaCore",
+                "CSmearCore",
                 "ZIPFoundation",
                 .product(name: "SQLite", package: "SQLite.swift"),
                 "AudioStreaming",

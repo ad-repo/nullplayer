@@ -112,6 +112,7 @@ enum VisualizationPreferences {
             GoomEngine.heldEffectKey,
             CoronaEngine.paletteKey,
             CoronaEngine.blazeKey,
+            SmearEngine.moveKey,
             "viz.legacyMigrationV1",
             "projectMPCMGain",
             "projectMLowPowerMode",

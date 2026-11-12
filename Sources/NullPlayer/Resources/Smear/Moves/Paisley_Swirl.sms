@@ -1,0 +1,20 @@
+// Smear Move Script
+// Author:	CoR
+
+(declare init
+ (set $useAspect 1)
+ (set $Xcenter (- (rnd) .5))
+ (set $Ycenter (- (rnd) .5))
+ (set $Mult (+ (* (trunc (rnd 2.999)) 2) 6))
+ (set $St (+ (rnd 10) 10))
+)
+
+(declare move
+ (polar $radius $theta (- $x $Xcenter) (- $y $Ycenter))
+ (set $srcTheta (+ $Theta .01 (/ (sin (* $Radius 24)) $st)))
+ (set $srcRadius (/ $Radius (+ 1 (/ (+ (sin (* $Theta $Mult)) .7) $st))))
+ (cart $x $y $srcRadius $srcTheta)
+
+ (set $srcX (+ $x $Xcenter))
+ (set $srcY (+ $y $Ycenter))
+)

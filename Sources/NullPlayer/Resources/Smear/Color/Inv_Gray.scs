@@ -1,0 +1,11 @@
+// Smear Color Script
+// Author:	xplo@xplo.org
+
+(declare init)
+
+(declare color
+ (set $ranl (rnd .6 1))
+ (set $r (- 1 (* $value $ranl)))
+ (set $g (- 1 (* $value $ranl)))
+ (set $b (- 1 (* $value $ranl)))
+)

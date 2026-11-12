@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Sine Multi-Circ
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (* $radius (+ .87 (* .05 (+ 1 (sin (* $radius 15)))))))
+ (set $srcTheta $theta)
+)

@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Collapse & Turn
+
+(declare init
+ (set $usePolar 1)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcRadius (* 1.01 $radius))
+ (set $srcTheta (+ $theta .021))
+)

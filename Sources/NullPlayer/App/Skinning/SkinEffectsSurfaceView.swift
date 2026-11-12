@@ -221,7 +221,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-            case .projectM, .geiss, .tripex, .avs, .corona:
+            case .projectM, .geiss, .tripex, .avs, .corona, .smear:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
                 break
@@ -327,7 +327,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard isActive else { return }
         switch effect.style {
         case .bars, .spikes, .ambience: if levels.isEmpty { return }
-        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs, .corona: break
+        case .cava, .visClassic, .projectM, .geiss, .tripex, .avs, .corona, .smear: break
         }
         // `bounds`, never `dirtyRect`: AppKit is free to hand a view a dirty rect larger than
         // itself — here the whole 596x468 window arrived as {{-269, -26}, {596, 468}} in this
@@ -373,7 +373,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .ambience: drawAmbience()
         case .cava: drawCava()
         case .visClassic: drawVisClassic()
-        case .projectM, .geiss, .tripex, .avs, .corona: drawOffscreenEngine()
+        case .projectM, .geiss, .tripex, .avs, .corona, .smear: drawOffscreenEngine()
         }
     }
 
@@ -557,7 +557,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     // MARK: - Keyboard
 
     /// **The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ pick the effect, ⌘→/⌘← move
-    /// inside it.** The catalogue is two levels deep — ten effects, and most of them carry a list
+    /// inside it.** The catalogue is two levels deep — eleven effects, and most of them carry a list
     /// of their own (ProjectM's presets, Geiss's and Tripex's effects, vis_classic's profiles,
     /// Cava's mono/stereo) — so the axes are split the way a two-level list reads: **down is the
     /// next effect** and up the previous, left/right step within whatever is now selected. An effect
@@ -587,7 +587,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     private func stepWithinEffect(by delta: Int) -> Bool {
         guard delta != 0 else { return false }
         switch effect.style {
-        case .projectM, .geiss, .tripex, .avs, .corona:
+        case .projectM, .geiss, .tripex, .avs, .corona, .smear:
             guard let count = presetCount(), count > 0 else { return false }
             let current = selection.preset % count
             selection.setPreset(((current + delta) % count + count) % count)
@@ -642,13 +642,14 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         case .visClassic:
             menu.addItem(.separator())
             visClassicOptionsMenu().items.forEach(menu.addItem)
-        case .projectM, .geiss, .tripex, .avs, .corona:
+        case .projectM, .geiss, .tripex, .avs, .corona, .smear:
             // The engine's own menu, through the shared `VisualizationMenuTarget` protocol this
             // view already conforms to — the same presets, cycling and sensitivity items the
             // standalone window offers, minus fullscreen and close, which a slot inside a skin's
-            // window has nowhere to go with.
+            // window has nowhere to go with, and the engine picker, which the Effect menu above is.
             menu.addItem(.separator())
-            let options = VisualizationContextMenu.Options(showsFullscreen: false, showsClose: false)
+            let options = VisualizationContextMenu.Options(showsFullscreen: false, showsClose: false,
+                                                           showsEnginePicker: false)
             VisualizationContextMenu.build(target: self, options: options).items.forEach(menu.addItem)
         case .bars, .spikes, .ambience:
             break
@@ -736,16 +737,9 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         engineView?.selectPreset(at: index, hardCut: false)
     }
 
-    /// **Through the skin's own selector, not the app's preference.** The engine a `.wmz` draws is
-    /// `mediacenter.effectType`, which 96 archives bind their rect's `currentEffectType` to, so a
-    /// choice made in this menu is one the skin can read back and put on screen beside the picture.
-    /// It is deliberately not `WindowManager.switchVisualizationEngine`: that is the setting the
-    /// visualization window and the menu bar share, and a skin is not entitled to rewrite it.
-    @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
-        guard let type = sender.representedObject as? VisualizationType,
-              let effect = SkinEffectSelection.catalogue.first(where: { $0.engine == type }) else { return }
-        selection.select(effect.id)
-    }
+    /// Never sent: this surface's menu leaves out Visualization Engine ▸ (`showsEnginePicker`),
+    /// because its Effect menu picks the engine, through the skin's own selection.
+    @objc func switchVisualizationEngine(_ sender: NSMenuItem) {}
 
     @objc func setAudioSensitivity(_ sender: NSMenuItem) {
         engineView?.setPCMGain(Float(sender.tag) / 10.0)

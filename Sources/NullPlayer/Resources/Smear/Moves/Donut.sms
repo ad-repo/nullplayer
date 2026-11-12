@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Donut
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius (- (- $radius (wrap (* .04 (sin (* 6.2 (- $radius .5)))))) (* .008 $radius)))
+ (set $srcTheta (- $theta .01))
+)

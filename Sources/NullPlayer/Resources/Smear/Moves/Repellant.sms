@@ -1,0 +1,26 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+
+(declare init
+ (set $useAspect 1)
+ (set $x0 (- (rnd 2.0) 1.0))
+ (set $y0 (- (rnd 2.0) 1.0))
+ (set $s0 (rnd -.01 -.0025))
+ (set $x1 (if (> $x0 0) (- $x0 1) (+ $x0 1)))
+ (set $y1 (if (> $y0 0) (- $y0 1) (+ $y0 1)))
+ (set $s1 (rnd -.01 -.0025))
+)
+
+(declare move
+ (polar $radius $theta (- $x $x0) (- $y $y0))
+ (set $radius (* $radius (+ 1 (/ $s0 (+ (pow $radius 1.5) 0.001)))))
+ (cart $x $y $radius $theta)
+ (set $x (+ $x $x0))
+ (set $y (+ $y $y0))
+
+ (polar $radius $theta (- $x $x1) (- $y $y1))
+ (set $radius (* $radius (+ 1 (/ $s1 (+ (pow $radius 1.5) 0.001)))))
+ (cart $x $y $radius $theta)
+ (set $srcX (+ $x $x1))
+ (set $srcY (+ $y $y1))
+)

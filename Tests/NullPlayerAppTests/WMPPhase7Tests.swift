@@ -40,7 +40,10 @@ final class WMPPhase7Tests: XCTestCase {
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "corona")
         XCTAssertEqual(selection.current.engine, .corona)
-        // Ten entries, so one more step is back to the start.
+        selection.step(by: 1)
+        XCTAssertEqual(selection.current.id, "smear")
+        XCTAssertEqual(selection.current.engine, .smear)
+        // Eleven entries, so one more step is back to the start.
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "spikes")
         _ = selection.select("spikes")

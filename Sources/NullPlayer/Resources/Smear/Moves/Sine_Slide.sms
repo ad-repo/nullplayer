@@ -1,0 +1,14 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Sine Slide
+
+(declare init
+ (set $useAspect 0)
+ (set $a0 17)
+ (set $a1 .020)
+)
+
+(declare move
+ (set $srcX (- (+ (- (- $x (* (sign $x) (* $a1 (- 1 (cos (* $a0 $x)))))) (* .02 $x)) .001) (rnd .002)))
+ (set $srcY (- (+ $y .001) (rnd .002)))
+)

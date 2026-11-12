@@ -1,0 +1,25 @@
+// Smear Waveform Script
+// Author:	???
+
+(declare init
+ (set $paths 3)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+ (set $noLines1 0)
+)
+
+(declare newline)
+
+(declare waveform
+ (set $ta0 (cos (* $time -.3)))
+ (set $ta1 (sin (* $time -.3)))
+ (set $tb0 (* $mid 0.3))
+ (set $tb1 (- (* 2 $step) 1))
+ (set $x0 (- (* (- 0 $ta0) $tb1) (* $ta1 $tb0)))
+ (set $y0 (- (* $ta0 $tb0) (* $ta1 $tb1)) )
+ (set $x1 (- (* (- 0 $ta1) $tb1) (* $ta0 $tb0)))
+ (set $y1 (+ (* (- 0 $ta1) $tb0) (* $ta0 $tb1)))
+)

@@ -1,0 +1,17 @@
+// Smear Move Script
+// Author:	mykel@earthling.net
+// Inspired by:	Geiss
+
+(declare init
+  (set $m1 (rnd 2 20))
+  (set $m2 (rnd .1 .8))
+)
+
+(declare move
+ (set $xa (* (sin (* $y $m1)) $m2))
+ (polar $Radius $Theta (+ $x $xa) (+ $y 1))
+ (set $Radius (* $Radius 1.06))
+ (cart $X $y $Radius $Theta)
+ (set $srcX (- $x $xa))
+ (set $srcY (- $y 1))
+)

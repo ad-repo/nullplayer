@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				TimeWarp
+// Created by Justin and Jesse Swidler
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+)
+
+(declare move
+ (set $srcRadius $radius)
+ (set $srcTheta (+ $theta .08))
+ //pump up the speed.
+)

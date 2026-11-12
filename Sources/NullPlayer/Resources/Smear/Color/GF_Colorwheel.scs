@@ -1,0 +1,13 @@
+// Smear Color Script
+// Translated from:	G-Force
+
+(declare init
+ (set $useHSV 1)
+ (set $useTime 1)
+)
+
+(declare color
+ (set $h (wrap (* .03 $time)))
+ (set $s (- 1 (* .6 (pow $value 2.5))))
+ (set $v $value)
+)

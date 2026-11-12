@@ -1,0 +1,28 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				SOLs Warp
+// Original Info:
+// Create by Brad Anderson for G-Force
+//e-mail: javalizard@mac.com
+//I was really bored one early early Saturday morning after a night of fun and wrote a
+//few new delta fields
+
+//Sound of Lights Warp
+//This one started with the Statship Enterprise D warp field
+//so I tried to make it into a delta field but what came out is this
+//pseudo shell, pseudo tornado like clouds, pseudo blender like Delta Field
+//interesting...  hard to read the code, eh?
+
+(declare init
+ (set $useAspect 1)
+ (set $a0 (+ .03 (rnd .04)))
+ (set $a1 (+ .2 (rnd .10)))
+ (set $a2 (+ .1 (rnd .08)))
+)
+
+//	srcx = x + more as it goes out on the x - y axis
+//the plus .002 is in there because there was artifacting on the x=0 line
+(declare move
+ (set $srcX (- (+ (- (+ $x (* (pow (abs(+ $x .002)) .01) $a0)) (* (abs $y) $a1)) (rnd .005)) .0025))
+ (set $srcY (- (+ (+ $y (* $y (* $x $a2))) (rnd .005)) .0025))
+)

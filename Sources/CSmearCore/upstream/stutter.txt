@@ -1,0 +1,617 @@
+                                 (Stu(t(ter)))
+
+
+INTRODUCTION
+------------
+Stutter is a very simple language used to define the move, waveform,
+particle and colormap functions.  The grammar of the language is
+very simple.  All operators are of the form
+
+        (operator argument ...)
+
+Each of the arguments can (usually) be one of
+
+        A literal       only numeric values are supported, and all
+                        numerics a floating point numbers.
+                        e.g.  1.0 23.92
+
+
+        A variable      a variable is referenced by '$name' where
+                        the name can be any alpha chacater followed
+                        by any combination of alpha-numeric characters
+                        e.g.  $x $Volume $Y3
+			
+			Stutter now supports a simple array type.  There
+			is a maximum number of 1024 elements in a an
+			array.  An array is accessed by as follows
+
+			[$name element]
+
+			Note that the '$' must be present.  The element
+			may be any argument type.  Only the integer
+			component of the element is used.  Arrays can
+			be used anywhere that variables can.
+
+        A operator      most arguments can also be the return values
+                        of another operator
+                        e.g.  (operator (operator arg) arg)
+
+It is required that you define a number of functions in your scripts
+that are run at appropriate times.  For example, all of the types
+of script should have an init function, which is used for setting
+up relevant variables and settings for the main function.  An example
+of an init function would be
+
+(declare init
+ (set $RandomX (- (rnd 2.0) 1.0))
+ (set $RandomY (- (rnd 2.0) 1.0))
+)
+
+To read and understand 'stutter' code it is best to work from the inner
+most levels out.  So, in this example the inner most function is
+
+ (rnd 2.0)
+
+This returns a random number between 0.0 and 2.0
+
+The next level out is
+
+ (- (rnd 2.0) 1.0)
+
+which means subtract 1.0 from the random number (in the range 0.0 to 2.0)
+
+The outer layer is
+
+ (set $RandomX (- (rnd 2.0) 1.0))
+
+which sets the value of the variable $RandomX to the number we have just
+worked out.
+
+You'll noticde that the whole function is within a (declare init ..).
+This is how you declare functions.  There is no way to run your own
+functions at this point, so you will only need to create the functions
+that are requried for each type of script.
+
+While the language may seem confusing it is simple to learn and its strange
+layout allows for simple and fast compiling and running of these scripts.
+
+
+FUNCTION LIST
+-------------
+The following functions are available
+
+Mathematical Operators:
+        These are the arithmetic functions, as well as trigonometric
+        and other standard mathematical functions.  All angles in
+        trigonometrical functions are in radians (a full circle is
+        2 * PI radians)
+        
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
++               (+ arg1 arg2 ...)       Returns arg1 + arg2.  If more arguments
+                                        are supplied, they are also added.
+-               (- arg1 arg2)           Returns arg1 - arg2
+*               (* arg1 arg2 ...)       Returns arg1 * arg2.  If more arguments
+                                        are supplied they are also multiplied.
+/               (/ arg1 arg2)           Returns arg1 / arg2.  If arg2 == 0 then
+                                        returns 0.
+mod             (mod arg1 arg2)         Returns the remainder of arg1 / arg2
+%               (% arg1 arg2)           Synonym for mod
+abs             (abs arg1)              Returns the absolute value of arg1
+trunc           (trunc arg1)            Returns the non-decimal part of arg1
+sign            (sign arg1)             If arg1 >= 0 returns 1.0 otherwise -1.0
+pos             (pos arg1)              If arg1 >= 0 returns arg1 otherwise 0.0
+neg             (neg arg1)              Return the negative of arg1.  Note that
+                                        this is NOT similar to the pos function.
+                                        Equivalent to (- 0 arg1).
+sqrt            (sqrt arg1)             Returns the square root of arg1
+
+log             (log arg1)              Returns the log of arg1
+exp             (exp arg1)              Returns the exp of arg1
+pow             (pow arg1 arg2)         Returns arg1 raised to the power of arg2
+
+sin             (sin arg1)              Returns the sin of arg1
+cos             (cos arg1)              Returns the cos of arg1
+tan             (tan arg1)              Returns the tan of arg1
+atan            (atan arg1 arg2)        Returns the arctangent of arg2 / arg1.
+                                        Correctly handles arg1 = 0.
+
+rnd             (rnd [arg1 [arg2]])     Return a random number between arg1
+                                        and arg2.  If arg2 is missing, then
+                                        return a number between 0 and arg1,
+                                        if neither are present return a number
+                                        between 0 and 1.
+wrap            (wrap arg1 [arg2        Wraps arg1 in the range a to b where
+                    [arg3]])            a=arg2 and b=arg3 if both supplied
+                                        a=0.0 and b=arg2 if one supplied
+                                        a=0.0 and b=1.0
+clamp           (clamp arg1 [arg2       With a and b the same as for wrap,
+                    [arg3]])            if arg1 < a return a, if arg1 > b
+                                        return b otherwise return arg1
+
+Logical Operators:
+        The logical operators duplicate the boolean functions of many
+        languages.  Because stutter only supports floating point numbers,
+        a value of 1.0 is used for True and 0.0 for False.  In the use
+        of logical values any non zero value is considered to be True.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+&&              (&& arg1 arg2 ...)      True if both arg1 and arg2 are nonzero
+                                        If more arguments are added, they must
+                                        also be non-zero.  Only enough args
+                                        are evaluated to find the first zero
+                                        value, otherwise all are evaluated.
+||              (|| arg1 arg2 ...)      True if either arg1 or arg2 is nonzero
+                                        If more arguments are added, they may
+                                        also be non-zero.  Only enough args
+                                        are evaluated to find the first
+                                        non-zero value, otherwise all are
+                                        evaluated.
+!               (! arg1)                True if arg1 is zero
+==              (== arg1 arg2)          True if arg1 and arg2 are equal
+!=              (!= arg1 arg2)          True if arg1 is not equal to arg2
+<               (< arg1 arg2)           True if arg1 is less than arg2
+<=              (<= arg1 arg2)          True if arg1 is less than or equal
+                                        to arg2
+>               (> arg1 arg2)           True if arg1 is greater than arg2
+>=              (>= arg1 arg2)          True if arg1 is greater than or equal
+                                        to arg2
+
+Bitwise Operators:
+        Although all variables in stutter are floating point, a small amount
+        of support for bitwise operators is available.  The decimal part of
+        the arguments are stripped off and the bitwise operation is applied
+        to the integer part of the arguments.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+&               (& arg1 arg2 ...)       Return the bitwise AND of arg1 and arg2
+                                        If more arguments are supplied they
+                                        are AND'ed as well.
+|               (| arg1 arg2 ...)       Return the bitwise OR of arg1 and arg2
+                                        If more arguments are supplied they
+                                        are OR'ed as well.
+<<              (<< arg1 arg2)          Left shift the integer value arg1 by
+                                        arg2 bits.
+>>              (>> arg1 arg2)          Right shift the integer value arg1 by
+                                        arg2 bits
+
+Variable Handling:
+        These operators are special in that one or more of the arguments
+        must be variables.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+set             (set $v arg1)           Set the value of variable $v to arg1
+=               (= $v arg1)             Synonym for set
+polar           (polar $v1 $v2 arg1     Convert arg1 and arg2, which are X and
+                    arg2)               Y coordinates to polar coordinates and
+                                        store them in the variables $v1 and $v2
+                                        which are radius and angle (theta)
+                                        respectively.  The value of this
+                                        function is the value of $v1
+cart            (cart $v1 $v2 arg1      Convert arg1 and arg2, which are radius
+                    arg2)               and theta in polar coordinates, to
+                                        cartesian (X, Y) coordinates and store
+                                        in the variables $v1 and $v2 which are
+                                        the X and Y coordinates.  The value of
+                                        this function is the value of $v1
++=              (+= $v arg1)            This is equivalent to (= $v (+ $v arg1))
+-=              (-= $v arg1)            This is equivalent to (= $v (- $v arg1))
+*=              (*= $v arg1)            This is equivalent to (= $v (* $v arg1))
+/=              (/= $v arg1)            This is equivalent to (= $v (/ $v arg1))
+%=              (%= $v arg1)            This is equivalent to (= $v (% $v arg1))
+
+
+Execution Flow:
+        These functions allow help with the flow of functions.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+declare         (delcare name [arg      Declare a function for use by the
+                    ...])               program.  The arguments are evaluated
+                                        in turn.  No value is returned from a
+                                        declare statement.  It can only be the
+                                        outermost level of any statement and
+                                        is also the only valid outermost level.
+block           (block [arg ...])       Evaluate the arguments in order.  The
+                                        return value is value of the last
+                                        argument.
+if              (if arg1 arg2 [arg3])   If the value of arg1 is considered to
+                                        be True (i.e arg1 != 0), then evaluate
+                                        arg2, otherwise evaluate arg3 if it is
+                                        supplied.  The return value whichever
+                                        argument (arg2 or arg3) is evaluated,
+                                        or 0 if none.
+loop            (loop $v1 arg1 arg2     Evalute arg3 for each integer value
+                    arg3                between arg1 and arg2 (inclusive).
+                                        The value of $v1 is set to the current
+                                        loop value for each iteration.  The
+                                        values of arg1 and arg2 are set at
+                                        the beginning of the loop and are not
+                                        continually evaulated.
+while           (while arg1 arg2)       So long as arg1 is nonzero, evaluate
+                                        arg2.
+case            (case val               A case statement is similar to that
+                 [tst0 arg0             in many languages, and is equivalent
+                  tst1 arg1 ...]        to a number of if statements.  The
+                 [argN])                value of 'val' is compared to each
+                                        of the tst0, tst1, etc values and
+                                        if they are equal, the value of the
+                                        matching arg is returned, otherwise
+                                        the value of argN (the final arg on
+                                        the end of the case statement) is
+                                        returned.  If that is not present a
+                                        value of 0 is returned if nothing
+                                        matches.
+
+
+
+
+Audio Data Functions:
+        These allow you to get audio data at the current time.  They
+        should only be used in colormap, waveform and particle functions.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+lSpect          (lspect arg1)           Return the spectrum intensity at the
+                                        frequency mapped by arg1.  Arg1 should
+                                        be in the range 0 to 1.  The data is
+                                        for the left channel.  The return value
+                                        is in the range 0 to 1.
+rSpect          (rspect arg1)           As with lspect except that the data is
+                                        from the right channel.
+lWave           (lwave arg1)            Return the wave value (range of -1 to 1)
+                                        at the point specified by arg1 (which
+                                        is in the range of 0 to 1).  The data
+                                        is from the left channel.
+rWave           (rwave arg1)            As with lwave except that the ata is
+                                        from the right channel.
+
+3D Functions:
+	To help speed up 3D calculations a little, there are a small number
+	of 3D routines available.
+
+	Note: the 3dSetup and 3dRotate routines are designed for use when
+	many points are being rotated through the same angles.  It is
+	expected that the 3dSetup be called once for many calls to the
+	3dRotate function.  If you wish to rotate a single point you
+	should probably script that explicitly.
+
+Function        Usage                   Notes
+--------        ----------------------- --------------------------------------
+3dSetup		(3dSetup arg1 arg2	Setup a rotation matrix with arg1,
+		    arg3)		arg2 and arg3 being the X, Y, and Z
+		    			rotation values respectively.  This
+					function should be called before the
+					3dRotate function is called, it does
+					precalculation for when you are
+					rotating many points through the same
+					angles.
+3dRotate	(3dRotate $v1 $v2 $v3	Rotate the points arg1, arg2 and arg3,
+		    arg1 arg2 arg3)	which are (X,Y,Z) through the rotation
+		    			setup with 3dSetup and store the values
+					in ($v1,$v2,$v3)
+
+
+SPECIAL VARIABLES AND FUNCTIONS
+-------------------------------
+
+In each script there are a number of variables that have special meaning.
+Some of these can be set by the script to determine behaviour - this is
+usually done within the init function.  Others are set before functions
+are called as effectively the passed arguments to the function.
+
+
+==============================================================================
+                                    Colormaps
+==============================================================================
+Function:               init
+Variables Supplied:     none
+Variables Returned:     none
+Called:                 Called when the colormap is about to be called for
+                        the first time.
+
+------------------------------------------------------------------------------
+
+Function:               color
+Variables Supplied:     $Time           time (in seconds) - see $UseTime and
+                                        $RelativeTime, below
+                        $Value          the color value (in the range from
+                                        0 to 1.  0 is considered the background
+                                        color and 1 the 'brightest'.
+                        $LeftPeak,      A measure of the average volume of
+                          $RightPeak,   the whole waveform.  The left and
+                          $MidPeak      right channels as well as the average
+                                        of the two, is supplied
+                        $LeftBass,      The bass and treble portions of the
+                          $RightBass,   left, right and average channels are
+                          $MidBass,     soon to be available, but currently
+                          $LeftTreble,  are set to zero.
+                          $RightTreble,
+                          $MidTreble
+Variabkes Returned:     $H, $S, $V      Hue, Saturation and Intensity
+                                        of the color, each in a range of 0
+                                        to 1.  Only used if $UseHSV is True.
+                        $R, $G, $B      Red, Green and Blue portions of the
+                                        color, each in a range of 0 to 1.
+                                        Only used if $UseHSV is not True.
+Called:                 Whenever a color is required.  Will be called once
+                        for each color in the colormap (256 colors)
+                        when the colormap is first installed.  If $UseTime
+                        is true then it will be called for each color in
+                        the colormap before each frame is displayed.
+
+
+------------------------------------------------------------------------------
+Special Variable:       $UseHSV         If True the HSV values rather than
+                                        RGB values are used to determine the
+                                        colors
+
+------------------------------------------------------------------------------
+Special Variable:       $UseTime        If True then the colormap is assumed
+                                        to change over time and is regenerated
+                                        each frame with an updated $Time
+                                        variable
+
+------------------------------------------------------------------------------
+Special Variable:       $RelativeTime   If True then the $Time variable sent
+                                        is relative to a zero time when the
+                                        colormap was first called, otherwise
+                                        it is system time.
+
+------------------------------------------------------------------------------
+Special Variable:       $PI             The value of PI (3.14159265358979323)
+------------------------------------------------------------------------------
+        
+
+==============================================================================
+                                    Movemaps
+==============================================================================
+Function:               init
+Variables Supplied:     none
+Variables Returned:     none
+Called:                 Called when the movemap is about to be called for
+                        the first time.
+------------------------------------------------------------------------------
+Function:               move
+Variables Supplied:     $X              X coordinate in the range -1 to 1
+                        $Y              Y coordinate in the range -1 to 1
+                        $Radius         Radius from polar coordinates (if
+                                        $RequireRadius is True)
+                        $Theta          Theta from polar coordinates (if
+                                        $RequireTheta is True)
+Variables Returned:     $SrcX, $SrcY    The X and Y coordinates to source the
+                                        new color for the $x, $y point from.
+                                        Only used if $UsePolar is not True
+                        $SrcRadius,     The Radius and Theta coordinates to
+                          $SrcTheta     source the new color for the $radius
+                                        $theta point from.  Only used if
+                                        $UsePolar is True.
+Called:                 Once per $x, $y on the current screen.
+------------------------------------------------------------------------------
+Special Variable:       $RequireRadius  If True then when the move function is
+                                        called, the radius of the (X, Y) point
+                                        is calculated and supplied in $Radius
+------------------------------------------------------------------------------
+Special Variable:       $RequireTheta   If True then when the move function is
+                                        called, the theta of the (X, Y) point
+                                        is calculated and supplied in $Theta
+------------------------------------------------------------------------------
+Special Variable:       $UsePolar       If True then the $SrcRadius and
+                                        $SrcTheta values are used instead of
+                                        $SrcX and $SrcY.  If set True in the
+                                        init function then $RequireRadius and
+                                        $RequireTheta are also set to True.
+------------------------------------------------------------------------------
+Special Variable:       $UseAspect      If True then the X, Y range from
+                                        (-1,-1) to (1,1) defines the smallest
+                                        square to fit all the screen otherwise
+                                        the shape is a rectangle to exactly
+                                        fit the screen.
+------------------------------------------------------------------------------
+Special Variable:       $PI             The value of PI (3.14159265358979323)
+------------------------------------------------------------------------------
+
+
+==============================================================================
+                                    Waveforms
+==============================================================================
+Function:               init
+Variables Supplied:     none
+Variables Returned:     $NumPaths       The number of separate waveforms to
+                                        draw.  There can be a maximum of 16
+                                        paths.  The value defaults to 1
+Called:                 Called when the waveform is about to be called for
+                        the first time.
+------------------------------------------------------------------------------
+Function:               newline
+Variables Supplied:     $Time           time (in seconds) - see $UseTime and
+                                        $RelativeTime, below
+                        $LeftPeak,      A measure of the average volume of
+                          $RightPeak,   the whole waveform.  The left and
+                          $MidPeak      right channels as well as the average
+                                        of the two, is supplied
+                        $LeftBass,      The bass and treble portions of the
+                          $RightBass,   left, right and average channels are
+                          $MidBass,     soon to be available, but currently
+                          $LeftTreble,  are set to zero.
+                          $RightTreble,
+                          $MidTreble
+Variables Returned:     none
+Called:                 Called once before the beginning of a new waveform
+                        for each frame.
+------------------------------------------------------------------------------
+Function:               waveform
+Variables Supplied:     $Time,          These are the same as in the newline
+                          $Leftpeak,    function.
+                          $RightPeak,
+                          $MidPeak,
+                          $LeftBass,    
+                          $RightBass,
+                          $MidBass,
+                          $LeftTreble,
+                          $RightTreble,
+                          $MidTreble
+                        $Step           The stage in the waveform we are.  This
+                                        is in the range 0 to 1.
+                        $Left, $Right,  The waveform data for the left and
+                          $Mid          right channel, as well as the average.
+Variables Returned:     $X0, $Y0,       For each path (from 0 to $NumPaths - 1)
+                          $X1, $Y1, ... you need to supply the X and Y points
+                                        for the waveform at this step.
+                        $Fade0, $Fade1, The color to draw the line in.  See
+                          ...           the special variables below.
+Called:                 Once for each step (see $NumSteps below) in the
+                        waveform.  Each call is expected to work out the x
+                        and y coordinates for each of the paths.
+------------------------------------------------------------------------------
+Special Variable:       $NumPaths       The number of separate waveform paths
+                                        to display.
+------------------------------------------------------------------------------
+Special Variable:       $NumSteps       The number of steps along the
+                                        waveform.  The default value is 256.
+                                        The data supplied is limited to 512
+                                        pieces of data, so the maximum value
+                                        for $NumSteps is 512.  Minimum 2.
+------------------------------------------------------------------------------
+Special Variable:       $Loop0,         For each of the paths if the $Loopn
+                          $Loop1, ...   is True, then a line is draw from the
+                                        last point back to the first point,
+                                        to make a looped waveform.
+------------------------------------------------------------------------------
+Special Variable:       $NoLines0,      If True, for each of the paths, then
+                          $NoLines1,    rather than draw lines just do points
+                          ...           for the waveform display.
+------------------------------------------------------------------------------
+Special Variable:       $Fade0,         How much, in a range of 0 to 1, to
+                          $Fade1        fade the newly drawn waveform data
+                          ...           by.  A value of zero draws the waveform
+                                        in the brightest color entry, while
+                                        a value of 1 draws in the background
+                                        color.
+------------------------------------------------------------------------------
+Special Variable:       $RelativeTime   If True then the $Time variable sent
+                                        is relative to a zero time when the
+                                        waveform was first called, otherwise
+                                        it is system time.
+------------------------------------------------------------------------------
+Special Variable:       $UseAspect      If True then the X, Y range from
+                                        (-1,-1) to (1,1) defines the smallest
+                                        square to fit all the screen otherwise
+                                        the shape is a rectangle to exactly
+                                        fit the screen.
+------------------------------------------------------------------------------
+Special Variable:       $useBlendType   Set the method by which the color
+                                        is drawn.  A blend type of 0 will
+                                        set the pixel to the color specified,
+                                        a type of 1 will add the value to the
+                                        current pixel, and a value of 2 will
+                                        only set the pixel if the new color
+                                        is 'brighter' than current one.
+------------------------------------------------------------------------------
+Special Variable:       $PI             The value of PI (3.14159265358979323)
+------------------------------------------------------------------------------
+
+
+==============================================================================
+                                    Particles
+==============================================================================
+Function:               init
+Variables Supplied:     none
+Variables Returned:     $NumParticles   The number of particles to be drawn.
+                                        The particle function will be called
+                                        once for each of these, with the value
+                                        of $Particle set to each integer
+                                        value from 0 to $NumParticles - 1 in
+                                        turn.
+Called:                 Called when the particle is about to be called for
+                        the first time.
+------------------------------------------------------------------------------
+Function:               newframe
+Variables Supplied:     $Time           time (in seconds) - see $UseTime and
+                                        $RelativeTime, below
+                        $LeftPeak,      A measure of the average volume of
+                          $RightPeak,   the whole waveform.  The left and
+                          $MidPeak      right channels as well as the average
+                                        of the two, is supplied
+                        $LeftBass,      The bass and treble portions of the
+                          $RightBass,   left, right and average channels are
+                          $MidBass,     soon to be available, but currently
+                          $LeftTreble,  are set to zero.
+                          $RightTreble,
+                          $MidTreble
+Variables Returned:     none
+Called:                 Called once before the beginning of a new frame.
+------------------------------------------------------------------------------
+Function:               particle
+Variables Supplied:     $Time,          These are the same as in the newline
+                          $Leftpeak,    function.
+                          $RightPeak,
+                          $MidPeak,
+                          $LeftBass,    
+                          $RightBass,
+                          $MidBass,
+                          $LeftTreble,
+                          $RightTreble,
+                          $MidTreble
+                        $Particle       This is the current particle number.
+                                        It is between 0 and $NumParticles - 1,
+                                        inclusive.
+Variables Returned:     $X, $Y          The X and Y values for this particle
+			$Xend, $Yend	The end X and Y values if the style
+					requires two points.
+                        $Size           The size of the particle.  The value
+                                        for the size should probably be in
+                                        the range of .01 to 1.0.  Anything
+                                        larger than 1.0 is quite large.
+                        $Style          This value determines the style of
+					particle type to draw.  Currently
+					the following types are supported
+					  1	A circle, using the size.
+					  2	A line between ($x,$y) and
+						($Xend,$Yend).  $size is
+						ignored.
+					  	
+					Any other value is treated as type
+					1.
+                        $Fade           The color to draw the particle in.  See
+                                        the special variables below.
+Called:                 Once for each particle in the range 0 to
+                        $NumParticles - 1.  Each call is expected to work out
+                        the x and y coordinates and size of its particle.
+------------------------------------------------------------------------------
+Special Variable:       $NumParticles   The number of particles to display.
+                                        There is one call to the particle
+                                        function for each particle for each
+                                        frame.
+------------------------------------------------------------------------------
+Special Variable:       $Fade           How much, in a range of 0 to 1, to
+                                        fade the newly drawn particle by.
+                                        A value of zero draws the particle
+                                        in the brightest color entry, while
+                                        a value of 1 draws in the background
+                                        color.
+------------------------------------------------------------------------------
+Special Variable:       $RelativeTime   If True then the $Time variable sent
+                                        is relative to a zero time when the
+                                        waveform was first called, otherwise
+                                        it is system time.
+------------------------------------------------------------------------------
+Special Variable:       $UseAspect      If True then the X, Y range from
+                                        (-1,-1) to (1,1) defines the smallest
+                                        square to fit all the screen otherwise
+                                        the shape is a rectangle to exactly
+                                        fit the screen.
+------------------------------------------------------------------------------
+Special Variable:       $useBlendType   Set the method by which the color
+                                        is drawn.  A blend type of 0 will
+                                        set the pixel to the color specified,
+                                        a type of 1 will add the value to the
+                                        current pixel, and a value of 2 will
+                                        only set the pixel if the new color
+                                        is 'brighter' than current one.
+------------------------------------------------------------------------------
+Special Variable:       $PI             The value of PI (3.14159265358979323)
+------------------------------------------------------------------------------

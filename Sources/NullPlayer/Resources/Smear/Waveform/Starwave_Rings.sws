@@ -1,0 +1,61 @@
+// Smear Waveform Script
+// Author: xplo@xplo.org
+// Description: Well since this is the sequel to starwave we need its historical rings, don't we? :)
+
+(declare init
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $numrings (trunc (* (rnd .5) 10)))
+ (if (== $numrings 1) (block (set $numrings 5)))
+ (set $paths (+ $numrings 1))
+ (set $noLines0 1)
+ (set $noLines1 1)
+ (set $noLines2 1)
+ (set $noLines3 1)
+ (set $noLines4 1)
+ (set $noLines5 1)
+ (set $noLines6 1)
+ (if (>= $numrings 1) (set $tv1 (/ (* 2 $Pi) $numrings)))
+)
+
+(declare newline
+ (set $angle (+ $angle 0.01))
+ (set $perc .33)
+ (if (>= $numrings 1) (block (cart $cx1 $cy1 $perc $angle)))
+ (if (>= $numrings 1) (block (cart $cx2 $cy2 $perc (+ $angle $tv1))))
+ (if (>= $numrings 2) (block (cart $cx3 $cy3 $perc (+ $angle (* $tv1 2)))))
+ (if (>= $numrings 3) (block (cart $cx4 $cy4 $perc (+ $angle (* $tv1 3)))))
+ (if (>= $numrings 4) (block (cart $cx5 $cy5 $perc (+ $angle (* $tv1 4)))))
+ (if (>= $numrings 5) (block (cart $cx6 $cy6 $perc (+ $angle (* $tv1 5)))))
+ (cart $cx0 $cy0 0 0)
+)
+
+(declare waveform
+ (set $v (+ (* $mid .5) 1))
+ (cart $x $y (* $v $midPeak) (* $step 6.283185307))
+ (set $x1 (+ $x $cx1))
+ (set $y1 (+ $y $cy1))
+ (if (>= $numrings 1) (block
+  (set $x2 (+ $x $cx2))
+  (set $y2 (+ $y $cy2))
+ ))
+ (if (>= $numrings 2) (block
+  (set $x3 (+ $x $cx3))
+  (set $y3 (+ $y $cy3))
+ ))
+ (if (>= $numrings 3) (block
+  (set $x4 (+ $x $cx4))
+  (set $y4 (+ $y $cy4))
+ ))
+ (if (>= $numrings 4) (block
+  (set $x5 (+ $x $cx5))
+  (set $y5 (+ $y $cy5))
+ ))
+ (if (>= $numrings 5) (block
+  (set $x6 (+ $x $cx6))
+  (set $y6 (+ $y $cy6))
+ ))
+ (set $x0 (+ $x 0))
+ (set $y0 (+ $y 0))
+)

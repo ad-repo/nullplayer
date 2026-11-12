@@ -1,0 +1,18 @@
+// Smear Moves Script
+// Author:	CoR wenzel.robert@gmx.de
+
+(declare init
+ (set $usePolar 0)
+ (set $useAspect 0)
+
+ (set $anglAdd (rnd $pi))
+ (set $speed (rnd 0.5))
+)
+
+(declare move
+ (polar $dist $angl $x $y)
+ (cart $myX $myY $dist (+ $angl $anglAdd))
+
+ (set $srcX (* $x (- 1 (* $myY $speed))))
+ (set $srcY (* $y (- 1 (* $myY $speed))))
+)

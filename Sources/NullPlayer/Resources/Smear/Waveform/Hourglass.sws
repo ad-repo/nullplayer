@@ -1,0 +1,35 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//			Hourglass by Erik, aka HHunter.
+
+(declare init
+ (set $paths 3)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useLoop0 0)
+ (set $noLines0 0)
+ (set $noLines1 0)
+ (set $noLines2 0)
+ (set $ta0 (* 2 $Pi))
+)
+
+(declare newline)
+
+(declare waveform
+ (set $tb0 (* $time .6))
+ (set $tb1 (* .5 (cos $tb0)))
+ (set $tb2 (* .5 (sin $tb0)))
+ (set $tc0 (* $step $ta0))
+ (set $tc1 (+ (* $mid .2) .5))
+ (set $tc2 (+ $step .2))
+ (set $tc3 (cos $tc0))
+ (set $tc4 (sin $tc0))
+ (set $tc5 (* .1 $mid))
+ (set $x0 (+ (+ (* 5 $tc5) (* .5 $tc3)) $tb1))
+ (set $y0 (+ (* .5 $tc4) $tb2))
+ (set $x1 (- (+ (* 5 $tc5) (* .5 $tc3)) $tb1))
+ (set $y1 (- (* .5 $tc4) $tb2))
+ (set $x2 (+ $tc5 (* .12 $tc3)))
+ (set $y2 (+ $tc5 (* .12 $tc4)))
+)

@@ -1,0 +1,9 @@
+//Smear Movemap Script
+//Author: aSSTaRD (Rasher8940@aol.com
+
+(declare init)
+
+(declare move
+ (set $SrcX (neg $X))
+ (set $SrcY $Y)
+)

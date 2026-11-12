@@ -1,0 +1,15 @@
+// Smear Moves Script
+// Author:	CoR wenzel.robert@gmx.de
+
+(declare init
+ (set $useAspect 0)
+ (set $sinMul (+ (rnd 15.0) 10.0))
+ (set $sinScal (+ (rnd 0.1) 0.05))
+ (set $sinOffs (* (rnd $pi) 2))
+)
+
+(declare move
+ (set $srcX (* $x 0.90))
+ (set $tv4 (+ (/ $y 0.90) (* (* (- 0 (abs $x)) $y) 0.4)))
+ (set $srcY (+ $tv4 (* (sin(+ (* $x $sinMul) $sinOffs)) 0.07)))
+)

@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Turbo Flow Out
+
+(declare init
+ (set $usePolar 1)
+ (set $use Aspect 1)
+)
+
+(declare move
+ (set $srcRadius (* .87 $radius))
+ (set $srcTheta (- $theta .009))
+)

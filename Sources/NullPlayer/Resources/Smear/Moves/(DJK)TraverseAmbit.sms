@@ -1,0 +1,16 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				(DJK)TraverseAmbit
+//Original Info:
+// By Djknowone
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+ (set $tv1 (+ 2 (rnd 16)))
+)
+
+(declare move
+ (set $srcRadius (* $radius (+ .92 (rnd .05))))
+ (set $srcTheta (* $theta (sin (* $tv1 $radius))))
+)

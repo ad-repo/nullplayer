@@ -39,6 +39,9 @@ enum VisualizationContextMenu {
         /// with. The embedded skin surface has neither — its "window" is a box inside the skin's.
         var showsFullscreen = true
         var showsClose = true
+        /// Visualization Engine ▸ — off where the host has its own picker: a `.wmz` / Sonique
+        /// effects slot lists the engines in its Effect menu, among its own effects.
+        var showsEnginePicker = true
         /// Cast Visualization ▸ — only the Classic and Modern Visualizations windows opt in.
         var showsCast = false
     }
@@ -67,7 +70,7 @@ enum VisualizationContextMenu {
             switch currentEngineType {
             case .projectM:
                 if let rated { addProjectMRatings(to: menu, target: target, glView: glView, rated: rated) }
-            case .goom:
+            case .goom, .smear:
                 break
             case .geiss:
                 GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: target, visualizationView: glView)
@@ -81,26 +84,25 @@ enum VisualizationContextMenu {
             if menu.numberOfItems > extrasStart { menu.addItem(.separator()) }
         }
 
-        // Visualization Engine selector
-        let engineMenu = NSMenu()
+        if options.showsEnginePicker {
+            let engineMenu = NSMenu()
+            for engineType in VisualizationType.allCases {
+                let item = NSMenuItem(
+                    title: engineType.displayName,
+                    action: #selector(VisualizationMenuTarget.switchVisualizationEngine(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = target
+                item.representedObject = engineType
+                item.state = (currentEngineType == engineType) ? .on : .off
+                engineMenu.addItem(item)
+            }
 
-        for engineType in VisualizationType.allCases {
-            let item = NSMenuItem(
-                title: engineType.displayName,
-                action: #selector(VisualizationMenuTarget.switchVisualizationEngine(_:)),
-                keyEquivalent: ""
-            )
-            item.target = target
-            item.representedObject = engineType
-            item.state = (currentEngineType == engineType) ? .on : .off
-            engineMenu.addItem(item)
+            let engineMenuItem = NSMenuItem(title: "Visualization Engine", action: nil, keyEquivalent: "")
+            engineMenuItem.submenu = engineMenu
+            menu.addItem(engineMenuItem)
+            menu.addItem(NSMenuItem.separator())
         }
-
-        let engineMenuItem = NSMenuItem(title: "Visualization Engine", action: nil, keyEquivalent: "")
-        engineMenuItem.submenu = engineMenu
-        menu.addItem(engineMenuItem)
-
-        menu.addItem(NSMenuItem.separator())
         
         // Audio Sensitivity submenu (PCM gain multiplier)
         let audioSensMenu = NSMenu()

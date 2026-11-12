@@ -1,0 +1,18 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Quantum Theta
+//Original Info:
+// "Quantum Theta" by Andy
+// Inspired by Justin and Jesse Swidler's "Spinner"
+
+(declare init
+ (set $useAspect 1)
+ (set $usePolar 1)
+ (set $tv1 (* 2 (trunc (+ 2 (rnd 6.5)))))
+ (set $tv2 (+ 1.04 (rnd .4)))
+)
+
+(declare move
+ (set $srcRadius $radius)
+ (set $srcTheta (+ $theta (* .04 (+ $tv2 (sin (* $tv1 $theta))))))
+)

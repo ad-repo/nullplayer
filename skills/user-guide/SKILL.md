@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom and Corona (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -503,19 +503,19 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Met visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear/Met visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
 (Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
 ### Every engine's menu
-ProjectM, Geiss, Tripex, AVS, Goom and Corona share one right-click menu, in the Visualizations window, a
+ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear share one right-click menu, in the Visualizations window, a
 `.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
 but Goom): the current preset,
 **Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
 with a **Cycle Interval** (5 s to 2 min), then that engine's own options, then **Visualization
-Engine**, **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
+Engine** (in a `.wmz` / Sonique effects area the **Effect** menu at the top picks it instead), **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its
 own cycle setting; with Manual Only an engine stays on the preset you chose. **C** steps the cycle
 setting in any engine.
 

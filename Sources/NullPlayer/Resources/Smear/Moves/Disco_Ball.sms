@@ -1,0 +1,21 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//				Disco Ball
+//Original Info:
+// "Burst" by Doug Fawley
+
+(declare init
+ (set $useAspect 0)
+ (set $usePolar 1)
+//A0=size of same-color areas--lower numbers=bigger areas
+//A1=speed of pull from outside
+//A2=speed of rotation (maybe should be negative, too)
+ (set $a0 (+ (rnd 10) 15))
+ (set $a1 (- 1 (rnd .0001)))
+ (set $a2 (+ .003 (rnd .003)))
+)
+
+(declare move
+ (set $srcRadius (/ (* $a1 (trunc (* $radius $a0))) $a0))
+ (set $srcTheta (- $theta $a2))
+)

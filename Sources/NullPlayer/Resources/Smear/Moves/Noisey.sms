@@ -1,0 +1,13 @@
+// Smear Moves Script
+// Translated from:	G-Force
+//			Noise Field
+
+(declare init
+ (set $usePolar 0)
+ (set $useAspect 1)
+)
+
+(declare move
+ (set $srcX (+ $x (* .1 (- (rnd 2) 1))))
+ (set $srcY (+ $y (* .1 (- (rnd 2) 1))))
+)

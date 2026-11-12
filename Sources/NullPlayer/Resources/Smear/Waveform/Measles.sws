@@ -1,0 +1,36 @@
+// Smear Waveform Script
+// Author:	xplo@xplo.org
+
+(declare init
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+ (set $useTime 1)
+ (set $paths 2)
+ (set $noLines0 1)
+ (set $noLines1 1)
+ (set $timer 0)
+ (set $ttimer 0)
+)
+
+(declare newline
+ (set $timer (+ $ttimer 1))
+ (set $ttimer $timer)
+ (set $tv0 (+ (* (* (cos (/ $timer 1.23455)) 100) (sin $timer)) 100))
+ (set $tv1 (+ (* (* (sin (/ $timer 1.23455)) 100) (cos $timer)) 100))
+ (set $tcx0 (- (/ $tv0 100) 1))
+ (set $tcy0 (- (/ $tv1 100) 1))
+ (set $tcx1 (- 1 $tcx0))
+ (set $tcy1 (- 1 $tcy0))
+)
+ 
+(declare waveform
+ (set $vl (+ (* $left .5) 1))
+ (set $vr (+ (* $right .5) 1))
+ (cart $xl $yl (* $vl $leftPeak) (* $step 6.283185307))
+ (cart $xr $yr (* $vr $rightPeak) (* $step 6.283185307))
+ (set $x0 (+ $xl $tcx0))
+ (set $y0 (+ $yl $tcy0))
+ (set $x1 (+ $xr $tcx1))
+ (set $y1 (+ $yl $tcy1))
+)

@@ -1,0 +1,19 @@
+// Smear Waveform Script
+// Translated from:	G-Force
+//				Up Like A Cup
+
+(declare init
+ (set $paths 1)
+ (set $steps 256)
+ (set $fade 0.0)
+ (set $useAspect 1)
+)
+
+(declare newline)
+
+(declare waveform
+ (set $tv1 (- 0 (sin (* 6.2831853 $step))))
+ (set $tv2 (* .4 $mid))
+ (set $x0 (- (- (* 2 $step) 1) (* $tv1 $tv2)))
+ (set $y0 (+ (* .7 (cos (* $step 6.2831853))) (* (sqrt (- 1 (* $tv1 $tv1))) $tv2)))
+)
