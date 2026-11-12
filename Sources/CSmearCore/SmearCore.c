@@ -5,7 +5,8 @@
 #include "smear.h"
 #include <time.h>
 
-extern void smearRender(SmearState *, uint32_t *Video, int width, int height, int pitch);
+/// 0 when its maps or screen buffers could not be allocated (it tries again next frame).
+extern int smearRender(SmearState *, uint32_t *Video, int width, int height, int pitch);
 
 /// The frame smearRender draws (0x00RRGGBB) and the RGBA bytes handed out.
 typedef struct {
@@ -14,6 +15,8 @@ typedef struct {
     size_t videoSize;
 } Core;
 
+/// Milliseconds since the core was made. An int, as upstream's timers are: it wraps after 24.8
+/// days, so a host recreates a core well before then (SmearEngine.coreLifetime).
 int smearNow(SmearState *s) {
     return (int)((clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - s->startNs) / 1000000);
 }
@@ -23,6 +26,7 @@ SmearCore *SmearCore_create(const char *scriptsDirectory) {
     if (!core) return NULL;
     SmearState *s = &core->state;
     s->startNs = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+    s->randSeed = arc4random();
     s->mapWidth = s->mapHeight = -1;
     s->sbWidth = s->sbHeight = -1;
     s->lineLastWidth = s->lineLastHeight = s->lineLastLine = -1;
@@ -81,7 +85,7 @@ const uint8_t *SmearCore_render(SmearCore *s, int width, int height,
         memcpy(s->waveform[channel], waveform, SMEAR_CORE_WAVEFORM_SIZE);
         memcpy(s->spectrum[channel], spectrum, SMEAR_CORE_SPECTRUM_SIZE);
     }
-    smearRender(s, core->video, width, height, width);
+    if (!smearRender(s, core->video, width, height, width)) return NULL;
 
     // 0x00RRGGBB to RGBA bytes, in place.
     uint8_t *rgba = (uint8_t *)core->video;

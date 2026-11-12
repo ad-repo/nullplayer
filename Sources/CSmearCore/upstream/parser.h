@@ -49,6 +49,7 @@ typedef	struct	__array_structure
 {
 	int	asAllocated;
 	double	*asData;
+	double	asErrorReturn;	// what an out-of-range access reads and writes
 }	ArrayStructure;
 
 

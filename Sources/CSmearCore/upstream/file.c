@@ -3,22 +3,16 @@
 // case) into the Smear's own lists, every Environment knowing its
 // Smear; the move is the one the host holds (smearapi's "set move",
 // without the shared memory) instead of a weighted random pick; the
-// four Choose functions share one weighted picker.  See LICENSE.TXT.
+// four Choose functions share one weighted picker, drawing from the
+// Smear's own generator (smearRand).  See LICENSE.TXT.
 
 #include "smear.h"
 #include <dirent.h>
 
 static inline int
-BasicRandom(int n)
+WeightedRandom(SmearState *s, int n)
 {
-	return rand() % n;
-}
-
-
-static inline int
-WeightedRandom(int n)
-{
-	int n2 = BasicRandom(n * n);
+	int n2 = smearRand(s) % (n * n);
 	int w;
 
 	w = n - (int)sqrt(n2) - 1;
@@ -90,7 +84,7 @@ LoadDummyScript(SmearState *s, ScriptList *sl, char *script)
 // Picks with upstream's weighting, then moves the pick to the end of the
 // list so it is the least likely next time.
 static Environment *
-ChooseScript(ScriptList *sl)
+ChooseScript(SmearState *s, ScriptList *sl)
 {
 	int		w;
 	Environment	*p;
@@ -98,7 +92,7 @@ ChooseScript(ScriptList *sl)
 	if (sl->count == 0)
 		return (Environment *)0;
 
-	w = WeightedRandom(sl->count);
+	w = WeightedRandom(s, sl->count);
 
 	p = sl->list[w];
 
@@ -126,21 +120,21 @@ ChooseMoveScript(SmearState *s)
 Environment	*
 ChooseColorScript(SmearState *s)
 {
-	return ChooseScript(&s->colors);
+	return ChooseScript(s, &s->colors);
 }
 
 
 Environment	*
 ChooseWaveFormScript(SmearState *s)
 {
-	return ChooseScript(&s->waveforms);
+	return ChooseScript(s, &s->waveforms);
 }
 
 
 Environment	*
 ChooseParticleScript(SmearState *s)
 {
-	return ChooseScript(&s->particles);
+	return ChooseScript(s, &s->particles);
 }
 
 

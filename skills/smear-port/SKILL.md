@@ -43,7 +43,10 @@ further edit. `fnlist.{c,h}` and `eruntime.h`'s layout are otherwise upstream's.
    function statics (maps, screen buffers, colour maps, the timers, the 3D matrix, the audio) is a
    field of `SmearState`; every `Environment` (a compiled script) points at its Smear (`eState`).
    Each core parses its own copies of the scripts, since a script's variables are its runtime
-   state. Only the tokenizer's statics remain, made `_Thread_local`.
+   state. The random generator is the core's too (`smearRand`, `rand_r` on `randSeed`, seeded
+   from `arc4random`), and an out-of-range array access uses the array's own `asErrorReturn`
+   where upstream had a function static. Only the tokenizer's statics remain, made
+   `_Thread_local`.
 2. `smear.c` is cut down to the renderer: the x86 assembly of `sbApplyMove` is replaced by
    upstream's own C twin (`OLDsbApplyMove`); the plugin entry points, VIS.INI settings, map thread,
    "constant merge"/"total mayhem", title screen, song titles and click overlay are gone. Settings
@@ -53,7 +56,10 @@ further edit. `fnlist.{c,h}` and `eruntime.h`'s layout are otherwise upstream's.
 4. Bugs fixed: `array.c` zeroed `sizeof(double)` bytes of a grown array instead of all of it; a
    token, the function list and the variable table could overrun (variables past 256 share
    `eOverflow`); EXECUTE/LOOP/WHILE returned uninitialised values; `TimedRunForLine` used its
-   resume column before resetting it; `effectsDrawLine` shifted negative values.
+   resume column before resetting it; `effectsDrawLine` shifted negative values. Allocations
+   are checked: a map or screen buffer that cannot be had makes `SmearCore_render` return NULL
+   (that frame is skipped, the next one tries again), and an array that cannot grow reads as
+   out of range.
 5. The spectrum is `unsigned char` (MSVC's signed `char` made values over 127 negative), the
    waveform `signed char`.
 6. `FreeEnvironment` frees a compiled script (upstream never freed them); compile errors go to
@@ -89,8 +95,11 @@ variables; bass and treble are 0, as upstream never computed them.
   show a new move.
 - Smear's row 0 is the top; the blit flips it.
 - **The core is the render thread's alone.** `lock` guards the waveform, spectrum and held move
-  handed over by the audio thread and main. Cores are independent; the only shared state is libc
-  `rand()`.
+  handed over by the audio thread and main. Cores share nothing, so a window and a skin slot can
+  each run one.
+- `smearNow` is an `int` of milliseconds, as upstream's timers are, and wraps after 24.8 days,
+  when the move and colour timers would stop firing. `SmearEngine` replaces a core older than
+  20 days (`coreLifetime`) with a fresh one holding the same move.
 
 ## Licensing
 

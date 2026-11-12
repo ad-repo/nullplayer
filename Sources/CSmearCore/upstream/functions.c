@@ -1,6 +1,7 @@
 // Modified for NullPlayer (2026-11-12): the audio data and the 3D
 // matrix belong to the Environment's Smear (e->eState); EXECUTE, LOOP
-// and WHILE return 0 when they run nothing.  See LICENSE.TXT.
+// and WHILE return 0 when they run nothing; RND draws from the Smear's
+// own generator.  See LICENSE.TXT.
 
 #include "smear.h"
 
@@ -164,7 +165,7 @@ flFuncDeclare(fnRnd)
 	}
 
 //	return drand48() * d;
-	return (double)(rand() & 32767) / 32768.0 * (d2 - d1) + d1;
+	return (double)(smearRand(e->eState) & 32767) / 32768.0 * (d2 - d1) + d1;
 }
 
 

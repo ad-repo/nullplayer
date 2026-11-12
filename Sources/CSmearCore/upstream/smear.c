@@ -7,7 +7,9 @@
 //       Edited futher by mykel (mykel@earthling.net)
 //
 // Modified for NullPlayer (2026-11-12), see LICENSE.TXT:
-//   - Every global and function static is a field of SmearState, passed in.
+//   - Every global and function static is a field of SmearState, passed in; so is
+//     the random generator (smearRand, in place of rand()).
+//   - The map and screen buffers' allocations are checked: a failed one skips the frame.
 //   - The x86 assembly of sbApplyMove and DwordCopy_Inline is gone; the move uses
 //     upstream's own C version of the same loop (OLDsbApplyMove).
 //   - The Sonique plugin entry points, VIS.INI settings, map thread, "map constant
@@ -24,7 +26,7 @@
 
 #include "smear.h"
 
-#define	SIMPLE_RAND(n) (rand() % n)
+#define	SIMPLE_RAND(n) (smearRand(s) % n)
 
 // Upstream's VIS.INI defaults (1/10ths of seconds; chance in percent).
 #define	ARG_MovemapHoldTime	150
@@ -58,7 +60,7 @@ mapFunctionExternalSetup(SmearState *s)
 }
 
 
-// Fix the allocation, return non-zero if map data was reallocated
+// Fix the allocation, return 1 if map data was reallocated, -1 if that failed
 static int
 mapsCheckAllocation(SmearState *s)
 {
@@ -82,6 +84,11 @@ mapsCheckAllocation(SmearState *s)
 	{
 		free(s->mapsData[i]);
 		s->mapsData[i] = (uint32_t *)calloc((size_t)s->mapWidth * s->mapHeight * 2, sizeof(uint32_t));
+	}
+	if (s->mapsData[0] == (uint32_t *)0 || s->mapsData[1] == (uint32_t *)0)
+	{
+		s->mapWidth = s->mapHeight = -1;	// try again next frame
+		return -1;
 	}
 
 	s->mapLine = 0;
@@ -137,8 +144,8 @@ mapsTimedBuildLines(SmearState *s, int ms)
 }
 
 
-// Handle the map stuff - just do it
-static void
+// Handle the map stuff - just do it.  0 when the maps could not be allocated.
+static int
 mapsHandleMaps(SmearState *s)
 {
 	int	now;
@@ -159,7 +166,10 @@ mapsHandleMaps(SmearState *s)
 	}
 
 
-	if (mapsCheckAllocation(s) == 1)
+	if ((rv = mapsCheckAllocation(s)) < 0)
+		return 0;
+
+	if (rv == 1)
 	{
 		s->mapMerging = 0;
 		mapFunctionExternalSetup(s);
@@ -192,7 +202,7 @@ mapsHandleMaps(SmearState *s)
 			s->mapMergeTime = 100 * ARG_MovemapFadeTime * (SIMPLE_RAND(100) + 50) / 100;
 		}
 		else
-			return;
+			return 1;
 	}
 
 	if ((rv = mapsTimedBuildLines(s, s->mapRebuildTime)) == 1)
@@ -216,6 +226,7 @@ mapsHandleMaps(SmearState *s)
 		s->mapEndTime = now + 100 * ARG_MovemapHoldTime * (SIMPLE_RAND(100) + 50) / 100;
 		s->mapMergeTime = 100 * ARG_MovemapFadeTime * (SIMPLE_RAND(100) + 50) / 100;
 	}
+	return 1;
 }
 
 
@@ -263,7 +274,12 @@ sbCheckAllocation(SmearState *s)
 	{
 		free(s->sbAllocs[i]);
 		s->sbAllocs[i] = (unsigned char *)calloc(size, 1);
-		s->sbData[i] = s->sbAllocs[i] + s->sbWidth + 1;
+		s->sbData[i] = s->sbAllocs[i] ? s->sbAllocs[i] + s->sbWidth + 1 : (unsigned char *)0;
+	}
+	if (s->sbData[0] == (unsigned char *)0 || s->sbData[1] == (unsigned char *)0)
+	{
+		s->sbWidth = s->sbHeight = -1;	// try again next frame
+		return -1;
 	}
 
 	return 1;
@@ -284,7 +300,8 @@ sbSwap(SmearState *s)
 
 #define	INTERPOLATE16(a, b, v)	((a) + ((((b) - (a)) * (v)) >> 16))
 
-static void
+// 0 when the maps or screen buffers could not be allocated.
+static int
 sbApplyMove(SmearState *s)
 {
 	uint32_t	*mp;
@@ -299,9 +316,8 @@ sbApplyMove(SmearState *s)
 	int		v2;
 	int		w;
 
-	mapsHandleMaps(s);
-
-	sbCheckAllocation(s);
+	if (!mapsHandleMaps(s) || sbCheckAllocation(s) < 0)
+		return 0;
 
 	w = s->sbWidth;
 
@@ -344,6 +360,7 @@ sbApplyMove(SmearState *s)
 	}
 
 	sbSwap(s);
+	return 1;
 }
 
 
@@ -828,7 +845,7 @@ colormapHandle(SmearState *s)
 // Draws one frame into Video, 0x00RRGGBB pixels, row 0 at the top.
 //
 //////////////////////////////////////////////////////////////////////////////////////
-void
+int
 smearRender(SmearState *s, uint32_t *Video, int width, int height, int pitch)
 {
 	s->_Video	= Video;
@@ -845,9 +862,11 @@ smearRender(SmearState *s, uint32_t *Video, int width, int height, int pitch)
 
 	colormapHandle(s);
 
-	sbApplyMove(s);
+	if (!sbApplyMove(s))
+		return 0;
 	waveformHandle(s);
 	particleHandle(s);
 
 	cmapMapSBToVideo(s);
+	return 1;
 }

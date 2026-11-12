@@ -67,6 +67,7 @@ typedef	struct	_scriptList
 typedef	struct	SmearState
 {
 	uint64_t	startNs;
+	unsigned int	randSeed;	// smearRand's state: libc rand() is shared by every core
 
 	ScriptList	moves, colors, waveforms, particles;
 	Environment	*heldMove;
@@ -131,6 +132,7 @@ typedef	struct	SmearState
 
 // Milliseconds since this Smear started; stands in for GetTickCount().
 extern	int	smearNow(SmearState *);
+#define	smearRand(s)	rand_r(&(s)->randSeed)
 
 extern	void	LoadEverything(SmearState *, const char *dir);
 extern	Environment	*ChooseMoveScript(SmearState *);

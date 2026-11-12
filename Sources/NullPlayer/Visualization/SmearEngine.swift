@@ -15,6 +15,9 @@ final class SmearEngine: NSObject, VisualizationEngine {
     private static let maxRenderWidth = 1024
     /// Smear is timed in milliseconds; more frames than this only spend CPU.
     private static let updateInterval = 1.0 / 60.0
+    /// Smear's clock is a 32-bit millisecond count that wraps after 24.8 days, when its timers
+    /// stop firing; a core this old is replaced by a fresh one, which holds the same move.
+    private static let coreLifetime: CFTimeInterval = 20 * 24 * 60 * 60
 
     static let moveKey = "smear.move"
 
@@ -32,6 +35,7 @@ final class SmearEngine: NSObject, VisualizationEngine {
 
     // Render thread only.
     private var core: OpaquePointer?
+    private var coreCreated: CFTimeInterval = 0
     /// Copied out of `waveform` / `spectrum` byte for byte, so the audio thread never pays for a
     /// copy-on-write of an array the render thread still holds.
     private var frameWaveform = [Int8](repeating: 0, count: Int(SMEAR_CORE_WAVEFORM_SIZE))
@@ -45,11 +49,12 @@ final class SmearEngine: NSObject, VisualizationEngine {
     init(width: Int, height: Int) {
         super.init()
         viewport = (max(1, width), max(1, height))
-        guard let folder = Self.scriptsFolder else {
+        guard Self.scriptsFolder != nil else {
             NSLog("SmearEngine: bundled scripts not found")
             return
         }
-        core = folder.withUnsafeFileSystemRepresentation { SmearCore_create($0) }
+        core = Self.makeCore()
+        coreCreated = CACurrentMediaTime()
         guard core != nil else { return }
         glGenTextures(1, &texture)
         glGenFramebuffers(1, &framebuffer)
@@ -94,6 +99,7 @@ final class SmearEngine: NSObject, VisualizationEngine {
     }
 
     func renderFrame() {
+        renewCoreIfOld()
         guard isAvailable, let core else { return }
         let canvas = SoftwareCanvas.atLeastMinimum(width: viewport.width, height: viewport.height)
         let width = min(canvas.width, Self.maxRenderWidth)
@@ -116,6 +122,19 @@ final class SmearEngine: NSObject, VisualizationEngine {
                           0, GLint(viewport.height), GLint(viewport.width), 0,
                           GLbitfield(GL_COLOR_BUFFER_BIT), GLenum(GL_LINEAR))
         glBindFramebuffer(GLenum(GL_READ_FRAMEBUFFER), GLuint(previousRead))
+    }
+
+    private static func makeCore() -> OpaquePointer? {
+        scriptsFolder?.withUnsafeFileSystemRepresentation { SmearCore_create($0) }
+    }
+
+    private func renewCoreIfOld() {
+        guard isAvailable, CACurrentMediaTime() - coreCreated >= Self.coreLifetime,
+              let fresh = Self.makeCore() else { return }
+        SmearCore_destroy(core)
+        core = fresh
+        coreCreated = CACurrentMediaTime()
+        lock.withLock { moveChanged = true }
     }
 
     /// Runs one Smear frame and uploads it. The core follows a new canvas size itself, as the
@@ -176,7 +195,7 @@ final class SmearEngine: NSObject, VisualizationEngine {
 
     func step(by offset: Int) {
         let count = Self.presetCount
-        select { (($0 ?? 0) + offset + count) % count }
+        select { ((($0 ?? 0) + offset) % count + count) % count }
     }
 
     func selectRandomPreset() {

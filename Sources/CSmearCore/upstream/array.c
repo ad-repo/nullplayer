@@ -1,6 +1,8 @@
 // Modified for NullPlayer (2026-11-12): a grown array zeroes all of its
 // new elements, not sizeof(double) bytes of them; an access starts
-// zeroed, so a half-compiled one can be freed.  See LICENSE.TXT.
+// zeroed, so a half-compiled one can be freed; an out-of-range access
+// (or one the array could not grow to) uses the array's own error slot,
+// not a static shared by every Smear.  See LICENSE.TXT.
 
 #include "smear.h"
 
@@ -22,6 +24,8 @@ arrayCheckAllocation(ArrayStructure *asp, int offset)
 		allocCount += ARRAY_ALLOCATION_CHUNK;
 
 	dp = (double *)malloc(allocCount * sizeof(double));
+	if (dp == (double *)0)
+		return;
 
 	if (asp->asAllocated)
 	{
@@ -74,18 +78,17 @@ arrayAllocateNewAccess(void)
 double	*
 arrayGetEvaluationPointer(ArrayStructure *asp, double offset)
 {
-static	double	errorReturn;
 	int	ioff;
 
 	ioff = (int)floor(offset);
 
-	if (ioff < 0 || ioff >= MAX_ARRAY_OFFSET)
-	{
-		errorReturn = 0.0;
-		return &errorReturn;
-	}
-
 	arrayCheckAllocation(asp, ioff);
+
+	if (ioff < 0 || ioff >= asp->asAllocated)
+	{
+		asp->asErrorReturn = 0.0;
+		return &asp->asErrorReturn;
+	}
 
 	return asp->asData + ioff;
 }
