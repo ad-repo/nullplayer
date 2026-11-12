@@ -61,25 +61,32 @@ final class WinampModernDebugClickSweep {
     private let startVolume: Double
     /// Put back at the end, with the volume: the EQ sliders and switches write the user's settings.
     private let startEQ: WinampModernEQSnapshot?
+    /// The skin's stored settings at the start, put back at the end (B439).
+    private let configuration: WinampModernConfiguration?
+    private let startConfiguration: [String: Any]
     private var menuOpened = false
     private var modalOpened = false
     private weak var openMenu: NSMenu?
     private var menuObserver: NSObjectProtocol?
 
-    static func start(on view: WinampModernMainView, containerID: @escaping (NSWindow) -> String?) {
+    static func start(on view: WinampModernMainView, configuration: WinampModernConfiguration?, containerID: @escaping (NSWindow) -> String?) {
         let startVolume = view.host.volume
         view.host.volume = probeVolume
-        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume, containerID: containerID)
+        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume, configuration: configuration,
+                                                containerID: containerID)
         running = sweep
         sweep.step(0)
     }
 
-    private init(view: WinampModernMainView, startVolume: Double, containerID: @escaping (NSWindow) -> String?) {
+    private init(view: WinampModernMainView, startVolume: Double, configuration: WinampModernConfiguration?,
+                 containerID: @escaping (NSWindow) -> String?) {
         self.view = view
         self.main = view
         self.startVolume = startVolume
         self.containerID = containerID
         startEQ = view.componentHost?.equalizerSnapshot()
+        self.configuration = configuration
+        startConfiguration = configuration?.storedSnapshot() ?? [:]
         startLayout = view.renderer.activeLayoutID
         targets = Self.targets(in: view)
         NSLog("WM-SMOKE start layout=%@ targets=%d", startLayout, targets.count)
@@ -355,6 +362,7 @@ final class WinampModernDebugClickSweep {
             host.equalizerSetPreampDB(startEQ.preampDB)
             startEQ.bandGainsDB.enumerated().forEach { host.equalizerSetBandGainDB($0.offset, gainDB: $0.element) }
         }
+        configuration?.restoreStored(startConfiguration)
         menuObserver.map(NotificationCenter.default.removeObserver)
         NSLog("WM-SMOKE done")
         Self.running = nil

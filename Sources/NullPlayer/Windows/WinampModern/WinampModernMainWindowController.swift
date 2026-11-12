@@ -384,7 +384,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 // later than a hand-given point so the launch's playback has started.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                     guard let self, let view = skinView else { return }
-                    WinampModernDebugClickSweep.start(on: view) { [weak self] window in
+                    WinampModernDebugClickSweep.start(on: view, configuration: self.loadedSkin?.configuration) { [weak self] window in
                         self?.auxiliaryContainers.first { $0.window === window }?.containerID
                     }
                 }
