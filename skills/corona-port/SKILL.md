@@ -12,8 +12,9 @@ warped, blurred trail and a rippling reflection along the bottom fifth. It is li
 itself a port of Richard Ashburn's Corona for Sonique. The source came as a zip
 (`Phthalo's Corona Source Code.zip`) identical to libvisual's files.
 
-A `.wal` skin's visualization box shows it too (it follows the shared engine preference), but the
-`.wmz` / Sonique effects list (`SkinEffectSelection.catalogue`) has no Corona entry, as it has no Goom.
+It runs in every skin family's slot: a `.wal` skin's visualization box (which follows the shared
+engine preference) and the `.wmz` / Sonique effects list (`SkinEffectSelection.catalogue`, entry
+`corona`), where it renders offscreen like the other engines.
 
 ## File layout
 

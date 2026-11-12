@@ -512,7 +512,7 @@ the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Met visualization host.
 ### Every engine's menu
 ProjectM, Geiss, Tripex, AVS, Goom and Corona share one right-click menu, in the Visualizations window, a
 `.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
-but Goom and Corona): the current preset,
+but Goom): the current preset,
 **Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
 with a **Cycle Interval** (5 s to 2 min), then that engine's own options, then **Visualization
 Engine**, **Audio Sensitivity**, **Quality**, **Fullscreen** and **Close**. Each engine remembers its

@@ -132,7 +132,8 @@
   flames of particles that swirl and leap on the beat over a rippling reflection. Its presets are 31
   palettes, fire, ice, night sky and more, which it fades between (Auto-Random every 30 seconds by
   default); right-click to pick one, and → / ← / R step through them. **Blaze**, in the same menu,
-  draws brighter, streakier flames.
+  draws brighter, streakier flames. It also plays in a Windows Media Player skin's effects area
+  and in Sonique's visual mode and mid-mode circle.
 
 ## 0.35.0
 
