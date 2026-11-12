@@ -2,6 +2,78 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B441 — EI's timer is cut off at the top — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B441 | **EI's timer is cut off at the top (and bottom).** Reported by the user (reported by the user at the intake #11 hand-over (2026-11-11)); measured 2026-11-11 on a census shot. `<text id="timer" display="time" x="30" y="24" w="80" h="18" font="player.arial" fontsize="35" align="right">`: the face is 35 px in an 18 px box, and `drawTrueTypeText` scissors a string to its own box vertically (BB27), so the digits showed rows 24.0..41.5 only, flat top and bottom. The author's `screenshot.png` shows the whole digit, 22 rows (29..50), beyond the box bottom at 42. Done when the digits are whole | EI | S | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** A `display="time"` clock taller than its box is no longer scissored to the box vertically (`band` in `drawTrueTypeText`, both the line clip and the per-cell clip); tickers and labels keep BB27's box. EI's census shot shows the whole `-3:46`. Other skins whose clock face is taller than its box (TOX Milla's Impact 24 in a 15 px timer) now draw whole too. Swept over the corpus (2026-11-11/12: render, interaction and motion against an `origin/main` 4d139aba baseline), every diff classified clean.
+
+## B440 — cPro skins open maximized at 1800x1130; the intake smoke put them there — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B440 | **cPro skins open maximized at 1800x1130, the whole visible screen; the intake smoke put them there.** Reported by the user (reported by the user at the intake #11 hand-over (2026-11-11): "tabs force the window fullscreen"). Measured 2026-11-11 on cPro__cMP11 (no census run). The layout declares `default_w="800" default_h="600"` (`two/xml/player-normal.xml:316`); at start the engine script reads `getPublicInt("cPro.maximized",0)` and, when it is 1, opens at the viewport (`getViewportWidthFromGuiObject` 1800, 1130). That int was 1 on seven skins of this batch (cPro_Candeo, cPro_Expensive_Hi_Fi, cPro_SC, cPro_WinampVista, cPro__Windows_XP, cPro__cirQ, cPro_smplwhite) because the click smoke presses `button#main.goBig` (and the title bar's `layer#doubleclick`, `Maximize Window on Titlebar Doubleclick=1`) and the skin persists the result: after one smoke of cPro__cMP11 the stored `cpro_maximized` was 1 and the next launch opened 1800x1130. Tabs do not resize the window: restored with the skin's own restore button to 500x500, a click on each of Playlist, Video, Visualization, Browser, BrowserPro, Now Playing, Playlist again left the frame at 762,293 500x500 every time (BrowserPro shown on a capture). Fixed: the sweep snapshots the skin's stored settings and puts them back when it finishes (`WinampModernConfiguration.storedSnapshot`/`restoreStored`), and the seven stored values were reset to 0 in the debug defaults. Open: from the default (unmaximized) state the smoke's first target is `layer#doubleclick`, which maximizes, and the sweep ends after that one click (`main 1 clicked`, `library not reached`; with the maximized start it read 25), so cPro skins need a press-back for a click that resizes the window. Done when the cPro smoke walks its controls from the default state | cPro__cMP10, cPro__cMP11, cPro_Candeo, cPro__Windows_XP, cPro_WinampVista, cPro_smplwhite, cPro__Blue_Green_Whale_Amp, cPro__cirQ, cPro_Expensive_Hi_Fi | S | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** The sweep restores the skin's stored settings when it finishes, and a click that resizes the main window is pressed back (`pressed-back`, like B433), so `layer#doubleclick` and `main.goBig` no longer maximize the window the walk is on. The nine cPro batch skins re-smoked from their default state: 24 clicked and `library embedded` on eight (43 clicked on Blue_Green_Whale_Amp, which has more controls), `cpro_maximized` 0 or absent in the debug defaults afterwards. A smoke that dies before `WM-SMOKE done` cannot restore (Blue_Green_Whale_Amp hit its 100 s cap once and left `maximized=1` and its shade layout stored); reset those two keys before re-running.
+
+## B437 — VISION_WINAMP_SKIN_'s slide show and picture buttons do nothing visible — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B437 | **VISION_WINAMP_SKIN_'s slide show and picture buttons do nothing visible.** Reported by the user (reported by the user at the intake #11 hand-over (2026-11-11): dead buttons, `togglebutton#slide`, "the pictures do not cycle"). Measured 2026-11-11 with `WINAMP_MODERN_CALL_TRACE=1`: `slide`'s click runs `pic.maki` (`isrunning()` 0 then `start()`), and each tick and each press of `next_pic`/`prev_pic` calls `setxmlparam(image,picN)` on `LAYER#face_pic` for pic2..pic6. Those bitmaps are `file="c:/vision/pic1.jpg"` … `pic5.jpg` (`player-elements.xml:14-18`), the author's own disk; the archive ships only `player/picST.jpg` (pic1), so there is nothing to cycle to and the face keeps showing it (checked on a shot after `next_pic`). `param="ps"` names no container, group or window: the toggle's job is the script on the button. The other `unreachable` smoke rows are the skin's duplicates: `SeekGhost` sits under `seeker` (same action, `seeker` seeks), and `slider#Volume` is `w=0 h=0` with the `vol` layer taking the press (`volume` changes). No engine defect | VISION_WINAMP_SKIN_ | - | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Not an engine defect: the scripts run and swap `face_pic` to bitmaps the archive does not contain. Nothing to change; the skin's `c:/vision/` pictures are the author's.
+
+## B435 — Akbank's and New_York_Minute_Winamp5_Skin's spectrum draws outside the player — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B435 | **Akbank's and New_York_Minute_Winamp5_Skin's spectrum draws outside the player, off its left side.** Found by the user (reported by the user at the intake #11 hand-over (2026-11-11)); census shots measured 2026-11-11. Both skins' `pink.xml` hold `<group id="vis.group.pink" x="30" y="140" background="pink.vis">` with a full-size `<vis w="0" relatw="1" h="0" relath="1">` inside; `pink.vis` is a 221x114 skyline whose alpha (bbox 6,14..209,111) is the vis's window. A group clips its children to its own box, and to its `background`'s alpha only when that background is not painted (`groupRegionMask`), so the bars filled the whole 221x114 rectangle and ran out over the oval's bottom-left rim. Done when the bars show only inside the skyline | Akbank, New_York_Minute_Winamp5_Skin | S | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** A group with a painted `background` that directly holds a `<vis>` now clips it to that background's alpha (`groupRegionMask`); other painted groups keep their box. Census shots of both skins: the bars no longer cross the oval. Swept over the corpus (2026-11-11/12: render, interaction and motion against an `origin/main` 4d139aba baseline), every diff classified clean; any other skin with a vis in a painted group is affected by design.
+
+## B433 — T3-Amp's PL, EQ, TH and ML toggles and seek bar read unreachable in the click smoke — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B433 | **T3-Amp's PL, EQ, TH and ML buttons and its seek bar cannot be clicked: something above them takes the press.** Found in intake #11's click smoke (2026-11-11, playing): `togglebutton#player.button.playlist`, `.equalizer`, `.thinger`, `.medialibrary` and `layer#player.background.seek.track` all read `unreachable` though the main window's shot draws them in the display (`player.normal.group.display.contents`, `xml/player-normal.xml:104-110`). Done when each toggles its window and the seek track takes a drag | T3-Amp | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Not an app defect. On a fresh launch a click at each control's centre reaches it (`WINAMP_MODERN_DEBUG_CLICK` logged `togglebutton#player.button.playlist`, `.equalizer`, `.thinger`, `.medialibrary` and `layer#player.background.seek.track`). The smoke's first row, `button#player.button.switch` (Switch Mode, `behaviors.m:144-150`), swaps `player.normal.group.display.contents` for its oversized twin, so the five controls it holds were off screen when the walk reached them. The sweep now presses a control back when its click took later targets off screen (`WinampModernDebugClickSweep`, note `pressed-back`): T3-Amp reads `main 12 clicked, 2 not clicked` (Minimize and Eject, skipped by design) where it read `7 clicked, 7 not clicked`.
+
+## B432 — sucksdotcomwinamp's and sx-2's Library opens with no close control — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B432 | **sucksdotcomwinamp's and sx-2's Library opens with no close control.** Found in intake #11's click smoke (2026-11-11, playing): `library skin-frame, … close no-close-control` on both; the surfaces line reads `library=synthesized:nullplayer.library`. Their census shots show the Library (and the EQ Studio) as a bare dark box with no title bar. Done when the synthesized Library carries a close the user can press, or the frame choice is recorded with why | sucksdotcomwinamp, sx-2 | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** Their standard frames carry no `CLOSE` art (sx-2's `pledit.exit` button is commented out in `standardframe.xml`), so the window closes from the base rule's invisible corner (`FallbackCloseArea`, `needsFallbackClose`). A real click in the corner of sx-2's Library closed it (`winhelper click`), and the smoke now presses that corner through `hostChromeHit` when no `CLOSE` is on screen and logs `fallback-corner`: both skins read `close closed`. The frame choice stands: nothing in either skin draws a close for the Library, so none is invented.
+
+## B430 — mcgen v1.2's Playlist Editor shows no tracks: its white panel is empty — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B430 | **mcgen v1.2's Playlist Editor shows no tracks: its white panel is empty.** Found in intake #11's visual review (2026-11-11, playing; no ref). `xml/pledit.xml`: `Pledit` holds the playlist component at `x=20 y=80 w=-40 h=-120` relative, inside `Wasabi:StandardFrame:NoStatus` with `content="pledit.content.group"`, on a 350x200 window; the surfaces line reads `playlist=declared:Pledit`. Its shot has no glyph pixels in the component's box at all (all white but the art), so the list is not drawn there, not merely low-contrast (the skin's `studio.list.text` is 200,200,200 and its list plate, `wasabi.edit.background` and `studio.list.background`, white). Done when the six rows show in the panel, legible | mcgen v1.2 | ? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** The list was there but its box was negative: `h="-120" relath="1"` in a frame whose client is 117 tall at the skin's 200 px floor, and a negative box is dropped from the scene, which also hid the holder from the component-room fit. `holderExtent` now counts a holder that only exists on a grown canvas as degenerate on that axis (`negativeHolderExtent`, `WasabiRendererLayoutSizing.swift`), and the fit's result reaches a window built before the frame's content existed (`WasabiSceneRenderer.autoFitDidChange`, set for auxiliary windows). The Playlist Editor opens 350x450 with the six rows legible (the list plate falls back to black through `listPlate`, white text on it).
+
+## B429 — heart_'s main window draws a teal slab behind the top half of the heart — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B429 | **heart_'s main window draws a teal slab behind the top half of the heart: its config drawer's frame background, which the skin cuts away.** Found in intake #11's visual review (2026-11-11, playing; no ref). `player.normal.drawer` (`xml/configdrawer.xml:844`, placed `y=-263 relaty=1 sysregion=1` by `player-normal-group.xml:338`) has `background="wasabi.frame.basetexture"` (`window/background.png`, teal 93,195,203), and its first layer `drawer.window.left.bottom.region` lays `drawer_bg_regions.png` with `sysregion="-1"`: opaque everywhere but the drawer panel's own outline, so everything else of the group comes off the window. We draw the background across the window's full 555 px width and about 125 px down, under the heart and the EQ drawer. The skin wraps everything in `Wasabi:MainFrame:NoStatus` (`sysregion=1` on the frame group), so the order rule in `regionCuts` (S7Reflex: a later positive restores an earlier cut) is the likely suspect. Also: its `button#pl`/`button#ml` and `slider#Seeker` read `unreachable` in the smoke. Done when the main window shows the heart and the drawer panel with no teal slab, and pl/ml are reachable or why not is recorded | heart_ | S? | 1 |
+
+**Closed 2026-11-11 (intake #11 fix pass).** The `regionCuts` order rule was right; the restore was too wide. `player.main` is a `sysregion="1"` wrapper, and what it puts back after the drawer's cut was the *box* of each leaf it holds, so the heart layer's 310x280 box restored the drawer's background over the clear corners above the lobes. A leaf with artwork now restores its artwork's shape (`WasabiRegionMark`, `fillMarks`); a leaf without keeps its box. The slab is gone from the census shot; `ml` now answers in the smoke. `Seeker` is covered by its own duplicate `SeekerGhost` (same box and action, declared after, takes the press and seeks), the skin's design; `pl` is filed as B434. Corpus render compare after the alpha fix (2026-11-11/12, against the `origin/main` 4d139aba baseline): 29 image diffs, all intended or justified (heart_'s slab, S7Reflex's drawer wedge, RODE_3_Lite's vistudio, Freddy_vs_Jason's status bar, wTunes and Lou_Reed's corners); interaction and motion sweeps clean, two interaction flips were noise in fresh re-runs.
+
+## B428 — The click smoke's aim search pinned the main thread on Official_Austin_Powers_3_Skin — closed 2026-11-11
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B428 | **The click smoke's aim search pinned the main thread on Official_Austin_Powers_3_Skin.** Found in intake #11's click smoke (2026-11-11, reported by the user as a deadlock): `sample` showed the main thread in `WinampModernDebugClickSweep.point(on:in:)` → `WasabiSceneRenderer.object(at:)` → `isClearMousetrap` → `WasabiResourceCache.opaqueBounds(of:)`, 885 of 913 samples. `opaqueBounds` rasterised the whole bitmap into an alpha buffer on every call, and the hit test asks it for every pressable object under the point, so the sweep's per-point search over large artwork never finished. The same uncached call sat on the real hover and click path | Official_Austin_Powers_3_Skin | S | 1 |
+
+**Closed 2026-11-11 (intake #11 scan).** `opaqueBounds` keeps one answer per `CGImage` in an `NSCache`. The skin's smoke now finishes in about 45 s (`main 11 clicked`, Library closed).
+
 ## B421 — WGlass's EQ Studio and Media Library wear its playlist frame, so they show the playlist time (`4:02/19:28`) — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |

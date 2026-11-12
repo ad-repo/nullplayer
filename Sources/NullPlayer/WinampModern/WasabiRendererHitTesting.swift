@@ -256,10 +256,10 @@ extension WasabiSceneRenderer {
         let bitmapID: String?
         /// A positive value adds this object to the window; a negative one takes it away.
         let additive: Bool
-        /// For a positive, artwork-less group whose descendants declare their own region: the boxes
-        /// of what it holds — its visible leaves, and any group inside that paints a `background`.
-        /// Such a group reaches that far, not as far as its own box. Nil for anything else.
-        let contentBoxes: [CGRect]?
+        /// For a positive, artwork-less group whose descendants declare their own region: what it
+        /// holds — its visible leaves, and any group inside that paints a `background`. Such a group
+        /// reaches that far, not as far as its own box. Nil for anything else.
+        let marks: [WasabiRegionMark]?
         /// Drawn at `alpha="0"`, itself or by a group above it. Part of the cache key, because a
         /// script shows such an object by raising its alpha (Clock V2.76's calendar).
         let hidden: Bool
@@ -267,7 +267,7 @@ extension WasabiSceneRenderer {
         static func == (lhs: Self, rhs: Self) -> Bool {
             lhs.object === rhs.object && lhs.frame == rhs.frame && lhs.clip == rhs.clip
                 && lhs.bitmapID == rhs.bitmapID && lhs.additive == rhs.additive
-                && lhs.contentBoxes == rhs.contentBoxes && lhs.hidden == rhs.hidden
+                && lhs.marks == rhs.marks && lhs.hidden == rhs.hidden
         }
     }
 
@@ -319,7 +319,7 @@ extension WasabiSceneRenderer {
         // A layout that cuts nothing keeps its rectangle (see `buildWindowRegion`), and this runs on
         // every frame as the cache key, so the content walk below is only paid for one that cuts.
         let cuts = declared.contains { !$0.additive }
-        let contentBoxes = cuts ? wrapperContentBoxes(nodes: nodes, declared: declared) : [:]
+        let marksByWrapper = cuts ? wrapperMarks(nodes: nodes, declared: declared) : [:]
         func cutParent(_ entry: (node: WasabiSceneNode, additive: Bool)) -> ObjectIdentifier? {
             entry.node.object.parent.map(ObjectIdentifier.init).flatMap { cutParents.contains($0) ? $0 : nil }
         }
@@ -345,15 +345,15 @@ extension WasabiSceneRenderer {
             let hidden = Self.alphaFraction(of: object) * entry.node.inheritedAlpha == 0
             return WasabiRegionCut(object: object, frame: entry.node.frame, clip: entry.node.clip,
                                    bitmapID: entry.node.bitmapID, additive: entry.additive,
-                                   contentBoxes: contentBoxes[ObjectIdentifier(object)], hidden: hidden)
+                                   marks: marksByWrapper[ObjectIdentifier(object)], hidden: hidden)
         }
     }
 
-    /// `WasabiRegionCut.contentBoxes` for every positive, artwork-less group with a region object
+    /// `WasabiRegionCut.marks` for every positive, artwork-less group with a region object
     /// beneath it, keyed by that group.
-    private func wrapperContentBoxes(nodes: [WasabiSceneNode],
-                                     declared: [(node: WasabiSceneNode, additive: Bool)])
-        -> [ObjectIdentifier: [CGRect]] {
+    private func wrapperMarks(nodes: [WasabiSceneNode],
+                              declared: [(node: WasabiSceneNode, additive: Bool)])
+        -> [ObjectIdentifier: [WasabiRegionMark]] {
         func ancestors(of object: WasabiObject) -> [ObjectIdentifier] {
             var result: [ObjectIdentifier] = []
             var ancestor = object.parent
@@ -369,7 +369,7 @@ extension WasabiSceneRenderer {
                 && regionAncestors.contains(ObjectIdentifier($0.node.object))
         }.map { ObjectIdentifier($0.node.object) })
         guard !wrappers.isEmpty else { return [:] }
-        var boxes: [ObjectIdentifier: [CGRect]] = Dictionary(uniqueKeysWithValues: wrappers.map { ($0, []) })
+        var boxes: [ObjectIdentifier: [WasabiRegionMark]] = Dictionary(uniqueKeysWithValues: wrappers.map { ($0, []) })
         let parents = Set(nodes.compactMap { $0.object.parent.map(ObjectIdentifier.init) })
         // A group counts when it paints a `background`; otherwise its box is only the room its
         // children are laid out in. A cut is a silhouette, not content: Big Bento's full-window
@@ -381,7 +381,7 @@ extension WasabiSceneRenderer {
             let box = node.frame.intersection(node.clip)
             guard !box.isNull, !box.isEmpty else { continue }
             for ancestor in ancestors(of: node.object) where wrappers.contains(ancestor) {
-                boxes[ancestor]?.append(box)
+                boxes[ancestor]?.append(WasabiRegionMark(node: node))
             }
         }
         // A wrapper that holds no content is its box, like any other artwork-less group.
@@ -562,11 +562,11 @@ extension WasabiSceneRenderer {
                 draw(backing, object: layout, frame: CGRect(x: 0, y: 0, width: width, height: height), context: context)
             }
             for cut in cuts {
-                guard let contentBoxes = cut.contentBoxes else { continue }
+                guard let marks = cut.marks else { continue }
                 context.saveGState()
                 context.clip(to: cut.clip)
                 context.clear(cut.frame)
-                context.fill(contentBoxes)
+                fillMarks(marks, in: context)
                 context.restoreGState()
             }
             for cut in drawnCuts {
@@ -586,8 +586,12 @@ extension WasabiSceneRenderer {
                     // window contributes. Only additive, because a *negative* object with no bitmap
                     // has no silhouette to cut with, and taking its whole rect would remove
                     // everything it happens to span.
-                    context.setFillColor(gray: 1, alpha: 1)
-                    context.fill(cut.contentBoxes ?? [cut.frame])
+                    if let marks = cut.marks {
+                        fillMarks(marks, in: context)
+                    } else {
+                        context.setFillColor(gray: 1, alpha: 1)
+                        context.fill(cut.frame)
+                    }
                 }
                 context.restoreGState()
             }

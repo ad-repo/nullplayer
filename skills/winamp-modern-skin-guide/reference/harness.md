@@ -990,7 +990,7 @@ released through the view's own mouse handlers (`WinampModernMainView.debugDrag`
 and dismisses any menu or modal alert the click popped. Then the Library: the sweep opens it the way the Windows menu does (from closed), logs an `open`
 row whose `note` says what came up (`skin-frame`, `embedded` in a skin window already open, `plain-chrome` for NullPlayer's own
 browser window, `not-opened`), sweeps a skin-frame Library's controls as `window=library` rows, then presses its first on-screen `CLOSE` (Just_Buttons pairs a hidden `Close.inactive` with `Close`) and logs a
-`close` row, `changed` `closed` or `nochange` (`note` `no-close-control` when none is on screen). `WM-SMOKE done` ends the run and puts back the starting volume and EQ. The driver is one command:
+`close` row, `changed` `closed` or `nochange` (`note` `fallback-corner` when the frame has no `CLOSE` art and the base rule's invisible corner is pressed instead, B432; `no-close-control` when that corner is not live either). A click that takes later targets off screen is pressed back (`note` `pressed-back`, B433: T3-Amp's Switch Mode swaps the display group the transport row lives in). `WM-SMOKE done` ends the run and puts back the starting volume, EQ and the skin's stored settings (B440: a cPro skin persists `cpro.maximized=1` when the sweep presses its maximize, and every later launch opened at the whole screen). The driver is one command:
 
 ```sh
 scripts/wal_live_smoke.sh Skin_A.wal Skin_B.wal --out /tmp/smoke   # one launch per skin, music playing

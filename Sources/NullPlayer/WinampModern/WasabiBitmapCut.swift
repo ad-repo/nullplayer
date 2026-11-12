@@ -84,9 +84,22 @@ extension WasabiResourceCache {
         return Int(min(limit, max(-limit, value)))
     }
 
+    /// One answer per image. A hit test asks for every object under the pointer (`isClearMousetrap`),
+    /// and each ask rasterised the whole bitmap: the click smoke's aim search pinned the main thread
+    /// on Official_Austin_Powers_3_Skin (intake #11).
+    private final class OpaqueBounds { let rect: CGRect?; init(_ rect: CGRect?) { self.rect = rect } }
+    private static let opaqueBoundsCache = NSCache<CGImage, OpaqueBounds>()
+
     /// The box around `image`'s non-transparent pixels, top-left origin; nil when nothing in it is
     /// opaque.
     static func opaqueBounds(of image: CGImage) -> CGRect? {
+        if let cached = opaqueBoundsCache.object(forKey: image) { return cached.rect }
+        let rect = measuredOpaqueBounds(of: image)
+        opaqueBoundsCache.setObject(OpaqueBounds(rect), forKey: image)
+        return rect
+    }
+
+    private static func measuredOpaqueBounds(of image: CGImage) -> CGRect? {
         let width = image.width, height = image.height
         var alpha = [UInt8](repeating: 0, count: width * height)
         let drawn = alpha.withUnsafeMutableBytes { buffer -> Bool in

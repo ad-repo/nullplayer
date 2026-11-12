@@ -384,7 +384,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 // later than a hand-given point so the launch's playback has started.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
                     guard let self, let view = skinView else { return }
-                    WinampModernDebugClickSweep.start(on: view) { [weak self] window in
+                    WinampModernDebugClickSweep.start(on: view, configuration: self.loadedSkin?.configuration) { [weak self] window in
                         self?.auxiliaryContainers.first { $0.window === window }?.containerID
                     }
                 }
@@ -619,6 +619,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             self?.resize(window: auxWindow, to: size)
             self?.applyLayoutConstraints()
         }
+        renderer.autoFitDidChange = { [weak view] size in view?.applyCanvasResize(size) }
         // The container's own `component=` GUID, not its id — `Pledit` and `MLibrary` only look
         // like their kinds by convention (`WinampModernContainerTopology.kind(of:)`).
         // `default_visible="1"` on a window we cannot fill is recorded, once, rather than acted

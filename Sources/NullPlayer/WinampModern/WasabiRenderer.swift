@@ -461,10 +461,20 @@ final class WasabiResourceCache {
     /// A group background's coverage as a clip mask: in wherever its artwork has any alpha (B249).
     /// Keyed by the declaring file as well as the name: a path background resolves relative to it.
     func alphaMask(background: String, declaredIn location: WalSourceLocation) -> CGImage? {
+        alphaMask(key: "alpha:" + location.path + "|" + background.lowercased()) {
+            bitmap(background: background, declaredIn: location)?.image
+        }
+    }
+
+    /// The same for a bitmap already resolved by id, so a faint shadow is still part of the shape (B429).
+    func alphaMask(bitmapID: String) -> CGImage? {
+        alphaMask(key: "alphaid:" + bitmapID.lowercased()) { bitmap(identifier: bitmapID)?.image }
+    }
+
+    private func alphaMask(key: String, artwork: () -> CGImage?) -> CGImage? {
         guard !isTornDown else { return nil }
-        let key = "alpha:" + location.path + "|" + background.lowercased()
         if let cached = regionMasks[key] { return cached }
-        guard let artwork = bitmap(background: background, declaredIn: location)?.image,
+        guard let artwork = artwork(),
               let image = Self.binaryMask(of: artwork, inside: { _, alpha in alpha > 0 }) else { return nil }
         cacheMask(image, key: key)
         return image
@@ -1038,7 +1048,23 @@ final class WasabiSceneRenderer {
         autoFit.canvas = size
         invalidateSceneCache()
         loadedSkin.runtime.graph.markAllDirty([.geometry, .appearance])
+        // A fit that lands after the window was built (a frame's content is instantiated when its
+        // layout is first shown) is a canvas the window has not heard of (B430).
+        if loadedSkin.runtime.hasStartedScripts, let autoFitDidChange {
+            DispatchQueue.main.async { [weak self] in
+                // A canvas that moved on since is announced by its own change.
+                guard self?.storedCanvasSize == size else { return }
+                autoFitDidChange(size)
+            }
+        }
     }
+
+    /// Set by a window that built its view before its content existed, so it can follow a later fit.
+    ///
+    /// The fit lands inside a scene build, so the renderer's canvas is updated at once and the view
+    /// is told one main-queue turn later: resizing the view re-enters the renderer, which cannot
+    /// happen mid-build. Until then `canvasSize` is ahead of the view's frame.
+    var autoFitDidChange: ((CGSize) -> Void)?
 
     /// Whether the skin described a resize range for the active layout **at all** — any one of
     /// `minimum_w`/`minimum_h`/`maximum_w`/`maximum_h`.

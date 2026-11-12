@@ -121,34 +121,32 @@ extension WasabiSceneRenderer {
             if !visible.isNull, drawFrame.minX >= visible.maxX - 1 { return }
         }
 
-        let clip = horizontalClip(of: object, text: text, measured: measured, frame: frame,
-                                  scrolls: scroll != nil, wraps: wraps, context: context)
+        // **The string's scissor: the box horizontally, and vertically the box too — except a clock
+        // taller than its box** (B441). EI's timer is a 35px face in `h="18"`, and its own screenshot
+        // shows the whole 22px of every digit; scissored at the box the top seven rows of each were
+        // gone. A ticker or label is bounded by its box (BB27). The band is symmetric about the box's
+        // midline, so it is the same rect in the mirrored space below.
+        let band = clock != nil && size > frame.height ? frame.insetBy(dx: 0, dy: -(size - frame.height)) : frame
+        let horizontal = horizontalClip(of: object, text: text, measured: measured, frame: frame,
+                                        scrolls: scroll != nil, wraps: wraps, context: context)
+        let clip = CGRect(x: horizontal.minX, y: band.minY, width: horizontal.width, height: band.height)
         context.saveGState()
         context.clip(to: clip)
         context.translateBy(x: 0, y: frame.midY)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: 0, y: -frame.midY)
         // The rect a string was drawn in was a **vertical** scissor as well as a layout box, and a
-        // `CTLine` has no rect at all, so that bound is restored here. It is load-bearing wherever a
-        // skin declares a font taller than the box it draws into, which is the whole point of a box
-        // that clips: measured pixel-for-pixel against `NSString.draw` over four faces, a 24pt line
-        // in a 16px box differs by ~350 pixels without it and by none with it
-        // (`WinampModernTextDrawingTests`). The wrapping branch draws into its own rect and needs no
-        // help.
+        // `CTLine` has no rect at all, so `clip` restores that bound. It is load-bearing wherever a
+        // skin declares a font taller than the box it draws into: measured pixel-for-pixel against
+        // `NSString.draw` over four faces, a 24pt line in a 16px box differs by ~350 pixels without
+        // it and by none with it (`WinampModernTextDrawingTests`). It is the object's own box, not
+        // `drawFrame`, which `valign` and `offsety` have moved: a line taller than its box is centred,
+        // so scissoring at the shifted rect would carry the cut up with it.
         //
-        // Applied *inside* the mirror, which is the space the rect it replaces was read in. `clip`
-        // above works unflipped only because mirroring `frame` about its own midpoint gives `frame`
-        // back; `drawFrame` is that box after `valign` and `offsety` have moved the string inside
-        // it, so it is not symmetric and the same trick does not work on it.
-        if !wraps {
-            // The **object's own box**, not the shifted one. They are the same rect whenever the line
-            // sits inside its box, and they part company exactly where the vertical alignment moved
-            // the string out of it — a line taller than its box is centred, so half its overflow is
-            // above the box, and scissoring at the shifted rect would carry the cut up there with it.
-            // BB27's rule is that the box bounds the string vertically, so that is the rect.
-            context.clip(to: CGRect(x: clip.minX, y: frame.minY,
-                                    width: clip.width, height: frame.height))
-        }
+        // Applied *inside* the mirror, which is the space the rect it replaces was read in. The
+        // scissor above is the same rect, and a clip applied twice at a fractional edge
+        // multiplies its coverage, so the pair is not a no-op.
+        if !wraps { context.clip(to: clip) }
         // Where a line's baseline sits inside `drawFrame`, and the one piece of vertical arithmetic
         // the conversion needs. All three branches share it: a clock cell and a ticker use the same
         // rect vertically, and only the horizontal origin differs between them.
@@ -177,12 +175,11 @@ extension WasabiSceneRenderer {
             // The cell rect used to be a scissor as well as a box — `.byClipping` was set for that
             // reason — and a `CTLine` has none. The per-cell clip below restores it. It is not
             // hypothetical: a `timecolonwidth` narrower than the colon glyph is exactly the case, and
-            // Big Bento Modern declares one. Vertically the cell is the **object's own box**, like the
+            // Big Bento Modern declares one. Vertically the cell is the **object's own band**, like the
             // scissor above: `drawFrame` is shifted by the centring, so a font taller than its box
             // (TOX Milla's Impact 24 in a 15px timer) lost the bottom of every digit to it.
             for cell in clock.cells {
-                let cellFrame = CGRect(x: origin, y: frame.minY,
-                                       width: cell.width, height: frame.height)
+                let cellFrame = CGRect(x: origin, y: clip.minY, width: cell.width, height: clip.height)
                 let glyphWidth = resources.textWidth(of: cell.text, font: font)
                 let x = cell.centred ? cellFrame.minX + (cellFrame.width - glyphWidth) / 2
                                      : cellFrame.minX

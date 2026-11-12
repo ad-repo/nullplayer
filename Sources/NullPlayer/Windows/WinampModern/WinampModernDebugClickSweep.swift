@@ -36,6 +36,7 @@ final class WinampModernDebugClickSweep {
         let layout: String
         let windows: [ObjectIdentifier: String]
         let mainOnScreen: Bool
+        let windowSize: CGSize
     }
 
     /// The keys of a `WM-SMOKE|` row, in order. A row the sweep did not click carries the first three
@@ -61,25 +62,30 @@ final class WinampModernDebugClickSweep {
     private let startVolume: Double
     /// Put back at the end, with the volume: the EQ sliders and switches write the user's settings.
     private let startEQ: WinampModernEQSnapshot?
+    /// The skin's stored settings at the start, put back at the end (B439).
+    private let storedSettings: (configuration: WinampModernConfiguration, snapshot: [String: Any])?
     private var menuOpened = false
     private var modalOpened = false
     private weak var openMenu: NSMenu?
     private var menuObserver: NSObjectProtocol?
 
-    static func start(on view: WinampModernMainView, containerID: @escaping (NSWindow) -> String?) {
+    static func start(on view: WinampModernMainView, configuration: WinampModernConfiguration?, containerID: @escaping (NSWindow) -> String?) {
         let startVolume = view.host.volume
         view.host.volume = probeVolume
-        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume, containerID: containerID)
+        let sweep = WinampModernDebugClickSweep(view: view, startVolume: startVolume, configuration: configuration,
+                                                containerID: containerID)
         running = sweep
         sweep.step(0)
     }
 
-    private init(view: WinampModernMainView, startVolume: Double, containerID: @escaping (NSWindow) -> String?) {
+    private init(view: WinampModernMainView, startVolume: Double, configuration: WinampModernConfiguration?,
+                 containerID: @escaping (NSWindow) -> String?) {
         self.view = view
         self.main = view
         self.startVolume = startVolume
         self.containerID = containerID
         startEQ = view.componentHost?.equalizerSnapshot()
+        storedSettings = configuration.map { ($0, $0.storedSnapshot()) }
         startLayout = view.renderer.activeLayoutID
         targets = Self.targets(in: view)
         NSLog("WM-SMOKE start layout=%@ targets=%d", startLayout, targets.count)
@@ -136,6 +142,27 @@ final class WinampModernDebugClickSweep {
         return nil
     }
 
+    /// The objects in the scene now: one `sceneNodes()` walk per step, not one per target.
+    private static func onScreen(in view: WinampModernMainView) -> Set<ObjectIdentifier> {
+        Set(view.renderer.sceneNodes().map { ObjectIdentifier($0.object) })
+    }
+
+    /// Runs one press with the unblock timer armed: a popped menu or a modal alert holds the main
+    /// thread inside the press, and GCD does not run during menu tracking; a timer in the common
+    /// modes (event tracking, modal panel) does.
+    private func pressUnblocked(_ press: () -> Void) {
+        let unblock = Timer(timeInterval: 1.0, repeats: false) { [weak self] _ in
+            self?.openMenu?.cancelTracking()
+            if NSApp.modalWindow != nil {
+                self?.modalOpened = true
+                NSApp.abortModal()
+            }
+        }
+        RunLoop.main.add(unblock, forMode: .common)
+        press()
+        unblock.invalidate()
+    }
+
     private func step(_ index: Int) {
         guard let view, index < targets.count else { return pass == .main ? openLibrary() : closeLibrary() }
         let target = targets[index]
@@ -147,21 +174,16 @@ final class WinampModernDebugClickSweep {
             return step(index + 1)
         }
         let before = snapshot(view)
+        // What is on screen to click before this press, so a press that hides some of it can be told.
+        let visibleBefore = Self.onScreen(in: view)
+        let later = targets[(index + 1)...].filter { visibleBefore.contains(ObjectIdentifier($0.object)) }
         menuOpened = false
         modalOpened = false
-        // A popped menu or a modal alert holds the main thread inside `debugClick`, and GCD does not
-        // run during menu tracking; a timer in the common modes (event tracking, modal panel) does.
-        let unblock = Timer(timeInterval: 1.0, repeats: false) { [weak self] _ in
-            self?.openMenu?.cancelTracking()
-            if NSApp.modalWindow != nil {
-                self?.modalOpened = true
-                NSApp.abortModal()
-            }
-        }
-        RunLoop.main.add(unblock, forMode: .common)
         let dragEnd = target.object.tag.is(.slider)
             ? view.renderer.frame(of: target.object).map(Self.quarterPoint) : nil
-        if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
+        pressUnblocked {
+            if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             guard let self, let view = self.view, let main = self.main else { return self?.finish() ?? () }
             let after = self.snapshot(view)
@@ -175,6 +197,19 @@ final class WinampModernDebugClickSweep {
             if before.play == "playing", after.play != "playing" {
                 main.host.play()
                 notes.append("resumed")
+            }
+            // **A press that hides later controls is half of a state pair, and is pressed back.**
+            // T3-Amp's Switch Mode swaps the display for its oversized twin, and with it the five
+            // controls the walk was still to reach (B433). The twin's own press restores the state.
+            // A press that resizes the window is pressed back as well (B440): cPro's title bar
+            // maximizes on a double-click and `main.goBig` does, the skin persists it, and the walk
+            // ended on a window it had just grown to the whole screen.
+            // Not a slider: a press at its point would seek or move the volume, not undo the drag.
+            let visibleAfter = Self.onScreen(in: view)
+            if dragEnd == nil, (view.window?.frame.size ?? .zero) != before.windowSize
+                || later.contains(where: { !visibleAfter.contains(ObjectIdentifier($0.object)) }) {
+                pressUnblocked { view.debugClick(atSkinPoint: point) }
+                notes.append("pressed-back")
             }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
@@ -267,19 +302,33 @@ final class WinampModernDebugClickSweep {
     /// Press the Library's own close control and say whether its window went.
     private func closeLibrary() {
         let manager = WindowManager.shared
-        guard let view, let window = view.window,
-              // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
-              let (close, point) = targets.lazy.filter({ $0.action == "CLOSE" })
-                  .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first else {
+        // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
+        let close = view.flatMap { view in
+            targets.lazy.filter({ $0.action == "CLOSE" })
+                .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first
+        }
+        var row = ["window": "library", "idx": "close", "action": "CLOSE"]
+        if let view, let (target, point) = close {
+            row.merge(["object": target.label, "action": target.action,
+                       "point": "\(Int(point.x)),\(Int(point.y))"]) { $1 }
+            view.debugClick(atSkinPoint: point)
+        } else if let view, view.needsFallbackClose {
+            // A frame with no `CLOSE` art closes from the base rule's invisible corner (B432); press
+            // that, through the same chrome hit the window takes.
+            let corner = FallbackCloseArea.rect(in: view.bounds, flipped: view.isFlipped)
+            if view.hostChromeHit(at: NSPoint(x: corner.midX, y: corner.midY)) == .close {
+                row.merge(["object": "fallback-corner", "note": "fallback-corner"]) { $1 }
+                view.requestClose()
+            }
+        }
+        guard let window = view?.window, row["object"] != nil else {
             Self.log(["window": "library", "idx": "close", "note": "no-close-control", "changed": "-"])
             if manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
             return finish()
         }
-        view.debugClick(atSkinPoint: point)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
             let closed = !window.isVisible || window.alphaValue == 0
-            Self.log(["window": "library", "idx": "close", "object": close.label, "action": close.action,
-                      "point": "\(Int(point.x)),\(Int(point.y))", "changed": closed ? "closed" : "nochange"])
+            Self.log(row.merging(["changed": closed ? "closed" : "nochange"]) { $1 })
             if !closed, manager.isMediaLibraryVisible { manager.toggleMediaLibrary() }
             self?.finish()
         }
@@ -316,7 +365,8 @@ final class WinampModernDebugClickSweep {
         return Snapshot(volume: view.host.volume, play: "\(view.host.playbackState)",
                         position: view.host.currentTime, track: track.isEmpty ? "-" : track, eq: eq,
                         layout: view.renderer.activeLayoutID,
-                        windows: windows, mainOnScreen: main?.isVisible == true && (main?.alphaValue ?? 0) > 0)
+                        windows: windows, mainOnScreen: main?.isVisible == true && (main?.alphaValue ?? 0) > 0,
+                        windowSize: view.window?.frame.size ?? .zero)
     }
 
     private func finish() {
@@ -327,6 +377,7 @@ final class WinampModernDebugClickSweep {
             host.equalizerSetPreampDB(startEQ.preampDB)
             startEQ.bandGainsDB.enumerated().forEach { host.equalizerSetBandGainDB($0.offset, gainDB: $0.element) }
         }
+        storedSettings.map { $0.configuration.restoreStored($0.snapshot) }
         menuObserver.map(NotificationCenter.default.removeObserver)
         NSLog("WM-SMOKE done")
         Self.running = nil

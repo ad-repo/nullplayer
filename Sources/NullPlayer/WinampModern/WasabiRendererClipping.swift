@@ -103,12 +103,23 @@ extension WasabiSceneRenderer {
     /// only. ArmorAmp is the measured case: its spectrum is a 170x70 `<vis>` inside
     /// `background="visgroup.bg"`, a blade-shaped map of the screen. Clipped only to the box, the bars
     /// spilled over the screen bezel.
+    ///
+    /// **A painted background shapes a `<vis>` it holds too** (B435). Akbank's and New_York_Minute's
+    /// `vis.group.pink` is a skyline `background` with a full-size `<vis>` inside: the author's
+    /// silhouette is the vis's window, and clipped only to the box the bars ran out over the player's
+    /// oval. Only a group that directly holds a `<vis>`: any other painted group keeps its box.
     func groupRegionMask(of object: WasabiObject, frame: CGRect) -> WasabiMaskClip? {
-        guard object.tag.is(.group), !frame.isEmpty, paintedBackingID(of: object) == nil,
+        guard object.tag.is(.group), !frame.isEmpty, shapesItsContent(object),
               let background = object.attributes["background"],
               let mask = resources.alphaMask(background: background, declaredIn: object.source)
         else { return nil }
         return WasabiMaskClip(mask: mask, rect: frame)
+    }
+
+    /// Whether a group's `background` is its content's window: an unpainted one always, a painted one
+    /// only for a `<vis>` it directly holds.
+    private func shapesItsContent(_ group: WasabiObject) -> Bool {
+        paintedBackingID(of: group) == nil || group.children.contains(where: \.isVisualizationHandle)
     }
 
     /// Clip one object to the region a script gave it, if any.

@@ -230,28 +230,42 @@ extension WasabiSceneRenderer {
             return declared
         }
         var size = declared
-        if !statesWidth, holder.width < Self.degenerateComponentExtent {
+        if !statesWidth, let width = holder.width, width < Self.degenerateComponentExtent {
             size.width = min(Self.optionalDimension(attributes["maximum_w"]) ?? .greatestFiniteMagnitude,
-                             size.width + Self.componentRoomExtent - holder.width)
+                             size.width + Self.componentRoomExtent - width)
         }
-        if !statesHeight, holder.height < Self.degenerateComponentExtent {
+        if !statesHeight, let height = holder.height, height < Self.degenerateComponentExtent {
             size.height = min(Self.optionalDimension(attributes["maximum_h"]) ?? .greatestFiniteMagnitude,
-                              size.height + Self.componentRoomExtent - holder.height)
+                              size.height + Self.componentRoomExtent - height)
         }
         return size
     }
 
     /// The widest and the tallest visible component holder the active layout resolves at `canvas`, or
     /// `nil` when it has none — what the component-room fit measures the window's shortfall from.
-    /// Visible only: a player parks holders it is not showing.
-    private func holderExtent(atCanvas canvas: CGSize) -> CGSize? {
-        let holders = sceneNodes(canvas: canvas).filter {
-            WinampModernComponentRegistry.isHolderElement($0.object.tag)
+    /// Visible only: a player parks holders it is not showing. An axis is `nil` when no holder wants
+    /// room on it (see `negativeHolderExtent`).
+    private func holderExtent(atCanvas canvas: CGSize) -> (width: CGFloat?, height: CGFloat?)? {
+        func holders(at canvas: CGSize) -> [WasabiSceneNode] {
+            sceneNodes(canvas: canvas).filter { WinampModernComponentRegistry.isHolderElement($0.object.tag) }
         }
-        guard !holders.isEmpty else { return nil }
-        return holders.reduce(CGSize.zero) {
-            CGSize(width: max($0.width, $1.frame.width), height: max($0.height, $1.frame.height))
-        }
+        let found = holders(at: canvas)
+        guard !found.isEmpty else { return negativeHolderExtent(atCanvas: canvas, holders: holders) }
+        return (found.map(\.frame.width).max(), found.map(\.frame.height).max())
+    }
+
+    /// A holder whose box resolves **negative** is dropped from the scene, so the measurement above
+    /// finds none and the window opens with no list in it. mcgen v1.2's playlist is
+    /// `h="-120" relath="1"` in a frame whose client is 117 tall at the skin's 200 floor, so its box
+    /// is -3 and the panel stayed empty (B430). Such a holder is degenerate on the axis whose growth
+    /// brings it back (extent 0), and absent on the other (`nil`), which must not grow for it.
+    private func negativeHolderExtent(atCanvas canvas: CGSize,
+                                      holders: (CGSize) -> [WasabiSceneNode]) -> (width: CGFloat?, height: CGFloat?)? {
+        let room = Self.componentRoomExtent
+        let needsWidth = !holders(CGSize(width: canvas.width + room, height: canvas.height)).isEmpty
+        let needsHeight = !holders(CGSize(width: canvas.width, height: canvas.height + room)).isEmpty
+        guard needsWidth || needsHeight else { return nil }
+        return (needsWidth ? 0 : nil, needsHeight ? 0 : nil)
     }
 
     /// The window width at which the holder gets the room its component asks for
