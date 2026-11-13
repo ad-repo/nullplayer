@@ -114,6 +114,13 @@ class E_Root : public Configurable_Effect<Root_Info, Root_Config> {
     virtual void load_legacy(unsigned char* data, int len);
     virtual int save_legacy(unsigned char* data);
     virtual E_Root* clone() { return new E_Root(*this); }
+    // NullPlayer: Effect::swap moves the children but not the config, so a loaded preset's
+    // Clear flag and metadata stayed on the secondary root and the previous preset's were
+    // shown and saved.
+    void swap(E_Root& other) {
+        Effect::swap(other);
+        std::swap(this->config, other.config);
+    }
     void remix();
     int64_t get_num_renders() { return this->children.size(); }
     void start_buffer_context();

@@ -85,8 +85,14 @@ class BPMDetector {
     
     // MARK: - Public API
     
-    /// Process audio samples. Called from the audio tap thread ONLY.
-    func process(samples: UnsafePointer<Float>, count: Int, sampleRate: Double) {
+    /// Process a whole tap buffer, mixed to mono and scaled by `gain`. Called from the audio
+    /// tap thread ONLY. aubio treats its input as one continuous signal, so every buffer must
+    /// arrive whole and none skipped: a slice of each (the FFT's 2048 of a 4410-frame buffer,
+    /// throttled) squeezed time and broke the tempo. `postBeats` posts `.audioBeatsUpdated`,
+    /// only wanted while a beat consumer exists.
+    func process(channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int,
+                 frameCount: Int, sampleRate: Double, gain: Float = 1, postBeats: Bool) {
+        guard channelCount > 0 else { return }
         if needsReset {
             needsReset = false
             destroyAubio()
@@ -108,20 +114,24 @@ class BPMDetector {
               let inputBuf = inputBuffer,
               let outputBuf = outputBuffer,
               let inputData = inputBuf.pointee.data,
-              let _ = outputBuf.pointee.data else { return }
+              let outputData = outputBuf.pointee.data else { return }
         
         // Write samples to ring buffer
         let ringSize = ringBuffer.count
-        let toWrite = min(count, ringSize - ringCount)
+        let toWrite = min(frameCount, ringSize - ringCount)
+        let scale = gain / Float(channelCount)
         for i in 0..<toWrite {
-            ringBuffer[ringWritePos] = samples[i]
+            var sum: Float = 0
+            for c in 0..<channelCount { sum += channels[c][i] }
+            ringBuffer[ringWritePos] = sum * scale
             ringWritePos = (ringWritePos + 1) % ringSize
         }
         ringCount += toWrite
         
         let hop = Int(hopSize)
         let now = CFAbsoluteTimeGetCurrent()
-        
+        var beats: [Bool] = []
+
         while ringCount >= hop {
             for i in 0..<hop {
                 inputData[i] = ringBuffer[ringReadPos]
@@ -130,6 +140,7 @@ class BPMDetector {
             ringCount -= hop
             
             aubio_tempo_do(tempoObj, inputBuf, outputBuf)
+            if postBeats { beats.append(outputData[0] != 0) }  // aubio: non-zero on a beat in this hop
             
             let bpm = aubio_tempo_get_bpm(tempoObj)
             let confidence = aubio_tempo_get_confidence(tempoObj)
@@ -152,6 +163,12 @@ class BPMDetector {
             }
         }
         
+        if !beats.isEmpty {
+            NotificationCenter.default.post(
+                name: .audioBeatsUpdated, object: nil,
+                userInfo: ["beats": beats, "hopMs": Double(hop) * 1000 / sampleRate])
+        }
+
         if hasConfidentReading && displayedBPM > 0 && now - lastNotificationTime >= notificationInterval {
             lastNotificationTime = now
             let bpm = displayedBPM

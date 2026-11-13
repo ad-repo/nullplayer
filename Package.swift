@@ -167,7 +167,9 @@ let package = Package(
                 + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)],
             cxxSettings: avsHeaderSearchPaths.map { .headerSearchPath($0) }
                 + avsDefines.map { .define($0) }
-                + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)]
+                + avsRenames.map { .define($0.0, to: $0.1) } + [.unsafeFlags(avsFlags)],
+            // The Text effect (upstream_port/e_text.cpp) draws with CoreText.
+            linkerSettings: [.linkedFramework("CoreText"), .linkedFramework("CoreGraphics")]
         ),
         // Goom (Goom2k26, LGPL-2.1): the pure-C effect core from j3k0/goom's Goom/ directory, with
         // the port's own edits (each marked in the file), behind the GoomCore.h shim; see

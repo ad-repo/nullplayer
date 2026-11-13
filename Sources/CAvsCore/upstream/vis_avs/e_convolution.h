@@ -2,6 +2,7 @@
 
 #include "effect.h"
 #include "effect_info.h"
+#include "../../upstream_port/convolution_portable.h"  // NullPlayer
 
 #include <cstdint>
 #include <mmintrin.h>
@@ -150,4 +151,6 @@ class E_Convolution : public Configurable_Effect<Convolution_Info, Convolution_C
     bool draw_created;
     bool need_draw_update;
     int code_length;
+    // NullPlayer: the JIT's portable stand-in, planned when need_draw_update is set.
+    Convolution_Portable portable;
 };

@@ -6,10 +6,19 @@ enum AvsPresets {
     private enum Key {
         static let customFolder = "avs.customPresetsFolder"
         static let currentPreset = "avs.presetPath"
+        static let advancedBeatDetection = "avs.advancedBeatDetection"
     }
 
     /// Cleared by "Reset All Visualization Preferences".
-    static let preferenceKeys = [Key.customFolder, Key.currentPreset]
+    static let preferenceKeys = [Key.customFolder, Key.currentPreset, Key.advancedBeatDetection]
+
+    /// Advanced beat detection: aubio's beat tracker in place of Winamp's standard detector.
+    /// Read by every engine's beat observers on the audio thread, so a change applies to all of them
+    /// at the next tap buffer.
+    static var advancedBeatDetection: Bool {
+        get { UserDefaults.standard.bool(forKey: Key.advancedBeatDetection) }
+        set { UserDefaults.standard.set(newValue, forKey: Key.advancedBeatDetection) }
+    }
 
     /// A plain path, like `ProjectMWrapper.customPresetsFolder` (tasks/MISC_TASKS.md has the
     /// security-scoped bookmark row both need for a sandboxed build).

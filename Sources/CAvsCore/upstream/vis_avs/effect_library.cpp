@@ -85,7 +85,7 @@ bool make_effect_lib() {
     MAKE_EFFECT_LIB_ENTRY(ClearScreen);
     MAKE_EFFECT_LIB_ENTRY(Mirror);
     MAKE_EFFECT_LIB_ENTRY(Starfield);
-    // MAKE_EFFECT_LIB_ENTRY(Text);
+    MAKE_EFFECT_LIB_ENTRY(Text);  // NullPlayer: upstream_port/e_text.cpp, on CoreText
     MAKE_EFFECT_LIB_ENTRY(Bump);
     MAKE_EFFECT_LIB_ENTRY(Mosaic);
     MAKE_EFFECT_LIB_ENTRY(WaterBump);
@@ -121,6 +121,11 @@ bool make_effect_lib() {
     MAKE_EFFECT_LIB_ENTRY(Picture2);
     MAKE_EFFECT_LIB_ENTRY(FramerateLimiter);
     MAKE_EFFECT_LIB_ENTRY(Texer);
+    // NullPlayer: APE releases of two built-ins, saved with the built-ins' exact config
+    // layout (36 and 28 bytes, checked against the bundled presets that use them). They
+    // load as the built-in, which saves under its built-in id.
+    g_legacy_ape_effect_lib["Winamp Starfield v1"] = Starfield_handle;
+    g_legacy_ape_effect_lib["Winamp Mosaic v1"] = Mosaic_handle;
     /* Example */
     // MAKE_EFFECT_LIB_ENTRY(Example);
 

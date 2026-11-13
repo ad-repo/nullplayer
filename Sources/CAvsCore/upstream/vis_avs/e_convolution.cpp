@@ -149,10 +149,13 @@ int E_Convolution::render(char[2][2][576],
         this->need_draw_update = true;
     }
 #if !defined(__i386__) && !defined(_M_IX86)
-    // NullPlayer: create_draw_func() JITs 32-bit x86 machine code into a heap buffer, so
-    // Convolution Filter passes the frame through on arm64/x86_64 until it is ported
-    // (tasks/MISC_TASKS.md).
-    return 0;
+    // NullPlayer: create_draw_func() JITs 32-bit x86 machine code, which cannot run on
+    // arm64/x86_64; upstream_port/convolution_portable.cpp computes what that code computes.
+    if (this->need_draw_update) {
+        this->portable.plan(this->config);
+        this->need_draw_update = false;
+    }
+    return this->portable.apply(framebuffer, fbout, w, h);
 #endif
     if (this->need_draw_update) {
         this->create_draw_func();

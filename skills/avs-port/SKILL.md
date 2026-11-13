@@ -20,17 +20,21 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 |------|------|
 | `Sources/CAvsCore/upstream/` | Upstream `avs/` subset, edits marked `NullPlayer:` (see *Patches*). `vis_avs/` is the library (`avs.h`, `avs_editor.h`, effects `e_*`, `instance`, `render_context`…); `3rdparty/` is md_fft, nlohmann json, stb_image, pevents and ns-eel. `LICENSE.TXT` is upstream's. |
 | `Sources/CAvsCore/upstream_port/platform_darwin.cpp` | Port of upstream's `platform_linux.c`: timers (`CLOCK_UPTIME_RAW`), threads, pevents locks and events, `mem_mark_rwx`. C++ because a C translation unit with `-fmodules` sees Mach's `thread_create` and clashes with upstream's. |
+| `Sources/CAvsCore/upstream_port/texer2_portable.{h,cpp}`, `convolution_portable.{h,cpp}` | C ports of Texer II's MMX loops and of the code Convolution's x86 JIT emits, for everything but i386 (see *Patches*). |
+| `Sources/CAvsCore/upstream_port/e_text.{h,cpp}` | The Text effect (legacy id 28), which upstream's library does not build: config, legacy load/save and the per-frame word, beat and placement logic. It keeps the saved `CHOOSEFONTA`/`LOGFONTA` blobs and patches only the changed font fields on save. `$(regNN[:fmt])` reads the EEL global registers; `$(title)` is empty and `$(playpos)`/`$(playlen)` read 0:00, as Winamp with no song. |
+| `Sources/CAvsCore/upstream_port/text_coretext.{h,cpp}` | Text's font measuring and drawing on CoreText (a `CGBitmapContext` in the framebuffer's BGRX layout, Windows-1252 strings). A separate translation unit with a libavs-free header, because CoreText's Mach headers clash with `platform.h`'s typedefs. |
 | `Sources/CAvsCore/upstream_port/audio_in_darwin.cpp` | Stubs for upstream's audio-input API. NullPlayer feeds audio with `avs_audio_set` (AVS_AUDIO_EXTERNAL). |
 | `Sources/CAvsCore/upstream_port/simd/` | `immintrin.h`, `emmintrin.h`… shims searched before clang's. On arm64 they include sse2neon (v1.8.0, MIT); on x86_64 they `#include_next` the real header. `mmintrin.h` adds the two MMX helpers sse2neon lacks. |
 | `Sources/CAvsCore/include/CAvsCore.h` | The module header: `avs.h` and `avs_editor.h`. |
-| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, and `AvsBeatDetector`. |
+| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, `AvsBeatDetector` and the paced `AvsBeatFeed`s. |
 | `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets. |
 | `Sources/NullPlayer/Visualization/AvsEngine+Menu.swift` | The engine's section of the shared visualization menu and its actions. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsEditorWindowController.swift` | **Edit Preset…**: the component tree, add / duplicate / delete / drag-move, the file buttons. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsParameterInspector.swift` | One component's parameters as controls built from `avs_parameter_info`. |
 | `Sources/NullPlayer/Resources/AVSPresets/` | Upstream's 35 bundled `.avs` presets. |
-| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; the SuperScope JIT; lock serialisation; the beat detector; the inspector builds for every component of every preset. |
+| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; only effects with no implementation load as Unknown Effect; the SuperScope JIT; lock serialisation; the beat detector and the feed's pacing; the inspector builds for every component of every preset. |
+| `Tests/NullPlayerAppTests/AvsEffectPortTests.swift` | The C ports of the x86 code and Text, by pixels: Convolution blurs a dot, Texer II draws in all ten blend modes, Text draws and cycles, and a Win32-layout Text record round-trips byte for byte. `AvsPresetBuilder` builds a preset through `avs_editor.h` by effect and parameter name. |
 
 ## Build
 
@@ -42,15 +46,16 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
   - `NO_MMX`, which selects upstream's C fallbacks for the inline MMX asm in Blur, Blitter Feedback, Dynamic Movement and Movement.
   - `_USE_MATH_DEFINES`, `NO_FFMPEG`, `WFMO`, `FORCE_CPP_FILESYSTEM_API`.
 - **Renames:** `FFT=AvsFFT` and `Effect=AvsEffect`. CVisClassicCore and CTripexCore export the same class names, and without the renames the link fails on duplicate symbols.
+- **Links** CoreText and CoreGraphics, for Text.
 - **Flags:** `-O2 -fno-strict-aliasing -fwrapv -w`.
   - `-O2` applies in debug too. At `-O0`, a 524×550 frame took 55 ms (13 fps); optimised it takes about 1 ms.
   - `-w` hides upstream's warnings, so check a new patch with `-Wint-to-pointer-cast` by hand.
 - **Excluded from compilation:**
   - The `asm-nseel-*` files (`#include`d by `nseel-cfunc.c`), `y.tab.c` (`#include`d by `nseel-yylex.c`), and the standalone EEL tools `eel_pp.cpp` and `loose_eel.cpp`.
   - The `.patch` files and licences.
-- **Not vendored:** `e_example_effect` and the ffmpeg video reader (`video_libav`, hence `NO_FFMPEG`). Upstream's library builds no Text effect (M83).
+- **Not vendored:** `e_example_effect` and the ffmpeg video reader (`video_libav`, hence `NO_FFMPEG`). Upstream's library comments Text out of `effect_library.cpp`; NullPlayer builds its own (`upstream_port/e_text.cpp`).
 
-**x86_64** uses EEL2's portable bytecode interpreter (`EEL_TARGET_PORTABLE`, set in `ns-eel.h`), because EEL2's x64 JIT needs a NASM object. The whole app does not build for x86_64 on `origin/main` (M82). The port was verified there with a standalone clang harness under Rosetta, and every preset loaded except Spacefolding.
+**x86_64** uses EEL2's portable bytecode interpreter (`EEL_TARGET_PORTABLE`, set in `ns-eel.h`), because EEL2's x64 JIT needs a NASM object. The whole app does not build for x86_64 on `origin/main` (M82). The port was verified there with a standalone clang harness under Rosetta, and every preset loaded except Spacefolding (since fixed by the APE aliases). The x86-only code paths that now have C ports (Texer II, Convolution) still compile there and keep their asm on i386 only.
 
 ## Patches to upstream
 
@@ -67,8 +72,11 @@ Every edit is marked `NullPlayer:` in the source. The list:
 - Pointer arithmetic moved from `uint32_t` to `uintptr_t`:
   - `e_videodelay.cpp` and `e_multidelay.cpp`, including the `l` and `d` locals.
   - `e_effectlist.cpp`: `(int)(intptr_t)parm`.
-- **Texer II** (`e_texer2.cpp`): `DrawParticle` returns before its 32-bit MMX asm on anything but i386 (M78). `e_texer2_macros.h` uses `lrint` in place of its GCC asm `RoundToInt`.
-- **Convolution Filter** (`e_convolution.cpp`): `render` returns 0 on anything but i386, because it JITs 32-bit x86 (M79).
+- **Texer II** (`e_texer2.cpp`): `DrawParticle`'s clipping and texture mapping are shared; where its 32-bit MMX asm starts, anything but i386 calls `texer2_draw_scaled` / `texer2_draw_unscaled` (`upstream_port/texer2_portable.cpp`), byte-exact C ports of the two loop families. They keep the asm's quirks: the min/max select compares RGB unsigned and the fourth byte signed, the two loops order min/max operands and weight the adjustable blend differently, and masked multiply filters the product. One deliberate difference: the asm's scaling loop read one texel past the image at the last column and row; the port clamps to the last texel. `EMMS` is i386 only. `e_texer2_macros.h` uses `lrint` in place of its GCC asm `RoundToInt`.
+- **Convolution Filter** (`e_convolution.cpp`): the 32-bit x86 JIT stays on i386; elsewhere `render` plans a `Convolution_Portable` (`upstream_port/convolution_portable.cpp`) when `need_draw_update` is set, as the JIT is rebuilt, and applies it per frame. It does what the generated code does: 16-bit lanes, wrapping sums when a side's weights sum under 256 and saturating otherwise, edge rows and columns clamped as the JIT's loads were, the second pass's rotated taps, in-place filtering when no weight precedes the centre. A diff from Winamp here is a port defect.
+- **Legacy APE aliases** (`effect_library.cpp`): `Winamp Starfield v1` and `Winamp Mosaic v1` load as the built-in Starfield and Mosaic, whose config records they match byte for byte (36 and 28 bytes). `FunkyFX FyrewurX v1` has no implementation and stays Unknown Effect (M91).
+- **`E_Root::swap`** (`e_root.h`): `Effect::swap` moved the children but not the config, so a loaded preset kept the previous preset's Clear flag and metadata. `E_Root` swaps its config too.
+- **Text** is added to the library (`MAKE_EFFECT_LIB_ENTRY(Text)`), from `upstream_port/`.
 - `e_blitterfeedback.cpp`: the stale `BLEND4` is renamed to `blend_bilinear_2x2`.
 - **All 54 `PUT_INT` macros:** `((y) >> N)`. Without the parentheses, Roto Blitter's legacy save wrote the wrong bytes, and a save then load was not idempotent.
 - `instance.h` `EelState`: `global_ram`, `visdata`, `log_errors` and the hooks are initialised. Freeing an uninitialised `global_ram` aborted.
@@ -103,14 +111,20 @@ More than one `AvsEngine` can exist at once (the Visualizations window and a ski
 
 AVS's FFT reads the newest 576 samples whatever the rate, so at 96 kHz the spectrum is compressed (576 samples is 6 ms).
 
-The engine takes the full-rate stereo feed itself:
-- `addFullStereoConsumer("avsEngine")` on main, removed on `cleanup`.
-- Its `addPCMMono` is empty, because the host only hands engines mono audio.
+The engine takes its audio itself, registering as `"avsEngine"` on main and releasing on `cleanup`:
+- the full-rate stereo feed (`addFullStereoConsumer`), for `avs_audio_set`;
+- the 576-sample waveform feed (`addWaveformConsumer`), for the standard beat detector;
+- aubio's beats (`addBeatConsumer`, `.audioBeatsUpdated`), for advanced detection.
+
+Its `addPCMMono` is empty, because the host only hands engines mono audio.
+
+The full-rate stereo feed is the newest 2048 frames of each tap buffer, and the tap delivers about 4410 frames ten times a second. A detector reading the newest 576 samples per frame heard one 13 ms slice in every 100 ms and missed most beats, so beats come from feeds that carry every sample.
 
 **Beat detection:** libavs's `AVS_BEAT_INTERNAL` is a stub, because upstream left beat detection in the Winamp frontend.
 - The instance runs with `AVS_BEAT_EXTERNAL`.
-- `AvsBeatDetector` is a port of the frontend's standard detector: a summed signed 8-bit amplitude over 576 samples, a beat at 34/32 above a decaying peak and above a silence floor.
-- The frontend's "advanced" BPM refinement is not ported (M81).
+- **Pacing:** the selected source fills the core's one `AvsBeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer; the engine's observers check the Beat Detection setting and drop the other source. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. After a switch the feed holds at most its 200 ms cap of the old source's slots.
+- **Standard:** `AvsBeatDetector`, a port of the frontend's standard detector, runs on every 576-sample chunk: a summed 8-bit amplitude, a beat at 34/32 above a decaying peak and above a silence floor. On real music it fires on snares and hi-hats as readily as kicks.
+- **Advanced** (right-click ▸ Beat Detection, `avs.advancedBeatDetection`, off by default): aubio's beat tracker, from the app's `BPMDetector` (`audio-system`), one verdict per 512-sample hop. This replaces Winamp's "advanced" `bpm.cpp` refiner: ported, it was fed the standard detector's beats and never settled on a tempo on real music (measured 2026-11-12: 165 → 87 → 136 BPM over 29 s).
 - Many presets only change colour or move on a beat, so a test signal without beats renders black.
 
 ## Rendering
@@ -129,15 +143,16 @@ The engine takes the full-rate stereo feed itself:
 |-----|---------|
 | `avs.presetPath` | The preset showing, by path; the first preset when it is missing. |
 | `avs.customPresetsFolder` | The user folder from **Choose AVS Preset Folder…**, a plain path (M84: security-scoped bookmarks). |
+| `avs.advancedBeatDetection` | Beat Detection ▸ Advanced (aubio's beats); one setting for every engine instance, read each frame. |
 | `avs.cycleMode` / `avs.cycleInterval` | Manual Only / Auto-Cycle / Auto-Random and its interval, through `VisualizationCycleSettings` like every engine's. One setting for every host. |
 
-The first two are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preferenceKeys`); the cycle keys are in the Visualizations window's reset with every engine's. The engine choice itself is the shared `visualizationEngineType`.
+The first three are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preferenceKeys`); the cycle keys are in the Visualizations window's reset with every engine's. The engine choice itself is the shared `visualizationEngineType`.
 
 ## Hosts
 
 - **Engine list:** the `.avs` case of `VisualizationType` puts AVS in every engine list. That is `VisualizationContextMenu` (all hosts) and **Visuals → Visualizations → Visualization Engine**.
 - **Factory:** `VisualizationGLView.createEngine` builds `AvsEngine`.
-- **Menu section:** the presets and cycle are the shared block every engine gets; `VisualizationContextMenu` then calls `AvsEngine.addMenuItems` for AVS's own Edit Preset… and folder items. They target the engine, so a host needs no AVS actions of its own.
+- **Menu section:** the presets and cycle are the shared block every engine gets; `VisualizationContextMenu` then calls `AvsEngine.addMenuItems` for AVS's own Edit Preset…, Beat Detection and folder items. They target the engine, so a host needs no AVS actions of its own.
 - **Preset stepping:** no host names AVS. Keys (→ / ← / R in `ProjectMView` and `ModernProjectMView`), the `.wal` `stepPreset` and the `.wmz`/Sonique `applyPreset` all call `VisualizationGLView+Presets.swift`, which maps count, name, select, step and random onto `AvsEngine.presets` / `selectPreset` / `step` / `selectRandomPreset`.
 - **`.wmz`:**
   - `SkinEffectSelection` has an `avs` style and catalogue entry.
@@ -185,12 +200,8 @@ The read-only arrays are effect output and are not shown.
 
 ## Gaps (tasks/MISC_TASKS.md)
 
-- M78: Texer II draws nothing.
-- M79: Convolution Filter passes frames through.
-- M80: three legacy APE ids load as Unknown Effect, so Spacefolding is black.
-- M81: no BPM beat detection.
+- M91: FyrewurX (`justin - fireworks kaliadascope mk 2`, `justin - steve likes it`) has no implementation.
 - M82: no x86_64 app build.
-- M83: no Text effect.
 - M84: preset folders are plain paths.
 
 ## Licensing
@@ -210,4 +221,5 @@ For anything that only shows on screen (a preset drawing wrong, stutter, a host 
 - **Pick a preset:** set it by path with `defaults write NullPlayer avs.presetPath <path>` before launching.
 - **Isolate the library:** the smoke tests run libavs headless, so a defect that reproduces there is libavs or the port, not the host.
 - **Uninitialised reads:** run the tests with `MallocPreScribble=1 MallocScribble=1`.
+- **Beats:** `AVS_BEAT_TRACE=1` (DEBUG) logs `AVS-BEAT t=<ms>` for every frame with a beat from the selected source (Beat Detection menu); the intervals show whether it is regular.
 - **Stutter:** time `core.renderFrame` before anything else. A debug build that lost `-O2` renders at about 13 fps.

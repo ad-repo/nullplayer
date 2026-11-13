@@ -7,6 +7,7 @@
 #include "image.h"
 #include "instance.h"
 #include "pixel_format.h"
+#include "../../upstream_port/texer2_portable.h"  // NullPlayer
 
 #include "../util.h"
 
@@ -229,11 +230,6 @@ void E_Texer2::DrawParticle(int* framebuffer,
                             double sizex,
                             double sizey,
                             unsigned int color) {
-#if !defined(__i386__) && !defined(_M_IX86)
-    // NullPlayer: this rasteriser is 32-bit MMX inline asm with no C path, so Texer II
-    // draws nothing on arm64/x86_64 until it is ported (tasks/MISC_TASKS.md).
-    return;
-#else
     // Adjust width/height
     --w;
     --h;
@@ -324,6 +320,23 @@ void E_Texer2::DrawParticle(int* framebuffer,
                 goto skippart;
             }
 
+#if !defined(__i386__) && !defined(_M_IX86)
+            // NullPlayer: C port of the MMX loops below (upstream_port/texer2_portable.cpp).
+            texer2_draw_scaled(framebuffer,
+                           texture,
+                           (iw + 1) * (ih + 1),
+                           iw + 1,
+                           w + 1,
+                           r2.left,
+                           r2.top,
+                           r2.right,
+                           r2.bottom,
+                           cx0,
+                           cy0,
+                           sdx,
+                           sdy,
+                           color);
+#else
             // Prepare filter color
             T2_PREP_MASK_COLOR
 
@@ -689,6 +702,7 @@ void E_Texer2::DrawParticle(int* framebuffer,
                     break;
                 }
             }
+#endif  // NullPlayer
         }
     } else {
         /***************************************************************************/
@@ -737,6 +751,21 @@ void E_Texer2::DrawParticle(int* framebuffer,
 
         int ty = cy0;
 
+#if !defined(__i386__) && !defined(_M_IX86)
+        // NullPlayer: C port of the MMX loops below (upstream_port/texer2_portable.cpp).
+        texer2_draw_unscaled(framebuffer,
+                         texture,
+                         iw + 1,
+                         w + 1,
+                         r2.left,
+                         r2.top,
+                         r2.right,
+                         r2.bottom,
+                         cx0,
+                         ty,
+                         this->config.colorize,
+                         color);
+#else
         if (this->config.colorize) {
             // Second easiest path, masking, but no scaling
             T2_PREP_MASK_COLOR
@@ -1547,6 +1576,7 @@ void E_Texer2::DrawParticle(int* framebuffer,
                 }
             }
         }
+#endif  // NullPlayer
     }
 
 skippart:
@@ -1554,8 +1584,9 @@ skippart:
     ++(this->ih);
 
     // Perhaps removing all fpu stuff here and doing one emms globally would be better?
+#if defined(__i386__) || defined(_M_IX86)  // NullPlayer: no MMX state elsewhere
     EMMS
-#endif  // NullPlayer: 32-bit x86 only
+#endif
 }
 
 inline double wrap_diff_to_plusminus1(double x) { return round(x / 2.0) * 2.0; }
