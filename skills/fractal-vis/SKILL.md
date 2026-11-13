@@ -50,6 +50,11 @@ bar; a hard cut (⇧, or a host's hard cut) skips the fade.
   seeded `SplitMix64`, settling over those 2 bars. A parameter that would visibly reshape the
   world under the camera (Fractal Planet's terrain, its towers) must not be one: towers once came
   and went with an eased density.
+- **`u_pBeats`**: `u_p` integrated over the beat clock. A parameter that sets a turn rate turns
+  by `u_pBeats`, never `u_beatTime * u_p`: that product swings the angle by the beat count on
+  every retarget, a fast spin late in a session.
+- **Slow frames**: `FractalDirector.advance` runs a frame longer than 0.1 s in 0.1 s steps (a
+  stall past 1 s is dropped), so the springs stay stable and the beat clock keeps the tempo.
 - **Palettes**: seven IQ cosine palettes, a new one every 4 bars, crossfading over 2.
 - **Pace**: the user found the first cut queasy. Orbits run 0.02–0.05 rad/beat, palettes and
   parameters change over bars, and 2D zooms take tens of beats per factor of e. Keep new motion

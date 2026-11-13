@@ -32,7 +32,7 @@ enum FractalScenes {
         body: """
         vec4 scene(vec2 frag) {
             vec2 uv = explore2D((frag - 0.5 * u_res) / u_res.y, 0.3);
-            uv = rot(u_beatTime * TAU / 256.0 * u_p.z) * uv * 2.8 * u_p.y / (1.0 + 0.04 * u_beat);
+            uv = rot(u_pBeats.z * TAU / 256.0) * uv * 2.8 * u_p.y / (1.0 + 0.04 * u_beat);
             float th = u_p.x + u_beatTime * TAU / 256.0;
             vec2 e = vec2(cos(th), sin(th));
             vec2 c = (0.5 * e - 0.25 * vec2(e.x * e.x - e.y * e.y, 2.0 * e.x * e.y)) * (0.985 + 0.03 * u_fast.x);
@@ -146,7 +146,7 @@ enum FractalScenes {
                 z = vec2(z.x * z.x - z.y * z.y, 2.0 * z.x * z.y) + c;
                 if (dot(z, z) > 256.0 || i >= limit) break;
             }
-            float fade = smoothstep(0.0, 0.04, progress) * smoothstep(1.0, 0.94, progress);
+            float fade = smoothstep(0.0, 0.04, progress) * (1.0 - smoothstep(0.94, 1.0, progress));
             if (i >= limit) return vec4(vec3(0.0), 0.9 * fade);
             float sn = i - log2(log2(dot(z, z)));
             float t = sn / 60.0 * u_p.y;
@@ -204,7 +204,7 @@ enum FractalScenes {
         vec2 cdiv(vec2 a, vec2 b) { return cmul(a, vec2(b.x, -b.y)) / dot(b, b); }
         vec4 scene(vec2 frag) {
             vec2 z = explore2D((frag - 0.5 * u_res) / u_res.y, 0.3) * 3.0;
-            float th = u_beatTime * TAU / 128.0 * u_p.x;
+            float th = u_pBeats.x * TAU / 128.0;
             vec2 r[3];
             for (int k = 0; k < 3; k++) {
                 float a = th + TAU * float(k) / 3.0;
@@ -275,7 +275,7 @@ enum FractalScenes {
     /// u_p: x roll speed, y look spread, z, w palette offset.
     static let mengerDive = FractalScene(
         name: "Menger Dive", kind: .raymarched,
-        params: [-1...1, 0.3...0.9, 0...1, 0...1],
+        params: [0...1, 0.3...0.9, 0...1, 0...1],
         steps: 120, trail: 0.6, swirl: 0.0,
         body: """
         const vec3 FIXED = vec3(1.0, 1.0, 0.0);
@@ -305,8 +305,7 @@ enum FractalScenes {
             float t = shotTime();
             vec3 ahead = normalize(FIXED - EYE);
             vec3 look = ahead + u_p.y * wander(t * 0.07, seed) * (hash1(seed * 3.0) < 0.3 ? 2.5 : 1.0);
-            float spin = (hash1(seed * 7.0) - 0.5) * 2.0 * (0.5 + abs(u_p.x));
-            float roll = u_beatTime * TAU / 256.0 * spin;
+            float roll = (hash1(seed * 7.0) - 0.5) * 2.0 * (0.5 * u_beatTime + u_pBeats.x) * TAU / 256.0;
             float lens = mix(0.55, 1.2, hash1(seed * 11.0)) * (1.0 - 0.03 * u_beat);
             vec3 rd = cameraRay(frag, EYE, EYE + look, lens, roll);
             Hit h = march(EYE, rd, 4.0);

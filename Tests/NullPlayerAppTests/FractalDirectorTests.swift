@@ -30,6 +30,23 @@ final class FractalDirectorTests: XCTestCase {
         XCTAssertEqual(director.barCount, 10)
     }
 
+    func testBeatClockKeepsTempoAtFiveFPS() {
+        var director = FractalDirector(seed: 1)
+        director.setScene(ranges: [0...1])
+        for _ in 0..<50 { director.advance(dt: 0.2, beat: false, bpm: 120, bands: quiet) }
+        // 10 s at 120 BPM is 20 beats, however coarse the frames.
+        XCTAssertEqual(director.beatTime, 20, accuracy: 1e-6)
+        XCTAssertEqual(director.time, 10, accuracy: 1e-6)
+    }
+
+    func testParamBeatsIntegratesTheParameters() {
+        var director = FractalDirector(seed: 3)
+        director.setScene(ranges: [0.5...0.5])
+        play(&director, seconds: 10)
+        // A parameter held at 0.5 over ~20 beats integrates to half the beat count.
+        XCTAssertEqual(director.paramBeats.x, director.beatTime * 0.5, accuracy: 1e-6)
+    }
+
     func testBeatClockLocksOntoLateBeats() {
         var director = FractalDirector(seed: 1)
         director.setScene(ranges: [0...1])

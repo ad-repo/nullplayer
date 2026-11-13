@@ -19,4 +19,11 @@ final class FractalScalerTests: XCTestCase {
         // Auto starts near 1280 px across on a wide viewport.
         XCTAssertEqual(FractalScaler(setting: 0, viewportWidth: 3840).scale, 1280.0 / 3840, accuracy: 0.03)
     }
+
+    func testASceneTooSlowFromTheStartStillShrinks() {
+        var auto = FractalScaler(setting: 0, viewportWidth: 1280)
+        var now = 0.0
+        for _ in 0..<20 { now += 0.15; _ = auto.update(gpuMs: 140, frameMs: 150, now: now) }
+        XCTAssertLessThan(auto.scale, 1)
+    }
 }

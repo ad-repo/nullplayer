@@ -697,7 +697,7 @@ visual mode.
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear, NullPlayer-Fractal), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -767,6 +767,8 @@ visual mode.
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The scene list and **Render Scale** are in the right-click context menu.
+- These are the Visualizations window's keys. In a `.wmz` / Sonique effects area only
+  **⌘→ / ⌘←** pick the scene ([Visualization Keys](#visualization-keys-every-window-that-shows-one)).
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

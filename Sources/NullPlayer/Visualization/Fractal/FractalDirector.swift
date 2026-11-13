@@ -42,6 +42,9 @@ struct FractalDirector {
     /// The scene's parameters (`u_p`), their spring velocities and targets.
     private(set) var params = SIMD4<Float>(repeating: 0)
     private(set) var targets = SIMD4<Float>(repeating: 0)
+    /// The parameters integrated over `beatTime` (`u_pBeats`): an angle turning at a rate set by a
+    /// parameter, which a retarget changes smoothly however many beats have passed.
+    private(set) var paramBeats = SIMD4<Double>(repeating: 0)
     private var velocity = SIMD4<Float>(repeating: 0)
     private var ranges: [ClosedRange<Float>] = []
 
@@ -85,9 +88,18 @@ struct FractalDirector {
     }
 
     /// One frame: `dt` seconds, whether a beat landed, the tempo (0 when unknown) and the raw
-    /// bass, mid and treble levels.
+    /// bass, mid and treble levels. A slow frame runs in steps of at most 0.1 s, so the springs
+    /// stay stable and the clocks keep real time; a stall past a second is dropped.
     mutating func advance(dt rawDt: Double, beat: Bool, bpm: Int, bands raw: SIMD3<Float>) {
-        let dt = min(max(rawDt, 0), 0.1)
+        var left = min(max(rawDt, 0), 1)
+        repeat {
+            let dt = min(left, 0.1)
+            left -= dt
+            step(dt: dt, beat: beat && left <= 0, bpm: bpm, bands: raw)
+        } while left > 0
+    }
+
+    private mutating func step(dt: Double, beat: Bool, bpm: Int, bands raw: SIMD3<Float>) {
         time += dt
         self.bpm = bpm
         let interval = beatInterval(bpm: bpm)
@@ -98,6 +110,7 @@ struct FractalDirector {
         let step = max(dt / interval + pull, 0.1 * dt / interval)
         phaseError -= step - dt / interval
         beatTime += step
+        paramBeats += SIMD4<Double>(params) * step
 
         beatPulse *= Float(exp(-dt * 6))
         if beat {

@@ -28,8 +28,13 @@ struct FractalScaler {
     mutating func update(gpuMs sample: Double?, frameMs frame: Double, now: Double) -> Double {
         guard setting == 0 else { return setting }
         if let sample { gpuMs = gpuMs.map { $0 + (sample - $0) * 0.2 } ?? sample }
-        // The host runs at 30 or 60 fps; a hiccup longer than 100 ms is not a frame interval.
-        if frame > 0, frame < 100 { frameMs = frameMs.map { $0 + (frame - $0) * 0.1 } ?? frame }
+        // The host runs at 30 or 60 fps; a hiccup longer than 100 ms is not a frame interval, but
+        // seeds the budget at 100 ms so a scene too slow from the start still shrinks.
+        if frame > 0, frame < 100 {
+            frameMs = frameMs.map { $0 + (frame - $0) * 0.1 } ?? frame
+        } else if frame > 0, frameMs == nil {
+            frameMs = 100
+        }
         guard let gpuMs, let frameMs, now - lastAdjust >= Self.adjustInterval else { return scale }
         lastAdjust = now
         if gpuMs > frameMs * Self.shrinkAbove {

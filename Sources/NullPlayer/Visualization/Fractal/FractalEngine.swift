@@ -257,9 +257,13 @@ final class FractalEngine: NSObject, VisualizationEngine {
         let palette = d.palette
         glUniform2f(location(program, "u_res"), GLfloat(renderSize.width), GLfloat(renderSize.height))
         // ponytail: wrapped so float precision holds over a long session; the wrap is a visible
-        // jump every 10 min (`u_time`) or 4096 beats (`u_beatTime`, whose periods all divide it).
+        // jump every 10 min (`u_time`) or 4096 beats (`u_beatTime` and `u_pBeats`, whose periods
+        // all divide it).
+        let beats = { (b: Double) in GLfloat(b.truncatingRemainder(dividingBy: 4096)) }
         glUniform1f(location(program, "u_time"), GLfloat(d.time.truncatingRemainder(dividingBy: 600)))
-        glUniform1f(location(program, "u_beatTime"), GLfloat(d.beatTime.truncatingRemainder(dividingBy: 4096)))
+        glUniform1f(location(program, "u_beatTime"), beats(d.beatTime))
+        let pb = d.paramBeats
+        glUniform4f(location(program, "u_pBeats"), beats(pb.x), beats(pb.y), beats(pb.z), beats(pb.w))
         glUniform1f(location(program, "u_beat"), d.beatPulse)
         glUniform1f(location(program, "u_bar"), GLfloat(d.barCount % 256))
         glUniform3f(location(program, "u_bands"), d.bands.x, d.bands.y, d.bands.z)

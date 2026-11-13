@@ -26,13 +26,14 @@ final class FractalRenderTests: XCTestCase {
         let outDir = ProcessInfo.processInfo.environment["FRACTAL_RENDER_DIR"].map(URL.init(fileURLWithPath:))
         let seconds = outDir == nil ? 0.3 : ProcessInfo.processInfo.environment["FRACTAL_SECONDS"].flatMap(Double.init) ?? 4
 
-        let engine = FractalEngine(width: size.width, height: size.height)
-        XCTAssertTrue(engine.isAvailable)
-        defer { engine.cleanup() }
         let only = ProcessInfo.processInfo.environment["FRACTAL_SCENES"]?.split(separator: ",").map(String.init)
-        for index in 0..<engine.presetCount where only?.contains(engine.presetName(at: index)) ?? true {
+        for (index, scene) in FractalScenes.all.enumerated() where only?.contains(scene.name) ?? true {
+            // A fresh engine per scene, so no earlier scene's trails count as this one's picture.
+            let engine = FractalEngine(width: size.width, height: size.height)
+            XCTAssertTrue(engine.isAvailable)
+            defer { engine.cleanup() }
             engine.selectPreset(at: index, hardCut: true)
-            let name = engine.presetName(at: index)
+            let name = scene.name
             let start = CACurrentMediaTime()
             var lastPost = start, frame = 0, nextBeat = start
             while CACurrentMediaTime() - start < seconds {

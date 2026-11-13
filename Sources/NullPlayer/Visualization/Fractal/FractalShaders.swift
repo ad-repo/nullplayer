@@ -28,6 +28,7 @@ enum FractalShaders {
     uniform vec3 u_bands;      // bass, mid, treble, smoothed, 0..1
     uniform vec3 u_fast;       // the same, fast
     uniform vec4 u_p;          // the scene's eased parameters
+    uniform vec4 u_pBeats;     // u_p integrated over u_beatTime, wrapped at 4096: angles at a u_p rate
     uniform vec3 u_pa, u_pb, u_pc, u_pd;
     uniform int u_steps;
     const float TAU = 6.28318530718;
