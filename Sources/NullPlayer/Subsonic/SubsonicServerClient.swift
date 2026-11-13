@@ -128,7 +128,7 @@ class SubsonicServerClient {
             
             // Parse the response
             let decoder = JSONDecoder()
-            let subsonicResponse = try decoder.decode(SubsonicResponse<T>.self, from: data.utf8Repaired ?? data)
+            let subsonicResponse = try decoder.decodeRepairingUTF8(SubsonicResponse<T>.self, from: data)
             
             // Check for API errors
             if let error = subsonicResponse.subsonicResponse.error {
@@ -203,7 +203,7 @@ class SubsonicServerClient {
             
             // Verify the response is valid JSON with ok status
             let decoder = JSONDecoder()
-            let subsonicResponse = try decoder.decode(SubsonicResponse<SubsonicPingResponse>.self, from: data)
+            let subsonicResponse = try decoder.decodeRepairingUTF8(SubsonicResponse<SubsonicPingResponse>.self, from: data)
             return subsonicResponse.subsonicResponse.isOk
             
         } catch {

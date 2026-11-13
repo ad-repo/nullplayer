@@ -128,7 +128,7 @@
 - **Plex search no longer fails with "The data couldn't be read because it isn't in the correct
   format."** A search whose results included a track with a non-UTF-8 tag (such as a Latin-1
   "Mötley Crüe") failed outright; the bad characters now show as `?` and the search works. Subsonic,
-  Jellyfin and Emby responses get the same protection.
+  Jellyfin and Emby browse and search responses get the same protection.
 
 ### Visualizations
 

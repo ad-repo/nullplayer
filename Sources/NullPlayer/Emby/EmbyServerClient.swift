@@ -202,7 +202,7 @@ class EmbyServerClient {
             }
 
             let decoder = JSONDecoder()
-            return try decoder.decode(T.self, from: data.utf8Repaired ?? data)
+            return try decoder.decodeRepairingUTF8(T.self, from: data)
 
         } catch let error as EmbyClientError {
             throw error
