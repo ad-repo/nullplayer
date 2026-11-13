@@ -93,6 +93,8 @@ private:
 	std::shared_ptr<Texture> gui;
 	uint32 last_time;
 	float frames = 0.0f;
+	// Wall time since AudioData last advanced; skipped frames must still feed it.
+	float port_audio_elapsed = 0.0f;
 	float port_intensity_scale = 1.0f;
 	// Set by Render when no effect could draw (CanRender), so the host keeps
 	// the last frame on screen instead of presenting an undrawn buffer.

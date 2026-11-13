@@ -192,6 +192,9 @@ Error* Tripex::Render(AudioSource& audio_source)
 	// CanRender forces a draw) and resets once one draws.
 	float frame_delta = std::min(4.0f, dwTimeChange / (1000.0f / 15.0f));
 	frames = std::min(4.0f, frames + frame_delta);
+	// PORT FIX 3: a skipped frame returns before audio->Update, so its time is
+	// banked here; otherwise AudioData's PCM consumption falls behind real time.
+	port_audio_elapsed += elapsed;
 	last_time = time;
 
 	effect_frames += frame_delta;
@@ -351,7 +354,8 @@ Error* Tripex::Render(AudioSource& audio_source)
 		return nullptr;
 	}
 
-	audio->Update(elapsed, enabled_effects[effect_idx]->sensitivity * port_intensity_scale, audio_source);
+	audio->Update(port_audio_elapsed, enabled_effects[effect_idx]->sensitivity * port_intensity_scale, audio_source);
+	port_audio_elapsed = 0.0f;
 
 	for (int i = 0; i < 2; i++)
 	{

@@ -173,6 +173,10 @@
   and changing any other Geiss setting saved whatever it happened to be.
 - **Geiss's Gamma menu lists its default, 1.10×,** so the current value is ticked from the start;
   nothing was ticked until you picked one.
+- **Geiss's Waveform Mode draws what you pick.** Wave drew the spectrum and Spectrum drew the
+  wave, with the tick on the opposite item, and Geiss started in spectrum instead of its usual wave.
+- **Tripex reacts to the music as it plays.** Frames Tripex skipped drawing also skipped reading
+  the audio, so its effects could fall behind the music.
 
 ### Classic skins
 

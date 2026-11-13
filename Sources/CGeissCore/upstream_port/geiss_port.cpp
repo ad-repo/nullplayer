@@ -2418,7 +2418,8 @@ extern "C" void geiss_port_get_config(GeissCoreConfig *out) {
     out->modeLocked = bLocked ? 1 : 0;
     out->paletteLocked = bPalLocked ? 1 : 0;
     out->autoSwitchSeconds = frames_til_auto_switch__registry / 30;
-    out->visMode = (int)visMode;
+    // GeissCore.h's contract is 0 = wave, 1 = spectrum; the enum orders them the other way.
+    out->visMode = (visMode == wave) ? 0 : 1;
 }
 
 extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg);
@@ -2461,7 +2462,7 @@ extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
     frames_til_auto_switch__registry = cfg->autoSwitchSeconds * 30;
 
     // visMode: pure read, applies next frame.
-    visMode = (visModeEnum)cfg->visMode;
+    visMode = (cfg->visMode == 0) ? wave : spectrum;
 }
 
 // geiss_port_randomize_palette(): trigger an immediate palette mutation,

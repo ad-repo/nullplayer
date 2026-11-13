@@ -4118,7 +4118,7 @@ class WindowManager {
     /// Winamp's "next/previous visualization"; with the visualization window up, its presets are
     /// what those buttons are pointing at.
     func stepVisualizationPreset(by delta: Int) {
-        if let controller = projectMWindowController {
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
             controller.stepPreset(by: delta)
         } else {
             hostedProjectMView?.visualizationGLView?.stepEnginePreset(by: delta)
