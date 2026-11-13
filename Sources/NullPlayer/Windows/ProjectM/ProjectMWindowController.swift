@@ -192,13 +192,13 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     /// Go to next preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func nextPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.nextPreset(hardCut: hardCut)
+        projectMView.visualizationGLView?.stepEnginePreset(by: 1, hardCut: hardCut)
     }
     
     /// Go to previous preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func previousPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.previousPreset(hardCut: hardCut)
+        projectMView.visualizationGLView?.stepEnginePreset(by: -1, hardCut: hardCut)
     }
     
     /// Select preset at specific index
@@ -216,7 +216,7 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     /// Select a random preset
     /// - Parameter hardCut: If true, switch immediately without blending
     func randomPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.randomPreset(hardCut: hardCut)
+        projectMView.visualizationGLView?.randomEnginePreset(hardCut: hardCut)
     }
     
     /// Set specific preset by index

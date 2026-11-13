@@ -79,6 +79,14 @@ class VisualizationGLView: NSOpenGLView {
         return engine
     }
 
+    /// Reads from the engine while holding `engineLock`, so the render thread cannot be setting it
+    /// up (ProjectM fills its preset list there) mid-read.
+    func readEngine<T>(_ read: (VisualizationEngine?) -> T) -> T {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        return read(engine)
+    }
+
     /// Whether audio is currently playing (affects visualization behavior)
     private var isAudioActive = false
     
@@ -917,9 +925,11 @@ class VisualizationGLView: NSOpenGLView {
             ?? (Int(backingBounds.width), Int(backingBounds.height))
 
         // Render with the current engine (safe because we hold engineLock)
+        var drew = true
         if let eng = engine, eng.isAvailable {
             renderEngine(engine: eng, pcm: pcm, spectrum: spectrum, width: viewportWidth, height: viewportHeight)
-            if let encoder { readBackForCast(encoder) }
+            drew = eng.drewLastFrame
+            if drew, let encoder { readBackForCast(encoder) }
         } else {
             // Engine not available - just clear to black
             glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
@@ -927,8 +937,8 @@ class VisualizationGLView: NSOpenGLView {
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         }
 
-        // Swap buffers
-        context.flushBuffer()
+        // Swap buffers, unless the engine drew nothing: the back buffer then holds an older frame
+        if drew { context.flushBuffer() }
 
         // Release CGL lock before the surface update dispatch so main thread never
         // contends for it inside openGLContext?.update().

@@ -87,7 +87,7 @@ extern "C" int TripexCore_renderFrame(TripexCoreHandle* h) {
     Error* err = h->tripex->Render(*h->audio);
     if (err) { setError(h, err); return 1; }
     h->last_error.clear();
-    return 0;
+    return h->tripex->PortFrameSkipped() ? 2 : 0;
 }
 
 extern "C" void TripexCore_prevEffect(TripexCoreHandle* h) {

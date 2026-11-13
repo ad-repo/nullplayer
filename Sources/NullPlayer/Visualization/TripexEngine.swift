@@ -99,8 +99,19 @@ final class TripexEngine: VisualizationEngine {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard isAvailable, let core else { return }
-        _ = TripexCore_renderFrame(core)
+        // A failed frame draws nothing, so the view keeps the last one: log the core's error once
+        // per distinct message rather than every frame.
+        let result = TripexCore_renderFrame(core)
+        drewLastFrame = result == 0
+        let error = result == 1 ? TripexCore_lastError(core).map { String(cString: $0) } ?? "?" : ""
+        if error != lastRenderError {
+            lastRenderError = error
+            if !error.isEmpty { NSLog("TripexEngine: frame failed: %@", error) }
+        }
     }
+
+    private var lastRenderError = ""
+    private(set) var drewLastFrame = true
 
     // MARK: - Effect navigation (used by TripexMenuBuilder in Chunk 7)
 
@@ -154,8 +165,9 @@ final class TripexEngine: VisualizationEngine {
         savePresetIndex()
     }
 
-    /// Jumps straight to a random effect. `TripexCore_changeEffect` only starts a transition, so
-    /// the index read back after it was still the old effect's, and that is what got saved.
+    /// Jumps straight to a random effect. `TripexCore_changeEffect` cannot: it starts a crossfade,
+    /// and the hold every host sets (`setHold(true)`) cancels the fade each frame
+    /// (`Tripex.cpp` `TXS_HOLD`), so R left the effect where it was.
     func randomPreset(hardCut: Bool) {
         let count = presetCount
         guard count > 1 else { return }

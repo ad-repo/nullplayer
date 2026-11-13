@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import OpenGL.GL3
 
 // Import the C projectM library when available
@@ -606,12 +606,6 @@ class ProjectMWrapper: VisualizationEngine {
 
     func stepPreset(by delta: Int, hardCut: Bool) {
         delta > 0 ? nextPreset(hardCut: hardCut) : previousPreset(hardCut: hardCut)
-    }
-
-    /// Its default preset, ratings and favorites (`VisualizationContextMenu.addProjectMRatings`).
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
-        guard isAvailable else { return }
-        VisualizationContextMenu.addProjectMRatings(to: menu, target: target, glView: glView)
     }
 
     /// Selects a random preset

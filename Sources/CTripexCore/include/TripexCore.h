@@ -28,9 +28,10 @@ void              TripexCore_resize(TripexCoreHandle* handle, int width, int hei
 // point to at least `count` int16 values.
 void              TripexCore_pushPCM(TripexCoreHandle* handle, const int16_t* samples, size_t count);
 
-// Renders one frame using the host's current GL context. Returns 0 on
-// success, non-zero if Tripex::Render returned an error (description
-// available via TripexCore_lastError).
+// Renders one frame using the host's current GL context. Returns 0 when it
+// drew, 2 when no effect was due to draw (nothing was drawn: the host must
+// not present the buffer), 1 if Tripex::Render returned an error
+// (description available via TripexCore_lastError).
 int               TripexCore_renderFrame(TripexCoreHandle* handle);
 
 // Effect navigation. The Tripex core enqueues these via internal `txs`

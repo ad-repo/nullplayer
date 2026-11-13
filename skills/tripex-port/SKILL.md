@@ -80,11 +80,23 @@ PCM is delivered by NullPlayer as mono float in `[-1, 1]`. `TripexEngine.addPCMM
 
 ### Effect timing and performance notes
 
-- `Tripex::Render` uses per-frame timing (`frames = ...`), not accumulated
-  skipped-frame timing. Effects with custom `CanRenderImpl` gates may need
-  review if they stall under this model.
-- Flowmap, MotionBlur1, and Phased have already been adjusted for the
-  per-frame timing model.
+- `Tripex::Render`'s `frames` is the time since the last **drawn** frame, in
+  1/15 s units capped at 4: it accumulates across skipped calls and resets once
+  a frame draws (`PORT FIX 2`). Upstream accumulated it and never reset it; the
+  first port fix made it a per-call delta, and then any effect gated by its own
+  accumulator (ConcentricRings' `accum`, only grown in `Calculate`) asked the
+  same `CanRender` question every 60 fps call and froze until a slow frame.
+  `effect_frames` still takes the per-call delta.
+- A skipped call draws nothing, so `TripexCore_renderFrame` returns 2 for it and
+  `TripexEngine.drewLastFrame` goes false; `VisualizationGLView` then neither
+  flushes nor reads back for a cast. Presenting the undrawn buffer put an older
+  frame on screen and made ConcentricRings judder.
+- Flowmap, MotionBlur1, and Phased had their gates forced to `true` as a
+  workaround for the per-call model; with `PORT FIX 2` their upstream gates
+  would work again, but they look right as they are and were left. LightRing
+  and LightSphere keep upstream's gates. Check a self-gated effect by capturing
+  the window repeatedly: before the fix ConcentricRings repeated 12 of 30
+  captures taken ~0.2 s apart, after it none.
 - Tube and WaterGlobe are the main current performance-sensitive effects.
   Both avoid the transparent z pre-pass in the OpenGL port; an attempted
   analytic/radial normal optimization made them look worse and was reverted.
@@ -162,7 +174,7 @@ randomize current effect settings, and overlays.
 ## Mode-specific guards (per CLAUDE.md gotcha)
 
 - `isTripexActive = currentEngineType == .tripex` is computed in `ModernProjectMView`'s menu builder. The `addTripexEffectsMenuItems` call is gated on it.
-- Effect navigation is `TripexEngine`'s `VisualizationEngine` preset methods (`selectPreset` / `stepPreset` / `randomPreset`), which save `tripex.lastEffectIndex` themselves. R picks an index and jumps there: `TripexCore_changeEffect` only starts a transition, so the index read back after it was the old effect's. The remaining Tripex helpers in `VisualizationGLView` (intensity, reconfigure, overlays) early-return via `withTripex` if the active engine is not `TripexEngine`.
+- Effect navigation is `TripexEngine`'s `VisualizationEngine` preset methods (`selectPreset` / `stepPreset` / `randomPreset`), which save `tripex.lastEffectIndex` themselves. R picks an index and jumps there: `TripexCore_changeEffect` starts a crossfade, which the hold every host sets cancels each frame (`Tripex.cpp` `TXS_HOLD` resets `TXS_IN_FADE`), so it never changed the effect. The remaining Tripex helpers in `VisualizationGLView` (intensity, reconfigure, overlays) early-return via `withTripex` if the active engine is not `TripexEngine`.
 
 ## Architectural deviations from upstream
 

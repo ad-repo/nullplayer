@@ -130,7 +130,8 @@ enum GeissMenuBuilder {
 }
 
 extension GeissEngine {
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {
+        guard let glView = target.visualizationGLView else { return }
         GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: target, visualizationView: glView)
     }
 }

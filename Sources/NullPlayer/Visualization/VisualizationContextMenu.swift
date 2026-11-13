@@ -59,7 +59,7 @@ enum VisualizationContextMenu {
         let currentEngineType = glView?.currentEngineType ?? .projectM
 
         if let glView {
-            // ProjectM rates its presets, so its titles carry the stars.
+            // ProjectM rates its presets: read once, for the star titles and its rating items.
             let rated = currentEngineType == .projectM && glView.isProjectMAvailable
                 ? RatedPresets(glView: glView) : nil
             addPresets(to: menu, glView: glView, rated: rated)
@@ -67,7 +67,8 @@ enum VisualizationContextMenu {
             addCycle(to: menu, glView: glView)
             menu.addItem(.separator())
             let extrasStart = menu.numberOfItems
-            glView.currentEngine?.addMenuItems(to: menu, target: target, glView: glView)
+            if let rated { addProjectMRatings(to: menu, target: target, glView: glView, rated: rated) }
+            glView.currentEngine?.addMenuItems(to: menu, target: target)
             if menu.numberOfItems > extrasStart { menu.addItem(.separator()) }
         }
 
@@ -232,8 +233,8 @@ enum VisualizationContextMenu {
     }
 
     /// ProjectM's own items: its default preset, ratings and favorites.
-    static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
-        let rated = RatedPresets(glView: glView)
+    private static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget,
+                                           glView: VisualizationGLView, rated: RatedPresets) {
         let ratingsStore = ProjectMPresetRatingsStore.shared
         let presetCount = rated.paths.count
         let currentPresetIndex = glView.currentEnginePresetIndex

@@ -160,8 +160,14 @@
   music, so most beats were missed and the rest landed late.
 - **The BPM readout hears all of the music.** It heard less than half of it, pieced together as
   if it were continuous.
-- **Tripex's R (random effect) is remembered.** The effect it landed on was not saved, so the next
-  launch came back on the one before it.
+- **R picks a random Tripex effect.** It did nothing (Tripex is held on its effect so the
+  auto-cycle can change it, and the held engine ignored R), so it never changed what came back
+  next launch either.
+- **Tripex's ConcentricRings plays smoothly.** It froze for moments at a time and juddered,
+  including just after switching to it.
+- **A Winamp Modern skin's next / previous visualization buttons step every engine's presets** in
+  the Visualizations window; they only stepped ProjectM's, and did nothing on Geiss, Tripex, AVS,
+  Goom, Corona or Smear.
 
 ### Classic skins
 

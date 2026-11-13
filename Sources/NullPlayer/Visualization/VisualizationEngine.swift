@@ -66,6 +66,11 @@ protocol VisualizationEngine: AnyObject {
     ///   done in `addPCMMono()` instead.
     func renderFrame()
 
+    /// False when the last `renderFrame` drew nothing (Tripex skips frames an effect is not due to
+    /// draw), so the host keeps the previous frame on screen rather than presenting an undrawn
+    /// buffer, which showed a stale picture and made the effect judder. Default: true.
+    var drewLastFrame: Bool { get }
+
     /// Clean up resources when the engine is being destroyed
     ///
     /// Optional method for engines that need explicit cleanup. Called before
@@ -91,8 +96,9 @@ protocol VisualizationEngine: AnyObject {
     func randomPreset(hardCut: Bool)
 
     /// The engine's own items in the shared menu (`VisualizationContextMenu`): only what no other
-    /// engine has. Default: none.
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView)
+    /// engine has. Default: none. ProjectM's ratings stay in the menu itself, beside the star titles
+    /// they share one ratings read with.
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget)
 }
 
 /// Default implementations for optional protocol methods
@@ -105,7 +111,9 @@ extension VisualizationEngine {
         // Default: no cleanup needed
     }
 
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {}
+    var drewLastFrame: Bool { true }
+
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {}
 }
 
 /// The canvas a software engine (Geiss, AVS, Corona, Smear) renders for a viewport. Their effects are

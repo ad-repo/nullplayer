@@ -185,7 +185,7 @@ final class CoronaEngine: NSObject, VisualizationEngine {
 
     // MARK: - Menu
 
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {
         let item = NSMenuItem(title: "Blaze", action: #selector(toggleBlazeAction), keyEquivalent: "")
         item.target = self
         item.state = lock.withLock { blaze } ? .on : .off

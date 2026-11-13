@@ -41,7 +41,8 @@ enum TripexMenuBuilder {
 }
 
 extension TripexEngine {
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {
+        guard let glView = target.visualizationGLView else { return }
         TripexMenuBuilder.addTripexConfigMenuItems(to: menu, target: target, visualizationView: glView)
     }
 }

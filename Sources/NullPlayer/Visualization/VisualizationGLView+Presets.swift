@@ -4,15 +4,20 @@ import AppKit
 /// bindings step "the next one" through here without asking which engine runs. Each engine
 /// answers through `VisualizationEngine`'s preset requirements, so a new engine adds nothing here.
 extension VisualizationGLView {
-    var enginePresetCount: Int { currentEngine?.presetCount ?? 0 }
+    // Reads hold `engineLock` (`readEngine`). Changes do not: AVS loads its preset on main, and
+    // holding the lock through that would stall the render thread.
+
+    var enginePresetCount: Int { readEngine { $0?.presetCount ?? 0 } }
 
     /// The running preset's index, nil when there is none yet.
     var currentEnginePresetIndex: Int? {
-        guard let engine = currentEngine, let index = engine.presetIndex else { return nil }
-        return (0..<engine.presetCount).contains(index) ? index : nil
+        readEngine { engine in
+            guard let engine, let index = engine.presetIndex else { return nil }
+            return (0..<engine.presetCount).contains(index) ? index : nil
+        }
     }
 
-    func enginePresetName(at index: Int) -> String { currentEngine?.presetName(at: index) ?? "" }
+    func enginePresetName(at index: Int) -> String { readEngine { $0?.presetName(at: index) ?? "" } }
 
     func selectEnginePreset(at index: Int) {
         currentEngine?.selectPreset(at: index, hardCut: false)

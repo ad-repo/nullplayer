@@ -4124,12 +4124,8 @@ class WindowManager {
             } else {
                 controller.previousPreset(hardCut: false)
             }
-        } else if let visView = hostedProjectMView?.visualizationGLView {
-            if delta >= 0 {
-                visView.nextPreset(hardCut: false)
-            } else {
-                visView.previousPreset(hardCut: false)
-            }
+        } else {
+            hostedProjectMView?.visualizationGLView?.stepEnginePreset(by: delta >= 0 ? 1 : -1)
         }
     }
 
