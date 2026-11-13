@@ -128,3 +128,9 @@ enum GeissMenuBuilder {
     func setVisMode(_ sender: NSMenuItem)
     func randomizePalette(_ sender: NSMenuItem)
 }
+
+extension GeissEngine {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+        GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: target, visualizationView: glView)
+    }
+}

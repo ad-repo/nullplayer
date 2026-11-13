@@ -9,12 +9,24 @@ NullPlayer has several visualization stacks. Each has its own skill; this file i
 
 The standalone waveform window is **not** a Metal visualization mode. It reuses audio waveform notifications and the cache service. Do not treat it as part of this stack.
 
+## The engine suite is global: no per-family permission
+
+The visualization engines and their shared seams (`Visualization/`: the engines, the preset seam, the
+shared menu, the cycler) are one app-wide feature that every skin family's host runs. A change there
+is a global change, **exempt** from CLAUDE.md's rule that a change affecting more than one skin family
+needs the user's permission first (the user's ruling, 2026-11-12). Verify it in each host anyway.
+
 ## Engine presets: one seam
 
-`VisualizationGLView+Presets.swift` is the only place that knows each engine's preset calls (count,
-name, current index, select, step, random). Every host (the Visualizations window's keys, the `.wal`
-slot, the `.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine
-adds its cases there.
+Each engine answers `VisualizationEngine`'s preset requirements (`presetCount`, `presetIndex`,
+`presetName(at:)`, `selectPreset`, `stepPreset`, `randomPreset`, and `addMenuItems` for its own menu
+items), and `VisualizationGLView+Presets.swift` forwards to the running engine. Every host (the
+Visualizations window's keys, the `.wal` slot, the `.wmz` and Sonique effects areas) calls the seam
+and never switches on the engine. A new engine adds nothing outside its own files and
+`VisualizationGLView.createEngine`; the `.wmz` / Sonique catalogue lists it as `.engine(type)`.
+An engine that persists its choice does it in its own preset methods (Tripex's `lastEffectIndex`).
+Every host shares one saved choice per engine (AVS's `avs.presetPath` included), as they share the
+cycle settings: the last preset chosen anywhere is what each restores.
 
 ## Context menu and auto-cycle: one menu, one timer
 

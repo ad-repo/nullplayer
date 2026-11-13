@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Protocol defining the interface for visualization engines
 ///
@@ -73,6 +73,26 @@ protocol VisualizationEngine: AnyObject {
     ///
     /// - Note: Default implementation does nothing
     func cleanup()
+
+    // MARK: Presets
+    //
+    // Whatever the engine calls them (ProjectM's preset list, Geiss's, Tripex's and Goom's effects,
+    // AVS's preset files, Corona's palettes, Smear's move scripts), every host reaches them through
+    // these, forwarded once by `VisualizationGLView+Presets`. `hardCut` (switch without blending)
+    // matters only to ProjectM, the one engine that blends.
+
+    var presetCount: Int { get }
+    /// The running preset's index, nil when there is none yet.
+    var presetIndex: Int? { get }
+    func presetName(at index: Int) -> String
+    func selectPreset(at index: Int, hardCut: Bool)
+    /// One step forwards (`delta > 0`) or backwards, wrapping.
+    func stepPreset(by delta: Int, hardCut: Bool)
+    func randomPreset(hardCut: Bool)
+
+    /// The engine's own items in the shared menu (`VisualizationContextMenu`): only what no other
+    /// engine has. Default: none.
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView)
 }
 
 /// Default implementations for optional protocol methods
@@ -84,6 +104,8 @@ extension VisualizationEngine {
     func cleanup() {
         // Default: no cleanup needed
     }
+
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {}
 }
 
 /// The canvas a software engine (Geiss, AVS, Corona, Smear) renders for a viewport. Their effects are

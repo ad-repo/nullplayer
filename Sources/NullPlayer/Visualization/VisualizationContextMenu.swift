@@ -59,7 +59,7 @@ enum VisualizationContextMenu {
         let currentEngineType = glView?.currentEngineType ?? .projectM
 
         if let glView {
-            // ProjectM rates its presets: read once, for the preset titles and its own items.
+            // ProjectM rates its presets, so its titles carry the stars.
             let rated = currentEngineType == .projectM && glView.isProjectMAvailable
                 ? RatedPresets(glView: glView) : nil
             addPresets(to: menu, glView: glView, rated: rated)
@@ -67,20 +67,7 @@ enum VisualizationContextMenu {
             addCycle(to: menu, glView: glView)
             menu.addItem(.separator())
             let extrasStart = menu.numberOfItems
-            switch currentEngineType {
-            case .projectM:
-                if let rated { addProjectMRatings(to: menu, target: target, glView: glView, rated: rated) }
-            case .goom, .smear:
-                break
-            case .geiss:
-                GeissMenuBuilder.addGeissConfigMenuItems(to: menu, target: target, visualizationView: glView)
-            case .tripex:
-                TripexMenuBuilder.addTripexConfigMenuItems(to: menu, target: target, visualizationView: glView)
-            case .avs:
-                (glView.currentEngine as? AvsEngine)?.addMenuItems(to: menu)
-            case .corona:
-                (glView.currentEngine as? CoronaEngine)?.addMenuItems(to: menu)
-            }
+            glView.currentEngine?.addMenuItems(to: menu, target: target, glView: glView)
             if menu.numberOfItems > extrasStart { menu.addItem(.separator()) }
         }
 
@@ -245,8 +232,8 @@ enum VisualizationContextMenu {
     }
 
     /// ProjectM's own items: its default preset, ratings and favorites.
-    private static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget,
-                                           glView: VisualizationGLView, rated: RatedPresets) {
+    static func addProjectMRatings(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+        let rated = RatedPresets(glView: glView)
         let ratingsStore = ProjectMPresetRatingsStore.shared
         let presetCount = rated.paths.count
         let currentPresetIndex = glView.currentEnginePresetIndex

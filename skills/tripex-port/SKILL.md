@@ -162,7 +162,7 @@ randomize current effect settings, and overlays.
 ## Mode-specific guards (per CLAUDE.md gotcha)
 
 - `isTripexActive = currentEngineType == .tripex` is computed in `ModernProjectMView`'s menu builder. The `addTripexEffectsMenuItems` call is gated on it.
-- `selectTripexEffect`, `nextTripexEffect`, etc. in `VisualizationGLView` all early-return via `withTripex` if the active engine is not `TripexEngine` — defensive against menu actions firing during an engine switch.
+- Effect navigation is `TripexEngine`'s `VisualizationEngine` preset methods (`selectPreset` / `stepPreset` / `randomPreset`), which save `tripex.lastEffectIndex` themselves. R picks an index and jumps there: `TripexCore_changeEffect` only starts a transition, so the index read back after it was the old effect's. The remaining Tripex helpers in `VisualizationGLView` (intensity, reconfigure, overlays) early-return via `withTripex` if the active engine is not `TripexEngine`.
 
 ## Architectural deviations from upstream
 

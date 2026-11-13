@@ -179,9 +179,11 @@ final class SmearEngine: NSObject, VisualizationEngine {
 
     static var presetCount: Int { moveFiles.count }
 
-    static func presetName(at index: Int) -> String {
-        guard moveFiles.indices.contains(index) else { return "" }
-        return (moveFiles[index] as NSString).deletingPathExtension.replacingOccurrences(of: "_", with: " ")
+    var presetCount: Int { Self.presetCount }
+
+    func presetName(at index: Int) -> String {
+        guard Self.moveFiles.indices.contains(index) else { return "" }
+        return (Self.moveFiles[index] as NSString).deletingPathExtension.replacingOccurrences(of: "_", with: " ")
     }
 
     private static var savedMove: String {
@@ -189,16 +191,16 @@ final class SmearEngine: NSObject, VisualizationEngine {
         return saved.flatMap { moveFiles.contains($0) ? $0 : nil } ?? moveFiles.first ?? ""
     }
 
-    var currentPreset: Int? { lock.withLock { Self.moveFiles.firstIndex(of: move) } }
+    var presetIndex: Int? { lock.withLock { Self.moveFiles.firstIndex(of: move) } }
 
-    func selectPreset(at index: Int) { select { _ in index } }
+    func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
 
-    func step(by offset: Int) {
+    func stepPreset(by offset: Int, hardCut: Bool) {
         let count = Self.presetCount
         select { ((($0 ?? 0) + offset) % count + count) % count }
     }
 
-    func selectRandomPreset() {
+    func randomPreset(hardCut: Bool) {
         select { current in
             var index: Int
             repeat { index = Int.random(in: 0..<Self.presetCount) } while index == current

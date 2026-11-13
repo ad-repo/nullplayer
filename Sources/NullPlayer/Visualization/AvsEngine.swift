@@ -36,7 +36,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
 
     // Main thread only, once `init` returns.
     private(set) var presets: [URL] = []
-    private(set) var currentIndex: Int?
+    private(set) var presetIndex: Int?
     /// Set while the editor has this engine open: auto-cycle would throw the edit away.
     var isBeingEdited = false
 
@@ -95,7 +95,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
         // folder delays the first frame; main's rescans (`reloadPresets`) run in the background.
         presets = AvsPresets.all()
         if let index = Self.savedIndex(in: presets) {
-            currentIndex = index
+            presetIndex = index
             if !core.loadPreset(at: presets[index]) {
                 NSLog("AvsEngine: %@ did not load: %@", presets[index].lastPathComponent, core.lastError)
             }
@@ -187,10 +187,6 @@ final class AvsEngine: NSObject, VisualizationEngine {
 
     // MARK: - Presets (main thread)
 
-    var currentPresetName: String? {
-        currentIndex.map { presets[$0].deletingPathExtension().lastPathComponent }
-    }
-
     /// Rescans the folders off main (a custom folder can be large or on a slow volume), then
     /// publishes the list and reloads the saved preset on main.
     func reloadPresets() {
@@ -200,7 +196,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.presets = found
-                self.currentIndex = nil
+                self.presetIndex = nil
                 if let index = Self.savedIndex(in: found) { self.selectPreset(at: index) }
             }
         }
@@ -212,10 +208,16 @@ final class AvsEngine: NSObject, VisualizationEngine {
         return presets.firstIndex { $0.path == saved } ?? (presets.isEmpty ? nil : 0)
     }
 
-    func selectPreset(at index: Int) {
+    var presetCount: Int { presets.count }
+
+    func presetName(at index: Int) -> String {
+        presets.indices.contains(index) ? presets[index].deletingPathExtension().lastPathComponent : ""
+    }
+
+    func selectPreset(at index: Int, hardCut: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard presets.indices.contains(index), let core else { return }
-        currentIndex = index
+        presetIndex = index
         let url = presets[index]
         if core.loadPreset(at: url) {
             AvsPresets.currentPreset = url.path
@@ -225,15 +227,15 @@ final class AvsEngine: NSObject, VisualizationEngine {
         }
     }
 
-    func step(by offset: Int) {
+    func stepPreset(by offset: Int, hardCut: Bool = false) {
         guard !presets.isEmpty else { return }
-        selectPreset(at: ((currentIndex ?? -1) + offset + presets.count) % presets.count)
+        selectPreset(at: ((presetIndex ?? -1) + offset + presets.count) % presets.count)
     }
 
-    func selectRandomPreset() {
+    func randomPreset(hardCut: Bool = false) {
         guard presets.count > 1 else { return }
-        var index = currentIndex ?? 0
-        while index == currentIndex { index = Int.random(in: presets.indices) }
+        var index = presetIndex ?? 0
+        while index == presetIndex { index = Int.random(in: presets.indices) }
         selectPreset(at: index)
     }
 }

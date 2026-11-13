@@ -144,49 +144,47 @@ final class GeissEngine: VisualizationEngine {
         }
     }
 
-    var effectCount: Int {
+    var presetCount: Int {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return 0 }
         return Int(GeissCore_effectCount(core))
     }
 
-    var currentEffectName: String {
+    var presetIndex: Int? {
+        let name = currentEffectName
+        return (0..<presetCount).first { presetName(at: $0) == name }
+    }
+
+    private var currentEffectName: String {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core, let cName = GeissCore_currentEffectName(core) else { return "" }
         return String(cString: cName)
     }
 
-    func effectName(at index: Int) -> String {
+    func presetName(at index: Int) -> String {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core, let cName = GeissCore_effectName(core, Int32(index)) else { return "" }
         return String(cString: cName)
     }
 
-    func nextEffect() {
+    func stepPreset(by delta: Int, hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }
-        GeissCore_nextEffect(core)
+        delta > 0 ? GeissCore_nextEffect(core) : GeissCore_prevEffect(core)
     }
 
-    func previousEffect() {
-        coreLock.lock()
-        defer { coreLock.unlock() }
-        guard let core else { return }
-        GeissCore_prevEffect(core)
-    }
-
-    func randomEffect() {
+    func randomPreset(hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }
         GeissCore_randomEffect(core)
     }
 
-    func selectEffect(at index: Int) {
+    func selectPreset(at index: Int, hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }

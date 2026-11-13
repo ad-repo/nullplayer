@@ -155,14 +155,15 @@ final class CoronaEngine: NSObject, VisualizationEngine {
         return (0..<presetCount).contains(saved) ? saved : 0
     }
 
-    static func presetName(at index: Int) -> String { String(cString: CoronaCore_paletteName(Int32(index))) }
+    var presetCount: Int { Self.presetCount }
+    var presetIndex: Int? { lock.withLock { palette } }
 
-    var currentPreset: Int { lock.withLock { palette } }
+    func presetName(at index: Int) -> String { String(cString: CoronaCore_paletteName(Int32(index))) }
 
-    func selectPreset(at index: Int) { select { _ in index } }
-    func step(by offset: Int) { select { ($0 + offset + Self.presetCount) % Self.presetCount } }
+    func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
+    func stepPreset(by offset: Int, hardCut: Bool) { select { ($0 + offset + Self.presetCount) % Self.presetCount } }
 
-    func selectRandomPreset() {
+    func randomPreset(hardCut: Bool) {
         select { current in
             var index = current
             while index == current { index = Int.random(in: 0..<Self.presetCount) }
@@ -184,7 +185,7 @@ final class CoronaEngine: NSObject, VisualizationEngine {
 
     // MARK: - Menu
 
-    func addMenuItems(to menu: NSMenu) {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
         let item = NSMenuItem(title: "Blaze", action: #selector(toggleBlazeAction), keyEquivalent: "")
         item.target = self
         item.state = lock.withLock { blaze } ? .on : .off

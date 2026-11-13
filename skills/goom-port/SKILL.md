@@ -132,7 +132,7 @@ Hypercos 2, Y Only, Speedway, and the port's Spiral, Vortex, Flower, Heart, Pent
 engine's "presets" in `VisualizationGLView+Presets.swift`, so → / ← / R and the hosts' preset
 steps work. **Goom is always held**: it never picks its own effect. `GoomEngine` keeps the chosen
 index in `goom.heldEffect` (default 0; cleared by the Visualizations window's preference reset),
-forces and holds it on every new core (a resize makes one), and `currentEffect` answers that index.
+forces and holds it on every new core (a resize makes one), and `presetIndex` answers that index.
 The shared `VisualizationPresetCycler` is what changes it over time (`goom.cycleMode` /
 `goom.cycleInterval`, default Auto-Random, 30 s).
 

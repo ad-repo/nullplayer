@@ -104,30 +104,28 @@ final class TripexEngine: VisualizationEngine {
 
     // MARK: - Effect navigation (used by TripexMenuBuilder in Chunk 7)
 
-    var effectCount: Int {
+    var presetCount: Int {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return 0 }
         return Int(TripexCore_effectCount(core))
     }
 
-    var currentEffectIndex: Int {
+    var presetIndex: Int? {
         coreLock.lock()
         defer { coreLock.unlock() }
-        guard let core else { return -1 }
-        return Int(TripexCore_currentEffectIndex(core))
+        guard let core else { return nil }
+        let index = Int(TripexCore_currentEffectIndex(core))
+        return index >= 0 ? index : nil
     }
 
-    func effectName(at index: Int) -> String {
+    func presetName(at index: Int) -> String {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core, let cName = TripexCore_effectName(core, Int32(index)) else { return "" }
         return String(cString: cName)
     }
 
-    func nextEffect()      { withCore { TripexCore_nextEffect($0) } }
-    func previousEffect()  { withCore { TripexCore_prevEffect($0) } }
-    func randomEffect()    { withCore { TripexCore_changeEffect($0) } }
     func reconfigure()     { withCore { TripexCore_reconfigureEffect($0) } }
     func setHold(_ on: Bool) { withCore { TripexCore_setHold($0, on ? 1 : 0) } }
     func toggleAudioInfo() { withCore { TripexCore_toggleAudioInfo($0) } }
@@ -144,8 +142,32 @@ final class TripexEngine: VisualizationEngine {
         }
     }
 
-    func selectEffect(at index: Int) {
+    // Each choice is saved as `lastEffectIndex`, which the engine restores at creation.
+
+    func selectPreset(at index: Int, hardCut: Bool) {
         withCore { TripexCore_selectEffect($0, Int32(index)) }
+        savePresetIndex()
+    }
+
+    func stepPreset(by delta: Int, hardCut: Bool) {
+        withCore { delta > 0 ? TripexCore_nextEffect($0) : TripexCore_prevEffect($0) }
+        savePresetIndex()
+    }
+
+    /// Jumps straight to a random effect. `TripexCore_changeEffect` only starts a transition, so
+    /// the index read back after it was still the old effect's, and that is what got saved.
+    func randomPreset(hardCut: Bool) {
+        let count = presetCount
+        guard count > 1 else { return }
+        let current = presetIndex
+        var index: Int
+        repeat { index = Int.random(in: 0..<count) } while index == current
+        selectPreset(at: index, hardCut: hardCut)
+    }
+
+    private func savePresetIndex() {
+        guard let index = presetIndex else { return }
+        UserDefaults.standard.set(index, forKey: DefaultsKey.lastEffectIndex)
     }
 
     private func withCore(_ body: (OpaquePointer) -> Void) {

@@ -4,7 +4,7 @@ import AppKit
 /// the presets and cycle every engine shares. The items target the engine, so a host needs no
 /// AVS-specific actions.
 extension AvsEngine {
-    func addMenuItems(to menu: NSMenu) {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
         menu.addItem(item("Edit Preset…", #selector(editPresetAction)))
         let beats = NSMenu(title: "Beat Detection")
         for (title, action, advanced) in [("Standard", #selector(standardBeatsAction), false),

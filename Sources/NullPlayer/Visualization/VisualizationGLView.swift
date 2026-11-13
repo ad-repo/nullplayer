@@ -427,8 +427,8 @@ class VisualizationGLView: NSOpenGLView {
                 let stored = UserDefaults.standard.integer(forKey: TripexEngine.DefaultsKey.lastEffectIndex)
                 if UserDefaults.standard.object(forKey: TripexEngine.DefaultsKey.lastEffectIndex) != nil,
                    stored >= 0,
-                   stored < tripex.effectCount {
-                    tripex.selectEffect(at: stored)
+                   stored < tripex.presetCount {
+                    tripex.selectPreset(at: stored, hardCut: true)
                 }
                 // The preset cycler, not Tripex's own timer, changes its effect.
                 tripex.setHold(true)
@@ -1402,56 +1402,7 @@ class VisualizationGLView: NSOpenGLView {
         return pm.presetsInfo
     }
 
-    // MARK: - Geiss Effect Navigation
-
-    var geissEffectCount: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return 0 }
-        return geiss.effectCount
-    }
-
-    var currentGeissEffectName: String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return "" }
-        return geiss.currentEffectName
-    }
-
-    func geissEffectName(at index: Int) -> String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return "" }
-        return geiss.effectName(at: index)
-    }
-
-    func nextGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.nextEffect()
-    }
-
-    func previousGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.previousEffect()
-    }
-
-    func randomGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.randomEffect()
-    }
-
-    func selectGeissEffect(at index: Int) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.selectEffect(at: index)
-    }
+    // MARK: - Geiss helpers (used by GeissMenuBuilder)
 
     func randomizeGeissPalette() {
         engineLock.lock()
@@ -1461,20 +1412,6 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     // MARK: - Tripex helpers (used by TripexMenuBuilder)
-
-    var tripexEffectCount: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return 0 }
-        return t.effectCount
-    }
-
-    var currentTripexEffectIndex: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return -1 }
-        return t.currentEffectIndex
-    }
 
     var tripexIntensityScale: Float {
         get {
@@ -1488,48 +1425,9 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
 
-    func tripexEffectName(at index: Int) -> String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return "" }
-        return t.effectName(at: index)
-    }
-
-    func nextTripexEffect() {
-        withTripex {
-            $0.nextEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
-
-    func previousTripexEffect() {
-        withTripex {
-            $0.previousEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
-
-    func randomTripexEffect() {
-        withTripex {
-            $0.randomEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
     func reconfigureTripex()    { withTripex { $0.reconfigure() } }
     func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
     func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
-
-    func selectTripexEffect(at index: Int) {
-        withTripex { t in
-            t.selectEffect(at: index)
-            persistTripexEffectIndex(t.currentEffectIndex)
-        }
-    }
-
-    private func persistTripexEffectIndex(_ index: Int) {
-        guard index >= 0 else { return }
-        UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
-    }
 
     private func withTripex(_ body: (TripexEngine) -> Void) {
         engineLock.lock()

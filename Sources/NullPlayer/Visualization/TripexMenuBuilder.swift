@@ -39,3 +39,9 @@ enum TripexMenuBuilder {
     func toggleTripexHelpAction(_ sender: NSMenuItem)
     func setTripexIntensity(_ sender: NSMenuItem)
 }
+
+extension TripexEngine {
+    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget, glView: VisualizationGLView) {
+        TripexMenuBuilder.addTripexConfigMenuItems(to: menu, target: target, visualizationView: glView)
+    }
+}
