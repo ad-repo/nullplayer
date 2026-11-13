@@ -178,7 +178,7 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 
 ## Configuration Levers (Phase 1)
 
-User-facing controls for Geiss parameters are exposed via a two-level ABI: C ABI (`GeissCoreConfig` struct + getters/setters in `geiss_port.cpp`), wrapped by Swift (`GeissEngine.Config` + accessors in `GeissEngine.swift`), persisted in `UserDefaults`, and surfaced via context-menu toggles and submenus in `ModernProjectMView` and `ProjectMView`.
+User-facing controls for Geiss parameters are exposed via a two-level ABI: C ABI (`GeissCoreConfig` struct + getters/setters in `geiss_port.cpp`), wrapped by Swift (`GeissEngine.Config` + accessors in `GeissEngine.swift`), persisted in `UserDefaults`, and surfaced via the engine's own toggles and submenus in the shared context menu (`GeissEngine+Menu.swift`).
 
 ### C ABI surface
 
@@ -203,7 +203,7 @@ User-facing controls for Geiss parameters are exposed via a two-level ABI: C ABI
 | `gamma` | `gamma` (`geiss_port.cpp:214`) | int 0–200 | `10` |
 | `beatDetection` | `g_bUseBeatDetection` (`geiss_port.cpp:334`) | BOOL | TRUE |
 | `syncColorToSound` | `g_bSyncColorToSound` (`geiss_port.cpp:335`) | BOOL | FALSE |
-| `slideShift` | `g_bSlideShift` (`geiss_port.cpp:300`) | bool | true |
+| `slideShift` | `g_bSlideShiftEnabled` (`geiss_port.cpp:303`), which gates each mode's `g_bSlideShift` roll (`g_SlideShiftFreq` = 33%) | bool | true |
 | `modeLocked` | `bLocked` (`geiss_port.cpp:315`) | bool | false |
 | `paletteLocked` | `bPalLocked` (`geiss_port.cpp:316`) | bool | false |
 | `autoSwitchSeconds` | `frames_til_auto_switch__registry` (`geiss_port.cpp:213`) | int, seconds | derived from `550` / fps |
@@ -223,20 +223,20 @@ geiss.autoSwitchSeconds (Int)
 geiss.visMode           (Int)
 ```
 
-Read with `object(forKey:)` in `VisualizationGLView.loadGeissConfigFromDefaults()` so missing keys ≠ zero. Applied to `GeissEngine` immediately after construction in `.geiss` case of `createEngine(type:width:height:)`, **with `modeLocked` forced on**: Geiss never picks its own next mode, the shared `VisualizationPresetCycler` does (`visualizations` skill § *Context menu and auto-cycle*). `geiss.modeLocked` and `geiss.autoSwitchSeconds` are still persisted but no longer have a menu; Geiss's own cycle is `geiss.cycleMode` / `geiss.cycleInterval` (`VisualizationCycleSettings`, default Auto-Random, 30 s).
+Read with `object(forKey:)` in `GeissEngine.savedConfig` (`GeissEngine+Menu.swift`) so missing keys ≠ zero; the menu actions write them. Applied to `GeissEngine` immediately after construction in `.geiss` case of `createEngine(type:width:height:)`, **with `modeLocked` forced on**: Geiss never picks its own next mode, the shared `VisualizationPresetCycler` does (`visualizations` skill § *Context menu and auto-cycle*). `geiss.modeLocked` and `geiss.autoSwitchSeconds` are still persisted but no longer have a menu; Geiss's own cycle is `geiss.cycleMode` / `geiss.cycleInterval` (`VisualizationCycleSettings`, default Auto-Random, 30 s).
 
 ### Menu surface
 
-The current mode, Next / Previous / Random, the mode list and Manual Only / Auto-Cycle / Auto-Random / Cycle Interval are the shared block every engine gets. Geiss's own items, below it, come from `GeissMenuBuilder.addGeissConfigMenuItems(to:target:visualizationView:)`:
+The current mode, Next / Previous / Random, the mode list and Manual Only / Auto-Cycle / Auto-Random / Cycle Interval are the shared block every engine gets. Geiss's own items, below it, come from `GeissEngine.addMenuItems(to:)` (`GeissEngine+Menu.swift`):
 
 - **Toggles** (checkmark on click): Beat Detection, Sync Color to Sound, Slide Shift, Palette Lock
 - **Submenus**:
   - "Geiss Sensitivity": 0.25×, 0.5×, 1.0×, 2.0×, 3.0×, 4.0× (checkmark on current closest value)
-  - "Gamma": 1.00×, 1.25×, 1.50×, 2.00×, 2.50×, 3.00× (0, 25, 50, 100, 150, 200)
+  - "Gamma": 1.00×, 1.10× (default), 1.25×, 1.50×, 2.00×, 2.50×, 3.00× (0, 10, 25, 50, 100, 150, 200; factor = 1 + gamma / 100)
   - "Waveform Mode": Wave, Spectrum
 - **Action**: "Randomize Palette" (triggers `GeissCore_randomizePalette`)
 
-Every host conforms to `GeissMenuTarget`; `VisualizationContextMenu` invokes the builder. Menu state reflects `VisualizationGLView.getGeissConfig()` at render time.
+The items target the engine itself, so no host has Geiss actions; `VisualizationContextMenu` calls `addMenuItems`. Menu state reflects `GeissEngine.config` when the menu opens, and each action applies the edited config and saves it.
 
 ### Deferred to future phases
 

@@ -4117,19 +4117,11 @@ class WindowManager {
     /// Step the visualization window's preset. A `.wal` skin's `VIS_NEXT`/`VIS_PREV` buttons are
     /// Winamp's "next/previous visualization"; with the visualization window up, its presets are
     /// what those buttons are pointing at.
-    func stepProjectMPreset(by delta: Int) {
-        if let controller = projectMWindowController {
-            if delta >= 0 {
-                controller.nextPreset(hardCut: false)
-            } else {
-                controller.previousPreset(hardCut: false)
-            }
-        } else if let visView = hostedProjectMView?.visualizationGLView {
-            if delta >= 0 {
-                visView.nextPreset(hardCut: false)
-            } else {
-                visView.previousPreset(hardCut: false)
-            }
+    func stepVisualizationPreset(by delta: Int) {
+        if let controller = projectMWindowController, controller.window?.isVisible == true {
+            controller.stepPreset(by: delta)
+        } else {
+            hostedProjectMView?.visualizationGLView?.stepEnginePreset(by: delta)
         }
     }
 
@@ -4774,14 +4766,14 @@ class WindowManager {
     /// Total number of visualization presets
     var visualizationPresetCount: Int {
         projectMWindowController?.presetCount
-            ?? hostedProjectMView?.visualizationGLView?.presetCount
+            ?? hostedProjectMView?.visualizationGLView?.projectMPresetCount
             ?? 0
     }
 
     /// Current visualization preset index
     var visualizationPresetIndex: Int? {
         projectMWindowController?.currentPresetIndex
-            ?? hostedProjectMView?.visualizationGLView?.currentPresetIndex
+            ?? hostedProjectMView?.visualizationGLView?.projectMPresetIndex
     }
 
     /// The visualization engine running inside the loaded `.wal` skin's own AVS window, if it has
@@ -4852,7 +4844,7 @@ class WindowManager {
     /// Select a visualization preset by index
     func selectVisualizationPreset(at index: Int) {
         projectMWindowController?.selectPreset(at: index, hardCut: false)
-        hostedProjectMView?.visualizationGLView?.selectPreset(at: index, hardCut: false)
+        hostedProjectMView?.visualizationGLView?.selectProjectMPreset(at: index, hardCut: false)
     }
 
     func notifyMainWindowVisibilityChanged() {
@@ -7649,8 +7641,8 @@ class WindowManager {
             if count > 0, index >= 0, index < count { return index }
         }
         if let visView = hostedProjectMView?.visualizationGLView, visView.isProjectMAvailable {
-            let count = visView.presetCount
-            let index = visView.currentPresetIndex
+            let count = visView.projectMPresetCount
+            let index = visView.projectMPresetIndex
             if count > 0, index >= 0, index < count { return index }
         }
         return nil

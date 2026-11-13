@@ -79,6 +79,14 @@ class VisualizationGLView: NSOpenGLView {
         return engine
     }
 
+    /// Reads from the engine while holding `engineLock`, so the render thread cannot be setting it
+    /// up (ProjectM fills its preset list there) mid-read.
+    func readEngine<T>(_ read: (VisualizationEngine?) -> T) -> T {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        return read(engine)
+    }
+
     /// Whether audio is currently playing (affects visualization behavior)
     private var isAudioActive = false
     
@@ -92,10 +100,6 @@ class VisualizationGLView: NSOpenGLView {
     
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
-
-    /// Cached Geiss configuration loaded from UserDefaults.
-    /// Applied to GeissEngine immediately after construction (before first render).
-    private var geissConfigCache = VisualizationGLView.loadGeissConfigFromDefaults()
 
     /// Pending NSOpenGLView surface update (window moved/resized).
     /// Set on main thread by AppKit via update(); cleared on render thread after openGLContext?.update().
@@ -408,7 +412,7 @@ class VisualizationGLView: NSOpenGLView {
             if geiss.isAvailable {
                 NSLog("VisualizationGLView: Geiss engine initialized")
                 // Apply persisted configuration before first render.
-                geiss.setConfig(geissConfigCache)
+                geiss.setConfig(GeissEngine.savedConfig)
                 return geiss
             } else {
                 NSLog("VisualizationGLView: Geiss engine not available")
@@ -427,8 +431,8 @@ class VisualizationGLView: NSOpenGLView {
                 let stored = UserDefaults.standard.integer(forKey: TripexEngine.DefaultsKey.lastEffectIndex)
                 if UserDefaults.standard.object(forKey: TripexEngine.DefaultsKey.lastEffectIndex) != nil,
                    stored >= 0,
-                   stored < tripex.effectCount {
-                    tripex.selectEffect(at: stored)
+                   stored < tripex.presetCount {
+                    tripex.selectPreset(at: stored, hardCut: true)
                 }
                 // The preset cycler, not Tripex's own timer, changes its effect.
                 tripex.setHold(true)
@@ -917,9 +921,11 @@ class VisualizationGLView: NSOpenGLView {
             ?? (Int(backingBounds.width), Int(backingBounds.height))
 
         // Render with the current engine (safe because we hold engineLock)
+        var drew = true
         if let eng = engine, eng.isAvailable {
             renderEngine(engine: eng, pcm: pcm, spectrum: spectrum, width: viewportWidth, height: viewportHeight)
-            if let encoder { readBackForCast(encoder) }
+            drew = eng.drewLastFrame
+            if drew, let encoder { readBackForCast(encoder) }
         } else {
             // Engine not available - just clear to black
             glViewport(0, 0, GLsizei(viewportWidth), GLsizei(viewportHeight))
@@ -927,8 +933,8 @@ class VisualizationGLView: NSOpenGLView {
             glClear(GLbitfield(GL_COLOR_BUFFER_BIT))
         }
 
-        // Swap buffers
-        context.flushBuffer()
+        // Swap buffers, unless the engine drew nothing: the back buffer then holds an older frame
+        if drew { context.flushBuffer() }
 
         // Release CGL lock before the surface update dispatch so main thread never
         // contends for it inside openGLContext?.update().
@@ -1242,7 +1248,7 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - ProjectM Preset Navigation (Backward Compatibility)
 
     /// Number of available presets (ProjectM only)
-    var presetCount: Int {
+    var projectMPresetCount: Int {
         engineLock.lock()
         defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
@@ -1250,7 +1256,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Index of currently selected preset (ProjectM only)
-    var currentPresetIndex: Int {
+    var projectMPresetIndex: Int {
         engineLock.lock()
         defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
@@ -1275,32 +1281,11 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
 
-    /// Select next preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func nextPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.nextPreset(hardCut: hardCut)
-    }
-
-    /// Select previous preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func previousPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.previousPreset(hardCut: hardCut)
-    }
-
-    /// Select a random preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func randomPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.randomPreset(hardCut: hardCut)
-    }
-
     /// Select a preset by index (ProjectM only)
     /// - Parameters:
     ///   - index: The preset index to select
     ///   - hardCut: If true, switch immediately without blending
-    func selectPreset(at index: Int, hardCut: Bool = false) {
+    func selectProjectMPreset(at index: Int, hardCut: Bool = false) {
         guard let pm = engine as? ProjectMWrapper else { return }
         pm.selectPreset(at: index, hardCut: hardCut)
     }
@@ -1321,7 +1306,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Get preset name at index (ProjectM only)
-    func presetName(at index: Int) -> String {
+    func projectMPresetName(at index: Int) -> String {
         guard let pm = engine as? ProjectMWrapper else { return "" }
         return pm.presetName(at: index)
     }
@@ -1400,209 +1385,5 @@ class VisualizationGLView: NSOpenGLView {
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         guard let pm = engine as? ProjectMWrapper else { return (0, 0, nil) }
         return pm.presetsInfo
-    }
-
-    // MARK: - Geiss Effect Navigation
-
-    var geissEffectCount: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return 0 }
-        return geiss.effectCount
-    }
-
-    var currentGeissEffectName: String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return "" }
-        return geiss.currentEffectName
-    }
-
-    func geissEffectName(at index: Int) -> String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return "" }
-        return geiss.effectName(at: index)
-    }
-
-    func nextGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.nextEffect()
-    }
-
-    func previousGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.previousEffect()
-    }
-
-    func randomGeissEffect() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.randomEffect()
-    }
-
-    func selectGeissEffect(at index: Int) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.selectEffect(at: index)
-    }
-
-    func randomizeGeissPalette() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.randomizePalette()
-    }
-
-    // MARK: - Tripex helpers (used by TripexMenuBuilder)
-
-    var tripexEffectCount: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return 0 }
-        return t.effectCount
-    }
-
-    var currentTripexEffectIndex: Int {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return -1 }
-        return t.currentEffectIndex
-    }
-
-    var tripexIntensityScale: Float {
-        get {
-            engineLock.lock()
-            defer { engineLock.unlock() }
-            guard let t = engine as? TripexEngine else { return 1.0 }
-            return t.intensityScale
-        }
-        set {
-            withTripex { $0.intensityScale = newValue }
-        }
-    }
-
-    func tripexEffectName(at index: Int) -> String {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return "" }
-        return t.effectName(at: index)
-    }
-
-    func nextTripexEffect() {
-        withTripex {
-            $0.nextEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
-
-    func previousTripexEffect() {
-        withTripex {
-            $0.previousEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
-
-    func randomTripexEffect() {
-        withTripex {
-            $0.randomEffect()
-            persistTripexEffectIndex($0.currentEffectIndex)
-        }
-    }
-    func reconfigureTripex()    { withTripex { $0.reconfigure() } }
-    func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
-    func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
-
-    func selectTripexEffect(at index: Int) {
-        withTripex { t in
-            t.selectEffect(at: index)
-            persistTripexEffectIndex(t.currentEffectIndex)
-        }
-    }
-
-    private func persistTripexEffectIndex(_ index: Int) {
-        guard index >= 0 else { return }
-        UserDefaults.standard.set(index, forKey: TripexEngine.DefaultsKey.lastEffectIndex)
-    }
-
-    private func withTripex(_ body: (TripexEngine) -> Void) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return }
-        body(t)
-    }
-
-    // MARK: - Geiss Configuration (UserDefaults persistence)
-
-    /// `modeLocked` is always on: the preset cycler, not Geiss's own auto-switch, changes its mode.
-    private static func loadGeissConfigFromDefaults() -> GeissEngine.Config {
-        var cfg = GeissEngine.Config(
-            sensitivity: 0.20,
-            gamma: 10,
-            beatDetection: true,
-            syncColorToSound: false,
-            slideShift: true,
-            modeLocked: true,
-            paletteLocked: false,
-            autoSwitchSeconds: 15,
-            visMode: 0
-        )
-
-        if let val = UserDefaults.standard.object(forKey: "geiss.sensitivity") as? NSNumber {
-            cfg.sensitivity = val.floatValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.gamma") as? NSNumber {
-            cfg.gamma = val.intValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.beatDetection") as? NSNumber {
-            cfg.beatDetection = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.syncColorToSound") as? NSNumber {
-            cfg.syncColorToSound = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.slideShift") as? NSNumber {
-            cfg.slideShift = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.paletteLocked") as? NSNumber {
-            cfg.paletteLocked = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.autoSwitchSeconds") as? NSNumber {
-            cfg.autoSwitchSeconds = val.intValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.visMode") as? NSNumber {
-            cfg.visMode = val.intValue
-        }
-
-        return cfg
-    }
-
-    func setGeissConfig(_ cfg: GeissEngine.Config) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        geissConfigCache = cfg
-        UserDefaults.standard.set(cfg.sensitivity, forKey: "geiss.sensitivity")
-        UserDefaults.standard.set(cfg.gamma, forKey: "geiss.gamma")
-        UserDefaults.standard.set(cfg.beatDetection, forKey: "geiss.beatDetection")
-        UserDefaults.standard.set(cfg.syncColorToSound, forKey: "geiss.syncColorToSound")
-        UserDefaults.standard.set(cfg.slideShift, forKey: "geiss.slideShift")
-        UserDefaults.standard.set(cfg.paletteLocked, forKey: "geiss.paletteLocked")
-        UserDefaults.standard.set(cfg.autoSwitchSeconds, forKey: "geiss.autoSwitchSeconds")
-        UserDefaults.standard.set(cfg.visMode, forKey: "geiss.visMode")
-
-        if let geiss = engine as? GeissEngine {
-            geiss.setConfig(cfg)
-        }
-    }
-
-    func getGeissConfig() -> GeissEngine.Config {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        return (engine as? GeissEngine)?.config ?? geissConfigCache
     }
 }

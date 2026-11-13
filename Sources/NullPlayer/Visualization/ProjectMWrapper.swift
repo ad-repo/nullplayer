@@ -602,6 +602,12 @@ class ProjectMWrapper: VisualizationEngine {
         loadPreset(at: newIndex, smoothTransition: !hardCut)
     }
     
+    var presetIndex: Int? { presetFiles.isEmpty ? nil : _currentPresetIndex }
+
+    func stepPreset(forward: Bool, hardCut: Bool) {
+        forward ? nextPreset(hardCut: hardCut) : previousPreset(hardCut: hardCut)
+    }
+
     /// Selects a random preset
     /// - Parameter hardCut: If true, switch immediately; if false, blend smoothly
     func randomPreset(hardCut: Bool = false) {

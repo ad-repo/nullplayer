@@ -63,6 +63,8 @@ extern int            iDispBits;
 extern int            new_mode;
 extern int            mode;
 extern int            y_map_pos;
+extern bool           bBeatMode;
+extern bool           bBigBeat;
 extern long           intframe;
 extern unsigned char *VS1;
 extern unsigned char *VS2;
@@ -198,6 +200,10 @@ static void geiss_reset_runtime_state() {
     intframe = 0;
     g_rush_map = 0;
     bLocked = false;
+    // Only RenderWave updates these, and silence never reaches it: a beat latched by
+    // the previous core would otherwise hold every mode switch waiting for a big beat.
+    bBeatMode = false;
+    bBigBeat = false;
 }
 
 static void geiss_pick_next_auto_mode() {
@@ -303,8 +309,7 @@ void GeissCore_render(GeissCore *core, unsigned char *indexBuf) {
             VS1[i] = (VS1[i] > 4) ? (unsigned char)(VS1[i] - 4) : 0;
             VS2[i] = (VS2[i] > 4) ? (unsigned char)(VS2[i] - 4) : 0;
         }
-        geiss_advance_auto_map();
-        memcpy(indexBuf, VS1, pixelCount);
+        geiss_advance_auto_map();        memcpy(indexBuf, VS1, pixelCount);
         return;
     }
 

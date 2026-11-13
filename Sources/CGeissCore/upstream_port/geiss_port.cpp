@@ -298,6 +298,9 @@ int      last_mouse_x                   = -1;
 int      last_mouse_y                   = -1;
 int      g_FramesSinceShift             = 0;
 bool     g_bSlideShift                  = true;
+// NullPlayer: the user's Slide Shift setting. Each mode rolls g_bSlideShift, so the setting gates
+// that roll rather than living in it (the config getter used to report the roll).
+bool     g_bSlideShiftEnabled           = true;
 int      g_SlideShiftFreq               = 33;
 int      g_SlideShiftMinFrames          = 5;
 float    g_ShiftMaxVol                  = 0.0f;
@@ -1650,9 +1653,9 @@ void GenerateChunkOfNewMap(bool bLoadPreset, int iPresetNum) {
             effect[NUCLIDE]  = GetPrivateProfileInt(section, "effect_nuclide",   0, inifile);
             effect[SHADE]    = GetPrivateProfileInt(section, "effect_shadebobs", 0, inifile);
             effect[SPECTRAL] = GetPrivateProfileInt(section, "effect_spectral",  0, inifile);
-            g_bSlideShift    = GetPrivateProfileInt(section, "shift",            0, inifile);
+            g_bSlideShift    = g_bSlideShiftEnabled && GetPrivateProfileInt(section, "shift", 0, inifile);
         } else {
-            g_bSlideShift = (rand() % 100 + 1) <= g_SlideShiftFreq;
+            g_bSlideShift = g_bSlideShiftEnabled && (rand() % 100 + 1) <= g_SlideShiftFreq;
 
             for (x = 0; x < NUM_EFFECTS; ++x) {
                 int thresh = modeInfo[mode].effect_freq[x];
@@ -2411,11 +2414,12 @@ extern "C" void geiss_port_get_config(GeissCoreConfig *out) {
     out->gamma = gamma;
     out->beatDetection = g_bUseBeatDetection ? 1 : 0;
     out->syncColorToSound = g_bSyncColorToSound ? 1 : 0;
-    out->slideShift = g_bSlideShift ? 1 : 0;
+    out->slideShift = g_bSlideShiftEnabled ? 1 : 0;
     out->modeLocked = bLocked ? 1 : 0;
     out->paletteLocked = bPalLocked ? 1 : 0;
     out->autoSwitchSeconds = frames_til_auto_switch__registry / 30;
-    out->visMode = (int)visMode;
+    // GeissCore.h's contract is 0 = wave, 1 = spectrum; the enum orders them the other way.
+    out->visMode = (visMode == wave) ? 0 : 1;
 }
 
 extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg);
@@ -2438,8 +2442,13 @@ extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
     // syncColorToSound: pure read, applies next frame.
     g_bSyncColorToSound = cfg->syncColorToSound ? TRUE : FALSE;
 
-    // slideShift: pure read, applies next frame.
-    g_bSlideShift = cfg->slideShift;
+    // slideShift: gates each mode's roll. A change applies now, as upstream's hotkey did.
+    bool slideShiftEnabled = cfg->slideShift != 0;
+    if (slideShiftEnabled != g_bSlideShiftEnabled) {
+        g_bSlideShiftEnabled = slideShiftEnabled;
+        g_bSlideShift = slideShiftEnabled;
+        if (!slideShiftEnabled) { slider1 = 0; }
+    }
 
     // modeLocked: applies at next chunk-completion (requires §0.1, §0.2).
     bLocked = cfg->modeLocked ? true : false;
@@ -2453,7 +2462,7 @@ extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
     frames_til_auto_switch__registry = cfg->autoSwitchSeconds * 30;
 
     // visMode: pure read, applies next frame.
-    visMode = (visModeEnum)cfg->visMode;
+    visMode = (cfg->visMode == 0) ? wave : spectrum;
 }
 
 // geiss_port_randomize_palette(): trigger an immediate palette mutation,

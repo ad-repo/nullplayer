@@ -189,16 +189,8 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     // MARK: - Preset Navigation
     
-    /// Go to next preset
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func nextPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.nextPreset(hardCut: hardCut)
-    }
-    
-    /// Go to previous preset
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func previousPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.previousPreset(hardCut: hardCut)
+    func stepPreset(by delta: Int) {
+        projectMView.visualizationGLView?.stepEnginePreset(by: delta)
     }
     
     /// Select preset at specific index
@@ -206,25 +198,19 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     ///   - index: The preset index to select
     ///   - hardCut: If true, switch immediately without blending
     func selectPreset(at index: Int, hardCut: Bool = false) {
-        projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
+        projectMView.visualizationGLView?.selectProjectMPreset(at: index, hardCut: hardCut)
     }
 
     func restorePresetSelection(index: Int) {
         projectMView.visualizationGLView?.restorePresetSelection(index: index)
     }
 
-    /// Select a random preset
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func randomPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.randomPreset(hardCut: hardCut)
-    }
-    
     /// Set specific preset by index
     /// - Parameters:
     ///   - index: The preset index to select
     ///   - hardCut: If true, switch immediately without blending
     func setPreset(_ index: Int, hardCut: Bool = false) {
-        projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
+        projectMView.visualizationGLView?.selectProjectMPreset(at: index, hardCut: hardCut)
     }
     
     /// Lock or unlock the current preset
@@ -257,12 +243,12 @@ class ProjectMWindowController: NSWindowController, ProjectMWindowProviding {
     
     /// Current preset index
     var currentPresetIndex: Int {
-        return projectMView.visualizationGLView?.currentPresetIndex ?? 0
+        return projectMView.visualizationGLView?.projectMPresetIndex ?? 0
     }
     
     /// Total number of presets
     var presetCount: Int {
-        return projectMView.visualizationGLView?.presetCount ?? 0
+        return projectMView.visualizationGLView?.projectMPresetCount ?? 0
     }
     
     /// Reload all presets from bundled and custom folders

@@ -104,7 +104,7 @@ These two effects are the current performance-sensitive area.
 - `Sources/CTripexCore/upstream/EffectWaterGlobe.cpp`
 - `Sources/NullPlayer/Visualization/VisualizationGLView.swift`
 - `Sources/NullPlayer/Visualization/TripexEngine.swift`
-- `Sources/NullPlayer/Visualization/TripexMenuBuilder.swift`
+- `Sources/NullPlayer/Visualization/TripexEngine+Menu.swift`
 
 ## Reproduce
 

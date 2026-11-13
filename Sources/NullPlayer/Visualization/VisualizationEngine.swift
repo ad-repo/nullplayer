@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Protocol defining the interface for visualization engines
 ///
@@ -66,6 +66,11 @@ protocol VisualizationEngine: AnyObject {
     ///   done in `addPCMMono()` instead.
     func renderFrame()
 
+    /// False when the last `renderFrame` drew nothing (Tripex skips frames an effect is not due to
+    /// draw), so the host keeps the previous frame on screen rather than presenting an undrawn
+    /// buffer, which showed a stale picture and made the effect judder. Default: true.
+    var drewLastFrame: Bool { get }
+
     /// Clean up resources when the engine is being destroyed
     ///
     /// Optional method for engines that need explicit cleanup. Called before
@@ -73,6 +78,27 @@ protocol VisualizationEngine: AnyObject {
     ///
     /// - Note: Default implementation does nothing
     func cleanup()
+
+    // MARK: Presets
+    //
+    // Whatever the engine calls them (ProjectM's preset list, Geiss's, Tripex's and Goom's effects,
+    // AVS's preset files, Corona's palettes, Smear's move scripts), every host reaches them through
+    // these, forwarded once by `VisualizationGLView+Presets`. `hardCut` (switch without blending)
+    // matters only to ProjectM, the one engine that blends.
+
+    var presetCount: Int { get }
+    /// The running preset's index, nil when there is none yet.
+    var presetIndex: Int? { get }
+    func presetName(at index: Int) -> String
+    func selectPreset(at index: Int, hardCut: Bool)
+    /// One preset forwards or backwards, wrapping.
+    func stepPreset(forward: Bool, hardCut: Bool)
+    func randomPreset(hardCut: Bool)
+
+    /// The engine's own items in the shared menu (`VisualizationContextMenu`): only what no other
+    /// engine has, targeting the engine itself so no host repeats them. Default: none. ProjectM's
+    /// ratings stay in the menu itself, beside the star titles they share one ratings read with.
+    func addMenuItems(to menu: NSMenu)
 }
 
 /// Default implementations for optional protocol methods
@@ -84,6 +110,10 @@ extension VisualizationEngine {
     func cleanup() {
         // Default: no cleanup needed
     }
+
+    var drewLastFrame: Bool { true }
+
+    func addMenuItems(to menu: NSMenu) {}
 }
 
 /// The canvas a software engine (Geiss, AVS, Corona, Smear) renders for a viewport. Their effects are

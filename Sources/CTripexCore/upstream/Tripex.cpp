@@ -184,10 +184,20 @@ Error* Tripex::Render(AudioSource& audio_source)
 	// exceeds 3.8 — breaking several effects' per-frame gating. `frames`
 	// is read as a per-call delta by CanRender / GetElapsed, so a plain
 	// assignment is the intended behavior.
-	frames = std::min(4.0f, dwTimeChange / (1000.0f / 15.0f));
+	// PORT FIX 2: but a skipped frame must still count. An effect gated by
+	// its own accumulator (ConcentricRings' `accum`, which only grows in
+	// Calculate) answered the same CanRender question every steady 60 fps
+	// call and stayed frozen until a slow frame. `frames` is the time since
+	// the last *drawn* frame: it accumulates across skips (capped at 4, where
+	// CanRender forces a draw) and resets once one draws.
+	float frame_delta = std::min(4.0f, dwTimeChange / (1000.0f / 15.0f));
+	frames = std::min(4.0f, frames + frame_delta);
+	// PORT FIX 3: a skipped frame returns before audio->Update, so its time is
+	// banked here; otherwise AudioData's PCM consumption falls behind real time.
+	port_audio_elapsed += elapsed;
 	last_time = time;
 
-	effect_frames += frames;
+	effect_frames += frame_delta;
 	fade_pos += dwTimeChange;
 
 	Effect* draw_effects[2];
@@ -338,12 +348,14 @@ Error* Tripex::Render(AudioSource& audio_source)
 	{
 		std::swap(draw_effects[1], draw_effects[0]);
 	}
-	if ((!draw_effects[0]->CanRender(frames) || draw_effects[0] == blank_effect) && (!draw_effects[1]->CanRender(frames) || draw_effects[1] == blank_effect) && !(draw_effects[0] == blank_effect && draw_effects[1] == blank_effect && frames > 1.0f))
+	port_frame_skipped = (!draw_effects[0]->CanRender(frames) || draw_effects[0] == blank_effect) && (!draw_effects[1]->CanRender(frames) || draw_effects[1] == blank_effect) && !(draw_effects[0] == blank_effect && draw_effects[1] == blank_effect && frames > 1.0f);
+	if (port_frame_skipped)
 	{
 		return nullptr;
 	}
 
-	audio->Update(elapsed, enabled_effects[effect_idx]->sensitivity * port_intensity_scale, audio_source);
+	audio->Update(port_audio_elapsed, enabled_effects[effect_idx]->sensitivity * port_intensity_scale, audio_source);
+	port_audio_elapsed = 0.0f;
 
 	for (int i = 0; i < 2; i++)
 	{
@@ -356,6 +368,7 @@ Error* Tripex::Render(AudioSource& audio_source)
 
 		audio->SetIntensityBeatScale(0.0f);
 	}
+	frames = 0.0f;
 
 	Error* error = renderer->BeginFrame();
 	if (error) return TraceError(error);

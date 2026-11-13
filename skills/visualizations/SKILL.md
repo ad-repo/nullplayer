@@ -9,12 +9,28 @@ NullPlayer has several visualization stacks. Each has its own skill; this file i
 
 The standalone waveform window is **not** a Metal visualization mode. It reuses audio waveform notifications and the cache service. Do not treat it as part of this stack.
 
+## The engine suite is global: no per-family permission
+
+The visualization engines and their shared seams (`Visualization/`: the engines, the preset seam, the
+shared menu, the cycler) are one app-wide feature that every skin family's host runs. A change there
+is a global change, **exempt** from CLAUDE.md's rule that a change affecting more than one skin family
+needs the user's permission first (the user's ruling, 2026-11-12). Verify it in each host anyway.
+
 ## Engine presets: one seam
 
-`VisualizationGLView+Presets.swift` is the only place that knows each engine's preset calls (count,
-name, current index, select, step, random). Every host (the Visualizations window's keys, the `.wal`
-slot, the `.wmz` and Sonique effects areas) calls it and never switches on the engine. A new engine
-adds its cases there.
+Each engine answers `VisualizationEngine`'s preset requirements (`presetCount`, `presetIndex`,
+`presetName(at:)`, `selectPreset`, `stepPreset(forward:)`, `randomPreset`, and `addMenuItems` for its own menu
+items), and `VisualizationGLView+Presets.swift` forwards to the running engine. Every host (the
+Visualizations window's keys, the `.wal` slot, the `.wmz` and Sonique effects areas) calls the seam
+and never switches on the engine. A new engine adds nothing outside its own files and
+`VisualizationGLView.createEngine`; the `.wmz` / Sonique catalogue lists it as `.engine(type)`.
+An engine that persists its choice does it in its own preset methods (Tripex's `lastEffectIndex`).
+Every host shares one saved choice per engine (AVS's `avs.presetPath` included), as they share the
+cycle settings: the last preset chosen anywhere is what each restores.
+An engine's own menu items target the engine itself, so no host carries engine-specific actions.
+`VisualizationGLView`'s `projectMPreset*` / `selectProjectMPreset` members are ProjectM-only (its
+ratings, a UI-switch restore, the main menu's preset list); anything meant for every engine goes
+through the seam.
 
 ## Context menu and auto-cycle: one menu, one timer
 
@@ -25,7 +41,7 @@ Visualization Engine, Audio Sensitivity, Quality, Fullscreen, Close. A host with
 picker leaves Visualization Engine out (`Options.showsEnginePicker`): the `.wmz` / Sonique slot,
 whose Effect menu lists the engines among its own effects, once showed both. An engine's own items are only
 what no other engine has: ProjectM's default / rating / favorites (its preset titles carry stars),
-Geiss's config (`GeissMenuBuilder`), Tripex's settings (`TripexMenuBuilder`), AVS's editor and
+Geiss's config and Tripex's settings (`GeissEngine+Menu.swift`, `TripexEngine+Menu.swift`), AVS's editor and
 folder (`AvsEngine.addMenuItems`), Corona's Blaze (`CoronaEngine.addMenuItems`), nothing for Goom or Smear. A new engine needs no menu code for the shared
 block.
 
@@ -83,7 +99,7 @@ Visualizations and Spectrum windows, effect and intensity in Art.
   `MainWindowKeys.performArrow` refuses it.
 - **No visualization menu item carries an arrow key equivalent.** The menu bar's Visuals →
   Visualizations copies the live Visualizations window's context menu, so an arrow equivalent on
-  any item `VisualizationContextMenu` / `TripexMenuBuilder` build becomes app-wide: key equivalent
+  any item `VisualizationContextMenu` or an engine's `addMenuItems` builds becomes app-wide: key equivalent
   routing gave every ⌘→ in the app to the Visualizations window — and a stale copy kept eating it
   after that window closed — so the key window never saw it. The Next / Previous items therefore
   show no shortcut.

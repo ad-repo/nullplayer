@@ -197,26 +197,18 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     
     // MARK: - Preset Navigation
     
-    func nextPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.nextPreset(hardCut: hardCut)
-    }
-    
-    func previousPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.previousPreset(hardCut: hardCut)
+    func stepPreset(by delta: Int) {
+        projectMView.visualizationGLView?.stepEnginePreset(by: delta)
     }
     
     func selectPreset(at index: Int, hardCut: Bool = false) {
-        projectMView.visualizationGLView?.selectPreset(at: index, hardCut: hardCut)
+        projectMView.visualizationGLView?.selectProjectMPreset(at: index, hardCut: hardCut)
     }
 
     func restorePresetSelection(index: Int) {
         projectMView.visualizationGLView?.restorePresetSelection(index: index)
     }
 
-    func randomPreset(hardCut: Bool = false) {
-        projectMView.visualizationGLView?.randomPreset(hardCut: hardCut)
-    }
-    
     var isPresetLocked: Bool {
         get { projectMView.visualizationGLView?.isPresetLocked ?? false }
         set { projectMView.visualizationGLView?.isPresetLocked = newValue }
@@ -243,11 +235,11 @@ class ModernProjectMWindowController: NSWindowController, ProjectMWindowProvidin
     }
     
     var currentPresetIndex: Int {
-        return projectMView.visualizationGLView?.currentPresetIndex ?? 0
+        return projectMView.visualizationGLView?.projectMPresetIndex ?? 0
     }
     
     var presetCount: Int {
-        return projectMView.visualizationGLView?.presetCount ?? 0
+        return projectMView.visualizationGLView?.projectMPresetCount ?? 0
     }
     
     func reloadPresets() {

@@ -153,7 +153,7 @@ The first three are in `VisualizationPreferences`' `.all` reset (`AvsPresets.pre
 - **Engine list:** the `.avs` case of `VisualizationType` puts AVS in every engine list. That is `VisualizationContextMenu` (all hosts) and **Visuals → Visualizations → Visualization Engine**.
 - **Factory:** `VisualizationGLView.createEngine` builds `AvsEngine`.
 - **Menu section:** the presets and cycle are the shared block every engine gets; `VisualizationContextMenu` then calls `AvsEngine.addMenuItems` for AVS's own Edit Preset…, Beat Detection and folder items. They target the engine, so a host needs no AVS actions of its own.
-- **Preset stepping:** no host names AVS. Keys (→ / ← / R in `ProjectMView` and `ModernProjectMView`), the `.wal` `stepPreset` and the `.wmz`/Sonique `applyPreset` all call `VisualizationGLView+Presets.swift`, which maps count, name, select, step and random onto `AvsEngine.presets` / `selectPreset` / `step` / `selectRandomPreset`.
+- **Preset stepping:** no host names AVS. Keys (→ / ← / R in `ProjectMView` and `ModernProjectMView`), the `.wal` `stepPreset` and the `.wmz`/Sonique `applyPreset` all call `VisualizationGLView+Presets.swift`, which forwards to `AvsEngine`'s `VisualizationEngine` preset methods (`presetCount`, `presetIndex`, `presetName`, `selectPreset`, `stepPreset`, `randomPreset`) over `AvsEngine.presets`.
 - **`.wmz`:**
   - `SkinEffectSelection` has an `avs` style and catalogue entry.
   - `SkinEffectsSurfaceView` treats it as an offscreen engine.

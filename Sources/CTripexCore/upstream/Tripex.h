@@ -42,6 +42,7 @@ public:
 	// without queueing). External index — same convention as the
 	// accessors above. Out-of-range values are clamped.
 	void        PortJumpToEffect(int index_external);
+	bool        PortFrameSkipped() const { return port_frame_skipped; }
 
 	// Explicit Hold setter (port). ToggleHoldingEffect() is a flip; the
 	// Swift cycle driver needs deterministic on/off semantics.
@@ -92,7 +93,12 @@ private:
 	std::shared_ptr<Texture> gui;
 	uint32 last_time;
 	float frames = 0.0f;
+	// Wall time since AudioData last advanced; skipped frames must still feed it.
+	float port_audio_elapsed = 0.0f;
 	float port_intensity_scale = 1.0f;
+	// Set by Render when no effect could draw (CanRender), so the host keeps
+	// the last frame on screen instead of presenting an undrawn buffer.
+	bool port_frame_skipped = false;
 
 	std::vector<std::shared_ptr<Effect>> effects;
 	std::vector<std::shared_ptr<Effect>> enabled_effects;

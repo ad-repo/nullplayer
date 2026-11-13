@@ -52,15 +52,8 @@ final class SkinEffectSelection {
         /// `visualizationEngineType`: that preference belongs to the standalone Visualizations
         /// window and the menu bar, and a skin cycling `visEffects` is not entitled to rewrite it.
         var engine: VisualizationType? {
-            switch style {
-            case .projectM: return .projectM
-            case .geiss: return .geiss
-            case .tripex: return .tripex
-            case .avs: return .avs
-            case .corona: return .corona
-            case .smear: return .smear
-            case .bars, .spikes, .ambience, .cava, .visClassic: return nil
-            }
+            if case .engine(let type) = style { return type }
+            return nil
         }
 
         /// A GL engine renders offscreen and is presented as a `CGImage`; the rest draw themselves
@@ -69,8 +62,10 @@ final class SkinEffectSelection {
         var isOffscreenEngine: Bool { engine != nil }
     }
 
-    enum NativeStyle: String {
-        case bars, spikes, ambience, cava, visClassic, projectM, geiss, tripex, avs, corona, smear
+    enum NativeStyle: Equatable {
+        case bars, spikes, ambience, cava, visClassic
+        /// A suite engine, rendered offscreen.
+        case engine(VisualizationType)
     }
 
     /// Posted, with the selection as its object, when the selected effect or preset changes, so
@@ -86,12 +81,12 @@ final class SkinEffectSelection {
         Effect(id: "ambience", title: "Ambience", style: .ambience),
         Effect(id: "cava", title: "Cava", style: .cava),
         Effect(id: "vis_classic", title: "vis_classic", style: .visClassic),
-        Effect(id: "projectm", title: "projectM", style: .projectM),
-        Effect(id: "geiss", title: "Geiss", style: .geiss),
-        Effect(id: "tripex", title: "Tripex", style: .tripex),
-        Effect(id: "avs", title: "AVS", style: .avs),
-        Effect(id: "corona", title: "Corona", style: .corona),
-        Effect(id: "smear", title: "Smear", style: .smear)
+        Effect(id: "projectm", title: "projectM", style: .engine(.projectM)),
+        Effect(id: "geiss", title: "Geiss", style: .engine(.geiss)),
+        Effect(id: "tripex", title: "Tripex", style: .engine(.tripex)),
+        Effect(id: "avs", title: "AVS", style: .engine(.avs)),
+        Effect(id: "corona", title: "Corona", style: .engine(.corona)),
+        Effect(id: "smear", title: "Smear", style: .engine(.smear))
     ]
 
     private(set) var index: Int

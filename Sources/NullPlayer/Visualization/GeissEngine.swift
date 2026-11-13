@@ -8,7 +8,7 @@ import CGeissCore
 /// with a hue-cycling palette through an indexed-framebuffer + palette-LUT
 /// fragment shader. The Swift side, GL textures, and ABI are the real seam;
 /// the actual Geiss effect core lands in Phase 4.
-final class GeissEngine: VisualizationEngine {
+final class GeissEngine: NSObject, VisualizationEngine {
 
     // MARK: - Config
     struct Config: Equatable {
@@ -63,6 +63,7 @@ final class GeissEngine: VisualizationEngine {
     // MARK: - Init / cleanup
 
     init(width: Int, height: Int) {
+        super.init()
         viewport = (max(1, width), max(1, height))
         (self.width, self.height) = SoftwareCanvas.atLeastMinimum(width: width, height: height)
         self.indexBuf = Array(repeating: 0, count: self.width * self.height)
@@ -144,49 +145,46 @@ final class GeissEngine: VisualizationEngine {
         }
     }
 
-    var effectCount: Int {
+    var presetCount: Int {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return 0 }
         return Int(GeissCore_effectCount(core))
     }
 
-    var currentEffectName: String {
+    /// The core names its current effect but not its index, so this finds the name, in one lock
+    /// section so the effect cannot change mid-search.
+    var presetIndex: Int? {
         coreLock.lock()
         defer { coreLock.unlock() }
-        guard let core, let cName = GeissCore_currentEffectName(core) else { return "" }
-        return String(cString: cName)
+        guard let core, let current = GeissCore_currentEffectName(core) else { return nil }
+        return (0..<Int(GeissCore_effectCount(core))).first {
+            GeissCore_effectName(core, Int32($0)).map { strcmp($0, current) == 0 } ?? false
+        }
     }
 
-    func effectName(at index: Int) -> String {
+    func presetName(at index: Int) -> String {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core, let cName = GeissCore_effectName(core, Int32(index)) else { return "" }
         return String(cString: cName)
     }
 
-    func nextEffect() {
+    func stepPreset(forward: Bool, hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }
-        GeissCore_nextEffect(core)
+        forward ? GeissCore_nextEffect(core) : GeissCore_prevEffect(core)
     }
 
-    func previousEffect() {
-        coreLock.lock()
-        defer { coreLock.unlock() }
-        guard let core else { return }
-        GeissCore_prevEffect(core)
-    }
-
-    func randomEffect() {
+    func randomPreset(hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }
         GeissCore_randomEffect(core)
     }
 
-    func selectEffect(at index: Int) {
+    func selectPreset(at index: Int, hardCut: Bool) {
         coreLock.lock()
         defer { coreLock.unlock() }
         guard let core else { return }

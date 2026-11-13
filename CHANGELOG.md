@@ -160,6 +160,23 @@
   music, so most beats were missed and the rest landed late.
 - **The BPM readout hears all of the music.** It heard less than half of it, pieced together as
   if it were continuous.
+- **R picks a random Tripex effect.** It did nothing (Tripex is held on its effect so the
+  auto-cycle can change it, and the held engine ignored R), so it never changed what came back
+  next launch either.
+- **Tripex's ConcentricRings plays smoothly.** It froze for moments at a time and juddered,
+  including just after switching to it.
+- **A Winamp Modern skin's next / previous visualization buttons step every engine's presets** in
+  the Visualizations window; they only stepped ProjectM's, and did nothing on Geiss, Tripex, AVS,
+  Goom, Corona or Smear.
+- **Geiss's Slide Shift setting stays as you set it.** Geiss turns slide shift on or off by itself
+  each time it changes mode, and that overwrote the setting, so the menu tick flipped on its own
+  and changing any other Geiss setting saved whatever it happened to be.
+- **Geiss's Gamma menu lists its default, 1.10×,** so the current value is ticked from the start;
+  nothing was ticked until you picked one.
+- **Geiss's Waveform Mode draws what you pick.** Wave drew the spectrum and Spectrum drew the
+  wave, with the tick on the opposite item, and Geiss started in spectrum instead of its usual wave.
+- **Tripex reacts to the music as it plays.** Frames Tripex skipped drawing also skipped reading
+  the audio, so its effects could fall behind the music.
 
 ### Classic skins
 

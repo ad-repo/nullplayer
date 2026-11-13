@@ -124,14 +124,15 @@ final class GoomEngine: NSObject, VisualizationEngine {
 
     static let effectCount = Int(GOOM_CORE_EFFECT_COUNT)
 
-    static func effectName(at index: Int) -> String { String(cString: GoomCore_effectName(Int32(index))) }
+    var presetCount: Int { Self.effectCount }
+    var presetIndex: Int? { lock.withLock { heldEffect } }
 
-    var currentEffect: Int { lock.withLock { heldEffect } }
+    func presetName(at index: Int) -> String { String(cString: GoomCore_effectName(Int32(index))) }
 
-    func selectEffect(at index: Int) { select { _ in index } }
-    func step(by offset: Int) { select { ($0 + offset + Self.effectCount) % Self.effectCount } }
+    func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
+    func stepPreset(forward: Bool, hardCut: Bool) { select { ($0 + (forward ? 1 : Self.effectCount - 1)) % Self.effectCount } }
 
-    func selectRandomEffect() {
+    func randomPreset(hardCut: Bool) {
         select { current in
             var index = current
             while index == current { index = Int.random(in: 0..<Self.effectCount) }

@@ -369,7 +369,7 @@ class ProjectMView: NSView, VisualizationMenuTarget {
 
     private func currentPresetIdentity() -> (index: Int, name: String, path: String)? {
         guard let visView = visualizationGLView, visView.isProjectMAvailable else { return nil }
-        let index = visView.currentPresetIndex
+        let index = visView.projectMPresetIndex
         let name = visView.currentPresetName
         let path = visView.presetPath(at: index)
         guard !path.isEmpty else { return nil }
@@ -381,7 +381,7 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         let normalizedTarget = (path as NSString).standardizingPath
         guard !normalizedTarget.isEmpty else { return nil }
         
-        for index in 0..<visView.presetCount {
+        for index in 0..<visView.projectMPresetCount {
             let candidate = (visView.presetPath(at: index) as NSString).standardizingPath
             if candidate == normalizedTarget {
                 return index
@@ -644,15 +644,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         VisualizationContextMenu.build(target: self, options: .init(showsCast: true))
     }
     
-    @objc func reconfigureTripexAction(_ sender: NSMenuItem)    { visualizationGLView?.reconfigureTripex() }
-    @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem){ visualizationGLView?.toggleTripexAudioInfo() }
-    @objc func toggleTripexHelpAction(_ sender: NSMenuItem)     { visualizationGLView?.toggleTripexHelp() }
-    @objc func setTripexIntensity(_ sender: NSMenuItem) {
-        let value = Float(sender.tag) / 100.0
-        visualizationGLView?.tripexIntensityScale = value
-        UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
-    }
-
     @objc func setCurrentPresetAsDefault(_ sender: NSMenuItem?) {
         visualizationGLView?.setCurrentPresetAsDefault()
     }
@@ -673,7 +664,7 @@ class ProjectMView: NSView, VisualizationMenuTarget {
         guard let path = sender.representedObject as? String,
               let index = presetIndex(forPath: path) else { return }
         hidePresetRatingOverlay()
-        visualizationGLView?.selectPreset(at: index, hardCut: false)
+        visualizationGLView?.selectProjectMPreset(at: index, hardCut: false)
     }
     
     @objc func toggleFullscreenAction(_ sender: NSMenuItem?) {
@@ -686,55 +677,6 @@ class ProjectMView: NSView, VisualizationMenuTarget {
     
     @objc func closeWindow(_ sender: NSMenuItem?) {
         window?.close()
-    }
-
-    // MARK: - Geiss Menu Handlers (GeissMenuTarget protocol implementations)
-
-    @objc func toggleBeatDetection(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.beatDetection.toggle()
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func toggleSyncColorToSound(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.syncColorToSound.toggle()
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func toggleSlideShift(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.slideShift.toggle()
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func togglePaletteLock(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.paletteLocked.toggle()
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func setSensitivity(_ sender: NSMenuItem) {
-        let sensitivity = Float(sender.tag) / 100.0
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.sensitivity = sensitivity
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func setGamma(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.gamma = sender.tag
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func setVisMode(_ sender: NSMenuItem) {
-        guard var cfg = visualizationGLView?.getGeissConfig() else { return }
-        cfg.visMode = sender.tag
-        visualizationGLView?.setGeissConfig(cfg)
-    }
-
-    @objc func randomizePalette(_ sender: NSMenuItem) {
-        visualizationGLView?.randomizeGeissPalette()
     }
 
     @objc func setAudioSensitivity(_ sender: NSMenuItem) {
