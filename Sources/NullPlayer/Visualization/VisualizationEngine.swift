@@ -158,8 +158,12 @@ enum VisualizationType: String, CaseIterable, Codable {
     /// Smear (mykel and xplo's Sonique visualizer; the `smear-port` skill)
     case smear = "Smear"
 
+    /// NullPlayer-Fractal: beat-synced GLSL fractals, the app's own (the `fractal-vis` skill)
+    case fractal = "NullPlayer-Fractal"
+
     /// Engines fed the host spectrum (`VisualizationEngine.setSpectrum`) from the audio thread.
-    var consumesHostSpectrum: Bool { self == .geiss || self == .corona || self == .smear }
+    private static let hostSpectrumTypes: Set<VisualizationType> = [.geiss, .corona, .smear, .fractal]
+    var consumesHostSpectrum: Bool { Self.hostSpectrumTypes.contains(self) }
 
     /// Human-readable display name
     var displayName: String {

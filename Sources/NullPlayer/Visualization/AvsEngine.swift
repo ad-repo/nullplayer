@@ -7,7 +7,7 @@ import OpenGL.GL3
 /// offscreen one.
 ///
 /// AVS is stereo, so the engine takes the full-rate stereo feed itself rather than the host's
-/// mono `addPCMMono`, plus one beat source (`AvsBeatFeed`): the 576-sample waveform feed for
+/// mono `addPCMMono`, plus one beat source (`BeatFeed`): the 576-sample waveform feed for
 /// the standard detector, or aubio's beats (`.audioBeatsUpdated`) for advanced detection. Its
 /// own menu items target the engine (`addMenuItems`), so a host needs no AVS-specific actions; preset state is main-thread only, and the render thread reaches
 /// libavs only through `AvsCore`'s lock.

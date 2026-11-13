@@ -128,7 +128,7 @@ final class AvsCoreSmokeTests: XCTestCase {
 
     /// Beats land on the pulses of the pulsed tone and not on a steady one.
     func testBeatDetectorFiresOnPulsesOnly() {
-        var detector = AvsBeatDetector()
+        var detector = StandardBeatDetector()
         let pulsed = (0..<60).map { frame -> Bool in
             let chunk = Self.waveformChunk(Self.pulsedTone(frame: frame).left)
             return detector.isBeat(left: chunk, right: chunk)
@@ -136,7 +136,7 @@ final class AvsCoreSmokeTests: XCTestCase {
         XCTAssertTrue(pulsed.enumerated().contains { $0.element && $0.offset % 10 < 2 })
         XCTAssertFalse(pulsed.enumerated().contains { $0.element && $0.offset % 10 >= 2 })
 
-        var steadyDetector = AvsBeatDetector()
+        var steadyDetector = StandardBeatDetector()
         let steady = Self.waveformChunk(Self.pulsedTone(frame: 0).left)
         let steadyBeats = (0..<60).filter { _ in
             steadyDetector.isBeat(left: steady, right: steady)
@@ -148,7 +148,7 @@ final class AvsCoreSmokeTests: XCTestCase {
     /// A tap buffer's chunks arrive together; the beat in the fourth is released one frame per
     /// chunk later, at its place in the music, not with the burst.
     func testBeatFeedReleasesABurstAtTheMusicsPace() {
-        let feed = AvsBeatFeed()
+        let feed = BeatFeed()
         let quiet = Self.waveformChunk((0..<576).map { sinf(Float($0) * 0.07) * 0.05 })
         let loud = Self.waveformChunk((0..<576).map { sinf(Float($0) * 0.07) * 0.9 })
         for _ in 0..<20 { feed.store(left: quiet, right: quiet, sampleRate: 44_100) }

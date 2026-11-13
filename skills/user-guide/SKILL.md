@@ -63,7 +63,7 @@ show the current preamp, balance and speed but cannot be turned. See `skills/son
 | **Art** | The playing track's cover — click to rate, double-click to step through a file's embedded pictures, **V** for 30 audio-reactive effects, **F** for fullscreen; right-click for the effect, intensity and rating menus. Opens under the player, shaped to the cover | AR button (Original), Windows menu |
 | **Flow** | Live network throughput meter — download/upload views with interface selection | Context menu or Window menu |
 | **Library Browser** | Browse Plex/Jellyfin/Subsonic/Emby and local media. The source bar shows the item count after the library name, e.g. *Music (1110 items)*. Three icons before refresh (**F5**; a refresh icon in Original) switch between **List**, **Flow** (Cover Flow) and **Tiles** (art grid; click selects, double-click or Return plays or opens, **‹ Back** returns, right-click gives the row's menu); the choice is remembered. Opening an album in Flow or Tiles shows its screen: cover, details, review, **▶ Play** and its tracks over the artist's picture | Logo button or context menu |
-| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
+| **Visualizations** | Visualization engine host for ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear and NullPlayer-Fractal (consistently labeled "Visualizations" in menus and window chrome) | VZ button, Windows menu, or context menu |
 
 In every UI mode — Classic, Original, Original-Metal, and Winamp Modern — **Windows > Play History** opens the **Data** tab inside the Library Browser instead of a separate window. The Data tab shows:
 - **Listening heatmap** — daily listening over the last year, in the current skin's colours (and the colour theme's, for Winamp Modern and Windows Media Player skins)
@@ -503,14 +503,14 @@ controls. In Winamp Modern (`.wal`) mode the **Visuals > Main Window** entry is 
 family drives its in-skin visualizer from the main window's own right-click menu instead.
 
 The **Visuals** menu also has top-level **Spectrum Window** controls and a **Visualizations** submenu for
-the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear visualization host.
+the ProjectM/Geiss/Tripex/AVS/Goom/Corona/Smear/NullPlayer-Fractal visualization host.
 
 ### Art Window (VIS)
 30 effects transforming the playing track's cover with the audio — press **V** in the **Art** window
 (Windows → Art), or right-click it. The Library Browser no longer has an ART view.
 
 ### Every engine's menu
-ProjectM, Geiss, Tripex, AVS, Goom, Corona and Smear share one right-click menu, in the Visualizations window, a
+ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear and NullPlayer-Fractal share one right-click menu, in the Visualizations window, a
 `.wal` skin's visualization box and a `.wmz` / Sonique effects area alike (which offers every engine
 but Goom): the current preset,
 **Next / Previous / Random Preset**, a **Presets** list, **Manual Only / Auto-Cycle / Auto-Random**
@@ -579,6 +579,19 @@ engine has. Smear starts on Auto-Random; with Manual Only it stays on the move y
 launches, and only re-rolls that move's own variations. The colour schemes, waveforms and particles
 change by themselves. A new move takes a moment to build before it fades in. Smear also plays in a
 `.wmz` skin's effects area and Sonique's visual mode.
+
+### NullPlayer-Fractal
+NullPlayer's own fractal visualizer, from the right-click **Visualization Engine** submenu: slow
+flights through 3D fractals and zooms into 2D ones, locked to the music's beat and tempo. Its
+eleven scenes are its presets: Julia Bloom, Mandelbrot Dive, Kaleido IFS, Newton Roots,
+Mandelbulb, Mandelbox Flight, Apollonian Tunnel, Menger Dive (an endless dive into the sponge),
+Pseudo-Kleinian, Quaternion Julia and Fractal Planet (a drone flyover of an alien world, faster
+with faster music). Right-click for the same preset and auto-cycle controls every engine has.
+Fractal starts on Auto-Random; with Manual Only it stays on the scene you pick, across launches,
+while the camera, colours and shapes keep moving with the music. **Render Scale** (Auto, 50%, 75%,
+100%) trades sharpness for frame rate; Auto lowers the resolution to keep the frame rate up. It
+also plays in a `.wal` skin's visualization box, a `.wmz` skin's effects area and Sonique's
+visual mode.
 
 ### Spectrum Analyzer Window
 55 bars, 9 quality modes (Winamp/vis_classic/Enhanced/Ultra/Fire/JWST/Lightning/Matrix/Snow)
@@ -684,7 +697,7 @@ change by themselves. A new move takes a moment to build before it fades in. Sme
 
 ### Visualization Keys (every window that shows one)
 - **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
-  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear), the Spectrum window's mode, a `.wmz` or Sonique skin's
+  (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear, NullPlayer-Fractal), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
 - **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
@@ -746,6 +759,16 @@ change by themselves. A new move takes a moment to build before it fades in. Sme
 - **Escape**: Exit fullscreen
 - **C**: Manual Only → Auto-Cycle → Auto-Random
 - The move list is in the right-click context menu.
+
+### NullPlayer-Fractal
+- **→ / ←**: Next / Previous scene (**⇧** cuts instead of fading)
+- **R**: Random scene
+- **F**: Toggle fullscreen
+- **Escape**: Exit fullscreen
+- **C**: Manual Only → Auto-Cycle → Auto-Random
+- The scene list and **Render Scale** are in the right-click context menu.
+- These are the Visualizations window's keys. In a `.wmz` / Sonique effects area only
+  **⌘→ / ⌘←** pick the scene ([Visualization Keys](#visualization-keys-every-window-that-shows-one)).
 
 ### Windows
 - **Cmd+L**: Show/hide Playlist

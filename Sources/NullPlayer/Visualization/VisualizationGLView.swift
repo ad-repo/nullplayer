@@ -455,6 +455,10 @@ class VisualizationGLView: NSOpenGLView {
         case .smear:
             let smear = SmearEngine(width: width, height: height)
             return smear.isAvailable ? smear : nil
+
+        case .fractal:
+            let fractal = FractalEngine(width: width, height: height)
+            return fractal.isAvailable ? fractal : nil
         }
     }
 

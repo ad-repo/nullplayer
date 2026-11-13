@@ -1,6 +1,6 @@
 ---
 name: visualizations
-description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, Goom, Corona, Smear, vis_classic, Metal mode internals).
+description: Index of NullPlayer's visualization systems. Use this to discover which sub-skill covers the specific visualizer you're working on (main window vis, spectrum window, album art, ProjectM/MilkDrop, Geiss, Tripex, AVS, Goom, Corona, Smear, NullPlayer-Fractal, vis_classic, Metal mode internals).
 ---
 
 # NullPlayer Visualization Systems — Index
@@ -42,7 +42,7 @@ picker leaves Visualization Engine out (`Options.showsEnginePicker`): the `.wmz`
 whose Effect menu lists the engines among its own effects, once showed both. An engine's own items are only
 what no other engine has: ProjectM's default / rating / favorites (its preset titles carry stars),
 Geiss's config and Tripex's settings (`GeissEngine+Menu.swift`, `TripexEngine+Menu.swift`), AVS's editor and
-folder (`AvsEngine.addMenuItems`), Corona's Blaze (`CoronaEngine.addMenuItems`), nothing for Goom or Smear. A new engine needs no menu code for the shared
+folder (`AvsEngine.addMenuItems`), Corona's Blaze (`CoronaEngine.addMenuItems`), Fractal's Render Scale (`FractalEngine.addMenuItems`), nothing for Goom or Smear. A new engine needs no menu code for the shared
 block.
 
 - **The shared block targets the `VisualizationGLView`** (`nextPresetMenuAction` etc., in
@@ -59,7 +59,7 @@ block.
   `setHold(true)`, Geiss `modeLocked = true`, Goom always held on its chosen effect, Corona always
   held on its chosen palette, Smear on its chosen move script. Manual Only
   therefore means the engine stays put; there are no per-engine Hold / Mode Lock / Auto-Switch items.
-- Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss, Goom, Corona and Smear Auto-Random
+- Defaults: ProjectM and AVS Manual Only, Tripex Auto-Cycle, Geiss, Goom, Corona, Smear and Fractal Auto-Random
   (they used to switch on their own); 30 s. Tests: `VisualizationCycleSettingsTests`.
 
 ## Software engines' canvas: one rule
@@ -134,19 +134,20 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 | [goom-port](../goom-port/SKILL.md) | Goom (j3k0/goom Goom2k26 C core) — CGoomCore shim, RGBA blit, 30/s cadence, forced effects, the port's own effects (Heart, Pentagram etc.) |
 | [corona-port](../corona-port/SKILL.md) | Corona (libvisual's port of the Sonique visualizer) — CCoronaCore shim, host spectrum, RGBA blit, palettes as presets, Blaze |
 | [smear-port](../smear-port/SKILL.md) | Smear (mykel and xplo's Sonique visualizer) — CSmearCore Stutter interpreter and renderer, bundled scripts, move scripts as held presets |
+| [fractal-vis](../fractal-vis/SKILL.md) | NullPlayer-Fractal, the app's own engine — GLSL raymarched and 2D fractal scenes, beat-synced director, adaptive render scale, camera shots, headless render harness |
 | [vis-classic-guide](../vis-classic-guide/SKILL.md) | vis_classic exact-port analyzer core |
 | [metal-gotchas](../metal-gotchas/SKILL.md) | Metal command-encoder pitfalls, render-to-texture y-flip, spectrum jitter |
 | [visualization-cast](../visualization-cast/SKILL.md) | **Cast Visualization ▸** — the Visualizations window's picture and the app's audio live to a Chromecast or DLNA TV; the GL readback seam, encoder, playlist, quality limits |
 
 ## Comparison
 
-| Feature | Album Art | ProjectM | Geiss | Tripex | Spectrum Window |
-|---------|-----------|----------|-------|--------|-----------------|
-| **Visual Style** | Transformed artwork | Procedural shaders | Indexed framebuffer + palette | 3D Winamp-era effects | Bars / vis_classic / Fire / JWST / Lightning / Matrix / Snow / EKG |
-| **Effect Count** | 30 built-in | 100s of presets | 25 modes | Upstream effect set | 10 modes |
-| **Customization** | Intensity | Full preset ecosystem | Effect selection | Effect / cycle / intensity | Mode + decay + style presets |
-| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL geometry | Metal shaders + compute |
-| **Audio Response** | Spectrum bands | PCM + beats | PCM + 256-bin host spectrum | PCM-driven internal FFT | 75-band spectrum / energy |
+| Feature | Album Art | ProjectM | Geiss | Tripex | Fractal | Spectrum Window |
+|---------|-----------|----------|-------|--------|---------|-----------------|
+| **Visual Style** | Transformed artwork | Procedural shaders | Indexed framebuffer + palette | 3D Winamp-era effects | Raymarched 3D and 2D fractals | Bars / vis_classic / Fire / JWST / Lightning / Matrix / Snow / EKG |
+| **Effect Count** | 30 built-in | 100s of presets | 25 modes | Upstream effect set | 11 scenes | 10 modes |
+| **Customization** | Intensity | Full preset ecosystem | Effect selection | Effect / cycle / intensity | Scene / cycle / render scale | Mode + decay + style presets |
+| **GPU Tech** | Core Image (Metal) | OpenGL shaders | OpenGL palette LUT | OpenGL geometry | GLSL 330 + HDR feedback | Metal shaders + compute |
+| **Audio Response** | Spectrum bands | PCM + beats | PCM + 256-bin host spectrum | PCM-driven internal FFT | Beats + BPM + 256-bin host spectrum | 75-band spectrum / energy |
 
 ### When to use each
 
@@ -158,6 +159,7 @@ Visualization choices are durable `UserDefaults` preferences, not AppState sessi
 - **Goom** — the XMMS-era zoom/tentacle/star-field effect that picks its own look from the music
 - **Corona** — Sonique-era particle flames swirling over a rippling reflection, in 31 palettes
 - **Smear** — Sonique-era G-Force-style feedback: 60 scripted move maps, with scripted colours, waveforms and particles
+- **NullPlayer-Fractal** — slow, beat-locked flights through 3D fractals (Mandelbulb, Menger, Apollonian, an alien planet) and 2D zooms
 - **Main Window Vis** — quick access without a separate window
 - **Spectrum Window** — detailed 84-bar frequency view + ambient modes (Fire/JWST/etc.)
 - **Cava** — responsive bar spectrum with gravity/autosens and skin-matched gradient colors; use mono inline in the main window or mono/stereo in the dockable standalone window
