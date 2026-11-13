@@ -48,6 +48,9 @@ extension Notification.Name {
     /// Posted when BPM detection updates
     /// userInfo contains: "bpm" (Int) - 0 means no confident reading
     static let bpmUpdated = Notification.Name("bpmUpdated")
+    /// Posted on the audio thread once per tap buffer the BPM detector heard: "beats" ([Bool]),
+    /// whether aubio placed a beat in each consecutive hop, and "hopMs" (Double), a hop's length.
+    static let audioBeatsUpdated = Notification.Name("audioBeatsUpdated")
 
     /// Posted when a track finishes playing naturally (not skipped by user).
     /// Always delivered on the main thread.
@@ -741,6 +744,9 @@ class AudioEngine {
     /// Magnitudes consumers — raw FFT magnitude posting is skipped entirely when this is empty
     private var magnitudesConsumers: [String: Int] = [:]
 
+    /// Beat consumers — keep the BPM detector running for `.audioBeatsUpdated` with no spectrum shown
+    private var beatConsumers: [String: Int] = [:]
+
     /// Decrement a ref-counted consumer id, removing the key when it reaches zero.
     private func releaseConsumer(_ id: String, from consumers: inout [String: Int]) {
         guard let count = consumers[id] else { return }
@@ -814,6 +820,18 @@ class AudioEngine {
     }
 
     var magnitudesNeeded: Bool { !magnitudesConsumers.isEmpty }
+
+    func addBeatConsumer(_ id: String) {
+        beatConsumers[id, default: 0] += 1
+        streamingPlayer?.beatsNeeded = !beatConsumers.isEmpty
+    }
+
+    func removeBeatConsumer(_ id: String) {
+        releaseConsumer(id, from: &beatConsumers)
+        streamingPlayer?.beatsNeeded = !beatConsumers.isEmpty
+    }
+
+    var beatsNeeded: Bool { !beatConsumers.isEmpty }
 
     // MARK: - Pre-allocated FFT Buffers (Memory Optimization)
 
@@ -2047,7 +2065,8 @@ class AudioEngine {
     #endif
 
     private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded
+              || beatsNeeded else { return }
         guard let channelData = buffer.floatChannelData else { return }
 
         let frameCount = Int(buffer.frameLength)
@@ -2141,6 +2160,11 @@ class AudioEngine {
         // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
         // work below is gated separately by `spectrumNeeded` so an octave-only (magnitudes)
         // consumer does not pay for it.
+        // The BPM readout and beats hear every sample, ahead of the FFT's slice and throttle.
+        if spectrumNeeded || magnitudesNeeded || beatsNeeded {
+            bpmDetector.process(channels: channelData, channelCount: channelCount,
+                                frameCount: frameCount, sampleRate: bufferSampleRate)
+        }
         guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Throttle updates to 60Hz max to prevent memory buildup
@@ -2159,12 +2183,6 @@ class AudioEngine {
             }
         }
 
-        // Feed BPM detector with raw mono samples before windowing.
-        fftSamples.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
-            }
-        }
 
         // Store raw PCM data for waveform visualization (before windowing)
         // Downsample to 512 samples for efficient storage and lowest latency
@@ -5118,6 +5136,7 @@ class AudioEngine {
             streamingPlayer?.stereoNeeded = stereoNeeded
             streamingPlayer?.fullStereoNeeded = fullStereoNeeded
             streamingPlayer?.magnitudesNeeded = magnitudesNeeded
+            streamingPlayer?.beatsNeeded = beatsNeeded
         }
         streamingPlayer?.balance = balance
 
@@ -5976,6 +5995,7 @@ class AudioEngine {
         streamingPlayer?.stereoNeeded = stereoNeeded
         streamingPlayer?.fullStereoNeeded = fullStereoNeeded
         streamingPlayer?.magnitudesNeeded = magnitudesNeeded
+        streamingPlayer?.beatsNeeded = beatsNeeded
         // crossfadeStreamingPlayer (old primary) already has nil delegate from above
         
         // Restore primary player to master volume (crossfade ended at masterVolume * 1.0)

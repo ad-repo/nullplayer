@@ -8,7 +8,7 @@ extension AvsEngine {
         menu.addItem(item("Edit Preset…", #selector(editPresetAction)))
         let beats = NSMenu(title: "Beat Detection")
         for (title, action, advanced) in [("Standard", #selector(standardBeatsAction), false),
-                                          ("Advanced (Learns the Tempo)", #selector(advancedBeatsAction), true)] {
+                                          ("Advanced (Tracks the Beat)", #selector(advancedBeatsAction), true)] {
             let choice = item(title, action)
             choice.state = AvsPresets.advancedBeatDetection == advanced ? .on : .off
             beats.addItem(choice)

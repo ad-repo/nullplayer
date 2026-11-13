@@ -134,19 +134,37 @@ final class AvsCoreSmokeTests: XCTestCase {
     func testBeatDetectorFiresOnPulsesOnly() {
         var detector = AvsBeatDetector()
         let pulsed = (0..<60).map { frame -> Bool in
-            let buffer = Self.pulsedTone(frame: frame)
-            return detector.isBeat(left: buffer.left, right: buffer.right)
+            let chunk = Self.waveformChunk(Self.pulsedTone(frame: frame).left)
+            return detector.isBeat(left: chunk, right: chunk)
         }
         XCTAssertTrue(pulsed.enumerated().contains { $0.element && $0.offset % 10 < 2 })
         XCTAssertFalse(pulsed.enumerated().contains { $0.element && $0.offset % 10 >= 2 })
 
         var steadyDetector = AvsBeatDetector()
-        let steady = Self.pulsedTone(frame: 0)
+        let steady = Self.waveformChunk(Self.pulsedTone(frame: 0).left)
         let steadyBeats = (0..<60).filter { _ in
-            steadyDetector.isBeat(left: steady.left, right: steady.right)
+            steadyDetector.isBeat(left: steady, right: steady)
         }
         // The onset fires while the peaks warm up (frames 0–1), then never again.
         XCTAssertTrue(steadyBeats.allSatisfy { $0 < 2 }, "steady tone beat at \(steadyBeats)")
+    }
+
+    /// A tap buffer's chunks arrive together; the beat in the fourth is released one frame per
+    /// chunk later, at its place in the music, not with the burst.
+    func testBeatFeedReleasesABurstAtTheMusicsPace() {
+        let feed = AvsBeatFeed()
+        let quiet = Self.waveformChunk((0..<576).map { sinf(Float($0) * 0.07) * 0.05 })
+        let loud = Self.waveformChunk((0..<576).map { sinf(Float($0) * 0.07) * 0.9 })
+        for _ in 0..<20 { feed.store(left: quiet, right: quiet, sampleRate: 44_100) }
+        _ = feed.take(nowMs: 0)
+        XCTAssertFalse(feed.take(nowMs: 10_000), "the warm-up drains without a beat")
+
+        for chunk in [quiet, quiet, quiet, loud, quiet, quiet, quiet, quiet] {
+            feed.store(left: chunk, right: chunk, sampleRate: 44_100)
+        }
+        // 14 ms a frame is just over a 13.06 ms chunk, so each frame takes one chunk.
+        let beats = (1...8).map { feed.take(nowMs: 10_000 + $0 * 14) }
+        XCTAssertEqual(beats, [false, false, false, true, false, false, false, false])
     }
 
     /// The editor's inspector builds its controls from libavs's parameter metadata, so building it
@@ -179,6 +197,11 @@ final class AvsCoreSmokeTests: XCTestCase {
 
     /// One 1024-frame buffer of a tone that is loud for 2 frames in every 10: many presets
     /// only colour or move on a beat, which AVS's detector finds in energy jumps.
+    /// The newest 576 samples as `.audioWaveform576DataUpdated` carries them.
+    private static func waveformChunk(_ samples: [Float]) -> [UInt8] {
+        samples.suffix(576).map { UInt8(clamping: Int($0 * 127 + 128)) }
+    }
+
     private static func pulsedTone(frame: Int) -> AvsAudioSlot.Buffer {
         let amplitude: Float = frame % 10 < 2 ? 0.9 : 0.05
         let samples = (0..<1024).map { sinf(Float($0 + frame * 1024) * 0.07) * amplitude }
@@ -192,9 +215,14 @@ final class AvsCoreSmokeTests: XCTestCase {
         var first: [UInt32] = []
         var moved = false
         for frame in 0..<count {
-            core.audio.store(Self.pulsedTone(frame: frame))
+            let tone = Self.pulsedTone(frame: frame)
+            core.audio.store(tone)
+            let chunk = Self.waveformChunk(tone.left)
+            core.beats.store(left: chunk, right: chunk, sampleRate: 44_100)
             pixels.withUnsafeMutableBufferPointer {
-                XCTAssertTrue(core.renderFrame(into: $0.baseAddress!, width: width, height: height),
+                // One chunk's time per frame, so each frame takes the chunk just stored.
+                XCTAssertTrue(core.renderFrame(into: $0.baseAddress!, width: width, height: height,
+                                               nowMs: frame * 14),
                               core.lastError)
             }
             if frame == 0 { first = pixels }

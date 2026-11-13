@@ -622,7 +622,9 @@ Real-time BPM detection using **aubio** library (`libaubio.5.dylib`):
 
 **Integration:**
 - Both `AudioEngine` and `StreamingAudioPlayer` own a `BPMDetector`
-- Fed from same buffer as spectrum analysis (before windowing)
+- Fed every tap buffer whole, mixed to mono, ahead of the spectrum's 2048-frame slice and 60 Hz throttle. aubio treats its input as one continuous signal: feeding it only the FFT's slice of each ~4410-frame buffer squeezed time and broke the tempo.
+- Runs while a spectrum, magnitudes or beat consumer is registered (`addBeatConsumer` keeps it running with no spectrum shown)
+- Also posts `.audioBeatsUpdated` per tap buffer on the audio thread: `beats` ([Bool], whether aubio put a beat in each 512-sample hop) and `hopMs`. AVS's advanced beat detection consumes it (`avs-port`)
 - Display reset on track change
 
 **Key Files:**

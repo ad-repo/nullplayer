@@ -7,7 +7,8 @@ import OpenGL.GL3
 /// offscreen one.
 ///
 /// AVS is stereo, so the engine takes the full-rate stereo feed itself rather than the host's
-/// mono `addPCMMono`. Its own menu items target the engine (`addMenuItems`), so a host needs
+/// mono `addPCMMono`, plus two beat sources (`AvsBeatFeed`): the 576-sample waveform feed for
+/// the standard detector, and aubio's beats (`.audioBeatsUpdated`) for advanced detection. Its own menu items target the engine (`addMenuItems`), so a host needs
 /// no AVS-specific actions; preset state is main-thread only, and the render thread reaches
 /// libavs only through `AvsCore`'s lock.
 final class AvsEngine: NSObject, VisualizationEngine {
@@ -23,7 +24,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
     /// The editor (`AvsEditorWindowController`) edits the preset through this, on main.
     let core: AvsCore?
     private var audioObserver: NSObjectProtocol?
-    private var songObserver: NSObjectProtocol?
+    private var waveformObserver: NSObjectProtocol?
+    private var trackedBeatsObserver: NSObjectProtocol?
 
     // Render thread only.
     private var viewport = (width: 1, height: 1)
@@ -66,9 +68,23 @@ final class AvsEngine: NSObject, VisualizationEngine {
                   let rate = note.userInfo?["sampleRate"] as? Double, rate > 0 else { return }
             audio.store(AvsAudioSlot.Buffer(left: left, right: right, sampleRate: rate))
         }
-        songObserver = NotificationCenter.default.addObserver(
-            forName: .audioTrackDidChange, object: nil, queue: .main
-        ) { [weak core] _ in core?.resetTempo() }
+        // Every 576-sample chunk, for the beat detector. Posted on the audio thread.
+        waveformObserver = NotificationCenter.default.addObserver(
+            forName: .audioWaveform576DataUpdated, object: nil, queue: nil
+        ) { [beats = core.beats] note in
+            guard let left = note.userInfo?["left"] as? [UInt8],
+                  let right = note.userInfo?["right"] as? [UInt8],
+                  let rate = note.userInfo?["sampleRate"] as? Double else { return }
+            beats.store(left: left, right: right, sampleRate: rate)
+        }
+        // aubio's beats, for advanced beat detection. Posted on the audio thread.
+        trackedBeatsObserver = NotificationCenter.default.addObserver(
+            forName: .audioBeatsUpdated, object: nil, queue: nil
+        ) { [trackedBeats = core.trackedBeats] note in
+            guard let beats = note.userInfo?["beats"] as? [Bool],
+                  let hopMs = note.userInfo?["hopMs"] as? Double else { return }
+            trackedBeats.store(beats: beats, slotMs: hopMs)
+        }
         // Not yet shared with main, so the list is written here: a host may apply a preset number
         // as soon as the engine exists. Loading the saved preset needs no notification or save.
         // ponytail: one synchronous scan on the render thread at engine start, so a huge custom
@@ -83,6 +99,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
         // Engines are built on the render thread; the consumer table is main's.
         DispatchQueue.main.async {
             WindowManager.shared.audioEngine.addFullStereoConsumer(Self.audioConsumerID)
+            WindowManager.shared.audioEngine.addWaveformConsumer(Self.audioConsumerID)
+            WindowManager.shared.audioEngine.addBeatConsumer(Self.audioConsumerID)
         }
     }
 
@@ -93,11 +111,12 @@ final class AvsEngine: NSObject, VisualizationEngine {
     }
 
     private func removeObservers() {
-        for observer in [audioObserver, songObserver].compactMap({ $0 }) {
+        for observer in [audioObserver, waveformObserver, trackedBeatsObserver].compactMap({ $0 }) {
             NotificationCenter.default.removeObserver(observer)
         }
         audioObserver = nil
-        songObserver = nil
+        waveformObserver = nil
+        trackedBeatsObserver = nil
     }
 
     /// Called on the render thread with the GL context current.
@@ -108,6 +127,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
         let id = ObjectIdentifier(self)
         DispatchQueue.main.async {
             WindowManager.shared.audioEngine.removeFullStereoConsumer(Self.audioConsumerID)
+            WindowManager.shared.audioEngine.removeWaveformConsumer(Self.audioConsumerID)
+            WindowManager.shared.audioEngine.removeBeatConsumer(Self.audioConsumerID)
             NotificationCenter.default.post(name: Self.didStop, object: nil, userInfo: ["engine": id])
         }
         if framebuffer != 0 { glDeleteFramebuffers(1, &framebuffer); framebuffer = 0 }

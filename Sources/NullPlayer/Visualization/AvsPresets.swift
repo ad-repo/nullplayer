@@ -12,8 +12,8 @@ enum AvsPresets {
     /// Cleared by "Reset All Visualization Preferences".
     static let preferenceKeys = [Key.customFolder, Key.currentPreset, Key.advancedBeatDetection]
 
-    /// Winamp's "Advanced" beat detection (`AvsBpmRefiner`) over the standard detector. Read by
-    /// every engine's render thread each frame, so a change applies to all of them at once.
+    /// Advanced beat detection: aubio's beat tracker in place of Winamp's standard detector.
+    /// Read by every engine's render thread each frame, so a change applies to all of them at once.
     static var advancedBeatDetection: Bool {
         get { UserDefaults.standard.bool(forKey: Key.advancedBeatDetection) }
         set { UserDefaults.standard.set(newValue, forKey: Key.advancedBeatDetection) }

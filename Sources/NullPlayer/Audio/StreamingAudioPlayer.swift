@@ -63,6 +63,9 @@ class StreamingAudioPlayer {
     /// Whether raw FFT magnitudes should be posted — bridged from AudioEngine.magnitudesNeeded
     var magnitudesNeeded: Bool = false
 
+    /// Whether the BPM detector runs for `.audioBeatsUpdated` — bridged from AudioEngine.beatsNeeded
+    var beatsNeeded: Bool = false
+
     /// FFT setup for spectrum analysis
     private var fftSetup: vDSP_DFT_Setup?
     private let fftSize: Int = 2048
@@ -522,7 +525,8 @@ class StreamingAudioPlayer {
 
         // Skip FFT/waveform processing when no consumer needs the data to save CPU.
         // The frame filter still receives buffers but we don't need to process them.
-        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded else { return }
+        guard spectrumNeeded || waveformNeeded || stereoNeeded || fullStereoNeeded || magnitudesNeeded
+              || beatsNeeded else { return }
 
         guard let channelData = buffer.floatChannelData else { return }
 
@@ -634,6 +638,12 @@ class StreamingAudioPlayer {
 
         // The FFT runs when spectrum OR raw magnitudes are demanded; the 75-band spectrum
         // work below is gated separately by `spectrumNeeded`.
+        // The BPM readout and beats hear every sample, ahead of the FFT's slice and throttle;
+        // the tap is after the volume, so it is compensated like the spectrum.
+        if spectrumNeeded || magnitudesNeeded || beatsNeeded {
+            bpmDetector.process(channels: channelData, channelCount: channelCount, frameCount: frameCount,
+                                sampleRate: buffer.format.sampleRate, gain: max(1, volumeCompensation))
+        }
         guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
         // Get audio samples (mono mix if stereo) - use pre-allocated buffer
@@ -660,12 +670,6 @@ class StreamingAudioPlayer {
         guard shouldUpdate else { return }
         lastSpectrumUpdateTime = now
 
-        // Feed BPM detector with raw mono samples before windowing.
-        fftSamples.withUnsafeBufferPointer { ptr in
-            if let base = ptr.baseAddress {
-                bpmDetector.process(samples: base, count: fftSize, sampleRate: buffer.format.sampleRate)
-            }
-        }
 
         // Forward PCM data for projectM visualization
         // Downsample to 512 samples for efficient visualization and lowest latency

@@ -26,17 +26,15 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 | `Sources/CAvsCore/upstream_port/audio_in_darwin.cpp` | Stubs for upstream's audio-input API. NullPlayer feeds audio with `avs_audio_set` (AVS_AUDIO_EXTERNAL). |
 | `Sources/CAvsCore/upstream_port/simd/` | `immintrin.h`, `emmintrin.h`… shims searched before clang's. On arm64 they include sse2neon (v1.8.0, MIT); on x86_64 they `#include_next` the real header. `mmintrin.h` adds the two MMX helpers sse2neon lacks. |
 | `Sources/CAvsCore/include/CAvsCore.h` | The module header: `avs.h` and `avs_editor.h`. |
-| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, and `AvsBeatDetector`. |
-| `Sources/NullPlayer/Visualization/AvsBpmRefiner.swift` | Advanced beat detection: a port of the frontend's `bpm.cpp` `refineBeat`. |
+| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, `AvsBeatDetector` and the paced `AvsBeatFeed`s. |
 | `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets. |
 | `Sources/NullPlayer/Visualization/AvsEngine+Menu.swift` | The engine's section of the shared visualization menu and its actions. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsEditorWindowController.swift` | **Edit Preset…**: the component tree, add / duplicate / delete / drag-move, the file buttons. |
 | `Sources/NullPlayer/Windows/AvsEditor/AvsParameterInspector.swift` | One component's parameters as controls built from `avs_parameter_info`. |
 | `Sources/NullPlayer/Resources/AVSPresets/` | Upstream's 35 bundled `.avs` presets. |
-| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; only effects with no implementation load as Unknown Effect; the SuperScope JIT; lock serialisation; the beat detector; the inspector builds for every component of every preset. |
+| `Tests/NullPlayerAppTests/AvsCoreSmokeTests.swift` | Every preset loads, saves legacy idempotently and moves; only effects with no implementation load as Unknown Effect; the SuperScope JIT; lock serialisation; the beat detector and the feed's pacing; the inspector builds for every component of every preset. |
 | `Tests/NullPlayerAppTests/AvsEffectPortTests.swift` | The C ports of the x86 code and Text, by pixels: Convolution blurs a dot, Texer II draws in all ten blend modes, Text draws and cycles, and a Win32-layout Text record round-trips byte for byte. `AvsPresetBuilder` builds a preset through `avs_editor.h` by effect and parameter name. |
-| `Tests/NullPlayerAppTests/AvsBpmRefinerTests.swift` | The refiner learns a 120 BPM pulse and fills in the beats the detector drops. |
 
 ## Build
 
@@ -113,14 +111,20 @@ More than one `AvsEngine` can exist at once (the Visualizations window and a ski
 
 AVS's FFT reads the newest 576 samples whatever the rate, so at 96 kHz the spectrum is compressed (576 samples is 6 ms).
 
-The engine takes the full-rate stereo feed itself:
-- `addFullStereoConsumer("avsEngine")` on main, removed on `cleanup`.
-- Its `addPCMMono` is empty, because the host only hands engines mono audio.
+The engine takes its audio itself, registering as `"avsEngine"` on main and releasing on `cleanup`:
+- the full-rate stereo feed (`addFullStereoConsumer`), for `avs_audio_set`;
+- the 576-sample waveform feed (`addWaveformConsumer`), for the standard beat detector;
+- aubio's beats (`addBeatConsumer`, `.audioBeatsUpdated`), for advanced detection.
+
+Its `addPCMMono` is empty, because the host only hands engines mono audio.
+
+The full-rate stereo feed is the newest 2048 frames of each tap buffer, and the tap delivers about 4410 frames ten times a second. A detector reading the newest 576 samples per frame heard one 13 ms slice in every 100 ms and missed most beats, so beats come from feeds that carry every sample.
 
 **Beat detection:** libavs's `AVS_BEAT_INTERNAL` is a stub, because upstream left beat detection in the Winamp frontend.
 - The instance runs with `AVS_BEAT_EXTERNAL`.
-- `AvsBeatDetector` is a port of the frontend's standard detector: a summed signed 8-bit amplitude over 576 samples, a beat at 34/32 above a decaying peak and above a silence floor.
-- **Advanced** (right-click ▸ Beat Detection, `avs.advancedBeatDetection`, off by default): `AvsBpmRefiner` runs the detector's beats through a port of the frontend's `refineBeat`. It learns the tempo, fires beats on it (filling in missed ones and dropping off-beat ones) and sticks once confident. Upstream's dialog defaults are fixed: sticky on, reset on a new song (`.audioTrackDidChange` → `AvsCore.resetTempo`). Upstream's resync nudges of ×1.01 / ×0.98 settle a steady 120 BPM at about 121.
+- **Pacing:** each source fills an `AvsBeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. Both feeds drain every frame, so switching never releases a backlog.
+- **Standard:** `AvsBeatDetector`, a port of the frontend's standard detector, runs on every 576-sample chunk: a summed 8-bit amplitude, a beat at 34/32 above a decaying peak and above a silence floor. On real music it fires on snares and hi-hats as readily as kicks.
+- **Advanced** (right-click ▸ Beat Detection, `avs.advancedBeatDetection`, off by default): aubio's beat tracker, from the app's `BPMDetector` (`audio-system`), one verdict per 512-sample hop. This replaces Winamp's "advanced" `bpm.cpp` refiner: ported, it was fed the standard detector's beats and never settled on a tempo on real music (measured 2026-11-12: 165 → 87 → 136 BPM over 29 s).
 - Many presets only change colour or move on a beat, so a test signal without beats renders black.
 
 ## Rendering
@@ -139,7 +143,7 @@ The engine takes the full-rate stereo feed itself:
 |-----|---------|
 | `avs.presetPath` | The preset showing, by path; the first preset when it is missing. |
 | `avs.customPresetsFolder` | The user folder from **Choose AVS Preset Folder…**, a plain path (M84: security-scoped bookmarks). |
-| `avs.advancedBeatDetection` | Beat Detection ▸ Advanced; one setting for every engine instance, read each frame. |
+| `avs.advancedBeatDetection` | Beat Detection ▸ Advanced (aubio's beats); one setting for every engine instance, read each frame. |
 | `avs.cycleMode` / `avs.cycleInterval` | Manual Only / Auto-Cycle / Auto-Random and its interval, through `VisualizationCycleSettings` like every engine's. One setting for every host. |
 
 The first three are in `VisualizationPreferences`' `.all` reset (`AvsPresets.preferenceKeys`); the cycle keys are in the Visualizations window's reset with every engine's. The engine choice itself is the shared `visualizationEngineType`.
@@ -217,4 +221,5 @@ For anything that only shows on screen (a preset drawing wrong, stutter, a host 
 - **Pick a preset:** set it by path with `defaults write NullPlayer avs.presetPath <path>` before launching.
 - **Isolate the library:** the smoke tests run libavs headless, so a defect that reproduces there is libavs or the port, not the host.
 - **Uninitialised reads:** run the tests with `MallocPreScribble=1 MallocScribble=1`.
+- **Beats:** `AVS_BEAT_TRACE=1` (DEBUG) logs `AVS-BEAT t=<ms> standard=<0|1> tracked=<0|1>` for every frame with a beat from either feed; the intervals show whether a source is regular.
 - **Stutter:** time `core.renderFrame` before anything else. A debug build that lost `-O2` renders at about 13 fps.
