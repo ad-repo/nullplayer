@@ -20,10 +20,13 @@ final class AvsCoreSmokeTests: XCTestCase {
 
     /// Presets that may legitimately render black and static for 60 frames of a pulsed tone,
     /// with the reason.
-    private static let staticAllowList: [String: String] = [
-        "lone - Spacefolding inside a Black Hole.avs":
-            "its renderers are the 'Winamp Starfield v1' and 'Winamp Mosaic v1' APEs, which "
-            + "upstream loads as Unknown Effect (tasks/MISC_TASKS.md)",
+    private static let staticAllowList: [String: String] = [:]
+
+    /// Presets with a component libavs has no implementation for, which loads as Unknown
+    /// Effect and draws nothing. FyrewurX is a third-party APE with no portable source.
+    private static let unknownEffectPresets: Set<String> = [
+        "justin - fireworks kaliadascope mk 2.avs",
+        "justin - steve likes it.avs",
     ]
 
     private let width = 320
@@ -67,6 +70,19 @@ final class AvsCoreSmokeTests: XCTestCase {
                 XCTFail("\(url.lastPathComponent): black and static for 60 frames; "
                         + "effects: \(core.withHandle(effectNames))")
             }
+        }
+    }
+
+    /// The 'Winamp Starfield v1' and 'Winamp Mosaic v1' APEs load as the built-in Starfield
+    /// and Mosaic, so only the FyrewurX presets keep an Unknown Effect.
+    func testOnlyUnimplementedEffectsLoadAsUnknown() throws {
+        for url in Self.presets {
+            let core = try XCTUnwrap(AvsCore())
+            XCTAssertTrue(core.loadPreset(at: url), url.lastPathComponent)
+            let tree = core.withHandle(effectNames)
+            XCTAssertEqual(tree.contains("Unknown Effect"),
+                           Self.unknownEffectPresets.contains(url.lastPathComponent),
+                           "\(url.lastPathComponent): \(tree)")
         }
     }
 

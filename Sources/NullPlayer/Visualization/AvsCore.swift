@@ -8,13 +8,15 @@ import CAvsCore
 /// `withHandle`, under one lock. The audio tap never takes that lock — it only fills `audio`,
 /// which `renderFrame` drains under it.
 ///
-/// Beats come from `AvsBeatDetector`: libavs's own AVS_BEAT_INTERNAL is a stub (upstream left
-/// beat detection in the Winamp frontend), so the instance runs with AVS_BEAT_EXTERNAL.
+/// Beats come from `AvsBeatDetector`, refined by `AvsBpmRefiner` when advanced beat detection
+/// is on: libavs's own AVS_BEAT_INTERNAL is a stub (upstream left beat detection in the Winamp
+/// frontend), so the instance runs with AVS_BEAT_EXTERNAL.
 final class AvsCore {
     let audio = AvsAudioSlot()
     private let lock = NSLock()
     private let handle: AVS_Handle
     private var beats = AvsBeatDetector()
+    private var tempo = AvsBpmRefiner()
     /// libavs only accepts audio whose end time moves forward, so the frames fed so far
     /// stand in for the tap's clock (realtime mode always renders the newest audio anyway).
     private var audioEndSample: Int64 = 0
@@ -57,8 +59,21 @@ final class AvsCore {
                     }
                 }
             }
+            if AvsPresets.advancedBeatDetection {
+                isBeat = tempo.refine(isBeat: isBeat, now: Self.milliseconds())
+            }
             return avs_render_frame(handle, pixels, width, height, -1, isBeat, AVS_PIXEL_RGB0_8)
         }
+    }
+
+    /// A new song: advanced beat detection learns its tempo afresh, as Winamp's did.
+    func resetTempo() {
+        withHandle { _ in tempo.reset(now: Self.milliseconds()) }
+    }
+
+    /// Uptime in ms, `GetTickCount`'s clock for `AvsBpmRefiner`.
+    private static func milliseconds() -> Int {
+        Int(DispatchTime.now().uptimeNanoseconds / 1_000_000)
     }
 
     func loadPreset(at url: URL) -> Bool {
@@ -74,7 +89,7 @@ final class AvsCore {
 /// The Winamp AVS frontend's standard beat detector (upstream `vis_avs/main.cpp` `render()`,
 /// BSD-3), on the newest 576 samples as signed 8-bit like Winamp's waveform data: a beat is
 /// a summed amplitude 34/32 above a slowly decaying peak, and above a silence floor. The
-/// frontend's optional "advanced" BPM refinement (`bpm.cpp`) is not ported.
+/// frontend's optional "advanced" BPM refinement is `AvsBpmRefiner`.
 struct AvsBeatDetector {
     private static let window = 576
     private var peak1 = 0

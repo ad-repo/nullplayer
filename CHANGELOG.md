@@ -140,12 +140,22 @@
   (Auto-Random every 30 seconds by default; right-click to pick one, → / ← / R step through them);
   the colour schemes, waveforms and particles change by themselves. It also plays in a Windows
   Media Player skin's effects area and in Sonique's visual mode and mid-mode circle.
+- **AVS plays three more effects:** Texer II and Convolution Filter, which drew nothing on Apple
+  silicon, and Text, which draws a preset's words, on the beat or cycling, with its font, outline
+  and shadow.
+- **AVS has Winamp's advanced beat detection** (right-click ▸ Beat Detection ▸ Advanced): it learns
+  the song's tempo and keeps the beat going where the music's own beat is too soft to detect,
+  starting over on each new song.
 - **Geiss and AVS show their whole picture in a skin's small effects area**, as in the
   Visualizations window, instead of a coarse close-up: in Sonique's top circle Geiss's waveform
   ran off both sides and AVS's lines and glows came out twice as thick. Corona and Smear do the same.
 - **A Windows Media Player or Sonique skin's effects area has one effect picker.** Its right-click
   menu offered both **Effect** and **Visualization Engine** for the same choice (and the second
   listed Goom, which did nothing there); only **Effect** is left.
+- **AVS presets keep their "clear every frame" setting.** Loading a preset kept the previous
+  preset's instead, so some drew over their own trails and others smeared.
+- **The AVS presets "Spacefolding inside a Black Hole" and "Arkanoid Legent" draw their starfield
+  and mosaic**; Spacefolding was black.
 
 ### Classic skins
 

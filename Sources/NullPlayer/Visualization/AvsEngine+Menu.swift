@@ -6,6 +6,16 @@ import AppKit
 extension AvsEngine {
     func addMenuItems(to menu: NSMenu) {
         menu.addItem(item("Edit Preset…", #selector(editPresetAction)))
+        let beats = NSMenu(title: "Beat Detection")
+        for (title, advanced) in [("Standard", false), ("Advanced (Learns the Tempo)", true)] {
+            let choice = item(title, #selector(beatDetectionAction(_:)))
+            choice.representedObject = advanced
+            choice.state = AvsPresets.advancedBeatDetection == advanced ? .on : .off
+            beats.addItem(choice)
+        }
+        let beatsItem = NSMenuItem(title: "Beat Detection", action: nil, keyEquivalent: "")
+        beatsItem.submenu = beats
+        menu.addItem(beatsItem)
         menu.addItem(item("Choose AVS Preset Folder…", #selector(choosePresetFolderAction)))
         if AvsPresets.customFolder != nil {
             menu.addItem(item("Use Bundled AVS Presets Only", #selector(clearPresetFolderAction)))
@@ -19,6 +29,10 @@ extension AvsEngine {
     }
 
     @objc private func editPresetAction() { AvsEditorWindowController.show(for: self) }
+
+    @objc private func beatDetectionAction(_ sender: NSMenuItem) {
+        AvsPresets.advancedBeatDetection = sender.representedObject as? Bool ?? false
+    }
 
     @objc private func choosePresetFolderAction() {
         let panel = NSOpenPanel()

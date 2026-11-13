@@ -23,6 +23,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
     /// The editor (`AvsEditorWindowController`) edits the preset through this, on main.
     let core: AvsCore?
     private var audioObserver: NSObjectProtocol?
+    private var songObserver: NSObjectProtocol?
 
     // Render thread only.
     private var viewport = (width: 1, height: 1)
@@ -65,6 +66,9 @@ final class AvsEngine: NSObject, VisualizationEngine {
                   let rate = note.userInfo?["sampleRate"] as? Double, rate > 0 else { return }
             audio.store(AvsAudioSlot.Buffer(left: left, right: right, sampleRate: rate))
         }
+        songObserver = NotificationCenter.default.addObserver(
+            forName: .audioTrackDidChange, object: nil, queue: nil
+        ) { [weak core] _ in core?.resetTempo() }
         // Not yet shared with main, so the list is written here: a host may apply a preset number
         // as soon as the engine exists. Loading the saved preset needs no notification or save.
         // ponytail: one synchronous scan on the render thread at engine start, so a huge custom
@@ -86,6 +90,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
     /// reference can go on any thread, so this only drops the observer and never touches GL.
     deinit {
         if let audioObserver { NotificationCenter.default.removeObserver(audioObserver) }
+        if let songObserver { NotificationCenter.default.removeObserver(songObserver) }
     }
 
     /// Called on the render thread with the GL context current.
@@ -93,7 +98,9 @@ final class AvsEngine: NSObject, VisualizationEngine {
         guard isAvailable else { return }
         isAvailable = false
         if let audioObserver { NotificationCenter.default.removeObserver(audioObserver) }
+        if let songObserver { NotificationCenter.default.removeObserver(songObserver) }
         audioObserver = nil
+        songObserver = nil
         let id = ObjectIdentifier(self)
         DispatchQueue.main.async {
             WindowManager.shared.audioEngine.removeFullStereoConsumer(Self.audioConsumerID)
