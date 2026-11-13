@@ -201,7 +201,7 @@ class JellyfinServerClient {
             }
             
             let decoder = JSONDecoder()
-            return try decoder.decode(T.self, from: data)
+            return try decoder.decode(T.self, from: data.utf8Repaired ?? data)
             
         } catch let error as JellyfinClientError {
             throw error

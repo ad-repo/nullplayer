@@ -14,7 +14,7 @@ enum PlexHubSearch {
     /// The deduped hits, plus every kept artist record — same-name records included, which
     /// `results.artists` collapses into one row.
     static func parse(_ data: Data, musicSectionID: String?) throws -> (results: PlexSearchResults, artistRecords: [PlexArtist]) {
-        let response = try JSONDecoder().decode(Response.self, from: data)
+        let response = try JSONDecoder().decode(Response.self, from: data.utf8Repaired ?? data)
 
         var results = PlexSearchResults()
         var artistRecords: [PlexArtist] = []

@@ -156,18 +156,12 @@ class PlexServerClient {
             } catch let initialError {
                 // If direct decoding fails, the data might contain invalid UTF-8 bytes
                 // (e.g., single bytes from Latin-1/Windows-1252 encoded artist names)
-                if String(data: data, encoding: .utf8) == nil {
-                    // Use lossy UTF-8 decoding, then replace the replacement character with "?"
-                    // so it displays properly in bitmap fonts that don't support U+FFFD
-                    let lossyString = String(decoding: data, as: UTF8.self)
-                        .replacingOccurrences(of: "\u{FFFD}", with: "?")
-                    if let sanitizedData = lossyString.data(using: .utf8) {
-                        do {
-                            NSLog("PlexServerClient: Retrying decode after UTF-8 sanitization (replaced invalid chars with ?)")
-                            return try JSONDecoder().decode(T.self, from: sanitizedData)
-                        } catch {
-                            NSLog("PlexServerClient: UTF-8 sanitization didn't help: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
-                        }
+                if let sanitizedData = data.utf8Repaired {
+                    do {
+                        NSLog("PlexServerClient: Retrying decode after UTF-8 sanitization (replaced invalid chars with ?)")
+                        return try JSONDecoder().decode(T.self, from: sanitizedData)
+                    } catch {
+                        NSLog("PlexServerClient: UTF-8 sanitization didn't help: %@", error.localizedDescription.redactingSensitiveURLQueryItems)
                     }
                 }
                 

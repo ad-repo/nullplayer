@@ -128,7 +128,7 @@ class SubsonicServerClient {
             
             // Parse the response
             let decoder = JSONDecoder()
-            let subsonicResponse = try decoder.decode(SubsonicResponse<T>.self, from: data)
+            let subsonicResponse = try decoder.decode(SubsonicResponse<T>.self, from: data.utf8Repaired ?? data)
             
             // Check for API errors
             if let error = subsonicResponse.subsonicResponse.error {

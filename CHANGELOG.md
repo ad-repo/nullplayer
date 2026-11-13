@@ -125,6 +125,10 @@
   Classic, Original, Windows Media Player skins and the video window, as Modern skins already did —
   instead of a crosshair (#741). The library browser's corners and edges now show their resize
   cursor at all, and a Windows Media Player skin's own cursors (such as Compact's size grip) appear.
+- **Plex search no longer fails with "The data couldn't be read because it isn't in the correct
+  format."** A search whose results included a track with a non-UTF-8 tag (such as a Latin-1
+  "Mötley Crüe") failed outright; the bad characters now show as `?` and the search works. Subsonic,
+  Jellyfin and Emby responses get the same protection.
 
 ### Visualizations
 
