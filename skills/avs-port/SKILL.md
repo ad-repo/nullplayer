@@ -20,6 +20,7 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 |------|------|
 | `Sources/CAvsCore/upstream/` | Upstream `avs/` subset, edits marked `NullPlayer:` (see *Patches*). `vis_avs/` is the library (`avs.h`, `avs_editor.h`, effects `e_*`, `instance`, `render_context`…); `3rdparty/` is md_fft, nlohmann json, stb_image, pevents and ns-eel. `LICENSE.TXT` is upstream's. |
 | `Sources/CAvsCore/upstream_port/platform_darwin.cpp` | Port of upstream's `platform_linux.c`: timers (`CLOCK_UPTIME_RAW`), threads, pevents locks and events, `mem_mark_rwx`. C++ because a C translation unit with `-fmodules` sees Mach's `thread_create` and clashes with upstream's. |
+| `Sources/CAvsCore/upstream_port/texer2_portable.{h,cpp}`, `convolution_portable.{h,cpp}` | C ports of Texer II's MMX loops and of the code Convolution's x86 JIT emits, for everything but i386 (see *Patches*). |
 | `Sources/CAvsCore/upstream_port/e_text.{h,cpp}` | The Text effect (legacy id 28), which upstream's library does not build: config, legacy load/save and the per-frame word, beat and placement logic. It keeps the saved `CHOOSEFONTA`/`LOGFONTA` blobs and patches only the changed font fields on save. `$(regNN[:fmt])` reads the EEL global registers; `$(title)` is empty and `$(playpos)`/`$(playlen)` read 0:00, as Winamp with no song. |
 | `Sources/CAvsCore/upstream_port/text_coretext.{h,cpp}` | Text's font measuring and drawing on CoreText (a `CGBitmapContext` in the framebuffer's BGRX layout, Windows-1252 strings). A separate translation unit with a libavs-free header, because CoreText's Mach headers clash with `platform.h`'s typedefs. |
 | `Sources/CAvsCore/upstream_port/audio_in_darwin.cpp` | Stubs for upstream's audio-input API. NullPlayer feeds audio with `avs_audio_set` (AVS_AUDIO_EXTERNAL). |
@@ -73,9 +74,9 @@ Every edit is marked `NullPlayer:` in the source. The list:
 - Pointer arithmetic moved from `uint32_t` to `uintptr_t`:
   - `e_videodelay.cpp` and `e_multidelay.cpp`, including the `l` and `d` locals.
   - `e_effectlist.cpp`: `(int)(intptr_t)parm`.
-- **Texer II** (`e_texer2.cpp`): `DrawParticle`'s 32-bit MMX asm stays on i386; elsewhere byte-exact C ports draw the particle (`t2_draw_scaled` with 8-bit bilinear fractions, `t2_draw_unscaled` with the colorize/multiply case, `t2_blend` for all ten blend modes). They keep the asm's quirks: the min/max select compares RGB unsigned and the fourth byte signed, and the adjustable blend rounds differently scaled and unscaled. `e_texer2_macros.h` uses `lrint` in place of its GCC asm `RoundToInt`.
-- **Convolution Filter** (`e_convolution.cpp`): the 32-bit x86 JIT stays on i386; elsewhere `convolve_portable` does what the generated code does — 16-bit lanes, wrapping sums when a side's weights sum under 256 and saturating otherwise, edge rows and columns clamped as the JIT's loads were, the second pass's rotated taps, in-place filtering when no weight precedes the centre. A diff from Winamp here is a port defect.
-- **Legacy APE aliases** (`effect_library.cpp`): `Winamp Starfield v1` and `Winamp Mosaic v1` load as the built-in Starfield and Mosaic, whose config records they match byte for byte (36 and 28 bytes). `FunkyFX FyrewurX v1` has no implementation and stays Unknown Effect (M80).
+- **Texer II** (`e_texer2.cpp`): `DrawParticle`'s clipping and texture mapping are shared; where its 32-bit MMX asm starts, anything but i386 calls `texer2_draw_scaled` / `texer2_draw_unscaled` (`upstream_port/texer2_portable.cpp`), byte-exact C ports of the two loop families. They keep the asm's quirks: the min/max select compares RGB unsigned and the fourth byte signed, the two loops order min/max operands and weight the adjustable blend differently, and masked multiply filters the product. One deliberate difference: the asm's scaling loop read one texel past the image at the last column and row; the port clamps to the last texel. `EMMS` is i386 only. `e_texer2_macros.h` uses `lrint` in place of its GCC asm `RoundToInt`.
+- **Convolution Filter** (`e_convolution.cpp`): the 32-bit x86 JIT stays on i386; elsewhere `render` plans a `Convolution_Portable` (`upstream_port/convolution_portable.cpp`) when `need_draw_update` is set, as the JIT is rebuilt, and applies it per frame. It does what the generated code does: 16-bit lanes, wrapping sums when a side's weights sum under 256 and saturating otherwise, edge rows and columns clamped as the JIT's loads were, the second pass's rotated taps, in-place filtering when no weight precedes the centre. A diff from Winamp here is a port defect.
+- **Legacy APE aliases** (`effect_library.cpp`): `Winamp Starfield v1` and `Winamp Mosaic v1` load as the built-in Starfield and Mosaic, whose config records they match byte for byte (36 and 28 bytes). `FunkyFX FyrewurX v1` has no implementation and stays Unknown Effect (M91).
 - **`E_Root::swap`** (`e_root.h`): `Effect::swap` moved the children but not the config, so a loaded preset kept the previous preset's Clear flag and metadata. `E_Root` swaps its config too.
 - **Text** is added to the library (`MAKE_EFFECT_LIB_ENTRY(Text)`), from `upstream_port/`.
 - `e_blitterfeedback.cpp`: the stale `BLEND4` is renamed to `blend_bilinear_2x2`.
@@ -195,7 +196,7 @@ The read-only arrays are effect output and are not shown.
 
 ## Gaps (tasks/MISC_TASKS.md)
 
-- M80: FyrewurX (`justin - fireworks kaliadascope mk 2`, `justin - steve likes it`) has no implementation.
+- M91: FyrewurX (`justin - fireworks kaliadascope mk 2`, `justin - steve likes it`) has no implementation.
 - M82: no x86_64 app build.
 - M84: preset folders are plain paths.
 

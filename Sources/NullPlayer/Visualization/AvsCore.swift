@@ -17,6 +17,9 @@ final class AvsCore {
     private let handle: AVS_Handle
     private var beats = AvsBeatDetector()
     private var tempo = AvsBpmRefiner()
+    /// Whether the last frame ran `tempo`: it starts over when advanced detection is turned
+    /// back on, instead of predicting from the beats it saw before it was turned off.
+    private var refining = false
     /// libavs only accepts audio whose end time moves forward, so the frames fed so far
     /// stand in for the tap's clock (realtime mode always renders the newest audio anyway).
     private var audioEndSample: Int64 = 0
@@ -43,9 +46,11 @@ final class AvsCore {
     }
 
     /// Feeds the newest tap audio, then renders one realtime frame into `pixels` (RGB0,
-    /// `width` a multiple of 4, `height` a multiple of 2).
+    /// `width` a multiple of 4, `height` a multiple of 2). `advancedBeats` runs the detector's
+    /// beats through `AvsBpmRefiner`.
     @discardableResult
-    func renderFrame(into pixels: UnsafeMutablePointer<UInt32>, width: Int, height: Int) -> Bool {
+    func renderFrame(into pixels: UnsafeMutablePointer<UInt32>, width: Int, height: Int,
+                     advancedBeats: Bool = false) -> Bool {
         withHandle { handle in
             var isBeat = false
             if let buffer = audio.take() {
@@ -59,9 +64,12 @@ final class AvsCore {
                     }
                 }
             }
-            if AvsPresets.advancedBeatDetection {
-                isBeat = tempo.refine(isBeat: isBeat, now: Self.milliseconds())
+            if advancedBeats {
+                let now = Self.milliseconds()
+                if !refining { tempo.reset(now: now) }
+                isBeat = tempo.refine(isBeat: isBeat, now: now)
             }
+            refining = advancedBeats
             return avs_render_frame(handle, pixels, width, height, -1, isBeat, AVS_PIXEL_RGB0_8)
         }
     }

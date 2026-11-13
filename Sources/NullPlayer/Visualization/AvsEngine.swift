@@ -67,7 +67,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
             audio.store(AvsAudioSlot.Buffer(left: left, right: right, sampleRate: rate))
         }
         songObserver = NotificationCenter.default.addObserver(
-            forName: .audioTrackDidChange, object: nil, queue: nil
+            forName: .audioTrackDidChange, object: nil, queue: .main
         ) { [weak core] _ in core?.resetTempo() }
         // Not yet shared with main, so the list is written here: a host may apply a preset number
         // as soon as the engine exists. Loading the saved preset needs no notification or save.
@@ -89,18 +89,22 @@ final class AvsEngine: NSObject, VisualizationEngine {
     /// Hosts release an engine through `cleanup()` with their context current. The last
     /// reference can go on any thread, so this only drops the observer and never touches GL.
     deinit {
-        if let audioObserver { NotificationCenter.default.removeObserver(audioObserver) }
-        if let songObserver { NotificationCenter.default.removeObserver(songObserver) }
+        removeObservers()
+    }
+
+    private func removeObservers() {
+        for observer in [audioObserver, songObserver].compactMap({ $0 }) {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        audioObserver = nil
+        songObserver = nil
     }
 
     /// Called on the render thread with the GL context current.
     func cleanup() {
         guard isAvailable else { return }
         isAvailable = false
-        if let audioObserver { NotificationCenter.default.removeObserver(audioObserver) }
-        if let songObserver { NotificationCenter.default.removeObserver(songObserver) }
-        audioObserver = nil
-        songObserver = nil
+        removeObservers()
         let id = ObjectIdentifier(self)
         DispatchQueue.main.async {
             WindowManager.shared.audioEngine.removeFullStereoConsumer(Self.audioConsumerID)
@@ -128,7 +132,8 @@ final class AvsEngine: NSObject, VisualizationEngine {
         guard width > 0, height > 0 else { return }
         if pixels.count != width * height { pixels = [UInt32](repeating: 0, count: width * height) }
         guard pixels.withUnsafeMutableBufferPointer({
-            core.renderFrame(into: $0.baseAddress!, width: width, height: height)
+            core.renderFrame(into: $0.baseAddress!, width: width, height: height,
+                             advancedBeats: AvsPresets.advancedBeatDetection)
         }) else { return }
 
         // RGB0 (0x00RRGGBB little-endian) is BGRA in memory; RGB8 storage ignores the zero alpha.

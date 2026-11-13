@@ -71,7 +71,12 @@ E_Text::E_Text(const E_Text& other)
       current_word(other.current_word),
       frames(other.frames),
       beat_frames(other.beat_frames),
-      odd_even(other.odd_even) {
+      odd_even(other.odd_even),
+      random_placed(other.random_placed),
+      random_x(other.random_x),
+      random_y(other.random_y),
+      clip_color(other.clip_color) {
+    // The drawn-word cache (buffer, drawn_key) starts empty: the clone redraws on its first frame.
     memcpy(this->choosefont, other.choosefont, sizeof(this->choosefont));
     memcpy(this->logfont, other.logfont, sizeof(this->logfont));
 }
