@@ -197,7 +197,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
                 guard let self else { return }
                 self.presets = found
                 self.presetIndex = nil
-                if let index = Self.savedIndex(in: found) { self.selectPreset(at: index) }
+                if let index = Self.savedIndex(in: found) { self.selectPreset(at: index, hardCut: false) }
             }
         }
     }
@@ -214,7 +214,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
         presets.indices.contains(index) ? presets[index].deletingPathExtension().lastPathComponent : ""
     }
 
-    func selectPreset(at index: Int, hardCut: Bool = false) {
+    func selectPreset(at index: Int, hardCut: Bool) {
         dispatchPrecondition(condition: .onQueue(.main))
         guard presets.indices.contains(index), let core else { return }
         presetIndex = index
@@ -227,15 +227,15 @@ final class AvsEngine: NSObject, VisualizationEngine {
         }
     }
 
-    func stepPreset(by offset: Int, hardCut: Bool = false) {
+    func stepPreset(forward: Bool, hardCut: Bool) {
         guard !presets.isEmpty else { return }
-        selectPreset(at: ((presetIndex ?? -1) + offset + presets.count) % presets.count)
+        selectPreset(at: ((presetIndex ?? -1) + (forward ? 1 : presets.count - 1)) % presets.count, hardCut: hardCut)
     }
 
-    func randomPreset(hardCut: Bool = false) {
+    func randomPreset(hardCut: Bool) {
         guard presets.count > 1 else { return }
         var index = presetIndex ?? 0
         while index == presetIndex { index = Int.random(in: presets.indices) }
-        selectPreset(at: index)
+        selectPreset(at: index, hardCut: hardCut)
     }
 }

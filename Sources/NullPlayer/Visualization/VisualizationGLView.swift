@@ -101,10 +101,6 @@ class VisualizationGLView: NSOpenGLView {
     /// Idle beat sensitivity (used when audio is not playing for calmer visualization)
     private let idleBeatSensitivity: Float = 0.2
 
-    /// Cached Geiss configuration loaded from UserDefaults.
-    /// Applied to GeissEngine immediately after construction (before first render).
-    private var geissConfigCache = VisualizationGLView.loadGeissConfigFromDefaults()
-
     /// Pending NSOpenGLView surface update (window moved/resized).
     /// Set on main thread by AppKit via update(); cleared on render thread after openGLContext?.update().
     /// nonisolated(unsafe): Bool write/read is word-aligned; worst case is a one-frame-late update.
@@ -416,7 +412,7 @@ class VisualizationGLView: NSOpenGLView {
             if geiss.isAvailable {
                 NSLog("VisualizationGLView: Geiss engine initialized")
                 // Apply persisted configuration before first render.
-                geiss.setConfig(geissConfigCache)
+                geiss.setConfig(GeissEngine.savedConfig)
                 return geiss
             } else {
                 NSLog("VisualizationGLView: Geiss engine not available")
@@ -1252,7 +1248,7 @@ class VisualizationGLView: NSOpenGLView {
     // MARK: - ProjectM Preset Navigation (Backward Compatibility)
 
     /// Number of available presets (ProjectM only)
-    var presetCount: Int {
+    var projectMPresetCount: Int {
         engineLock.lock()
         defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
@@ -1260,7 +1256,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Index of currently selected preset (ProjectM only)
-    var currentPresetIndex: Int {
+    var projectMPresetIndex: Int {
         engineLock.lock()
         defer { engineLock.unlock() }
         guard let pm = engine as? ProjectMWrapper else { return 0 }
@@ -1285,32 +1281,11 @@ class VisualizationGLView: NSOpenGLView {
         }
     }
 
-    /// Select next preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func nextPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.nextPreset(hardCut: hardCut)
-    }
-
-    /// Select previous preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func previousPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.previousPreset(hardCut: hardCut)
-    }
-
-    /// Select a random preset (ProjectM only)
-    /// - Parameter hardCut: If true, switch immediately without blending
-    func randomPreset(hardCut: Bool = false) {
-        guard let pm = engine as? ProjectMWrapper else { return }
-        pm.randomPreset(hardCut: hardCut)
-    }
-
     /// Select a preset by index (ProjectM only)
     /// - Parameters:
     ///   - index: The preset index to select
     ///   - hardCut: If true, switch immediately without blending
-    func selectPreset(at index: Int, hardCut: Bool = false) {
+    func selectProjectMPreset(at index: Int, hardCut: Bool = false) {
         guard let pm = engine as? ProjectMWrapper else { return }
         pm.selectPreset(at: index, hardCut: hardCut)
     }
@@ -1331,7 +1306,7 @@ class VisualizationGLView: NSOpenGLView {
     }
 
     /// Get preset name at index (ProjectM only)
-    func presetName(at index: Int) -> String {
+    func projectMPresetName(at index: Int) -> String {
         guard let pm = engine as? ProjectMWrapper else { return "" }
         return pm.presetName(at: index)
     }
@@ -1410,107 +1385,5 @@ class VisualizationGLView: NSOpenGLView {
     var presetsInfo: (bundledCount: Int, customCount: Int, customPath: String?) {
         guard let pm = engine as? ProjectMWrapper else { return (0, 0, nil) }
         return pm.presetsInfo
-    }
-
-    // MARK: - Geiss helpers (used by GeissMenuBuilder)
-
-    func randomizeGeissPalette() {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let geiss = engine as? GeissEngine else { return }
-        geiss.randomizePalette()
-    }
-
-    // MARK: - Tripex helpers (used by TripexMenuBuilder)
-
-    var tripexIntensityScale: Float {
-        get {
-            engineLock.lock()
-            defer { engineLock.unlock() }
-            guard let t = engine as? TripexEngine else { return 1.0 }
-            return t.intensityScale
-        }
-        set {
-            withTripex { $0.intensityScale = newValue }
-        }
-    }
-
-    func reconfigureTripex()    { withTripex { $0.reconfigure() } }
-    func toggleTripexAudioInfo(){ withTripex { $0.toggleAudioInfo() } }
-    func toggleTripexHelp()     { withTripex { $0.toggleHelp() } }
-
-    private func withTripex(_ body: (TripexEngine) -> Void) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        guard let t = engine as? TripexEngine else { return }
-        body(t)
-    }
-
-    // MARK: - Geiss Configuration (UserDefaults persistence)
-
-    /// `modeLocked` is always on: the preset cycler, not Geiss's own auto-switch, changes its mode.
-    private static func loadGeissConfigFromDefaults() -> GeissEngine.Config {
-        var cfg = GeissEngine.Config(
-            sensitivity: 0.20,
-            gamma: 10,
-            beatDetection: true,
-            syncColorToSound: false,
-            slideShift: true,
-            modeLocked: true,
-            paletteLocked: false,
-            autoSwitchSeconds: 15,
-            visMode: 0
-        )
-
-        if let val = UserDefaults.standard.object(forKey: "geiss.sensitivity") as? NSNumber {
-            cfg.sensitivity = val.floatValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.gamma") as? NSNumber {
-            cfg.gamma = val.intValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.beatDetection") as? NSNumber {
-            cfg.beatDetection = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.syncColorToSound") as? NSNumber {
-            cfg.syncColorToSound = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.slideShift") as? NSNumber {
-            cfg.slideShift = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.paletteLocked") as? NSNumber {
-            cfg.paletteLocked = val.boolValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.autoSwitchSeconds") as? NSNumber {
-            cfg.autoSwitchSeconds = val.intValue
-        }
-        if let val = UserDefaults.standard.object(forKey: "geiss.visMode") as? NSNumber {
-            cfg.visMode = val.intValue
-        }
-
-        return cfg
-    }
-
-    func setGeissConfig(_ cfg: GeissEngine.Config) {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        geissConfigCache = cfg
-        UserDefaults.standard.set(cfg.sensitivity, forKey: "geiss.sensitivity")
-        UserDefaults.standard.set(cfg.gamma, forKey: "geiss.gamma")
-        UserDefaults.standard.set(cfg.beatDetection, forKey: "geiss.beatDetection")
-        UserDefaults.standard.set(cfg.syncColorToSound, forKey: "geiss.syncColorToSound")
-        UserDefaults.standard.set(cfg.slideShift, forKey: "geiss.slideShift")
-        UserDefaults.standard.set(cfg.paletteLocked, forKey: "geiss.paletteLocked")
-        UserDefaults.standard.set(cfg.autoSwitchSeconds, forKey: "geiss.autoSwitchSeconds")
-        UserDefaults.standard.set(cfg.visMode, forKey: "geiss.visMode")
-
-        if let geiss = engine as? GeissEngine {
-            geiss.setConfig(cfg)
-        }
-    }
-
-    func getGeissConfig() -> GeissEngine.Config {
-        engineLock.lock()
-        defer { engineLock.unlock() }
-        return (engine as? GeissEngine)?.config ?? geissConfigCache
     }
 }

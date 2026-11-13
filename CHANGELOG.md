@@ -168,6 +168,11 @@
 - **A Winamp Modern skin's next / previous visualization buttons step every engine's presets** in
   the Visualizations window; they only stepped ProjectM's, and did nothing on Geiss, Tripex, AVS,
   Goom, Corona or Smear.
+- **Geiss's Slide Shift setting stays as you set it.** Geiss turns slide shift on or off by itself
+  each time it changes mode, and that overwrote the setting, so the menu tick flipped on its own
+  and changing any other Geiss setting saved whatever it happened to be.
+- **Geiss's Gamma menu lists its default, 1.10×,** so the current value is ticked from the start;
+  nothing was ticked until you picked one.
 
 ### Classic skins
 

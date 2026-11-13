@@ -33,8 +33,7 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     // MARK: - Preset Navigation
     
     /// Step the running engine's preset (`VisualizationGLView+Presets`), whatever the engine
-    func nextPreset(hardCut: Bool)
-    func previousPreset(hardCut: Bool)
+    func stepPreset(by delta: Int)
     
     /// Select preset at specific index
     func selectPreset(at index: Int, hardCut: Bool)
@@ -42,9 +41,6 @@ protocol ProjectMWindowProviding: ModeDependentWindow {
     /// Restore a previously-active preset index after a window rebuild, deferring until the
     /// engine is ready so the live selection survives a UI-system switch.
     func restorePresetSelection(index: Int)
-    
-    /// A random preset of the running engine
-    func randomPreset(hardCut: Bool)
     
     /// Lock or unlock the current preset
     var isPresetLocked: Bool { get set }

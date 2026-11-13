@@ -4,7 +4,10 @@ import AppKit
 /// targets, so the protocol is `@objc`: the builder makes its selectors against *this* type, which is
 /// what lets one menu serve unrelated views. The presets and cycle every engine shares target the
 /// engine view itself (`VisualizationGLView+Presets`), so no host repeats them.
-@objc(VisualizationMenuTarget) protocol VisualizationMenuTarget: GeissMenuTarget, TripexMenuTarget {
+@objc(VisualizationMenuTarget) protocol VisualizationMenuTarget: AnyObject {
+    /// The engine view the menu reads and acts on; nil while the host shows no engine.
+    var visualizationGLView: VisualizationGLView? { get }
+
     func setCurrentPresetAsDefault(_ sender: NSMenuItem?)
     func setCurrentPresetRatingFromMenu(_ sender: NSMenuItem)
     func toggleCurrentPresetFavorite(_ sender: NSMenuItem?)
@@ -68,7 +71,7 @@ enum VisualizationContextMenu {
             menu.addItem(.separator())
             let extrasStart = menu.numberOfItems
             if let rated { addProjectMRatings(to: menu, target: target, glView: glView, rated: rated) }
-            glView.currentEngine?.addMenuItems(to: menu, target: target)
+            glView.currentEngine?.addMenuItems(to: menu)
             if menu.numberOfItems > extrasStart { menu.addItem(.separator()) }
         }
 
@@ -226,7 +229,7 @@ enum VisualizationContextMenu {
         let ratings: [Int]
 
         init(glView: VisualizationGLView) {
-            paths = (0..<glView.presetCount).map { (glView.presetPath(at: $0) as NSString).standardizingPath }
+            paths = (0..<glView.projectMPresetCount).map { (glView.presetPath(at: $0) as NSString).standardizingPath }
             let byPath = ProjectMPresetRatingsStore.shared.ratings(forPresetPaths: paths)
             ratings = paths.map { byPath[$0] ?? 0 }
         }
@@ -275,7 +278,7 @@ enum VisualizationContextMenu {
         if !favoritePaths.isEmpty {
             favoritesMenu.addItem(NSMenuItem.separator())
             for (i, path) in rated.paths.enumerated() where favoritePaths.contains(path) {
-                let title = "\(glView.presetName(at: i)) [\(starString(for: rated.ratings[i]))]"
+                let title = "\(glView.projectMPresetName(at: i)) [\(starString(for: rated.ratings[i]))]"
                 let item = NSMenuItem(title: title, action: #selector(VisualizationMenuTarget.selectFavoritePresetFromMenu(_:)), keyEquivalent: "")
                 item.target = target
                 item.representedObject = path

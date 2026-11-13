@@ -28,7 +28,7 @@ extension VisualizationGLView {
     /// only ProjectM, the one engine that blends.
     func stepEnginePreset(by delta: Int, hardCut: Bool = false) {
         guard delta != 0 else { return }
-        currentEngine?.stepPreset(by: delta > 0 ? 1 : -1, hardCut: hardCut)
+        currentEngine?.stepPreset(forward: delta > 0, hardCut: hardCut)
         enginePresetDidChange?()
     }
 

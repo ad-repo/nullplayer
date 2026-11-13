@@ -81,13 +81,13 @@ extern "C" void TripexCore_pushPCM(TripexCoreHandle* h, const int16_t* samples, 
     if (h->audio) h->audio->Push((const int16*)samples, count);
 }
 
-extern "C" int TripexCore_renderFrame(TripexCoreHandle* h) {
-    if (!h || !h->tripex || !h->audio) return -1;
+extern "C" TripexFrameResult TripexCore_renderFrame(TripexCoreHandle* h) {
+    if (!h || !h->tripex || !h->audio) return TRIPEX_FRAME_NO_CORE;
     std::lock_guard<std::mutex> lk(h->lock);
     Error* err = h->tripex->Render(*h->audio);
-    if (err) { setError(h, err); return 1; }
+    if (err) { setError(h, err); return TRIPEX_FRAME_ERROR; }
     h->last_error.clear();
-    return h->tripex->PortFrameSkipped() ? 2 : 0;
+    return h->tripex->PortFrameSkipped() ? TRIPEX_FRAME_SKIPPED : TRIPEX_FRAME_DRAWN;
 }
 
 extern "C" void TripexCore_prevEffect(TripexCoreHandle* h) {

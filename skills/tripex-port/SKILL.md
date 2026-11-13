@@ -1,6 +1,6 @@
 ---
 name: tripex-port
-description: Implementation reference for NullPlayer's Tripex visualization engine — the MIT-licensed port of ben-marsh/tripex (Winamp-era D3D9 3D visualizer, ~25 effects) onto macOS as a ProjectM-peer engine. Covers the CTripexCore C ABI, upstream-vs-port file split, OpenGL 3.2 renderer subclass, audio ring buffer, threading model, persistence, and the architectural deviations from upstream. Use when modifying anything under Sources/CTripexCore/, TripexEngine.swift, TripexMenuBuilder.swift, the Tripex factory branch in VisualizationGLView, or the engine-conditional Tripex menu in ModernProjectMView.
+description: Implementation reference for NullPlayer's Tripex visualization engine — the MIT-licensed port of ben-marsh/tripex (Winamp-era D3D9 3D visualizer, ~25 effects) onto macOS as a ProjectM-peer engine. Covers the CTripexCore C ABI, upstream-vs-port file split, OpenGL 3.2 renderer subclass, audio ring buffer, threading model, persistence, and the architectural deviations from upstream. Use when modifying anything under Sources/CTripexCore/, TripexEngine.swift, TripexEngine+Menu.swift, the Tripex factory branch in VisualizationGLView, or the engine-conditional Tripex menu in ModernProjectMView.
 ---
 
 # Tripex Port Guide
@@ -48,7 +48,7 @@ Exceptions are present in upstream (`Error.cpp` throws); clang's default `-fexce
 
 - **Audio thread** (NullPlayer's audio pump tap) → `TripexEngine.addPCMMono(_:)` → `TripexCore_pushPCM` → `HostAudioSource::Push` → ring buffer write under `HostAudioSource::mutex_`.
 - **Render thread** (CVDisplayLink) → `TripexEngine.renderFrame()` → `TripexCore_renderFrame` → `Tripex::Render(*audio)` → effect calculations + `AudioSource::Read` (ring buffer read under the same mutex).
-- **Main thread** (right-click menu) → `TripexEngine.nextEffect()` / `selectEffect(at:)` / etc. → `TripexCore_nextEffect` etc.
+- **Main thread** (right-click menu, keys) → `TripexEngine.stepPreset` / `selectPreset` / `randomPreset` and the menu actions in `TripexEngine+Menu.swift` → `TripexCore_nextEffect` etc.
 
 Two mutexes are at play:
 1. `TripexCoreHandle::lock` serializes every public ABI entry inside `TripexCore.cpp`. Audio push and render frame are NEVER executed concurrently — `pushPCM` holds the lock while writing to the ring buffer; `renderFrame` holds it for the full Tripex frame.
@@ -157,15 +157,15 @@ Auto-Cycle / Auto-Random / Cycle Interval are the shared block every engine gets
 `createEngine` builds it, so the shared `VisualizationPresetCycler` is the only thing that changes
 its effect.
 
-`TripexMenuBuilder.addTripexConfigMenuItems(to:target:visualizationView:)` adds only Tripex's own
-items below that block:
+`TripexEngine.addMenuItems(to:)` (`TripexEngine+Menu.swift`) adds only Tripex's own items below
+that block:
 
 - Randomize Effect Settings.
 - Intensity submenu (`0.25x` through `4.0x`).
 - Show Audio Info / Show Help Overlay (toggle actions).
 
-`TripexMenuTarget` is the @objc protocol every host conforms to, forwarding each action to the
-corresponding `VisualizationGLView.*Tripex*` helper.
+The items target the engine itself, so no host has Tripex actions; the intensity action saves
+`tripex.intensityScale`.
 
 Tripex does not expose native per-effect sliders. The exposed "levers" are
 the native engine-level controls that make sense in NullPlayer: intensity,
@@ -174,7 +174,7 @@ randomize current effect settings, and overlays.
 ## Mode-specific guards (per CLAUDE.md gotcha)
 
 - `isTripexActive = currentEngineType == .tripex` is computed in `ModernProjectMView`'s menu builder. The `addTripexEffectsMenuItems` call is gated on it.
-- Effect navigation is `TripexEngine`'s `VisualizationEngine` preset methods (`selectPreset` / `stepPreset` / `randomPreset`), which save `tripex.lastEffectIndex` themselves. R picks an index and jumps there: `TripexCore_changeEffect` starts a crossfade, which the hold every host sets cancels each frame (`Tripex.cpp` `TXS_HOLD` resets `TXS_IN_FADE`), so it never changed the effect. The remaining Tripex helpers in `VisualizationGLView` (intensity, reconfigure, overlays) early-return via `withTripex` if the active engine is not `TripexEngine`.
+- Effect navigation is `TripexEngine`'s `VisualizationEngine` preset methods (`selectPreset` / `stepPreset` / `randomPreset`), which save `tripex.lastEffectIndex` themselves. R picks an index and jumps there: `TripexCore_changeEffect` starts a crossfade, which the hold every host sets cancels each frame (`Tripex.cpp` `TXS_HOLD` resets `TXS_IN_FADE`), so it never changed the effect. The menu items target the engine they were built from, so a menu left open across an engine switch acts on that (detached) engine, never on the new one.
 
 ## Architectural deviations from upstream
 
@@ -188,10 +188,9 @@ randomize current effect settings, and overlays.
 ## Adding a Tripex configuration menu item
 
 1. Add a getter/setter pair in `TripexCore.h` if the new option requires a real binding (otherwise use `_setOption`/`_getOption` with a key string).
-2. Add a Swift accessor on `TripexEngine` and a forwarding wrapper on `VisualizationGLView` (mutex-guarded by `engineLock`).
-3. Append the menu item in `TripexMenuBuilder.addTripexConfigMenuItems`.
-4. Add the action selector to `TripexMenuTarget` and implement it on `ModernProjectMView`.
-5. If the option is user-persistent, write to UserDefaults in the action handler and read it back in the `.tripex` factory branch of `VisualizationGLView.createEngine`.
+2. Add a Swift accessor on `TripexEngine` (guarded by `coreLock` via `withCore`).
+3. Append the item in `TripexEngine.addMenuItems(to:)` with an `@objc private` action in `TripexEngine+Menu.swift`; it targets the engine, so no host changes.
+4. If the option is user-persistent, write to UserDefaults in that action and read it back in the `.tripex` factory branch of `VisualizationGLView.createEngine`.
 
 ## Common modifications
 

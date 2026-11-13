@@ -9,7 +9,7 @@ import CTripexCore
 /// to interleaved int16 stereo @ 44.1 kHz (Tripex's `AudioSource` contract)
 /// and forward to the ring buffer in `HostAudioSource`. Tripex runs its
 /// own FFT (upstream/Fourier.cpp), so no spectrum is supplied.
-final class TripexEngine: VisualizationEngine {
+final class TripexEngine: NSObject, VisualizationEngine {
 
     // MARK: - VisualizationEngine
 
@@ -34,6 +34,7 @@ final class TripexEngine: VisualizationEngine {
     // MARK: - Init / cleanup
 
     init(width: Int, height: Int) {
+        super.init()
         self.width = max(1, width)
         self.height = max(1, height)
 
@@ -102,8 +103,11 @@ final class TripexEngine: VisualizationEngine {
         // A failed frame draws nothing, so the view keeps the last one: log the core's error once
         // per distinct message rather than every frame.
         let result = TripexCore_renderFrame(core)
-        drewLastFrame = result == 0
-        let error = result == 1 ? TripexCore_lastError(core).map { String(cString: $0) } ?? "?" : ""
+        drewLastFrame = result == TRIPEX_FRAME_DRAWN
+        var error = ""
+        if result == TRIPEX_FRAME_ERROR {
+            error = TripexCore_lastError(core).map { String(cString: $0) } ?? "?"
+        }
         if error != lastRenderError {
             lastRenderError = error
             if !error.isEmpty { NSLog("TripexEngine: frame failed: %@", error) }
@@ -113,7 +117,7 @@ final class TripexEngine: VisualizationEngine {
     private var lastRenderError = ""
     private(set) var drewLastFrame = true
 
-    // MARK: - Effect navigation (used by TripexMenuBuilder in Chunk 7)
+    // MARK: - Effect navigation
 
     var presetCount: Int {
         coreLock.lock()
@@ -160,8 +164,8 @@ final class TripexEngine: VisualizationEngine {
         savePresetIndex()
     }
 
-    func stepPreset(by delta: Int, hardCut: Bool) {
-        withCore { delta > 0 ? TripexCore_nextEffect($0) : TripexCore_prevEffect($0) }
+    func stepPreset(forward: Bool, hardCut: Bool) {
+        withCore { forward ? TripexCore_nextEffect($0) : TripexCore_prevEffect($0) }
         savePresetIndex()
     }
 

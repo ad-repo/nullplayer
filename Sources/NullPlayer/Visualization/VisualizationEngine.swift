@@ -91,14 +91,14 @@ protocol VisualizationEngine: AnyObject {
     var presetIndex: Int? { get }
     func presetName(at index: Int) -> String
     func selectPreset(at index: Int, hardCut: Bool)
-    /// One step forwards (`delta > 0`) or backwards, wrapping.
-    func stepPreset(by delta: Int, hardCut: Bool)
+    /// One preset forwards or backwards, wrapping.
+    func stepPreset(forward: Bool, hardCut: Bool)
     func randomPreset(hardCut: Bool)
 
     /// The engine's own items in the shared menu (`VisualizationContextMenu`): only what no other
-    /// engine has. Default: none. ProjectM's ratings stay in the menu itself, beside the star titles
-    /// they share one ratings read with.
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget)
+    /// engine has, targeting the engine itself so no host repeats them. Default: none. ProjectM's
+    /// ratings stay in the menu itself, beside the star titles they share one ratings read with.
+    func addMenuItems(to menu: NSMenu)
 }
 
 /// Default implementations for optional protocol methods
@@ -113,7 +113,7 @@ extension VisualizationEngine {
 
     var drewLastFrame: Bool { true }
 
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {}
+    func addMenuItems(to menu: NSMenu) {}
 }
 
 /// The canvas a software engine (Geiss, AVS, Corona, Smear) renders for a viewport. Their effects are

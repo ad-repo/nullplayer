@@ -130,7 +130,7 @@ final class GoomEngine: NSObject, VisualizationEngine {
     func presetName(at index: Int) -> String { String(cString: GoomCore_effectName(Int32(index))) }
 
     func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
-    func stepPreset(by offset: Int, hardCut: Bool) { select { ($0 + offset + Self.effectCount) % Self.effectCount } }
+    func stepPreset(forward: Bool, hardCut: Bool) { select { ($0 + (forward ? 1 : Self.effectCount - 1)) % Self.effectCount } }
 
     func randomPreset(hardCut: Bool) {
         select { current in

@@ -100,7 +100,7 @@ extension WinampModernMainView {
             return
         }
         if WindowManager.shared.isProjectMVisible {
-            WindowManager.shared.stepProjectMPreset(by: delta)
+            WindowManager.shared.stepVisualizationPreset(by: delta)
             return
         }
         guard let mode = renderer.visualizationMode else { return }

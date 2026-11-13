@@ -604,8 +604,8 @@ class ProjectMWrapper: VisualizationEngine {
     
     var presetIndex: Int? { presetFiles.isEmpty ? nil : _currentPresetIndex }
 
-    func stepPreset(by delta: Int, hardCut: Bool) {
-        delta > 0 ? nextPreset(hardCut: hardCut) : previousPreset(hardCut: hardCut)
+    func stepPreset(forward: Bool, hardCut: Bool) {
+        forward ? nextPreset(hardCut: hardCut) : previousPreset(hardCut: hardCut)
     }
 
     /// Selects a random preset

@@ -161,7 +161,7 @@ final class CoronaEngine: NSObject, VisualizationEngine {
     func presetName(at index: Int) -> String { String(cString: CoronaCore_paletteName(Int32(index))) }
 
     func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
-    func stepPreset(by offset: Int, hardCut: Bool) { select { ($0 + offset + Self.presetCount) % Self.presetCount } }
+    func stepPreset(forward: Bool, hardCut: Bool) { select { ($0 + (forward ? 1 : Self.presetCount - 1)) % Self.presetCount } }
 
     func randomPreset(hardCut: Bool) {
         select { current in
@@ -185,7 +185,7 @@ final class CoronaEngine: NSObject, VisualizationEngine {
 
     // MARK: - Menu
 
-    func addMenuItems(to menu: NSMenu, target: VisualizationMenuTarget) {
+    func addMenuItems(to menu: NSMenu) {
         let item = NSMenuItem(title: "Blaze", action: #selector(toggleBlazeAction), keyEquivalent: "")
         item.target = self
         item.state = lock.withLock { blaze } ? .on : .off

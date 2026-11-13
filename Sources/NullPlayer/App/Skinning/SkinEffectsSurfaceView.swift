@@ -19,7 +19,7 @@ import AppKit
 /// `onClick` on the rect to cycle their effect and that handler belongs to the scene's own hit
 /// testing, not to this overlay.
 @MainActor
-final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
+final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTarget {
     /// The family's selection: what the surface draws, and whose Cava and vis_classic settings.
     private let selection: SkinEffectSelection
     private var levels: [Float] = []
@@ -709,7 +709,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         selection.select(id)
     }
 
-    /// `VisualizationMenuTarget` / `GeissMenuTarget`: the engine the shared menu acts on. It is nil
+    /// `VisualizationMenuTarget`: the engine the shared menu acts on. It is nil
     /// while the rect is drawing bars or standing aside, and the builder answers its defaults.
     var visualizationGLView: VisualizationGLView? { engineView }
 
@@ -734,7 +734,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     @objc func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               let index = presetIndex(forPath: path) else { return }
-        engineView?.selectPreset(at: index, hardCut: false)
+        engineView?.selectProjectMPreset(at: index, hardCut: false)
     }
 
     /// Never sent: this surface's menu leaves out Visualization Engine ▸ (`showsEnginePicker`),
@@ -755,40 +755,11 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
     @objc func toggleFullscreenAction(_ sender: NSMenuItem?) {}
     @objc func closeWindow(_ sender: NSMenuItem?) {}
 
-    // MARK: - GeissMenuTarget
-
-    @objc func toggleBeatDetection(_ sender: NSMenuItem) { editGeissConfig { $0.beatDetection.toggle() } }
-    @objc func toggleSyncColorToSound(_ sender: NSMenuItem) { editGeissConfig { $0.syncColorToSound.toggle() } }
-    @objc func toggleSlideShift(_ sender: NSMenuItem) { editGeissConfig { $0.slideShift.toggle() } }
-    @objc func togglePaletteLock(_ sender: NSMenuItem) { editGeissConfig { $0.paletteLocked.toggle() } }
-    @objc func setSensitivity(_ sender: NSMenuItem) {
-        editGeissConfig { $0.sensitivity = Float(sender.tag) / 100.0 }
-    }
-    @objc func setGamma(_ sender: NSMenuItem) { editGeissConfig { $0.gamma = sender.tag } }
-    @objc func setVisMode(_ sender: NSMenuItem) { editGeissConfig { $0.visMode = sender.tag } }
-    @objc func randomizePalette(_ sender: NSMenuItem) { engineView?.randomizeGeissPalette() }
-
-    private func editGeissConfig(_ edit: (inout GeissEngine.Config) -> Void) {
-        guard var config = engineView?.getGeissConfig() else { return }
-        edit(&config)
-        engineView?.setGeissConfig(config)
-    }
-
-    // MARK: - TripexMenuTarget
-
-    @objc func reconfigureTripexAction(_ sender: NSMenuItem) { engineView?.reconfigureTripex() }
-    @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem) { engineView?.toggleTripexAudioInfo() }
-    @objc func toggleTripexHelpAction(_ sender: NSMenuItem) { engineView?.toggleTripexHelp() }
-    @objc func setTripexIntensity(_ sender: NSMenuItem) {
-        let value = Float(sender.tag) / 100.0
-        engineView?.tripexIntensityScale = value
-        UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
-    }
     // MARK: - ProjectM ratings
 
     private func currentPresetIdentity() -> (name: String, path: String)? {
         guard let engineView, engineView.isProjectMAvailable else { return nil }
-        let path = engineView.presetPath(at: engineView.currentPresetIndex)
+        let path = engineView.presetPath(at: engineView.projectMPresetIndex)
         guard !path.isEmpty else { return nil }
         return (engineView.currentPresetName, path)
     }
@@ -797,7 +768,7 @@ final class SkinEffectsSurfaceView: NSView, VisualizationMenuTarget {
         guard let engineView else { return nil }
         let wanted = (path as NSString).standardizingPath
         guard !wanted.isEmpty else { return nil }
-        return (0..<engineView.presetCount).first {
+        return (0..<engineView.projectMPresetCount).first {
             (engineView.presetPath(at: $0) as NSString).standardizingPath == wanted
         }
     }

@@ -24,7 +24,7 @@ import AppKit
 final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizationSurface,
                                                   VisualizationMenuTarget {
     private let engineView: VisualizationGLView
-    /// `VisualizationMenuTarget` / `GeissMenuTarget`: the engine the shared menu acts on.
+    /// `VisualizationMenuTarget`: the engine the shared menu acts on.
     var visualizationGLView: VisualizationGLView? { engineView }
     private var pcmObserver: NSObjectProtocol?
     private var spectrumObserver: NSObjectProtocol?
@@ -182,7 +182,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     @objc func selectFavoritePresetFromMenu(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String,
               let index = presetIndex(forPath: path) else { return }
-        engineView.selectPreset(at: index, hardCut: false)
+        engineView.selectProjectMPreset(at: index, hardCut: false)
     }
 
     @objc func switchVisualizationEngine(_ sender: NSMenuItem) {
@@ -208,40 +208,11 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// so every menu stays in agreement about what is open.
     @objc func closeWindow(_ sender: NSMenuItem?) { WindowManager.shared.toggleProjectM() }
 
-    // MARK: - GeissMenuTarget
-
-    @objc func toggleBeatDetection(_ sender: NSMenuItem) { editGeissConfig { $0.beatDetection.toggle() } }
-    @objc func toggleSyncColorToSound(_ sender: NSMenuItem) { editGeissConfig { $0.syncColorToSound.toggle() } }
-    @objc func toggleSlideShift(_ sender: NSMenuItem) { editGeissConfig { $0.slideShift.toggle() } }
-    @objc func togglePaletteLock(_ sender: NSMenuItem) { editGeissConfig { $0.paletteLocked.toggle() } }
-    @objc func setSensitivity(_ sender: NSMenuItem) {
-        editGeissConfig { $0.sensitivity = Float(sender.tag) / 100.0 }
-    }
-    @objc func setGamma(_ sender: NSMenuItem) { editGeissConfig { $0.gamma = sender.tag } }
-    @objc func setVisMode(_ sender: NSMenuItem) { editGeissConfig { $0.visMode = sender.tag } }
-    @objc func randomizePalette(_ sender: NSMenuItem) { engineView.randomizeGeissPalette() }
-
-    private func editGeissConfig(_ edit: (inout GeissEngine.Config) -> Void) {
-        var config = engineView.getGeissConfig()
-        edit(&config)
-        engineView.setGeissConfig(config)
-    }
-
-    // MARK: - TripexMenuTarget
-
-    @objc func reconfigureTripexAction(_ sender: NSMenuItem) { engineView.reconfigureTripex() }
-    @objc func toggleTripexAudioInfoAction(_ sender: NSMenuItem) { engineView.toggleTripexAudioInfo() }
-    @objc func toggleTripexHelpAction(_ sender: NSMenuItem) { engineView.toggleTripexHelp() }
-    @objc func setTripexIntensity(_ sender: NSMenuItem) {
-        let value = Float(sender.tag) / 100.0
-        engineView.tripexIntensityScale = value
-        UserDefaults.standard.set(value, forKey: TripexEngine.DefaultsKey.intensityScale)
-    }
     // MARK: - ProjectM ratings
 
     private func currentPresetIdentity() -> (name: String, path: String)? {
         guard engineView.isProjectMAvailable else { return nil }
-        let path = engineView.presetPath(at: engineView.currentPresetIndex)
+        let path = engineView.presetPath(at: engineView.projectMPresetIndex)
         guard !path.isEmpty else { return nil }
         return (engineView.currentPresetName, path)
     }
@@ -249,7 +220,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     private func presetIndex(forPath path: String) -> Int? {
         let wanted = (path as NSString).standardizingPath
         guard !wanted.isEmpty else { return nil }
-        return (0..<engineView.presetCount).first {
+        return (0..<engineView.projectMPresetCount).first {
             (engineView.presetPath(at: $0) as NSString).standardizingPath == wanted
         }
     }

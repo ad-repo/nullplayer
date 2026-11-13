@@ -177,9 +177,7 @@ final class SmearEngine: NSObject, VisualizationEngine {
         return names.filter { $0.lowercased().hasSuffix(".sms") }.sorted()
     }()
 
-    static var presetCount: Int { moveFiles.count }
-
-    var presetCount: Int { Self.presetCount }
+    var presetCount: Int { Self.moveFiles.count }
 
     func presetName(at index: Int) -> String {
         guard Self.moveFiles.indices.contains(index) else { return "" }
@@ -195,22 +193,22 @@ final class SmearEngine: NSObject, VisualizationEngine {
 
     func selectPreset(at index: Int, hardCut: Bool) { select { _ in index } }
 
-    func stepPreset(by offset: Int, hardCut: Bool) {
-        let count = Self.presetCount
-        select { ((($0 ?? 0) + offset) % count + count) % count }
+    func stepPreset(forward: Bool, hardCut: Bool) {
+        let count = presetCount
+        select { (($0 ?? 0) + (forward ? 1 : count - 1)) % count }
     }
 
     func randomPreset(hardCut: Bool) {
         select { current in
             var index: Int
-            repeat { index = Int.random(in: 0..<Self.presetCount) } while index == current
+            repeat { index = Int.random(in: 0..<self.presetCount) } while index == current
             return index
         }
     }
 
     /// Holds the move `pick` chooses from the held one; the render thread builds it.
     private func select(_ pick: (_ current: Int?) -> Int) {
-        guard Self.presetCount > 1 else { return }
+        guard presetCount > 1 else { return }
         let chosen: String? = lock.withLock {
             let index = pick(Self.moveFiles.firstIndex(of: move))
             guard Self.moveFiles.indices.contains(index) else { return nil }
