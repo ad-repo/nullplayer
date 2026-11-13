@@ -389,14 +389,8 @@ int E_Text::save_legacy(unsigned char* data) {
     pos += TEXT_CHOOSEFONT_SIZE;
     memcpy(data + pos, this->logfont, TEXT_LOGFONT_SIZE);
     pos += TEXT_LOGFONT_SIZE;
-    if (this->config.text.empty()) {
-        put(0);
-    } else {
-        int32_t size = (int32_t)this->config.text.size() + 1;
-        put(size);
-        memcpy(data + pos, this->config.text.c_str(), size);
-        pos += size;
-    }
+    // Bounded like every upstream string save, so a long text cannot overrun the save buffer.
+    pos += string_save_legacy(this->config.text, (char*)data + pos, 0x7fff, /*with_nt*/ true);
     put(this->config.outline);
     put((int32_t)this->config.outline_color);
     put((int32_t)this->config.shift_x);

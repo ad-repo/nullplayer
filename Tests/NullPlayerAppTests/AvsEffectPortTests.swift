@@ -165,6 +165,9 @@ final class AvsEffectPortTests: XCTestCase {
 
 /// Builds a preset in an `AvsCore` through the editor API, addressing effects and parameters by
 /// their names in libavs's metadata.
+/// A required effect is not in the library: the test fails rather than skips.
+struct MissingEffect: Error { let name: String }
+
 struct AvsPresetBuilder {
     let core: AvsCore
 
@@ -186,7 +189,7 @@ struct AvsPresetBuilder {
             }
             return 0
         }
-        guard component != 0 else { throw XCTSkip("no effect named \(effectName)") }
+        guard component != 0 else { throw MissingEffect(name: effectName) }
         return component
     }
 

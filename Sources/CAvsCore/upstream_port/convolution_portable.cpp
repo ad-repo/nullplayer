@@ -27,12 +27,17 @@ inline uint16_t add16(uint16_t a, uint32_t b, bool saturate) {
 }  // namespace
 
 void Convolution_Portable::plan(const Convolution_Config& config) {
+    // A JSON preset can give a shorter kernel and a zero scale: JSON loading skips the
+    // hooks that keep 49 entries and map a zero scale to 1 (check_scale_not_zero).
+    auto value = [&](int i) {
+        return i < (int)config.kernel.size() ? (int32_t)config.kernel[i].value : 0;
+    };
     uint16_t weight[CONVO_KERNEL_SIZE];
     uint32_t possum = 0, negsum = 0;
     int zerostringl = 0;
     bool zerostring = true;
     for (int i = 0; i < CONVO_KERNEL_SIZE; i++) {
-        auto v = (int32_t)config.kernel[i].value;
+        auto v = value(i);
         weight[i] = (uint16_t)(v < 0 ? -v : v);
         if (v < 0) {
             negsum -= v;
@@ -51,7 +56,7 @@ void Convolution_Portable::plan(const Convolution_Config& config) {
     } else {
         possum += bias;
     }
-    this->divisor = (int32_t)config.scale;
+    this->divisor = config.scale == 0 ? 1 : (int32_t)config.scale;
     bool swap = this->divisor < 0;  // a negative scale swaps the sides and divides by -scale
     if (swap) {
         this->divisor = -this->divisor;
@@ -62,7 +67,7 @@ void Convolution_Portable::plan(const Convolution_Config& config) {
         }
     }
     for (int i = 0; i < CONVO_KERNEL_SIZE; i++) {
-        auto v = (int32_t)config.kernel[i].value;
+        auto v = value(i);
         if (v == 0) {
             continue;
         }

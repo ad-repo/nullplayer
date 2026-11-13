@@ -4,7 +4,8 @@ import Foundation
 /// from upstream `vis_avs/bpm.cpp` (BSD-3, Nullsoft), minus the dialog's sliders. It learns
 /// the tempo from the detector's beats, then fires beats on the predicted tempo, filling in
 /// the ones the detector misses and dropping the ones off the beat. Once the tempo has held
-/// with high confidence it sticks until `reset()` (a new song) or a confidence loss.
+/// with high confidence it sticks until `reset()` (a new song), as upstream's does; predicted
+/// beats fire whatever the confidence, which only gates their entry into the history.
 ///
 /// Upstream's defaults are fixed: sticky on, "only use when sticky" off, reset on a new song.
 /// Ticks are milliseconds, as `GetTickCount`; arithmetic keeps upstream's integer and float

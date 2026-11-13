@@ -6,9 +6,17 @@
 #include <cstring>
 
 namespace {
+// The editor and JSON presets give UTF-8; legacy presets hold Windows-1252 bytes, which are
+// rarely valid UTF-8. ponytail: a 1252 string that happens to be valid UTF-8 reads as UTF-8;
+// convert at the legacy load/save boundary if one turns up.
 CFStringRef cf_string(const char* s) {
-    return CFStringCreateWithBytes(
-        nullptr, (const UInt8*)s, (CFIndex)strlen(s), kCFStringEncodingWindowsLatin1, false);
+    auto bytes = (const UInt8*)s;
+    auto length = (CFIndex)strlen(s);
+    CFStringRef utf8 =
+        CFStringCreateWithBytes(nullptr, bytes, length, kCFStringEncodingUTF8, false);
+    return utf8 ? utf8
+                : CFStringCreateWithBytes(
+                      nullptr, bytes, length, kCFStringEncodingWindowsLatin1, false);
 }
 
 CTFontRef make_font(const AvsTextFont& spec) {
