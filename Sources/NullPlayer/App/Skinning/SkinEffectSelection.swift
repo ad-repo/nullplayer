@@ -86,7 +86,8 @@ final class SkinEffectSelection {
         Effect(id: "tripex", title: "Tripex", style: .engine(.tripex)),
         Effect(id: "avs", title: "AVS", style: .engine(.avs)),
         Effect(id: "corona", title: "Corona", style: .engine(.corona)),
-        Effect(id: "smear", title: "Smear", style: .engine(.smear))
+        Effect(id: "smear", title: "Smear", style: .engine(.smear)),
+        Effect(id: "fractal", title: "NullPlayer-Fractal", style: .engine(.fractal))
     ]
 
     private(set) var index: Int

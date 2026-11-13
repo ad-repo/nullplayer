@@ -113,6 +113,8 @@ enum VisualizationPreferences {
             CoronaEngine.paletteKey,
             CoronaEngine.blazeKey,
             SmearEngine.moveKey,
+            FractalEngine.sceneKey,
+            FractalEngine.renderScaleKey,
             "viz.legacyMigrationV1",
             "projectMPCMGain",
             "projectMLowPowerMode",

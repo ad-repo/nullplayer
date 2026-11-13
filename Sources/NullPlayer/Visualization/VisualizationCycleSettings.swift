@@ -28,7 +28,7 @@ enum VisualizationCycleSettings {
         switch engine {
         case .projectM, .avs: return .off
         case .tripex: return .cycle
-        case .geiss, .goom, .corona, .smear: return .random
+        case .geiss, .goom, .corona, .smear, .fractal: return .random
         }
     }
 
@@ -67,6 +67,7 @@ enum VisualizationCycleSettings {
         case .goom: return "goom"
         case .corona: return "corona"
         case .smear: return "smear"
+        case .fractal: return "fractal"
         }
     }
 }

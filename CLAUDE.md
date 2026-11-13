@@ -33,6 +33,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `visualizations`: visualizer router; `main-window-visualization`: inline vis; `spectrum-analyzer-window`: analyzer; `audio-analysis-window`: analysis panes
 - `peppymeter`: analog VU; `cava`: bar spectrum; `flow`: network meter; `gpu-vis-modes`: shaders; `album-art-visualizer`: Art window
 - `projectm-milkdrop`: MilkDrop; `metal-gotchas`: Metal rules
+- `fractal-vis`: NullPlayer-Fractal, the app's own GPU fractal engine
 - `geiss-port`, `tripex-port`, `avs-port`, `goom-port`, `corona-port`, `smear-port`, `vis-classic-guide`: visualization ports and compatibility
 - `app-control`: launching, configuring, driving and measuring the running app; test-data targets
 - `live-ui-testing`: process skill for screen-only defects — instrument first, drive the app yourself, measure what is drawn

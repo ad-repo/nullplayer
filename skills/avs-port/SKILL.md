@@ -26,7 +26,7 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
 | `Sources/CAvsCore/upstream_port/audio_in_darwin.cpp` | Stubs for upstream's audio-input API. NullPlayer feeds audio with `avs_audio_set` (AVS_AUDIO_EXTERNAL). |
 | `Sources/CAvsCore/upstream_port/simd/` | `immintrin.h`, `emmintrin.h`… shims searched before clang's. On arm64 they include sse2neon (v1.8.0, MIT); on x86_64 they `#include_next` the real header. `mmintrin.h` adds the two MMX helpers sse2neon lacks. |
 | `Sources/CAvsCore/include/CAvsCore.h` | The module header: `avs.h` and `avs_editor.h`. |
-| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot, `AvsBeatDetector` and the paced `AvsBeatFeed`s. |
+| `Sources/NullPlayer/Visualization/AvsCore.swift` | One libavs instance behind a lock (`withHandle`), the audio slot. The beat detector and paced feed (`StandardBeatDetector`, `BeatFeed`) live in `BeatFeed.swift`, shared with NullPlayer-Fractal. |
 | `Sources/NullPlayer/Visualization/AvsEngine.swift` | The `VisualizationEngine`: render, GL blit, stereo feed, presets. |
 | `Sources/NullPlayer/Visualization/AvsEngine+Menu.swift` | The engine's section of the shared visualization menu and its actions. |
 | `Sources/NullPlayer/Visualization/AvsPresets.swift` | Preset list (bundled, then the user folder, recursive) and the UserDefaults keys. |
@@ -122,8 +122,8 @@ The full-rate stereo feed is the newest 2048 frames of each tap buffer, and the 
 
 **Beat detection:** libavs's `AVS_BEAT_INTERNAL` is a stub, because upstream left beat detection in the Winamp frontend.
 - The instance runs with `AVS_BEAT_EXTERNAL`.
-- **Pacing:** the selected source fills the core's one `AvsBeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer; the engine's observers check the Beat Detection setting and drop the other source. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. After a switch the feed holds at most its 200 ms cap of the old source's slots.
-- **Standard:** `AvsBeatDetector`, a port of the frontend's standard detector, runs on every 576-sample chunk: a summed 8-bit amplitude, a beat at 34/32 above a decaying peak and above a silence floor. On real music it fires on snares and hi-hats as readily as kicks.
+- **Pacing:** the selected source fills the core's one `BeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer; the engine's observers check the Beat Detection setting and drop the other source. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. After a switch the feed holds at most its 200 ms cap of the old source's slots.
+- **Standard:** `StandardBeatDetector`, a port of the frontend's standard detector, runs on every 576-sample chunk: a summed 8-bit amplitude, a beat at 34/32 above a decaying peak and above a silence floor. On real music it fires on snares and hi-hats as readily as kicks.
 - **Advanced** (right-click ▸ Beat Detection, `avs.advancedBeatDetection`, off by default): aubio's beat tracker, from the app's `BPMDetector` (`audio-system`), one verdict per 512-sample hop. This replaces Winamp's "advanced" `bpm.cpp` refiner: ported, it was fed the standard detector's beats and never settled on a tempo on real music (measured 2026-11-12: 165 → 87 → 136 BPM over 29 s).
 - Many presets only change colour or move on a beat, so a test signal without beats renders black.
 

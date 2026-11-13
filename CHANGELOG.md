@@ -128,6 +128,14 @@
 
 ### Visualizations
 
+- **NullPlayer-Fractal is a visualization engine** (Visualization Engine ▸ NullPlayer-Fractal),
+  NullPlayer's own: slow flights through 3D fractals and zooms into 2D ones, locked to the beat and
+  tempo of the music. Its eleven scenes are its presets, among them Mandelbulb, an endless dive
+  into the Menger sponge, an Apollonian tunnel and Fractal Planet, a drone flyover of an alien
+  world (Auto-Random every 30 seconds by default; right-click to pick one, → / ← / R step through
+  them). **Render Scale** in the same menu trades sharpness for frame rate; Auto keeps the frame
+  rate up. It also plays in a Winamp Modern skin's visualization box, a Windows Media Player
+  skin's effects area and Sonique's visual mode.
 - **Corona is a visualization engine** (Visualization Engine ▸ Corona), the Sonique-era visualizer:
   flames of particles that swirl and leap on the beat over a rippling reflection. Its presets are 31
   palettes, fire, ice, night sky and more, which it fades between (Auto-Random every 30 seconds by

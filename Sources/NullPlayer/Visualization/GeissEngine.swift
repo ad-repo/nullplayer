@@ -331,7 +331,7 @@ final class GeissEngine: NSObject, VisualizationEngine {
         }
         """
 
-        guard let prog = compileProgram(vertex: vertexSrc, fragment: fragmentSrc) else {
+        guard let prog = GLProgram.make(vertex: vertexSrc, fragment: fragmentSrc, label: "GeissEngine") else {
             return false
         }
         program = prog
@@ -399,58 +399,5 @@ final class GeissEngine: NSObject, VisualizationEngine {
         if indexTex != 0 { glDeleteTextures(1, &indexTex); indexTex = 0 }
         if paletteTex != 0 { glDeleteTextures(1, &paletteTex); paletteTex = 0 }
         if program != 0 { glDeleteProgram(program); program = 0 }
-    }
-
-    private func compileShader(type: GLenum, source: String) -> GLuint? {
-        let shader = glCreateShader(type)
-        guard shader != 0 else { return nil }
-        var cString = (source as NSString).utf8String
-        var length = GLint(source.utf8.count)
-        withUnsafePointer(to: &cString) { ptr in
-            ptr.withMemoryRebound(to: UnsafePointer<GLchar>?.self, capacity: 1) { p in
-                glShaderSource(shader, 1, p, &length)
-            }
-        }
-        glCompileShader(shader)
-        var status: GLint = 0
-        glGetShaderiv(shader, GLenum(GL_COMPILE_STATUS), &status)
-        if status == GL_FALSE {
-            var logLen: GLint = 0
-            glGetShaderiv(shader, GLenum(GL_INFO_LOG_LENGTH), &logLen)
-            var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
-            glGetShaderInfoLog(shader, GLsizei(log.count), nil, &log)
-            let msg = String(cString: log)
-            NSLog("GeissEngine: shader compile failed: %@", msg)
-            glDeleteShader(shader)
-            return nil
-        }
-        return shader
-    }
-
-    private func compileProgram(vertex: String, fragment: String) -> GLuint? {
-        guard let vs = compileShader(type: GLenum(GL_VERTEX_SHADER), source: vertex) else { return nil }
-        guard let fs = compileShader(type: GLenum(GL_FRAGMENT_SHADER), source: fragment) else {
-            glDeleteShader(vs)
-            return nil
-        }
-        let prog = glCreateProgram()
-        glAttachShader(prog, vs)
-        glAttachShader(prog, fs)
-        glLinkProgram(prog)
-        glDeleteShader(vs)
-        glDeleteShader(fs)
-        var status: GLint = 0
-        glGetProgramiv(prog, GLenum(GL_LINK_STATUS), &status)
-        if status == GL_FALSE {
-            var logLen: GLint = 0
-            glGetProgramiv(prog, GLenum(GL_INFO_LOG_LENGTH), &logLen)
-            var log = [GLchar](repeating: 0, count: Int(max(logLen, 1)))
-            glGetProgramInfoLog(prog, GLsizei(log.count), nil, &log)
-            let msg = String(cString: log)
-            NSLog("GeissEngine: program link failed: %@", msg)
-            glDeleteProgram(prog)
-            return nil
-        }
-        return prog
     }
 }
