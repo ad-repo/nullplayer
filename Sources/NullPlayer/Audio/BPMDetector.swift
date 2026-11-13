@@ -88,9 +88,10 @@ class BPMDetector {
     /// Process a whole tap buffer, mixed to mono and scaled by `gain`. Called from the audio
     /// tap thread ONLY. aubio treats its input as one continuous signal, so every buffer must
     /// arrive whole and none skipped: a slice of each (the FFT's 2048 of a 4410-frame buffer,
-    /// throttled) squeezed time and broke the tempo.
+    /// throttled) squeezed time and broke the tempo. `postBeats` posts `.audioBeatsUpdated`,
+    /// only wanted while a beat consumer exists.
     func process(channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int,
-                 frameCount: Int, sampleRate: Double, gain: Float = 1) {
+                 frameCount: Int, sampleRate: Double, gain: Float = 1, postBeats: Bool) {
         guard channelCount > 0 else { return }
         if needsReset {
             needsReset = false
@@ -139,7 +140,7 @@ class BPMDetector {
             ringCount -= hop
             
             aubio_tempo_do(tempoObj, inputBuf, outputBuf)
-            beats.append(outputData[0] != 0)  // aubio: non-zero when a beat falls in this hop
+            if postBeats { beats.append(outputData[0] != 0) }  // aubio: non-zero on a beat in this hop
             
             let bpm = aubio_tempo_get_bpm(tempoObj)
             let confidence = aubio_tempo_get_confidence(tempoObj)

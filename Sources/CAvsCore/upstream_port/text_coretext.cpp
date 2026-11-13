@@ -45,13 +45,15 @@ CTFontRef make_font(const AvsTextFont& spec) {
     return font;
 }
 
-// A line in the font, its colour taken from the context's fill. Null on a bad string.
-CTLineRef make_line(const AvsTextFont& spec, const char* text, AvsTextMetrics* metrics) {
+}  // namespace
+
+AvsTextLine::AvsTextLine(const AvsTextFont& spec, const char* text) : antialias_(spec.antialias) {
     CFStringRef string = cf_string(text);
     if (!string) {
-        return nullptr;
+        return;
     }
     CTFontRef font = make_font(spec);
+    // The line's colour comes from the context's fill, so each pass sets its own.
     const void* keys[] = {kCTFontAttributeName, kCTForegroundColorFromContextAttributeName};
     const void* values[] = {font, kCFBooleanTrue};
     CFDictionaryRef attributes = CFDictionaryCreate(nullptr,
@@ -63,36 +65,30 @@ CTLineRef make_line(const AvsTextFont& spec, const char* text, AvsTextMetrics* m
     CFAttributedStringRef attributed = CFAttributedStringCreate(nullptr, string, attributes);
     CTLineRef line = CTLineCreateWithAttributedString(attributed);
     CGFloat ascent = 0, descent = 0;
-    metrics->width = CTLineGetTypographicBounds(line, &ascent, &descent, nullptr);
-    metrics->ascent = ascent;
-    metrics->descent = descent;
+    this->metrics_.width = CTLineGetTypographicBounds(line, &ascent, &descent, nullptr);
+    this->metrics_.ascent = ascent;
+    this->metrics_.descent = descent;
+    this->line_ = line;
     CFRelease(attributed);
     CFRelease(attributes);
     CFRelease(font);
     CFRelease(string);
-    return line;
 }
-}  // namespace
 
-AvsTextMetrics avs_text_measure(const AvsTextFont& font, const char* text) {
-    AvsTextMetrics metrics = {0, 0, 0};
-    if (CTLineRef line = make_line(font, text, &metrics)) {
-        CFRelease(line);
+AvsTextLine::~AvsTextLine() {
+    if (this->line_) {
+        CFRelease(this->line_);
     }
-    return metrics;
 }
 
-void avs_text_draw(uint32_t* buffer,
-                   int w,
-                   int h,
-                   const AvsTextFont& font,
-                   const char* text,
-                   double x,
-                   double top,
-                   uint32_t rgb) {
-    AvsTextMetrics metrics;
-    CTLineRef line = make_line(font, text, &metrics);
-    if (!line) {
+void AvsTextLine::draw(uint32_t* buffer,
+                       int w,
+                       int h,
+                       double x,
+                       double top,
+                       const AvsTextPass* passes,
+                       int pass_count) const {
+    if (!this->line_) {
         return;
     }
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
@@ -106,17 +102,22 @@ void avs_text_draw(uint32_t* buffer,
         space,
         (CGBitmapInfo)kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
     CGColorSpaceRelease(space);
-    if (context) {
-        CGContextSetShouldAntialias(context, font.antialias);
-        CGContextSetShouldSmoothFonts(context, false);
+    if (!context) {
+        return;
+    }
+    CGContextSetShouldAntialias(context, this->antialias_);
+    CGContextSetShouldSmoothFonts(context, false);
+    for (int i = 0; i < pass_count; i++) {
+        uint32_t rgb = passes[i].rgb;
         CGContextSetRGBFillColor(context,
                                  ((rgb >> 16) & 0xFF) / 255.0,
                                  ((rgb >> 8) & 0xFF) / 255.0,
                                  (rgb & 0xFF) / 255.0,
                                  1.0);
-        CGContextSetTextPosition(context, round(x), h - (round(top) + metrics.ascent));
-        CTLineDraw(line, context);
-        CGContextRelease(context);
+        CGContextSetTextPosition(context,
+                                 round(x + passes[i].dx),
+                                 h - (round(top + passes[i].dy) + this->metrics_.ascent));
+        CTLineDraw((CTLineRef)this->line_, context);
     }
-    CFRelease(line);
+    CGContextRelease(context);
 }

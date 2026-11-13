@@ -19,16 +19,36 @@ struct AvsTextMetrics {
     double descent;
 };
 
-// The typographic size of one line of Windows-1252 `text`.
-AvsTextMetrics avs_text_measure(const AvsTextFont& font, const char* text);
+// One copy of the line, offset from its position, in `rgb` (0x00RRGGBB).
+struct AvsTextPass {
+    int dx;
+    int dy;
+    uint32_t rgb;
+};
 
-// Draws `text` into a w*h 0x00RRGGBB buffer (row 0 on top) with the top of its line box at
-// (x, top), in `rgb`.
-void avs_text_draw(uint32_t* buffer,
-                   int w,
-                   int h,
-                   const AvsTextFont& font,
-                   const char* text,
-                   double x,
-                   double top,
-                   uint32_t rgb);
+// One line of Windows-1252 or UTF-8 text in a font, built once to measure and draw.
+class AvsTextLine {
+   public:
+    AvsTextLine(const AvsTextFont& font, const char* text);
+    ~AvsTextLine();
+    AvsTextLine(const AvsTextLine&) = delete;
+    AvsTextLine& operator=(const AvsTextLine&) = delete;
+
+    // The line's typographic size; zero when the text could not be read.
+    const AvsTextMetrics& metrics() const { return this->metrics_; }
+
+    // Draws the line once per pass, in order, into a w*h 0x00RRGGBB buffer (row 0 on top),
+    // with the top of its line box at (x, top).
+    void draw(uint32_t* buffer,
+              int w,
+              int h,
+              double x,
+              double top,
+              const AvsTextPass* passes,
+              int pass_count) const;
+
+   private:
+    const void* line_ = nullptr;  // CTLineRef
+    AvsTextMetrics metrics_ = {0, 0, 0};
+    bool antialias_;
+};

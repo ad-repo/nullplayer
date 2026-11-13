@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <string>
+#include <tuple>
 
 // Win32 CHOOSEFONTA and LOGFONTA as a 32-bit Winamp saved them, kept verbatim so a legacy
 // save round-trips byte for byte.
@@ -90,6 +91,28 @@ struct Text_Info : public Effect_Info {
     EFFECT_INFO_GETTERS;
 };
 
+// Everything the drawn word depends on: the buffer is redrawn when any of it changes.
+struct Text_Draw_Key {
+    std::string word;
+    int w = 0, h = 0;
+    int h_align = 0, v_align = 0, shift_x = 0, shift_y = 0;
+    uint64_t color = 0, outline_color = 0;
+    bool outline = false, shadow = false;
+    int64_t outline_size = 0;
+    std::string font;
+    int64_t font_size = 0;
+    bool bold = false, italic = false;
+    uint8_t quality = 0;  // LOGFONT lfQuality: antialiasing
+    uint32_t clip_color = 0;
+
+    auto tied() const {
+        return std::tie(word, w, h, h_align, v_align, shift_x, shift_y, color, outline_color,
+                        outline, shadow, outline_size, font, font_size, bold, italic, quality,
+                        clip_color);
+    }
+    bool operator==(const Text_Draw_Key& other) const { return tied() == other.tied(); }
+};
+
 class E_Text : public Configurable_Effect<Text_Info, Text_Config> {
    public:
     E_Text(AVS_Instance* avs);
@@ -126,5 +149,5 @@ class E_Text : public Configurable_Effect<Text_Info, Text_Config> {
     int buffer_w = 0;
     int buffer_h = 0;
     uint32_t clip_color = 0;
-    std::string drawn_key;
+    Text_Draw_Key drawn_key;
 };

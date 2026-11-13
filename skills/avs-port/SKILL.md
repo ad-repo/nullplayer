@@ -122,7 +122,7 @@ The full-rate stereo feed is the newest 2048 frames of each tap buffer, and the 
 
 **Beat detection:** libavs's `AVS_BEAT_INTERNAL` is a stub, because upstream left beat detection in the Winamp frontend.
 - The instance runs with `AVS_BEAT_EXTERNAL`.
-- **Pacing:** each source fills an `AvsBeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. Both feeds drain every frame, so switching never releases a backlog.
+- **Pacing:** the selected source fills the core's one `AvsBeatFeed` with one verdict per slot of the music, about 100 ms of slots per tap buffer; the engine's observers check the Beat Detection setting and drop the other source. `renderFrame` takes the slots whose time has come by its clock (`nowMs`, injectable for tests), so a beat lands within a slot of its place in the music, about one tap buffer late. After a switch the feed holds at most its 200 ms cap of the old source's slots.
 - **Standard:** `AvsBeatDetector`, a port of the frontend's standard detector, runs on every 576-sample chunk: a summed 8-bit amplitude, a beat at 34/32 above a decaying peak and above a silence floor. On real music it fires on snares and hi-hats as readily as kicks.
 - **Advanced** (right-click ▸ Beat Detection, `avs.advancedBeatDetection`, off by default): aubio's beat tracker, from the app's `BPMDetector` (`audio-system`), one verdict per 512-sample hop. This replaces Winamp's "advanced" `bpm.cpp` refiner: ported, it was fed the standard detector's beats and never settled on a tempo on real music (measured 2026-11-12: 165 → 87 → 136 BPM over 29 s).
 - Many presets only change colour or move on a beat, so a test signal without beats renders black.
@@ -221,5 +221,5 @@ For anything that only shows on screen (a preset drawing wrong, stutter, a host 
 - **Pick a preset:** set it by path with `defaults write NullPlayer avs.presetPath <path>` before launching.
 - **Isolate the library:** the smoke tests run libavs headless, so a defect that reproduces there is libavs or the port, not the host.
 - **Uninitialised reads:** run the tests with `MallocPreScribble=1 MallocScribble=1`.
-- **Beats:** `AVS_BEAT_TRACE=1` (DEBUG) logs `AVS-BEAT t=<ms> standard=<0|1> tracked=<0|1>` for every frame with a beat from either feed; the intervals show whether a source is regular.
+- **Beats:** `AVS_BEAT_TRACE=1` (DEBUG) logs `AVS-BEAT t=<ms>` for every frame with a beat from the selected source (Beat Detection menu); the intervals show whether it is regular.
 - **Stutter:** time `core.renderFrame` before anything else. A debug build that lost `-O2` renders at about 13 fps.

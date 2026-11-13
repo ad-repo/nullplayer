@@ -642,7 +642,8 @@ class StreamingAudioPlayer {
         // the tap is after the volume, so it is compensated like the spectrum.
         if spectrumNeeded || magnitudesNeeded || beatsNeeded {
             bpmDetector.process(channels: channelData, channelCount: channelCount, frameCount: frameCount,
-                                sampleRate: buffer.format.sampleRate, gain: max(1, volumeCompensation))
+                                sampleRate: buffer.format.sampleRate, gain: max(1, volumeCompensation),
+                                postBeats: beatsNeeded)
         }
         guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 

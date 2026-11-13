@@ -18,10 +18,6 @@ final class AvsCoreSmokeTests: XCTestCase {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
-    /// Presets that may legitimately render black and static for 60 frames of a pulsed tone,
-    /// with the reason.
-    private static let staticAllowList: [String: String] = [:]
-
     /// Presets with a component libavs has no implementation for, which loads as Unknown
     /// Effect and draws nothing. FyrewurX is a third-party APE with no portable source.
     private static let unknownEffectPresets: Set<String> = [
@@ -66,7 +62,7 @@ final class AvsCoreSmokeTests: XCTestCase {
         for url in Self.presets {
             let core = try XCTUnwrap(AvsCore())
             XCTAssertTrue(core.loadPreset(at: url), url.lastPathComponent)
-            if !renderFrames(core, count: 60).moved, Self.staticAllowList[url.lastPathComponent] == nil {
+            if !renderFrames(core, count: 60).moved {
                 XCTFail("\(url.lastPathComponent): black and static for 60 frames; "
                         + "effects: \(core.withHandle(effectNames))")
             }
@@ -195,13 +191,13 @@ final class AvsCoreSmokeTests: XCTestCase {
         return walk(avs_component_root(handle))
     }
 
-    /// One 1024-frame buffer of a tone that is loud for 2 frames in every 10: many presets
-    /// only colour or move on a beat, which AVS's detector finds in energy jumps.
     /// The newest 576 samples as `.audioWaveform576DataUpdated` carries them.
     private static func waveformChunk(_ samples: [Float]) -> [UInt8] {
         samples.suffix(576).map { UInt8(clamping: Int($0 * 127 + 128)) }
     }
 
+    /// One 1024-frame buffer of a tone that is loud for 2 frames in every 10: many presets
+    /// only colour or move on a beat, which AVS's detector finds in energy jumps.
     private static func pulsedTone(frame: Int) -> AvsAudioSlot.Buffer {
         let amplitude: Float = frame % 10 < 2 ? 0.9 : 0.05
         let samples = (0..<1024).map { sinf(Float($0 + frame * 1024) * 0.07) * amplitude }

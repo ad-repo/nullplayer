@@ -7,9 +7,9 @@ import OpenGL.GL3
 /// offscreen one.
 ///
 /// AVS is stereo, so the engine takes the full-rate stereo feed itself rather than the host's
-/// mono `addPCMMono`, plus two beat sources (`AvsBeatFeed`): the 576-sample waveform feed for
-/// the standard detector, and aubio's beats (`.audioBeatsUpdated`) for advanced detection. Its own menu items target the engine (`addMenuItems`), so a host needs
-/// no AVS-specific actions; preset state is main-thread only, and the render thread reaches
+/// mono `addPCMMono`, plus one beat source (`AvsBeatFeed`): the 576-sample waveform feed for
+/// the standard detector, or aubio's beats (`.audioBeatsUpdated`) for advanced detection. Its
+/// own menu items target the engine (`addMenuItems`), so a host needs no AVS-specific actions; preset state is main-thread only, and the render thread reaches
 /// libavs only through `AvsCore`'s lock.
 final class AvsEngine: NSObject, VisualizationEngine {
     private static let audioConsumerID = "avsEngine"
@@ -68,22 +68,26 @@ final class AvsEngine: NSObject, VisualizationEngine {
                   let rate = note.userInfo?["sampleRate"] as? Double, rate > 0 else { return }
             audio.store(AvsAudioSlot.Buffer(left: left, right: right, sampleRate: rate))
         }
-        // Every 576-sample chunk, for the beat detector. Posted on the audio thread.
+        // The two beat sources share one feed; the setting picks which one fills it, so a switch
+        // takes effect on the next tap buffer. Both are posted on the audio thread.
+        // Every 576-sample chunk, for the standard detector.
         waveformObserver = NotificationCenter.default.addObserver(
             forName: .audioWaveform576DataUpdated, object: nil, queue: nil
         ) { [beats = core.beats] note in
-            guard let left = note.userInfo?["left"] as? [UInt8],
+            guard !AvsPresets.advancedBeatDetection,
+                  let left = note.userInfo?["left"] as? [UInt8],
                   let right = note.userInfo?["right"] as? [UInt8],
                   let rate = note.userInfo?["sampleRate"] as? Double else { return }
             beats.store(left: left, right: right, sampleRate: rate)
         }
-        // aubio's beats, for advanced beat detection. Posted on the audio thread.
+        // aubio's beats, for advanced beat detection.
         trackedBeatsObserver = NotificationCenter.default.addObserver(
             forName: .audioBeatsUpdated, object: nil, queue: nil
-        ) { [trackedBeats = core.trackedBeats] note in
-            guard let beats = note.userInfo?["beats"] as? [Bool],
+        ) { [beats = core.beats] note in
+            guard AvsPresets.advancedBeatDetection,
+                  let tracked = note.userInfo?["beats"] as? [Bool],
                   let hopMs = note.userInfo?["hopMs"] as? Double else { return }
-            trackedBeats.store(beats: beats, slotMs: hopMs)
+            beats.store(beats: tracked, slotMs: hopMs)
         }
         // Not yet shared with main, so the list is written here: a host may apply a preset number
         // as soon as the engine exists. Loading the saved preset needs no notification or save.
@@ -153,8 +157,7 @@ final class AvsEngine: NSObject, VisualizationEngine {
         guard width > 0, height > 0 else { return }
         if pixels.count != width * height { pixels = [UInt32](repeating: 0, count: width * height) }
         guard pixels.withUnsafeMutableBufferPointer({
-            core.renderFrame(into: $0.baseAddress!, width: width, height: height,
-                             advancedBeats: AvsPresets.advancedBeatDetection)
+            core.renderFrame(into: $0.baseAddress!, width: width, height: height)
         }) else { return }
 
         // RGB0 (0x00RRGGBB little-endian) is BGRA in memory; RGB8 storage ignores the zero alpha.

@@ -19,15 +19,6 @@
 
 constexpr Parameter Text_Info::parameters[];
 
-#define GET_INT() \
-    (data[pos] | (data[pos + 1] << 8) | (data[pos + 2] << 16) | (data[pos + 3] << 24))
-
-#define PUT_INT(y)                     \
-    data[pos] = (y) & 255;             \
-    data[pos + 1] = ((y) >> 8) & 255;  \
-    data[pos + 2] = ((y) >> 16) & 255; \
-    data[pos + 3] = ((y) >> 24) & 255
-
 namespace {
 // GDI DrawText alignment flags, as the legacy format stores them.
 constexpr int DT_LEFT = 0, DT_CENTER = 1, DT_RIGHT = 2;
@@ -145,29 +136,25 @@ bool E_Text::draw_word(const std::string& word, int w, int h) {
     int v_align = this->random_placed ? DT_TOP : v_align_to_dt(this->config.v_align);
     int shift_x = this->random_placed ? this->random_x : (int)this->config.shift_x;
     int shift_y = this->random_placed ? this->random_y : (int)this->config.shift_y;
-    char key[512];
-    snprintf(key,
-             sizeof(key),
-             "%dx%d %d %d %d %d %06llx %06llx %d %d %lld %s %lld %d %d %d %d|",
-             w,
-             h,
-             h_align,
-             v_align,
-             shift_x,
-             shift_y,
-             (unsigned long long)this->config.color,
-             (unsigned long long)this->config.outline_color,
-             this->config.outline,
-             this->config.shadow,
-             (long long)this->config.outline_size,
-             this->config.font.c_str(),
-             (long long)this->config.font_size,
-             this->config.bold,
-             this->config.italic,
-             (int)this->logfont[26],
-             (int)this->clip_color);
-    std::string full_key = key + word;
-    if (this->buffer && full_key == this->drawn_key) {
+    Text_Draw_Key key = {word,
+                         w,
+                         h,
+                         h_align,
+                         v_align,
+                         shift_x,
+                         shift_y,
+                         this->config.color,
+                         this->config.outline_color,
+                         this->config.outline,
+                         this->config.shadow,
+                         this->config.outline_size,
+                         this->config.font,
+                         this->config.font_size,
+                         this->config.bold,
+                         this->config.italic,
+                         this->logfont[26],
+                         this->clip_color};
+    if (this->buffer && key == this->drawn_key) {
         return true;
     }
     if (!this->buffer || this->buffer_w != w || this->buffer_h != h) {
@@ -179,7 +166,7 @@ bool E_Text::draw_word(const std::string& word, int w, int h) {
         this->buffer_w = w;
         this->buffer_h = h;
     }
-    this->drawn_key = full_key;
+    this->drawn_key = std::move(key);
     for (int i = 0; i < w * h; i++) {
         this->buffer[i] = this->clip_color;
     }
@@ -187,31 +174,33 @@ bool E_Text::draw_word(const std::string& word, int w, int h) {
         return true;
     }
 
-    AvsTextFont font = this->font();
-    AvsTextMetrics line = avs_text_measure(font, word.c_str());
+    AvsTextLine line(this->font(), word.c_str());
+    const AvsTextMetrics& m = line.metrics();
     // DrawText(DT_SINGLELINE | DT_NOCLIP) in the screen rectangle shifted by percent.
     double left = (int)((float)shift_x * (float)w / 100.0F);
     double top = (int)((float)shift_y * (float)h / 100.0F);
-    double height = line.ascent + line.descent;
+    double height = m.ascent + m.descent;
     double x = h_align == DT_LEFT    ? left
-               : h_align == DT_RIGHT ? left + w - line.width
-                                     : left + (w - line.width) / 2;
+               : h_align == DT_RIGHT ? left + w - m.width
+                                     : left + (w - m.width) / 2;
     double y = v_align == DT_TOP      ? top
                : v_align == DT_BOTTOM ? top + h - height
                                       : top + (h - height) / 2;
-    auto draw_at = [&](int dx, int dy, uint64_t color) {
-        avs_text_draw(this->buffer, w, h, font, word.c_str(), x + dx, y + dy, (uint32_t)color);
-    };
+    // The outline ring or the shadow first, then the word over it.
+    AvsTextPass passes[9];
+    int pass_count = 0;
     int s = (int)this->config.outline_size;
+    auto outline_rgb = (uint32_t)this->config.outline_color;
     if (this->config.outline) {
         const int ring[8][2] = {{-1, -1}, {0, -1}, {1, -1}, {1, 0}, {1, 1}, {0, 1}, {-1, 1}, {-1, 0}};
         for (auto& o : ring) {
-            draw_at(o[0] * s, o[1] * s, this->config.outline_color);
+            passes[pass_count++] = {o[0] * s, o[1] * s, outline_rgb};
         }
     } else if (this->config.shadow) {
-        draw_at(s, s, this->config.outline_color);
+        passes[pass_count++] = {s, s, outline_rgb};
     }
-    draw_at(0, 0, this->config.color);
+    passes[pass_count++] = {0, 0, (uint32_t)this->config.color};
+    line.draw(this->buffer, w, h, x, y, passes, pass_count);
     for (int i = 0; i < w * h; i++) {
         this->buffer[i] &= 0xFFFFFF;
     }
@@ -257,9 +246,9 @@ int E_Text::render(char[2][2][576], int is_beat, int* framebuffer, int*, int w, 
         this->random_placed = this->config.random_position && w && h;
         if (this->random_placed) {
             // Keep the word on screen: a random top-left within what it leaves free.
-            AvsTextMetrics line = avs_text_measure(this->font(), shown.c_str());
-            int range_x = (int)(((float)(w - line.width) / (float)w) * 100.0F);
-            int range_y = (int)(((float)(h - (line.ascent + line.descent)) / (float)h) * 100.0F);
+            AvsTextMetrics m = AvsTextLine(this->font(), shown.c_str()).metrics();
+            int range_x = (int)(((float)(w - m.width) / (float)w) * 100.0F);
+            int range_y = (int)(((float)(h - (m.ascent + m.descent)) / (float)h) * 100.0F);
             this->random_x = range_x > 0 ? rand() % range_x : 0;
             this->random_y = range_y > 0 ? rand() % range_y : 0;
         }
@@ -297,7 +286,7 @@ void E_Text::load_legacy(unsigned char* data, int len) {
         if (len - pos < 4) {
             return fallback;
         }
-        int32_t v = GET_INT();
+        int32_t v = get_i32(data + pos);
         pos += 4;
         return v;
     };
@@ -343,7 +332,7 @@ void E_Text::load_legacy(unsigned char* data, int len) {
     this->config.random_word = next(0);
     this->config.shadow = next(0);
     this->random_placed = false;
-    this->drawn_key.clear();
+    this->drawn_key = Text_Draw_Key{};
 }
 
 int E_Text::save_legacy(unsigned char* data) {
@@ -371,7 +360,7 @@ int E_Text::save_legacy(unsigned char* data) {
 
     int pos = 0;
     auto put = [&](int32_t v) {
-        PUT_INT(v);
+        put_i32(data + pos, v);
         pos += 4;
     };
     put(this->enabled);

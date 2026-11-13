@@ -2163,7 +2163,8 @@ class AudioEngine {
         // The BPM readout and beats hear every sample, ahead of the FFT's slice and throttle.
         if spectrumNeeded || magnitudesNeeded || beatsNeeded {
             bpmDetector.process(channels: channelData, channelCount: channelCount,
-                                frameCount: frameCount, sampleRate: bufferSampleRate)
+                                frameCount: frameCount, sampleRate: bufferSampleRate,
+                                postBeats: beatsNeeded)
         }
         guard spectrumNeeded || magnitudesNeeded, frameCount >= fftSize, let fftSetup = fftSetup else { return }
 
