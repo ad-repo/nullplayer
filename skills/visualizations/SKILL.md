@@ -78,22 +78,31 @@ visualization box hosts the user's engine, Goom included); none of them uses it.
 ## Standard keys: one seam
 
 Every window that shows a visualization answers the same keys, defined once in
-`Visualization/VisualizationKeys.swift` (`VisualizationKey`): **⌘↓ / ⌘↑ step the engine** (a
+`Visualization/VisualizationKeys.swift` (`VisualizationKey`): **↓ / ↑ step the engine** (a
 main window's mode, the Spectrum window's mode, the `.wmz` / Sonique effect, Art's effect group) and
-**⌘→ / ⌘← step the preset inside it** (an engine's presets, a mode's style, a vis_classic profile,
+**→ / ← step the preset inside it** (an engine's presets, a mode's style, a vis_classic profile,
 Cava's colour preset or channel mode, an Art effect). ⇧ added is a hard cut where an engine blends.
-Plain arrows stay each window's own: seek and volume on every main window, presets in the
-Visualizations and Spectrum windows, effect and intensity in Art.
+**A window that is only a visualization takes them plain or with ⌘** (`VisualizationKey(event,
+plainArrows: true)`); **a main window takes only the ⌘ ones**, because its plain arrows are seek and
+volume. The same in every skin family, including the `.wal` skin's own AVS window and the
+visualization, Spectrum and Art windows a `.wal` skin hosts in its frame. Art's intensity is its
+menu's.
 
-| Window | ⌘↓ / ⌘↑ | ⌘→ / ⌘← |
-|---|---|---|
-| Classic / Original main window | `MainWindowVisMode.advanced(by:)` | `MainWindowVisStyle.step`, vis_classic via the overlay |
-| `.wal` hosted visualization | `WindowManager.switchVisualizationEngine` (the shared preference) | the engine's presets |
-| `.wmz` / Sonique `<EFFECTS>` | `SkinEffectsSurfaceView.handleKeyDown` (effect) | within the effect |
-| Visualizations window | `VisualizationType.advanced(by:)` | presets (its plain arrows) |
-| Spectrum window | `SpectrumQualityMode.advanced(by:)` | style / profile (its plain arrows) |
-| Art window | `ArtVisEffect.advancedGroup(by:)` | `ArtVisEffect.advanced(by:)` |
-| Audion | no visualization: the keys do nothing | |
+| Window | ↓ / ↑ | → / ← | Plain arrows? |
+|---|---|---|---|
+| Classic / Original main window | `MainWindowVisMode.advanced(by:)` | `MainWindowVisStyle.step`, vis_classic via the overlay | no: seek / volume |
+| `.wal` skin's AVS window (`WinampModernVisualizationSurfaceView`) | `WindowManager.switchVisualizationEngine` (the shared preference) | the engine's presets | yes |
+| `.wmz` / Sonique `<EFFECTS>` | `SkinEffectsSurfaceView.handleKeyDown` (effect) | within the effect | no: seek / volume |
+| Visualizations window (`ProjectMView`, `ModernProjectMView`) | `VisualizationType.advanced(by:)` | presets | yes |
+| Spectrum window | `SpectrumQualityMode.advanced(by:)` | style / profile | yes |
+| Art window | `ArtVisEffect.advancedGroup(by:)` | `ArtVisEffect.advanced(by:)` | yes |
+| Audion | no visualization: the keys do nothing | | |
+
+- **A `.wal` window gets the keyboard only if its view does.** A skin's container view
+  (`WinampModernMainView.keyDown`) seeks on plain arrows, so a hosted window whose click lands on a
+  subview that refuses first mouse keeps the keyboard on the skin view: the hosted `SpectrumView`
+  claims its own clicks (`hitTest`) for that reason. The skin's AVS window is routed in
+  `keyDown` itself, by the container's kind (`WinampModernContainerTopology.kind(of:) == .visualization`).
 
 - **A ⌘-arrow is never seek or volume**, even in a main window with nothing to visualize:
   `MainWindowKeys.performArrow` refuses it.

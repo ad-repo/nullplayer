@@ -511,15 +511,24 @@ final class WinampModernMainView: NSView {
             for surface in hostedWindowSurfaces.values { surface.resume() }
             needsDisplay = true
         } else {
-            for surface in hostedWindowSurfaces.values { surface.suspend() }
+            // Every hide and teardown of a hosted window comes through here, before the window
+            // orders out: a fullscreen view comes home first, or it would stay on screen over a
+            // hidden window and bring that window back when it left.
+            for surface in hostedWindowSurfaces.values {
+                WinampModernFullscreen.shared.exit(presenting: surface.view)
+                surface.suspend()
+            }
         }
     }
 
     /// Visibility of host-owned consumers is stricter than Wasabi window visibility: an occluded or
     /// miniaturized native window is still logically shown to the skin, but its timers/display links
     /// must stop until pixels can be seen again.
+    ///
+    /// Not a surface shown fullscreen (`WinampModernFullscreen`): it covers this window, and the
+    /// occlusion that causes must not stop the picture covering it.
     func setHostedContentActive(_ active: Bool) {
-        for surface in hostedWindowSurfaces.values {
+        for surface in hostedWindowSurfaces.values where !WinampModernFullscreen.shared.isPresenting(surface.view) {
             if active { surface.resume() } else { surface.suspend() }
         }
     }
@@ -912,11 +921,12 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
-        // Plain arrows are the main window's, as in every other mode: ←/→ seek 5 s (a parked film's
-        // too, through the window manager, rather than the film's own 10 s skip), ↑/↓ step the
-        // volume. Only those: the rest of that table's letters are the visualization's keys here.
-        // The engine announces no volume change, so the skin's own readout is told here, the way
-        // `updatePlaybackState` tells it of any other.
+        if visualizationWindowTakesArrow(event) { return }
+        // Every other window's plain arrows are the main window's, as in every other mode: ←/→ seek
+        // 5 s (a parked film's too, through the window manager, rather than the film's own 10 s
+        // skip), ↑/↓ step the volume. Only those: the rest of that table's letters are the
+        // visualization's keys here. The engine announces no volume change, so the skin's own
+        // readout is told here, the way `updatePlaybackState` tells it of any other.
         if MainWindowKeys.performArrow(event) {
             updatePlaybackState()
             return
@@ -1500,6 +1510,7 @@ final class WinampModernMainView: NSView {
 
     /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
     /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
+    /// `first` is the only one: `visualizationSurfaces` is reconciled to the single engine holder.
     var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
 
     /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
@@ -1556,7 +1567,10 @@ final class WinampModernMainView: NSView {
         layoutVideoSurface(holders: holders, placed: placed)
         for holder in holders {
             guard case .hostWindow = holder.surfaceID,
-                  let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
+                  let surface = hostedWindowSurfaces[holder.object.stableID],
+                  // Fullscreen, it fills the screen; `WinampModernFullscreen.exit` asks for the
+                  // layout that puts it back in the holder.
+                  !WinampModernFullscreen.shared.isPresenting(surface.view) else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
         }
         for browser in browsers {

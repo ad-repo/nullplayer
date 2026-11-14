@@ -2,16 +2,19 @@ import AppKit
 
 /// **The standard visualization keys**, the same in every window that shows one — each skin
 /// family's main window, the visualization windows, the Spectrum analyzer and Art:
-/// ⌘↓ / ⌘↑ step the engine (a main window's mode, Art's effect group), ⌘→ / ⌘← step the preset
-/// inside it (an effect, a profile, a style). ⇧ added is a hard cut where an engine blends.
-/// Plain arrows stay each window's own: seek and volume on a main window.
+/// ↓ / ↑ step the engine (a main window's mode, Art's effect group), → / ← step the preset inside
+/// it (an effect, a profile, a style). ⇧ added is a hard cut where an engine blends. A window that
+/// is only a visualization takes them plain or with ⌘; a main window takes only the ⌘ ones, since
+/// its plain arrows are seek and volume.
 enum VisualizationKey {
     case engine(Int)
     case preset(Int)
 
-    /// The key `event` is, or nil for any key that is not a ⌘-arrow.
-    init?(_ event: NSEvent) {
-        guard event.modifierFlags.contains(.command) else { return nil }
+    /// The key `event` is, or nil for any key that is not a ⌘-arrow. `plainArrows` admits the arrows
+    /// without ⌘ too: every visualization window passes it; a main window, whose plain arrows are
+    /// seek and volume, does not.
+    init?(_ event: NSEvent, plainArrows: Bool = false) {
+        guard plainArrows || event.modifierFlags.contains(.command) else { return nil }
         switch event.keyCode {
         case 125: self = .engine(1)   // ⌘↓
         case 126: self = .engine(-1)  // ⌘↑

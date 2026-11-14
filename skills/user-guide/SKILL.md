@@ -699,14 +699,21 @@ visual mode.
   binds an arrow, and a focused slider in a `.wmz` skin takes them.
 
 ### Visualization Keys (every window that shows one)
-- **⌘↓ / ⌘↑**: Next / previous visualization — the main window's mode, the visualization engine
+- **↓ / ↑**: Next / previous visualization — the main window's mode, the visualization engine
   (ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear, NullPlayer-Fractal), the Spectrum window's mode, a `.wmz` or Sonique skin's
   effect, or the Art window's effect group
-- **⌘→ / ⌘←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
+- **→ / ←**: Next / previous preset inside it — an engine's presets, Fire's flame style,
   Lightning's style, Matrix's colour, EKG's style, Cava's colour preset, a vis_classic profile, or
   an Art effect; add **⇧** for a hard cut where the engine blends
-- Works on Classic, Original, `.wal`, `.wmz` and Sonique main windows (Sonique in visual mode), the
-  Visualizations window, the Spectrum window and the Art window. Audion faces have no visualization.
+- **In the Visualizations, Spectrum and Art windows the plain arrows do this**, with or without ⌘,
+  in every skin family — including a `.wal` skin's own visualization window. Art's intensity is in
+  its right-click menu.
+- **On a main window, hold ⌘** (plain arrows there seek and change the volume). Works on Classic,
+  Original, `.wal`, `.wmz` and Sonique main windows (Sonique in visual mode). Audion faces have no
+  visualization.
+- **F** (or the right-click menu's Fullscreen) takes any of those windows fullscreen, including in a
+  `.wal` skin; **Esc** or **F** comes back (in a `.wal` skin's own visualization window, a
+  double-click too).
 
 ### vis_classic Profiles
 - **Main window**: **, / .** previous/next profile

@@ -579,8 +579,8 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
         // Check for modifier keys
         let hasShift = event.modifierFlags.contains(.shift)
 
-        // ⌘↓/⌘↑: the standard engine keys (`VisualizationKey`); ⌘→/⌘← fall to the arrows below.
-        if case .engine(let delta)? = VisualizationKey(event) {
+        // ↓/↑ (⌘ optional): the standard engine keys (`VisualizationKey`); ←/→ fall to the arrows below.
+        if case .engine(let delta)? = VisualizationKey(event, plainArrows: true) {
             switchVisualizationEngine(to: (visualizationGLView?.currentEngineType ?? .projectM).advanced(by: delta))
             return true
         }
@@ -746,7 +746,8 @@ extension ModernProjectMView: WinampModernHostedSurface {
         updateVisualizationFrame()
         needsDisplay = true
     }
-    func resume() { startRendering() }
+    /// A transition restart, not a bare start: the view may have just moved window (fullscreen).
+    func resume() { resumeRenderingAfterWindowTransition() }
     func suspend() { stopRendering() }
     func unmountFromHolder() { removeFromSuperview() }
     func prepareForUITeardown() {

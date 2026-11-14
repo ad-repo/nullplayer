@@ -435,8 +435,8 @@ class ModernSpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        // ⌘↓/⌘↑: the standard engine keys (`VisualizationKey`); ⌘→/⌘← fall to the arrows below.
-        if case .engine(let delta)? = VisualizationKey(event) { cycleQualityMode(by: delta); return }
+        // ↓/↑ (⌘ optional): the standard engine keys (`VisualizationKey`); ←/→ fall to the arrows below.
+        if case .engine(let delta)? = VisualizationKey(event, plainArrows: true) { cycleQualityMode(by: delta); return }
 
         if spectrumAnalyzerView?.qualityMode == .visClassicExact,
            let chars = event.charactersIgnoringModifiers {

@@ -305,9 +305,13 @@ view reads as "presenting fullscreen" when deciding whether an occluded window m
 The visualization window's keys work in the skin's window too: **⌘→/⌘←** step (shift = hard cut),
 **⌘↓/⌘↑** switch the engine through `WindowManager.switchVisualizationEngine` (the preference the
 visualization window and menu bar share), **R** random, **F** fullscreen, **P** quality, **C**
-cycles Manual → Auto-Cycle → Auto-Random, **Esc** leaves fullscreen. Plain arrows are the main
-window's seek and volume (`MainWindowKeys.performArrow`), as in every other mode — the standard
-visualization keys, see [visualizations](../../../visualizations/SKILL.md) § *Standard keys*. They are
+cycles Manual → Auto-Cycle → Auto-Random, **Esc** leaves fullscreen. Plain arrows in the skin's
+visualization window (`WinampModernContainerTopology.kind(of:) == .visualization`, the same test
+that picks the engine holder) are that window's own, as in NullPlayer's visualization window: a
+parked film's first, then the visualization's preset (←/→) and engine (↑/↓) steps. They are the
+only keys asked ahead of `MainWindowKeys.performArrow`; every other window's plain arrows are the
+main window's seek and volume, as in every other mode — the standard visualization keys, see
+[visualizations](../../../visualizations/SKILL.md) § *Standard keys*. They are
 offered *after* the skin's own accelerators (`WinampModernMainView.keyDown` →
 `scripts.dispatchKeyDown` first), so a skin binding never loses its key, and a key the surface does
 not take still falls through to the host's menu shortcuts. In fullscreen the whole map goes to the

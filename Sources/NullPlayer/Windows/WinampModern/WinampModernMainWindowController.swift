@@ -874,7 +874,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 nativeWindow: { [weak self] in self?.hostedWindow(ifMaterialized: id) },
                 requestClose: { [weak self] in self?.hideHostedWindow(id) },
                 requestFullscreen: { [weak self] in
-                    self?.hostedWindow(ifMaterialized: id)?.toggleFullScreen(nil)
+                    guard let surface = self?.hostedWindowSurface(id) else { return }
+                    WinampModernFullscreen.shared.toggle(surface.view, didMove: { [weak surface] in surface?.resume() })
                 }
             )
         }
