@@ -47,6 +47,16 @@ final class VisualizationKeysTests: XCTestCase {
         XCTAssertNil(VisualizationKey(key(40, .command)))   // ⌘K
     }
 
+    /// A visualization window takes the arrows plain too, the same as with ⌘.
+    func testPlainArrowsAreTheStandardKeysInAVisualizationWindow() {
+        guard case .engine(1)? = VisualizationKey(key(125), plainArrows: true) else { return XCTFail("↓") }
+        guard case .engine(-1)? = VisualizationKey(key(126), plainArrows: true) else { return XCTFail("↑") }
+        guard case .preset(1)? = VisualizationKey(key(124), plainArrows: true) else { return XCTFail("→") }
+        guard case .preset(-1)? = VisualizationKey(key(123), plainArrows: true) else { return XCTFail("←") }
+        guard case .engine(1)? = VisualizationKey(key(125, .command), plainArrows: true) else { return XCTFail("⌘↓") }
+        XCTAssertNil(VisualizationKey(key(40), plainArrows: true))   // K
+    }
+
     func testCommandArrowIsNeverSeekOrVolume() {
         for code: UInt16 in [123, 124, 125, 126] {
             XCTAssertFalse(MainWindowKeys.performArrow(key(code, .command)))

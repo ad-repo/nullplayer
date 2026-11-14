@@ -361,6 +361,14 @@ class SpectrumView: NSView {
         return true
     }
     
+    /// Hosted in a `.wal` skin's frame, a click anywhere on the view is the view's: the analyzer
+    /// under it handles no clicks of its own, and as the hit view it would spend the window's first
+    /// click on activation, leaving the keyboard with the skin's view.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let hit = super.hitTest(point) else { return nil }
+        return hostedContext != nil ? self : hit
+    }
+
     override func mouseDown(with event: NSEvent) {
         if isFullscreen {
             return
@@ -370,6 +378,9 @@ class SpectrumView: NSView {
         let skinPoint = convertToSkinCoordinates(point)
 
         if hostedContext != nil {
+            // The click is what gives this view the keyboard: otherwise the skin's view keeps it and
+            // takes the arrows as seek and volume.
+            window?.makeFirstResponder(self)
             if event.clickCount == 2 { cycleQualityMode() }
             hostedDrag.prime(event, context: hostedContext)
             return
@@ -472,8 +483,8 @@ class SpectrumView: NSView {
     override var acceptsFirstResponder: Bool { true }
     
     override func keyDown(with event: NSEvent) {
-        // ⌘↓/⌘↑: the standard engine keys (`VisualizationKey`); ⌘→/⌘← fall to the arrows below.
-        if case .engine(let delta)? = VisualizationKey(event) { cycleQualityMode(by: delta); return }
+        // ↓/↑ (⌘ optional): the standard engine keys (`VisualizationKey`); ←/→ fall to the arrows below.
+        if case .engine(let delta)? = VisualizationKey(event, plainArrows: true) { cycleQualityMode(by: delta); return }
 
         if spectrumAnalyzerView?.qualityMode == .visClassicExact,
            let chars = event.charactersIgnoringModifiers {

@@ -44,6 +44,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var host: WinampModernAudioEngineHost?
     private var componentBridge: WinampModernComponentBridge?
     private var hostedWindowMaterializer: WinampModernHostedWindowMaterializer?
+    /// The one hosted window's view on screen fullscreen, if any (`requestFullscreen`).
+    private let hostedFullscreen = WinampModernHostedFullscreen()
     private(set) var auxiliaryContainers: [AuxiliaryContainer] = []
     /// Containers whose window has been given a position. Placement happens once, on first show, so
     /// re-opening a window the user has moved never yanks it back.
@@ -874,7 +876,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 nativeWindow: { [weak self] in self?.hostedWindow(ifMaterialized: id) },
                 requestClose: { [weak self] in self?.hideHostedWindow(id) },
                 requestFullscreen: { [weak self] in
-                    self?.hostedWindow(ifMaterialized: id)?.toggleFullScreen(nil)
+                    guard let self, let surface = hostedWindowSurface(id) else { return }
+                    hostedFullscreen.toggle(surface)
                 }
             )
         }
@@ -942,6 +945,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     func hideHostedWindow(_ id: WinampModernHostedWindowID) {
+        hostedFullscreen.exit()
         hostedWindowMaterializer?.hide(id)
     }
 
@@ -2792,6 +2796,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
         glue.detachAfterDrag()
+        hostedFullscreen.exit()
         hostedWindowMaterializer?.teardown()
         hostedWindowMaterializer = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first

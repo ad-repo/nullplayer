@@ -101,9 +101,13 @@
   ironwork over it: it opens there, moves and docks with the player, survives a restore and a shade,
   and the shade button closes it. Its cover window's title ticker sits beside the transport buttons.
 - **A spectrum inside a shaped panel stays inside its shape** (Axess, New York Minute).
-- **← and → step the preset in a skin's own visualization window**, as in NullPlayer's; they
-  seeked the track instead. A film playing in that window takes them first and skips, as its own
-  window does. They still seek in the player window.
+- **The arrow keys work in a skin's visualization window**, as in NullPlayer's: ← and → step the
+  preset and ↑ and ↓ switch the engine; ← and → seeked the track instead. A film playing in that
+  window takes them first. They still seek in the player window.
+- **Fullscreen works in the Visualizations, Spectrum and Art windows a skin hosts**, from
+  F or the right-click menu; it did nothing. The picture keeps moving there, and Esc, F or a
+  double-click comes back.
+- **The arrow keys reach the Spectrum window a skin hosts**; they seeked the track instead.
 
 ### Sonique skins
 
@@ -198,6 +202,10 @@
   the audio, so its effects could fall behind the music.
 - **A chosen AVS or projectM preset folder survives a relaunch in the App Store build.** The
   sandbox only granted the folder until quit, so both lists came back without your presets.
+- **Plain arrows work in every visualization window**: ↑ and ↓ switch the engine (the Spectrum
+  window's mode, Art's effect group) and ← and → step the preset, without ⌘, in the Visualizations,
+  Spectrum and Art windows of every skin family. ⌘ still works too, and is still needed on a main
+  window, whose plain arrows seek and change the volume. Art's intensity moved to its right-click menu.
 
 ### Classic skins
 

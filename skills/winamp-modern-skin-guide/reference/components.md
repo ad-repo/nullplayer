@@ -932,6 +932,16 @@ every skin-owned step has declined (B55, above).
 - Close hides and retains the instance. Reopen reuses it; UI Size changes resize only materialized
   instances; skin/mode teardown destroys them once. If request-time construction fails, the partial
   graph/window is rolled back and the existing standalone controller opens immediately.
+- **Fullscreen moves the view, never the window.** A skin window is borderless, so
+  `NSWindow.toggleFullScreen` does nothing on it — the dead path every hosted window's F and
+  Fullscreen menu item took until 2026-11. `requestFullscreen` now hands the surface to the
+  controller's one `WinampModernHostedFullscreen`, which moves its view into a
+  `WinampModernFullscreenWindow` (the class the skin's AVS window uses too) and back (Esc, F,
+  double-click; hiding the window or tearing the skin down exits first). Two things that move needs:
+  the surface's `resumeAfterWindowTransition()` (a GL view re-pins its context and display link —
+  without it the picture freezes on its last frame), and `WinampModernMainView.setHostedContentActive`
+  skipping a surface whose view is no longer in its window — the fullscreen window covers the holder,
+  and the holder's occlusion suspended the very surface on screen.
 - The hosted surface is chromeless: the Wasabi standard frame owns close, resize, keyboard, and
   artwork. The same existing feature view draws its shared `.wal`-palette fallback chrome only when
   it remains inside the standalone controller. **It does not own the drag** — see below.

@@ -518,8 +518,11 @@ final class WinampModernMainView: NSView {
     /// Visibility of host-owned consumers is stricter than Wasabi window visibility: an occluded or
     /// miniaturized native window is still logically shown to the skin, but its timers/display links
     /// must stop until pixels can be seen again.
+    ///
+    /// Only a surface still in this window: one shown fullscreen (`WinampModernHostedFullscreen`)
+    /// covers this window, and the occlusion that causes must not stop the picture covering it.
     func setHostedContentActive(_ active: Bool) {
-        for surface in hostedWindowSurfaces.values {
+        for surface in hostedWindowSurfaces.values where surface.view.window === window {
             if active { surface.resume() } else { surface.suspend() }
         }
     }
@@ -912,11 +915,11 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
-        // ←/→ in the skin's visualization window are that window's own, as in NullPlayer's: the
-        // same order as the keys below — a parked film's skip first, since it is what is on screen,
-        // then the visualization's preset step. The only keys asked ahead of the main window's
+        // The arrows in the skin's visualization window are that window's own: the same order as the
+        // keys below — a parked film first, since it is what is on screen, then the visualization's
+        // preset (←/→) and engine (↑/↓) steps. The only keys asked ahead of the main window's
         // arrows; a key both refuse falls through to the asks below, which refuse it again.
-        if event.keyCode == 123 || event.keyCode == 124,
+        if (123...126).contains(event.keyCode),
            WinampModernContainerTopology.kind(of: renderer.container) == .visualization,
            hostedVideoSurface?.handleKeyDown(event) == true
             || hostedVisualizationSurface?.handleKeyDown(event) == true { return }

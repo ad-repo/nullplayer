@@ -365,9 +365,9 @@ final class ArtView: NSView {
             default: break
             }
         }
-        // The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ the effect group, ⌘→/⌘← the
-        // effect. Ahead of the plain arrows, which ↑/↓ would otherwise take as intensity.
-        if isVisualizing, let key = VisualizationKey(event) {
+        // The standard visualization keys (`VisualizationKey`), ⌘ optional: ↓/↑ the effect group,
+        // →/← the effect. Intensity is the menu's.
+        if isVisualizing, let key = VisualizationKey(event, plainArrows: true) {
             switch key {
             case .engine(let delta): show(effect.advancedGroup(by: delta))
             case .preset(let delta): step(by: delta)
@@ -379,10 +379,6 @@ final class ArtView: NSView {
         case 9: isVisualizing.toggle()                                   // V
         case 53 where isFullscreen: host?.toggleArtFullscreen()          // Esc
         case 53 where isVisualizing: isVisualizing = false
-        case 123 where isVisualizing: step(by: -1)                       // ←
-        case 124 where isVisualizing: step(by: 1)                        // →
-        case 126 where isVisualizing: intensity = min(2.0, intensity + 0.25)  // ↑
-        case 125 where isVisualizing: intensity = max(0.5, intensity - 0.25)  // ↓
         case 15 where isVisualizing: visMode = visMode == .random ? .single : .random  // R
         case 8 where isVisualizing: visMode = visMode == .cycle ? .single : .cycle     // C
         default: super.keyDown(with: event)

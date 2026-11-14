@@ -28,6 +28,13 @@ protocol WinampModernHostedSurface: AnyObject {
     func suspend()
     func unmountFromHolder()
     func prepareForUITeardown()
+    /// The view moved to another window (into fullscreen and back): restart whatever was pinned to
+    /// the old one. `resume()` unless the surface pins something, such as a GL context.
+    func resumeAfterWindowTransition()
+}
+
+extension WinampModernHostedSurface {
+    func resumeAfterWindowTransition() { resume() }
 }
 
 /// Optional capabilities exposed only by the hosted surfaces that own them. WindowManager performs

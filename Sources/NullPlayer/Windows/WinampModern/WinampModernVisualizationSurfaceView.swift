@@ -33,7 +33,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     private var windowVisibilityObserver: NSObjectProtocol?
     private var isTornDown = false
     /// The screen-filling window the engine moves into for `VIS_FS`, or nil when it is in the box.
-    private var fullscreenWindow: VisualizationFullscreenWindow?
+    private var fullscreenWindow: WinampModernFullscreenWindow?
 
     /// The audio engine's spectrum tap is reference-counted by consumer name, and every consumer has
     /// to be a distinct one or the first `remove` silences the others.
@@ -280,9 +280,11 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     func handleKeyDown(_ event: NSEvent) -> Bool {
         guard !isTornDown else { return false }
         let hard = event.modifierFlags.contains(.shift)
-        // The standard visualization keys (`VisualizationKey`). The engine goes through the window
-        // manager, as the menu's does: it is a preference the visualization window shares.
-        if let key = VisualizationKey(event) {
+        // The standard visualization keys (`VisualizationKey`), plain arrows too: a skin's main
+        // window takes those first (`WinampModernMainView.keyDown`), so only the skin's visualization
+        // window and fullscreen ever offer them. The engine goes through the window manager, as the
+        // menu's does: it is a preference the visualization window shares.
+        if let key = VisualizationKey(event, plainArrows: true) {
             switch key {
             case .engine(let delta):
                 WindowManager.shared.switchVisualizationEngine(to: engineType.advanced(by: delta))
@@ -300,12 +302,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
             return true
         case 35: // P — 30/60fps
             engineView.toggleLowPowerMode()
-            return true
-        case 124: // Right arrow
-            stepPreset(by: 1, hardCut: hard)
-            return true
-        case 123: // Left arrow
-            stepPreset(by: -1, hardCut: hard)
             return true
         case 15: // R
             engineView.randomEnginePreset(hardCut: hard)
@@ -341,19 +337,10 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     private func enterFullscreen() {
         guard !isTornDown, fullscreenWindow == nil,
               let screen = window?.screen ?? NSScreen.main else { return }
-        let fullscreen = VisualizationFullscreenWindow(contentRect: screen.frame,
-                                                       styleMask: [.borderless],
-                                                       backing: .buffered, defer: false)
-        fullscreen.isReleasedWhenClosed = false
-        fullscreen.isOpaque = true
-        fullscreen.backgroundColor = .black
-        fullscreen.level = .screenSaver
+        let fullscreen = WinampModernFullscreenWindow.covering(screen)
         fullscreen.onExit = { [weak self] in self?.exitFullscreen() }
         fullscreen.onKeyDown = { [weak self] event in self?.handleKeyDown(event) ?? false }
-        let host = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
-        host.wantsLayer = true
-        host.layer?.backgroundColor = NSColor.black.cgColor
-        fullscreen.contentView = host
+        guard let host = fullscreen.contentView else { return }
         engineView.frame = host.bounds
         host.addSubview(engineView)
         fullscreen.makeKeyAndOrderFront(nil)
@@ -399,29 +386,5 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
         engineView.stopRendering()
         engineView.removeFromSuperview()
         removeFromSuperview()
-    }
-}
-
-/// The screen-filling window `VIS_FS` moves the engine into, and the two ways out of it that Winamp's
-/// own fullscreen visualization has: **Esc** (or `f`) and a **double-click**.
-private final class VisualizationFullscreenWindow: NSWindow {
-    var onExit: (() -> Void)?
-
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
-
-    /// Fullscreen is where the keyboard matters most — there are no buttons on screen at all — so the
-    /// whole map goes to the surface, not just the two ways out.
-    var onKeyDown: ((NSEvent) -> Bool)?
-
-    override func keyDown(with event: NSEvent) {
-        if onKeyDown?(event) == true { return }
-        super.keyDown(with: event)
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        // The engine view passes its clicks through (`hitTest` returns nil), so this is where a click
-        // on the picture arrives.
-        if event.clickCount >= 2 { onExit?() }
     }
 }
