@@ -29,7 +29,9 @@ final class HostSpectrum: @unchecked Sendable {  // `lock` guards every buffer
     }
 
     /// Computes the bins from `pcm` scaled by `gain`, and hands them to `body` while they are still
-    /// locked against the next audio callback.
+    /// locked against the next audio callback. Lock order: this lock, then whatever `body` takes —
+    /// `VisualizationGLView` takes `dataLock`, then only *tries* `engineLock`, so the audio thread
+    /// never waits on a render. `body` must not block.
     func compute(from pcm: [Float], gain: Float, _ body: ([Float]) -> Void) {
         guard let setup else { return }
         lock.lock()

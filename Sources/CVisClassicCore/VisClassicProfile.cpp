@@ -9,8 +9,6 @@ namespace visclassic {
 
 namespace {
 
-constexpr int kColorCount = 256;
-
 bool parseInt(const std::string &s, int &out) {
     try {
         size_t pos = 0;
@@ -71,12 +69,18 @@ std::string stemFromPath(const std::string &path) {
     return file.substr(0, dot);
 }
 
-int IniProfile::analyzerInt(const char *key, int fallback, int lo, int hi) const {
-    auto it = analyzer.find(key);
-    if (it == analyzer.end()) return fallback;
-    int v = fallback;
-    if (!parseInt(it->second, v)) return fallback;
-    return std::clamp(v, lo, hi);
+const std::string *IniProfile::analyzerValue(const std::string &key) const {
+    for (auto it = analyzer.rbegin(); it != analyzer.rend(); ++it) {
+        if (it->first == key) return &it->second;
+    }
+    return nullptr;
+}
+
+std::optional<int> IniProfile::analyzerInt(const std::string &key) const {
+    const std::string *value = analyzerValue(key);
+    int v = 0;
+    if (!value || !parseInt(*value, v)) return std::nullopt;
+    return v;
 }
 
 bool readProfile(const std::string &path, IniProfile &out) {
@@ -102,7 +106,7 @@ bool readProfile(const std::string &path, IniProfile &out) {
         std::string value = trim(line.substr(eq + 1));
 
         if (section == "Classic Analyzer") {
-            out.analyzer[key] = value;
+            out.analyzer.emplace_back(key, value);
             continue;
         }
 
@@ -140,27 +144,24 @@ bool readProfile(const std::string &path, IniProfile &out) {
     return true;
 }
 
-bool writeProfile(const std::string &path,
-                  const std::vector<std::pair<std::string, std::string>> &analyzer,
-                  const Palette &bars, const Palette &peaks, const Palette &volumes,
-                  const VolumeFunction &volumeFunc) {
+bool writeProfile(const std::string &path, const IniProfile &profile) {
     std::ofstream out(path, std::ios::out | std::ios::trunc);
     if (!out) {
         return false;
     }
 
     out << "[Classic Analyzer]\n";
-    for (const auto &[key, value] : analyzer) {
+    for (const auto &[key, value] : profile.analyzer) {
         out << key << "=" << value << "\n";
     }
 
-    writePalette(out, "BarColours", bars);
-    writePalette(out, "PeakColours", peaks);
-    writePalette(out, "VolumeColours", volumes);
+    writePalette(out, "BarColours", profile.barColors);
+    writePalette(out, "PeakColours", profile.peakColors);
+    writePalette(out, "VolumeColours", profile.volumeColors);
 
     out << "[VolumeFunction]\n";
     for (int i = 0; i < kColorCount; ++i) {
-        out << i << "=" << volumeFunc[i] << "\n";
+        out << i << "=" << profile.volumeFunc[i] << "\n";
     }
     return true;
 }

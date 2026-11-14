@@ -21,7 +21,8 @@ struct RGB {
     uint8_t b = 0;
 };
 
-using Palette = std::array<RGB, 256>;
+constexpr int kColorCount = 256;  // entries in a palette, and in VolumeFunction
+using Palette = std::array<RGB, kColorCount>;
 using BarColourFn = unsigned char (*)(int level, int y);
 
 enum Background { kBackgroundBlack = 0, kBackgroundFlash, kBackgroundSolid, kBackgroundGrid, kBackgroundFlashGrid };

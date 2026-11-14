@@ -17,7 +17,7 @@ extension AvsEngine {
         beatsItem.submenu = beats
         menu.addItem(beatsItem)
         menu.addItem(item("Choose AVS Preset Folder…", #selector(choosePresetFolderAction)))
-        if AvsPresets.customFolder != nil {
+        if AvsPresets.customFolder.url != nil {
             menu.addItem(item("Use Bundled AVS Presets Only", #selector(clearPresetFolderAction)))
         }
     }
@@ -40,12 +40,12 @@ extension AvsEngine {
         panel.allowsMultipleSelection = false
         panel.message = "Choose a folder of AVS presets (.avs)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        AvsPresets.customFolderSetting.set(url)
+        AvsPresets.customFolder.set(url)
         reloadPresets()
     }
 
     @objc private func clearPresetFolderAction() {
-        AvsPresets.customFolderSetting.set(nil)
+        AvsPresets.customFolder.set(nil)
         reloadPresets()
     }
 }

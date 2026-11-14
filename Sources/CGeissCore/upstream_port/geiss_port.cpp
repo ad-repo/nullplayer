@@ -736,9 +736,7 @@ void PutPalette() {
 // `win_compat.h`.
 // ---------------------------------------------------------------------------
 
-#define gamma geiss_gamma  // Effects.h's LoadPreset/SavePreset read upstream `gamma`
 #include "Effects.h"
-#undef gamma
 
 // ---------------------------------------------------------------------------
 // Phase 4c-4: FX_Init / FX_Fini / FX_Pick_Random_Mode — direct ports of

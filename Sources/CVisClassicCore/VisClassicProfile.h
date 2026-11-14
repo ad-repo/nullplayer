@@ -6,7 +6,7 @@
 // (256 integers). This file only reads and writes it; the core decides what each setting means.
 
 #include <array>
-#include <map>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,10 +15,10 @@
 
 namespace visclassic {
 
-using VolumeFunction = std::array<int, 256>;
+using VolumeFunction = std::array<int, kColorCount>;
 
 struct IniProfile {
-    std::map<std::string, std::string> analyzer;
+    std::vector<std::pair<std::string, std::string>> analyzer;  // file order; a repeated key's last value wins
     Palette barColors{};
     Palette peakColors{};
     Palette volumeColors{};
@@ -28,17 +28,15 @@ struct IniProfile {
     bool hasVolumeColors = false;
     bool hasVolumeFunc = false;
 
-    // The `[Classic Analyzer]` integer `key`, clamped to [lo, hi]; `fallback` when absent or unparsable.
-    int analyzerInt(const char *key, int fallback, int lo, int hi) const;
+    const std::string *analyzerValue(const std::string &key) const;
+    // The `[Classic Analyzer]` integer `key`; nothing when absent or unparsable.
+    std::optional<int> analyzerInt(const std::string &key) const;
 };
 
 bool readProfile(const std::string &path, IniProfile &out);
 
-// Writes `analyzer` in the order given, then the palettes and VolumeFunction.
-bool writeProfile(const std::string &path,
-                  const std::vector<std::pair<std::string, std::string>> &analyzer,
-                  const Palette &bars, const Palette &peaks, const Palette &volumes,
-                  const VolumeFunction &volumeFunc);
+// Writes `profile.analyzer` in its order, then every palette and VolumeFunction.
+bool writeProfile(const std::string &path, const IniProfile &profile);
 
 std::string trim(const std::string &s);
 

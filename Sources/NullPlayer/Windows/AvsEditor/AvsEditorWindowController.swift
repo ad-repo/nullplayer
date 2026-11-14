@@ -235,7 +235,7 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
     @objc private func openPreset() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [UTType(filenameExtension: "avs") ?? .data, .json]
-        panel.directoryURL = AvsPresets.customFolder
+        panel.directoryURL = AvsPresets.customFolder.url
         guard let window, panel.runModal() == .OK, let url = panel.url else { return }
         if !core.loadPreset(at: url) {
             NSAlert.informational("Could not open \(url.lastPathComponent)", core.lastError).beginSheetModal(for: window)
@@ -256,7 +256,7 @@ final class AvsEditorWindowController: NSWindowController, NSWindowDelegate {
     private func save(as type: UTType, _ write: (AVS_Handle, String) -> Bool) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [type]
-        panel.directoryURL = AvsPresets.customFolder
+        panel.directoryURL = AvsPresets.customFolder.url
         panel.nameFieldStringValue = "Untitled"
         guard let window, panel.runModal() == .OK, let url = panel.url else { return }
         window.makeFirstResponder(nil)
