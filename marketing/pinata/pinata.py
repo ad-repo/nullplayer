@@ -4,35 +4,20 @@
 # Media (shots list, audio, output) lives in ~/Documents/shots/promo-kit/pinata, not in the repo.
 import math, os, random, subprocess, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from promo_common import HN, brand, ease, fade, paste, plate, smooth
 
 OUT, LIST = sys.argv[1], sys.argv[2]
 AUDIO = sys.argv[3] if len(sys.argv) > 3 else None
 ASTART = float(sys.argv[4]) if len(sys.argv) > 4 else 0
-ICON = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "../../Sources/NullPlayer/Resources/AppIcon.png")
 W, H, FPS, SECS = 1920, 1080, 50, 20
 N = int(os.environ.get("FRAMES", FPS * SECS))
 rng = random.Random(34)
-HN = "/System/Library/Fonts/HelveticaNeue.ttc"
 
 HITS, EMIT0, EMIT1, SNAP, FINALE = (1.5, 2.3, 3.05), 3.15, 13.6, 14.4, 15.2   # seconds; the last hit bursts it
 BREAK = HITS[-1]
 TX, TY, ROPE = W // 2 + 110, -30, 610          # rope's fixed top and length; the donkey hangs from its end
 G = 1500                                       # px/s², for the skins and the snapped donkey
-
-def ease(x):
-    x = min(max(x, 0), 1)
-    return 1 - (1 - x) ** 3
-
-def smooth(x):
-    x = min(max(x, 0), 1)
-    return x * x * (3 - 2 * x)
-
-def fade(im, a):
-    if a >= 1:
-        return im
-    im = im.copy()
-    im.putalpha(im.getchannel("A").point(lambda p: int(p * a)))
-    return im
 
 # --- background + logo (same look as cake.py)
 bg = Image.new("RGBA", (W, H))
@@ -41,23 +26,7 @@ for y in range(H):
     c = int(212 - 30 * y / H)
     d.line([(0, y), (W, y)], fill=(c - 8, c - 2, c + 10, 255))
 
-def plate(size, pad=150, r=120, a=190, blur=70):
-    g = Image.new("RGBA", (size[0] + 2 * pad, size[1] + 2 * pad))
-    ImageDraw.Draw(g).rounded_rectangle((pad, pad + 20, g.width - pad, g.height - pad - 20), r, fill=(255, 255, 255, a))
-    return g.filter(ImageFilter.GaussianBlur(blur))
-
-font = ImageFont.truetype(HN, 230, index=1)
-icon = Image.open(ICON).convert("RGBA").resize((300, 300), Image.LANCZOS)
-tw = int(font.getlength("NullPlayer"))
-logo = Image.new("RGBA", (300 + 50 + tw + 40, 450))
-logo.alpha_composite(icon, (0, 30))
-ld = ImageDraw.Draw(logo)
-ld.text((350, 180), "NullPlayer", font=font, fill=(28, 30, 38, 255), anchor="lm")
-ld.text((logo.width // 2, 405), "nullplayer.fyi", font=ImageFont.truetype(HN, 76, index=0), fill=(45, 48, 60, 255), anchor="mm")
-logo = logo.resize((int(logo.width * 0.5), int(logo.height * 0.5)), Image.LANCZOS)
-brand = plate(logo.size, 110, 90, 170, 50)
-brand.alpha_composite(logo, (110, 110))
-BRAND_XY = ((W - brand.width) // 2, 40 - 110)
+brand, BRAND_XY = brand(W)
 
 # --- the donkey, drawn at 2x in its own frame (origin = rope attach point, facing left) and downsampled
 S, K = 2, 0.85                                  # supersample, donkey scale
@@ -215,11 +184,6 @@ cd.text((950, 290), "version 0.34.0", font=ImageFont.truetype(HN, 46, index=0), 
 cap = cap.crop(cap.getbbox())
 caption = plate(cap.size, 120, 100, 200, 55)
 caption.alpha_composite(cap, (120, 120))
-
-def paste(fr, im, cx, cy):
-    x0, y0 = int(cx - im.width / 2), int(cy - im.height / 2)
-    if x0 < W and y0 < H and x0 + im.width > 0 and y0 + im.height > 0:
-        fr.alpha_composite(im, (max(x0, 0), max(y0, 0)), (max(-x0, 0), max(-y0, 0)))
 
 ff = subprocess.Popen(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba", "-s", f"{W}x{H}",
                        "-r", str(FPS), "-i", "-"]
