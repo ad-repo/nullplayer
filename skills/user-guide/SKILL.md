@@ -712,7 +712,8 @@ visual mode.
   Original, `.wal`, `.wmz` and Sonique main windows (Sonique in visual mode). Audion faces have no
   visualization.
 - **F** (or the right-click menu's Fullscreen) takes any of those windows fullscreen, including in a
-  `.wal` skin; **Esc**, **F** or a double-click comes back.
+  `.wal` skin; **Esc** or **F** comes back (in a `.wal` skin's own visualization window, a
+  double-click too).
 
 ### vis_classic Profiles
 - **Main window**: **, / .** previous/next profile

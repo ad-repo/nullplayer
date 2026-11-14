@@ -511,7 +511,13 @@ final class WinampModernMainView: NSView {
             for surface in hostedWindowSurfaces.values { surface.resume() }
             needsDisplay = true
         } else {
-            for surface in hostedWindowSurfaces.values { surface.suspend() }
+            // Every hide and teardown of a hosted window comes through here, before the window
+            // orders out: a fullscreen view comes home first, or it would stay on screen over a
+            // hidden window and bring that window back when it left.
+            for surface in hostedWindowSurfaces.values {
+                WinampModernFullscreen.shared.exit(presenting: surface.view)
+                surface.suspend()
+            }
         }
     }
 
@@ -1561,7 +1567,10 @@ final class WinampModernMainView: NSView {
         layoutVideoSurface(holders: holders, placed: placed)
         for holder in holders {
             guard case .hostWindow = holder.surfaceID,
-                  let surface = hostedWindowSurfaces[holder.object.stableID] else { continue }
+                  let surface = hostedWindowSurfaces[holder.object.stableID],
+                  // Fullscreen, it fills the screen; `WinampModernFullscreen.exit` asks for the
+                  // layout that puts it back in the holder.
+                  !WinampModernFullscreen.shared.isPresenting(surface.view) else { continue }
             surface.view.frame = viewRect(fromSkin: holder.frame)
         }
         for browser in browsers {

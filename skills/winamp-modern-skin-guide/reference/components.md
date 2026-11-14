@@ -937,8 +937,13 @@ every skin-owned step has declined (B55, above).
   Fullscreen menu item took until 2026-11. Every `.wal` fullscreen — a hosted window's
   `requestFullscreen` and the skin's own AVS window's `VIS_FS` / F — goes through the one
   `WinampModernFullscreen.shared`, which moves the view into a screen-filling window and back (Esc,
-  the view's own F, a double-click; hiding that window or tearing the skin down exits first), so two
-  fullscreens can never stack. Two things the move needs: the surface's `resume()` re-pins what it
+  the view's own F; a double-click only where the view passes clicks through, i.e. the AVS engine
+  view), so two fullscreens can never stack. Every hide and teardown of a hosted window exits first,
+  from `WinampModernMainView.setSceneVisible(false)` — the one seam the materializer's toggle, hide,
+  script and container paths all reach before ordering the window out; exiting later would re-front
+  the hidden window. The holder's layout skips the fullscreen view (it would shrink the picture into
+  a corner), and exit puts a view that filled its holder back to filling it and asks for a layout, so
+  a UI Size change made meanwhile is picked up. Two things the move needs: the surface's `resume()` re-pins what it
   pinned to its window (`ModernProjectMView.resume` is a GL transition restart — without it the
   picture freezes on its last frame), and `WinampModernMainView.setHostedContentActive` skips the
   surface that is fullscreen — the fullscreen window covers the holder, and the holder's occlusion

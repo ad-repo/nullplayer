@@ -943,7 +943,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     }
 
     func hideHostedWindow(_ id: WinampModernHostedWindowID) {
-        if let surface = hostedWindowSurface(id) { WinampModernFullscreen.shared.exit(presenting: surface.view) }
         hostedWindowMaterializer?.hide(id)
     }
 
@@ -2794,7 +2793,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // A scale the outgoing skin asked for is not owed to the incoming one.
         pendingUIScaleRequest = nil
         glue.detachAfterDrag()
-        WinampModernFullscreen.shared.exit()
         hostedWindowMaterializer?.teardown()
         hostedWindowMaterializer = nil
         // Auxiliary views share the main view's script runtime + host, so tear them down first

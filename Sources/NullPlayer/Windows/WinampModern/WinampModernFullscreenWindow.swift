@@ -11,8 +11,8 @@ final class WinampModernFullscreen {
     static let shared = WinampModernFullscreen()
 
     private var window: WinampModernFullscreenWindow?
-    private var origin: (view: NSView, superview: NSView, frame: NSRect, mask: NSView.AutoresizingMask,
-                         holderWindow: NSWindow?, didMove: () -> Void)?
+    private var origin: (view: NSView, superview: NSView, frame: NSRect, fillsSuperview: Bool,
+                         mask: NSView.AutoresizingMask, holderWindow: NSWindow?, didMove: () -> Void)?
 
     func isPresenting(_ view: NSView) -> Bool { origin?.view === view }
 
@@ -26,7 +26,8 @@ final class WinampModernFullscreen {
     private func enter(_ view: NSView, keyDown: ((NSEvent) -> Bool)?, didMove: @escaping () -> Void) {
         exit()
         guard let superview = view.superview, let screen = view.window?.screen ?? NSScreen.main else { return }
-        origin = (view, superview, view.frame, view.autoresizingMask, view.window, didMove)
+        origin = (view, superview, view.frame, view.frame == superview.bounds, view.autoresizingMask,
+                  view.window, didMove)
         let fullscreen = WinampModernFullscreenWindow(covering: screen)
         fullscreen.onExit = { [weak self] in self?.exit() }
         fullscreen.onKeyDown = { [weak self] event in
@@ -46,16 +47,20 @@ final class WinampModernFullscreen {
         didMove()
     }
 
-    /// Back to where the view came from. Also the teardown path: a window hidden or a skin unloaded
-    /// while its view is fullscreen gets the view back first, so the holder's unmount finds it.
+    /// Back to where the view came from. Also the hide and teardown path
+    /// (`WinampModernMainView.setSceneVisible(false)`, the AVS surface's unmount): the view comes home
+    /// before its window goes, so the holder's unmount finds it.
     func exit() {
         guard let fullscreen = window, let origin else { return }
         window = nil
         self.origin = nil
         NSApp.presentationOptions = []
-        origin.view.frame = origin.frame
+        // The holder may have changed size meanwhile (UI Size): a view that filled it fills it again,
+        // and its layout places any other where it now belongs.
+        origin.view.frame = origin.fillsSuperview ? origin.superview.bounds : origin.frame
         origin.view.autoresizingMask = origin.mask
         origin.superview.addSubview(origin.view)
+        origin.superview.needsLayout = true
         fullscreen.orderOut(nil)
         origin.didMove()
         origin.holderWindow?.makeKeyAndOrderFront(nil)
@@ -69,8 +74,9 @@ final class WinampModernFullscreen {
 }
 
 /// The borderless, black, `.screenSaver`-level window over a whole screen that `WinampModernFullscreen`
-/// moves a view into, and the ways out of it that Winamp's own fullscreen visualization has: **Esc**
-/// (and whatever the view's own keys add, such as `f`) and a **double-click**. `.screenSaver` is the
+/// moves a view into, and the ways out of it: **Esc**, whatever the view's own keys add (`f`), and a
+/// **double-click** that reaches the window — only a view that passes its clicks through (the skin's
+/// AVS engine view) lets one through; the others use their clicks. `.screenSaver` is the
 /// level the visualization window's own custom fullscreen uses, and the GL view reads it as
 /// "presenting fullscreen".
 private final class WinampModernFullscreenWindow: NSWindow {
