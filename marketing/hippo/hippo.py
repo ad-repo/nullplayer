@@ -5,16 +5,16 @@
 # Media (shots list, audio, output) lives in ~/Documents/shots/promo-kit/hippo, not in the repo.
 import math, os, random, subprocess, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from promo_common import HN, brand, ease, fade, paste, plate, smooth
 
 OUT, LIST = sys.argv[1], sys.argv[2]
 AUDIO = sys.argv[3] if len(sys.argv) > 3 else None
 ASTART = float(sys.argv[4]) if len(sys.argv) > 4 else 0
-ICON = os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "../../Sources/NullPlayer/Resources/AppIcon.png")
 W, H, FPS, SECS = 1920, 1080, 50, 20
 T0 = float(os.environ.get("START", 0))           # render from this second on (stills for checking a beat)
 N = min(int(os.environ.get("FRAMES", FPS * SECS)), int((SECS - T0) * FPS))
 rng = random.Random(21)
-HN = "/System/Library/Fonts/HelveticaNeue.ttc"
 
 ZIN0, ZIN1, SPIN0, EMIT0, EMIT1, ZOUT0, ZOUT1, SPIN1, FINALE = 2.0, 3.4, 3.3, 3.8, 13.4, 11.6, 13.0, 14.0, 15.2
 ZOOM = 2.4                                       # camera zoom on the rump; the hippo and tail are drawn at S = 3
@@ -28,45 +28,9 @@ LEGS = [(-195, -125), (-110, -40), (85, 155), (165, 232)]                # hippo
 CERTIFIED = 149                                  # the release's count for the caption, whatever the list holds
 G = 700                                          # world px/s² for the flung skins
 
-def ease(x):
-    x = min(max(x, 0), 1)
-    return 1 - (1 - x) ** 3
-
-def smooth(x):
-    x = min(max(x, 0), 1)
-    return x * x * (3 - 2 * x)
-
-def fade(im, a):
-    if a >= 1:
-        return im
-    im = im.copy()
-    im.putalpha(im.getchannel("A").point(lambda p: int(p * a)))
-    return im
-
-def paste(fr, im, cx, cy):
-    x0, y0 = int(cx - im.width / 2), int(cy - im.height / 2)
-    if x0 < W and y0 < H and x0 + im.width > 0 and y0 + im.height > 0:
-        fr.alpha_composite(im, (max(x0, 0), max(y0, 0)), (max(-x0, 0), max(-y0, 0)))
-
-def plate(size, pad=150, r=120, a=190, blur=70):
-    g = Image.new("RGBA", (size[0] + 2 * pad, size[1] + 2 * pad))
-    ImageDraw.Draw(g).rounded_rectangle((pad, pad + 20, g.width - pad, g.height - pad - 20), r, fill=(255, 255, 255, a))
-    return g.filter(ImageFilter.GaussianBlur(blur))
-
 # --- logo (same look as cake.py / pinata.py)
 
-font = ImageFont.truetype(HN, 230, index=1)
-icon = Image.open(ICON).convert("RGBA").resize((300, 300), Image.LANCZOS)
-tw = int(font.getlength("NullPlayer"))
-logo = Image.new("RGBA", (300 + 50 + tw + 40, 450))
-logo.alpha_composite(icon, (0, 30))
-ld = ImageDraw.Draw(logo)
-ld.text((350, 180), "NullPlayer", font=font, fill=(28, 30, 38, 255), anchor="lm")
-ld.text((logo.width // 2, 405), "nullplayer.fyi", font=ImageFont.truetype(HN, 76, index=0), fill=(45, 48, 60, 255), anchor="mm")
-logo = logo.resize((int(logo.width * 0.5), int(logo.height * 0.5)), Image.LANCZOS)
-brand = plate(logo.size, 110, 90, 170, 50)
-brand.alpha_composite(logo, (110, 110))
-BRAND_XY = ((W - brand.width) // 2, 40 - 110)
+brand, BRAND_XY = brand(W)
 
 # --- the hippo, side on facing left, drawn at S in its own frame (origin = body centre)
 LAV, LAV_L, LAV_D, EDGE, PINK = (164, 150, 196), (204, 192, 226), (132, 118, 168), (78, 66, 104), (240, 160, 180)
