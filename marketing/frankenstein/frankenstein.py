@@ -318,8 +318,8 @@ for n in range(NF):
     fl = max([max(0, 1 - abs(t - f) / 0.12) for f in FLASHES] + [0])              # lightning flash, 0..1
     fr = Image.blend(lab, lit, min(1, light * 0.75 + fl * 0.6))
     fr = Image.composite(fr, black, vignette.point(lambda p: int(p * (0.55 + 0.45 * light))))
-    fr.alpha_composite(fade(brand, ease((t - 0.3) / 1.0)), BRAND_XY)
     fr = Image.composite(fr, black, Image.new("L", (W, H), int(255 * ease(t / 1.2))))   # fade in from black
+    fr.alpha_composite(brand, BRAND_XY)                                            # the logo is up from the first frame
 
     storm = STORM0 <= t < STORM1 + 0.15
     if t < UNPLUG:                                                                 # cables jar → bolts / clip on top
