@@ -56,14 +56,6 @@ extension ContextMenuBuilder {
     static func skinRows(for mode: PlayerUIMode) -> [NSMenuItem] {
         let wm = WindowManager.shared
         let isActive = wm.uiMode == mode
-        func modernFamilyRows(_ family: ModernSkinFamily) -> [NSMenuItem] {
-            let current = ModernSkinEngine.shared.currentSkinName(for: family)
-            return ModernSkinEngine.shared.availableSkins(for: family).map {
-                skinMenuItem($0.name, #selector(MenuActions.selectModernFamilySkin(_:)),
-                             representedObject: MenuActions.ModernFamilySkinChoice(family: family, name: $0.name),
-                             isOn: wm.uiMode == family.playerUIMode && $0.name == current)
-            }
-        }
         switch mode {
         case .classic:
             return wm.availableSkins().map {
@@ -71,9 +63,7 @@ extension ContextMenuBuilder {
                              isOn: isActive && wm.currentSkinPath == $0.url.path)
             }
         // One Original list across both families, so Next/Previous Skin steps through Metal too.
-        case .modern, .metal:
-            return [ModernSkinFamily.modern, .metal].filter { AppCapabilities.supports($0.appFeature) }
-                .flatMap(modernFamilyRows)
+        case .modern, .metal: return originalSkinRows()
         case .winampModern:
             let importer = WinampModernSkinImporter.shared
             let selected = importer.selectedSkin()?.archiveURL
@@ -104,8 +94,12 @@ extension ContextMenuBuilder {
 
     /// The family submenu with its parent item, checked while that family is on screen.
     static func skinFamilyItem(_ mode: PlayerUIMode, menu: NSMenu) -> NSMenuItem {
-        let item = NSMenuItem(title: mode.displayName, action: nil, keyEquivalent: "")
-        if WindowManager.shared.uiMode == mode { item.state = .on }
+        skinFamilyItem(title: mode.displayName, isOn: WindowManager.shared.uiMode == mode, menu: menu)
+    }
+
+    private static func skinFamilyItem(title: String, isOn: Bool, menu: NSMenu) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        if isOn { item.state = .on }
         item.submenu = menu
         return item
     }
@@ -129,32 +123,60 @@ extension ContextMenuBuilder {
 
     // MARK: - Original and Original-Metal
 
-    /// One Original submenu for both families: each family's options, then both skin lists.
-    /// Every item carries its family, so both share one action per job.
-    static func buildOriginalSkinsMenu() -> NSMenu {
+    /// The Original and Original-Metal families this edition supports, in menu order.
+    static var originalFamilies: [ModernSkinFamily] {
+        [ModernSkinFamily.modern, .metal].filter { AppCapabilities.supports($0.appFeature) }
+    }
+
+    /// One family's skins as rows, checked only while that family is on screen.
+    private static func modernFamilyRows(_ family: ModernSkinFamily) -> [NSMenuItem] {
+        let isActive = WindowManager.shared.uiMode == family.playerUIMode
+        let current = ModernSkinEngine.shared.currentSkinName(for: family)
+        return ModernSkinEngine.shared.availableSkins(for: family).map {
+            skinMenuItem($0.name, #selector(MenuActions.selectModernFamilySkin(_:)),
+                         representedObject: MenuActions.ModernFamilySkinChoice(family: family, name: $0.name),
+                         isOn: isActive && $0.name == current)
+        }
+    }
+
+    /// Both families' skins as one list, Original first, for Next/Previous Skin.
+    static func originalSkinRows() -> [NSMenuItem] {
+        originalFamilies.flatMap(modernFamilyRows)
+    }
+
+    /// The Skins menu's Original entry, holding both families: each family's options, then the
+    /// Original skins and the Metal skins with a divider between. Named after the family when the
+    /// edition supports only one; nil when it supports neither.
+    static func originalFamilyMenuItem() -> NSMenuItem? {
+        let families = originalFamilies
+        guard let first = families.first else { return nil }
         let mode = WindowManager.shared.uiMode
-        let families = [ModernSkinFamily.modern, .metal].filter { AppCapabilities.supports($0.appFeature) }
+        let isOnScreen = mode.modernSkinFamily != nil
         // Original-Metal names itself in its own entries; Original, the older family, does not.
         func qualifier(_ family: ModernSkinFamily) -> String { family == .metal ? "Metal " : "" }
         var options = families.map {
-            skinMenuItem("Load \(qualifier($0))Skin...", #selector(MenuActions.loadModernFamilySkin(_:)), representedObject: $0)
+            skinMenuItem("Load \(qualifier($0))Skin...", #selector(MenuActions.loadModernFamilySkin(_:)),
+                         representedObject: $0)
         }
-        if mode.modernSkinFamily != nil {
+        if isOnScreen {
             options.append(skinMenuItem("Reset Skin to Default", #selector(MenuActions.resetCurrentSkinToDefault)))
         }
         options += families.map {
-            skinMenuItem("Open \(qualifier($0))Skins Folder...", #selector(MenuActions.openModernFamilySkinsFolder(_:)),
-                         representedObject: $0)
+            skinMenuItem("Open \(qualifier($0))Skins Folder...",
+                         #selector(MenuActions.openModernFamilySkinsFolder(_:)), representedObject: $0)
         }
-        if mode.modernSkinFamily != nil, let remove = removeSkinItem(for: mode) { options.append(remove) }
-        // Outside both families, "Switch to" re-enters Original with its last skin.
-        let switchItem = families.first.flatMap { family -> NSMenuItem? in
-            guard mode.modernSkinFamily == nil else { return nil }
-            return skinMenuItem("Switch to \(family.displayName)"
-                + (UserDefaults.standard.string(forKey: family.skinNameKey).map { " (\($0))" } ?? ""),
-                #selector(MenuActions.setModernFamilyMode(_:)), representedObject: family)
-        }
-        return buildSkinFamilyMenu(switchItem: switchItem, options: options, skins: skinRows(for: .modern))
+        options += families.compactMap { removeSkinItem(for: $0.playerUIMode) }
+        // Outside both families, "Switch to" re-enters the first family with its last skin.
+        let switchRow = isOnScreen ? nil
+            : switchItem(to: first.playerUIMode, skinName: UserDefaults.standard.string(forKey: first.skinNameKey),
+                         action: #selector(MenuActions.setModernFamilyMode(_:)))
+        switchRow?.representedObject = first
+        // Two families at most, so the one separator instance is inserted once.
+        let skins = Array(families.map(modernFamilyRows).filter { !$0.isEmpty }
+            .joined(separator: [NSMenuItem.separator()]))
+        let menu = buildSkinFamilyMenu(switchItem: switchRow, options: options, skins: skins)
+        return skinFamilyItem(title: families.count == 1 ? first.displayName : ModernSkinFamily.modern.displayName,
+                              isOn: isOnScreen, menu: menu)
     }
 
     // MARK: - Modern (.wal)

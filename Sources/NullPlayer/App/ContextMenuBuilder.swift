@@ -854,10 +854,7 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.winampModernMode) {
             uiMenu.addItem(skinFamilyItem(.winampModern, menu: buildWinampModernSkinsMenu()))
         }
-        if AppCapabilities.supports(.modernMode) || AppCapabilities.supports(.metalMode) {
-            let original = NSMenuItem(title: ModernSkinFamily.modern.displayName, action: nil, keyEquivalent: "")
-            if WindowManager.shared.uiMode.modernSkinFamily != nil { original.state = .on }
-            original.submenu = buildOriginalSkinsMenu()
+        if let original = originalFamilyMenuItem() {
             uiMenu.addItem(original)
         }
         if AppCapabilities.supports(.wmpSkinMode) {
