@@ -843,8 +843,8 @@ class ContextMenuBuilder {
     // MARK: - UI Submenu
 
     /// The Skins menu: one submenu per skin family (see `ContextMenuBuilder+SkinFamilies.swift`).
-    /// The four families read Classic → Modern → Original → Original-Metal, with Media Player
-    /// after them. Modern is the `.wal` engine; the two Original families follow it.
+    /// The families read Classic → Modern → Original, with Media Player after them. Modern is the
+    /// `.wal` engine; Original holds both the Original and Original-Metal families.
     private static func buildUIMenu() -> NSMenu {
         let uiMenu = NSMenu()
         uiMenu.autoenablesItems = false
@@ -854,11 +854,11 @@ class ContextMenuBuilder {
         if AppCapabilities.supports(.winampModernMode) {
             uiMenu.addItem(skinFamilyItem(.winampModern, menu: buildWinampModernSkinsMenu()))
         }
-        if AppCapabilities.supports(.modernMode) {
-            uiMenu.addItem(skinFamilyItem(.modern, menu: buildModernFamilySkinsMenu(.modern)))
-        }
-        if AppCapabilities.supports(.metalMode) {
-            uiMenu.addItem(skinFamilyItem(.metal, menu: buildModernFamilySkinsMenu(.metal)))
+        if AppCapabilities.supports(.modernMode) || AppCapabilities.supports(.metalMode) {
+            let original = NSMenuItem(title: ModernSkinFamily.modern.displayName, action: nil, keyEquivalent: "")
+            if WindowManager.shared.uiMode.modernSkinFamily != nil { original.state = .on }
+            original.submenu = buildOriginalSkinsMenu()
+            uiMenu.addItem(original)
         }
         if AppCapabilities.supports(.wmpSkinMode) {
             uiMenu.addItem(skinFamilyItem(.wmp, menu: buildWMPSkinsMenu()))

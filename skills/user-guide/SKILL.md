@@ -613,6 +613,9 @@ visual mode.
 - Switches **live, with no restart** — only the mode-dependent window layer is rebuilt; audio, casting, the video player, and playlist/seek/play state continue uninterrupted. Picking a skin in any family's list, or loading one with its **Load Skin...**, while another family is on screen also switches live to that family.
 - Original skins use `skin.json` format
 - Portable Original skin bundles use `.nsz` (ZIP) and can be imported via **Skins > Original > Load Skin...**
+- **Skins > Original** holds both Original and Original-Metal: the Original skins, then the Metal
+  skins, with **Load Metal Skin...** and **Open Metal Skins Folder...** for the Metal family. Picking
+  a Metal skin switches to Original-Metal; **Next/Previous Skin** step across both lists.
 - Bundled Original skins: NullPlayer-Orange (default), October, NeonWave, Skulls, and more
 
 ### Winamp Modern (`.wal`) Mode
