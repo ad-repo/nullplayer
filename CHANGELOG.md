@@ -101,6 +101,9 @@
   ironwork over it: it opens there, moves and docks with the player, survives a restore and a shade,
   and the shade button closes it. Its cover window's title ticker sits beside the transport buttons.
 - **A spectrum inside a shaped panel stays inside its shape** (Axess, New York Minute).
+- **← and → step the preset in a skin's own visualization window**, as in NullPlayer's; they
+  seeked the track instead. A film playing in that window takes them first and skips, as its own
+  window does. They still seek in the player window.
 
 ### Sonique skins
 

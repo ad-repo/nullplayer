@@ -912,11 +912,19 @@ final class WinampModernMainView: NSView {
             needsDisplay = true
             return
         }
-        // Plain arrows are the main window's, as in every other mode: ←/→ seek 5 s (a parked film's
-        // too, through the window manager, rather than the film's own 10 s skip), ↑/↓ step the
-        // volume. Only those: the rest of that table's letters are the visualization's keys here.
-        // The engine announces no volume change, so the skin's own readout is told here, the way
-        // `updatePlaybackState` tells it of any other.
+        // ←/→ in the skin's visualization window are that window's own, as in NullPlayer's: the
+        // same order as the keys below — a parked film's skip first, since it is what is on screen,
+        // then the visualization's preset step. The only keys asked ahead of the main window's
+        // arrows; a key both refuse falls through to the asks below, which refuse it again.
+        if event.keyCode == 123 || event.keyCode == 124,
+           WinampModernContainerTopology.kind(of: renderer.container) == .visualization,
+           hostedVideoSurface?.handleKeyDown(event) == true
+            || hostedVisualizationSurface?.handleKeyDown(event) == true { return }
+        // Every other window's plain arrows are the main window's, as in every other mode: ←/→ seek
+        // 5 s (a parked film's too, through the window manager, rather than the film's own 10 s
+        // skip), ↑/↓ step the volume. Only those: the rest of that table's letters are the
+        // visualization's keys here. The engine announces no volume change, so the skin's own
+        // readout is told here, the way `updatePlaybackState` tells it of any other.
         if MainWindowKeys.performArrow(event) {
             updatePlaybackState()
             return
@@ -1500,6 +1508,7 @@ final class WinampModernMainView: NSView {
 
     /// The visualization surface in this scene, if the skin's AVS holder made one. The host actions
     /// (`VIS_NEXT`, `VIS_CFG`) and the Visualizations menu reach the running engine through it.
+    /// `first` is the only one: `visualizationSurfaces` is reconciled to the single engine holder.
     var hostedVisualizationSurface: WinampModernVisualizationSurface? { visualizationSurfaces.values.first }
 
     /// How far a video or visualization surface passes under the skin's surrounding artwork, in skin
