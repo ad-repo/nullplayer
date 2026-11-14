@@ -40,12 +40,12 @@ extension AvsEngine {
         panel.allowsMultipleSelection = false
         panel.message = "Choose a folder of AVS presets (.avs)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        AvsPresets.customFolder = url.path
+        AvsPresets.customFolderSetting.set(url)
         reloadPresets()
     }
 
     @objc private func clearPresetFolderAction() {
-        AvsPresets.customFolder = nil
+        AvsPresets.customFolderSetting.set(nil)
         reloadPresets()
     }
 }

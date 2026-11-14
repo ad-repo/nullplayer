@@ -10,7 +10,7 @@ enum AvsPresets {
     }
 
     /// Cleared by "Reset All Visualization Preferences".
-    static let preferenceKeys = [Key.customFolder, Key.currentPreset, Key.advancedBeatDetection]
+    static let preferenceKeys = [Key.customFolder, customFolderSetting.bookmarkKey, Key.currentPreset, Key.advancedBeatDetection]
 
     /// Advanced beat detection: aubio's beat tracker in place of Winamp's standard detector.
     /// Read by every engine's beat observers on the audio thread, so a change applies to all of them
@@ -20,12 +20,8 @@ enum AvsPresets {
         set { UserDefaults.standard.set(newValue, forKey: Key.advancedBeatDetection) }
     }
 
-    /// A plain path, like `ProjectMWrapper.customPresetsFolder` (tasks/MISC_TASKS.md has the
-    /// security-scoped bookmark row both need for a sandboxed build).
-    static var customFolder: String? {
-        get { UserDefaults.standard.string(forKey: Key.customFolder) }
-        set { UserDefaults.standard.set(newValue, forKey: Key.customFolder) }
-    }
+    static let customFolderSetting = RememberedFolder(pathKey: Key.customFolder)
+    static var customFolder: URL? { customFolderSetting.url }
 
     static var currentPreset: String? {
         get { UserDefaults.standard.string(forKey: Key.currentPreset) }
@@ -37,7 +33,7 @@ enum AvsPresets {
     /// Every preset, bundled first, each group sorted by name; the user folder is searched
     /// recursively, as Winamp's AVS folder was.
     static func all() -> [URL] {
-        let folders = [bundledFolder, customFolder.map { URL(fileURLWithPath: $0) }].compactMap { $0 }
+        let folders = [bundledFolder, customFolder].compactMap { $0 }
         return folders.flatMap { folder -> [URL] in
             let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)?
                 .compactMap { $0 as? URL } ?? []

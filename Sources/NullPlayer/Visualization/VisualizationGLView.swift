@@ -1,7 +1,6 @@
 import AppKit
 import OpenGL.GL3
 import CoreVideo
-import Accelerate
 import os
 
 // Silence OpenGL deprecation warnings (macOS still supports OpenGL 4.1)
@@ -123,19 +122,7 @@ class VisualizationGLView: NSOpenGLView {
 
     private let dataLock = OSAllocatedUnfairLock()  // Faster than NSLock for short critical sections
 
-    /// Winamp-compatible host spectrum for the engines that read one (`consumesHostSpectrum`: Geiss,
-    /// Corona, Smear): 256 bins from a 512-sample real FFT.
-    private let hostFFTSize = 512
-    private let hostSpectrumBinCount = 256
-    private let hostFFTLog2N = vDSP_Length(9)
-    private let hostSpectrumScale: Float = 2.0 / 512.0
-    private nonisolated(unsafe) var hostFFTSetup: FFTSetup?
-    private nonisolated(unsafe) var hostFFTWindow: [Float] = Array(repeating: 0, count: 512)
-    private nonisolated(unsafe) var hostFFTInput: [Float] = Array(repeating: 0, count: 512)
-    private nonisolated(unsafe) var hostFFTReal: [Float] = Array(repeating: 0, count: 256)
-    private nonisolated(unsafe) var hostFFTImag: [Float] = Array(repeating: 0, count: 256)
-    private nonisolated(unsafe) var hostSpectrumScratch: [Float] = Array(repeating: 0, count: 256)
-    private let hostFFTLock = NSLock()
+    private let hostSpectrum = HostSpectrum()
     
     /// Frame counter for frame skipping (renders at 30fps instead of 60fps to save CPU)
     private var frameCounter: UInt64 = 0
@@ -251,7 +238,6 @@ class VisualizationGLView: NSOpenGLView {
         // Set up OpenGL context
         openGLContext?.makeCurrentContext()
         setupOpenGL()
-        setupHostFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow — the view must be in a real window
         // before CVDisplayLinkSetCurrentCGDisplay is called, otherwise the GPU driver can panic
@@ -275,7 +261,6 @@ class VisualizationGLView: NSOpenGLView {
         loadScopedSettings(for: currentEngineType)
 
         setupOpenGL()
-        setupHostFFT()
         setupEngine()
         // setupDisplayLink() deferred to viewDidMoveToWindow (see above)
     }
@@ -295,11 +280,6 @@ class VisualizationGLView: NSOpenGLView {
         cleanupEngineWithCurrentContext()
         NSOpenGLContext.clearCurrentContext()
         engineLock.unlock()
-
-        if let hostFFTSetup {
-            vDSP_destroy_fftsetup(hostFFTSetup)
-            self.hostFFTSetup = nil
-        }
     }
     
     // MARK: - OpenGL Setup
@@ -332,12 +312,6 @@ class VisualizationGLView: NSOpenGLView {
         glClearColor(0.0, 0.0, 0.0, 1.0)
     }
 
-    private func setupHostFFT() {
-        guard hostFFTSetup == nil else { return }
-        hostFFTSetup = vDSP_create_fftsetup(hostFFTLog2N, FFTRadix(kFFTRadix2))
-        vDSP_hann_window(&hostFFTWindow, vDSP_Length(hostFFTSize), Int32(vDSP_HANN_DENORM))
-    }
-    
     private func cleanupOpenGL() {
         releaseOffscreenTargetsWithCurrentContext()
         // Nothing to clean up - projectM manages its own resources
@@ -768,67 +742,22 @@ class VisualizationGLView: NSOpenGLView {
 
     private func updateHostSpectrumFromPCM(_ pcm: [Float]) {
         guard currentEngineType.consumesHostSpectrum else { return }
-        guard hostFFTSetup != nil else { return }
 
-        hostFFTLock.lock()
-        defer { hostFFTLock.unlock() }
-
-        computeHostSpectrumLocked(from: pcm)
-        dataLock.withLock {
-            let copied = min(hostSpectrumScratch.count, localSpectrum.count)
-            for i in 0..<copied {
-                localSpectrum[i] = hostSpectrumScratch[i]
-            }
-        }
-
-        // The audio callback should not wait behind a render or engine swap.
-        // If the render thread owns the engine this tick, the next PCM update
-        // will refresh the spectrum; the engine keeps the last host spectrum.
-        guard engineLock.try() else { return }
-        defer { engineLock.unlock() }
-
-        guard let engine, engine.isAvailable else { return }
-        engine.setSpectrum(hostSpectrumScratch)
-    }
-
-    private func computeHostSpectrumLocked(from pcm: [Float]) {
-        guard let setup = hostFFTSetup else {
-            for i in 0..<hostSpectrumScratch.count {
-                hostSpectrumScratch[i] = 0
-            }
-            return
-        }
-
-        let gain = pcmGain
-        let copied = min(pcm.count, hostFFTSize)
-        for i in 0..<copied {
-            let sample = max(-1.0, min(1.0, pcm[i] * gain))
-            hostFFTInput[i] = sample * hostFFTWindow[i]
-        }
-        if copied < hostFFTSize {
-            for i in copied..<hostFFTSize {
-                hostFFTInput[i] = 0
-            }
-        }
-
-        hostFFTInput.withUnsafeBufferPointer { inputPtr in
-            inputPtr.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: hostSpectrumBinCount) { complexPtr in
-                hostFFTReal.withUnsafeMutableBufferPointer { realPtr in
-                    hostFFTImag.withUnsafeMutableBufferPointer { imagPtr in
-                        var split = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
-                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(hostSpectrumBinCount))
-                        vDSP_fft_zrip(setup, &split, 1, hostFFTLog2N, FFTDirection(FFT_FORWARD))
-                        vDSP_zvabs(&split, 1, &hostSpectrumScratch, 1, vDSP_Length(hostSpectrumBinCount))
-                    }
+        hostSpectrum.compute(from: pcm, gain: pcmGain) { bins in
+            dataLock.withLock {
+                for i in 0..<min(bins.count, localSpectrum.count) {
+                    localSpectrum[i] = bins[i]
                 }
             }
-        }
 
-        // Convert the FFT's linear magnitudes into Winamp-style normalized bins.
-        // The square-root curve keeps quiet treble visible without clipping bass hits.
-        for i in 0..<hostSpectrumBinCount {
-            let scaled = min(1.0, max(0.0, hostSpectrumScratch[i] * hostSpectrumScale))
-            hostSpectrumScratch[i] = sqrtf(scaled)
+            // The audio callback should not wait behind a render or engine swap.
+            // If the render thread owns the engine this tick, the next PCM update
+            // will refresh the spectrum; the engine keeps the last host spectrum.
+            guard engineLock.try() else { return }
+            defer { engineLock.unlock() }
+
+            guard let engine, engine.isAvailable else { return }
+            engine.setSpectrum(bins)
         }
     }
 

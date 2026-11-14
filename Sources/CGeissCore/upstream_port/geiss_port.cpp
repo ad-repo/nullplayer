@@ -211,7 +211,8 @@ long  chaser_offset       = 0;
 long  last_mousemove_frame = -5;
 int   frames_til_auto_switch              = 550;
 int   frames_til_auto_switch__registry    = 550;
-int   gamma               = 10;
+// Upstream `gamma`, renamed: the x86_64 SDK's <math.h> declares gamma().
+int   geiss_gamma         = 10;
 int   solar_pal_freq      = 1;
 int   coarse_pal_freq     = 1;
 int   waveform            = 0;
@@ -669,7 +670,7 @@ void FX_Random_Palette(bool bLoadPal) {
         }
 
         float xv, yv, zv;
-        float gamma_factor = 1.0f + gamma * 0.01f;
+        float gamma_factor = 1.0f + geiss_gamma * 0.01f;
         if (SoundEmpty) gamma_factor += 0.3f;
 
         for (n = 0; n < 256; ++n) {
@@ -735,7 +736,9 @@ void PutPalette() {
 // `win_compat.h`.
 // ---------------------------------------------------------------------------
 
+#define gamma geiss_gamma  // Effects.h's LoadPreset/SavePreset read upstream `gamma`
 #include "Effects.h"
+#undef gamma
 
 // ---------------------------------------------------------------------------
 // Phase 4c-4: FX_Init / FX_Fini / FX_Pick_Random_Mode — direct ports of
@@ -2411,7 +2414,7 @@ extern "C" void geiss_port_get_config(GeissCoreConfig *out);
 extern "C" void geiss_port_get_config(GeissCoreConfig *out) {
     if (!out) return;
     out->sensitivity = volscale;
-    out->gamma = gamma;
+    out->gamma = geiss_gamma;
     out->beatDetection = g_bUseBeatDetection ? 1 : 0;
     out->syncColorToSound = g_bSyncColorToSound ? 1 : 0;
     out->slideShift = g_bSlideShiftEnabled ? 1 : 0;
@@ -2431,8 +2434,8 @@ extern "C" void geiss_port_set_config(const GeissCoreConfig *cfg) {
 
     // gamma: requires palette rebuild (mirrors upstream's gamma hotkey path).
     // Since FX_Random_Palette is the only palette mutation, trigger it.
-    if (gamma != cfg->gamma) {
-        gamma = cfg->gamma;
+    if (geiss_gamma != cfg->gamma) {
+        geiss_gamma = cfg->gamma;
         FX_Random_Palette(true);  // true = don't shuffle c1/c2/c3, just recompute with new gamma
     }
 
@@ -2558,7 +2561,7 @@ extern "C" void geiss_port_randomize_palette(void) {
         } while (temp > 1);
 
         float xv, yv, zv;
-        float gamma_factor = 1.0f + gamma * 0.01f;
+        float gamma_factor = 1.0f + geiss_gamma * 0.01f;
         if (SoundEmpty) gamma_factor += 0.3f;
 
         for (n = 0; n < 256; ++n) {

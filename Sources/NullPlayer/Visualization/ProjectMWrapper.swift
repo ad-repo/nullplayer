@@ -641,8 +641,7 @@ class ProjectMWrapper: VisualizationEngine {
 
 extension ProjectMWrapper {
     
-    /// UserDefaults key for custom presets folder
-    private static let customPresetsFolderKey = "customPresetsFolder"
+    static let customPresetsFolderSetting = RememberedFolder(pathKey: "customPresetsFolder")
     
     /// UserDefaults key for default preset path selected by the user.
     fileprivate static let defaultPresetPathKey = "projectMDefaultPresetPath"
@@ -650,19 +649,8 @@ extension ProjectMWrapper {
     /// UserDefaults key for default preset display name as fallback when path changes.
     fileprivate static let defaultPresetNameKey = "projectMDefaultPresetName"
     
-    /// Gets or sets the custom presets folder path
-    static var customPresetsFolder: String? {
-        get {
-            return UserDefaults.standard.string(forKey: customPresetsFolderKey)
-        }
-        set {
-            if let path = newValue {
-                UserDefaults.standard.set(path, forKey: customPresetsFolderKey)
-            } else {
-                UserDefaults.standard.removeObject(forKey: customPresetsFolderKey)
-            }
-        }
-    }
+    /// The custom presets folder's path
+    static var customPresetsFolder: String? { customPresetsFolderSetting.path }
     
     /// Full path of the user-selected startup default preset.
     static var defaultPresetPath: String? {

@@ -135,7 +135,7 @@ libprojectM can SIGSEGV/SIGBUS on a buggy preset (bad shader compile, the null-t
 
 **Black screen**: ProjectM requires OpenGL 4.1; check Console.app for projectM init errors; try reloading presets. If the view was added to a window that was still hidden, the display link was never started at all — see **Rendering lifetime** under Technical; in a `.wal` skin's window the DEBUG line `WINAMP-MODERN-VIS: resume … rendering=<0/1>` answers it directly.
 
-**No presets loading**: verify preset files exist in bundle or custom folder; check folder permissions.
+**No presets loading**: verify preset files exist in bundle or custom folder; check folder permissions. The custom folder (`ProjectMWrapper.customPresetsFolderSetting`) is a `RememberedFolder`: a security-scoped bookmark under `customPresetsFolder.bookmark`, so the sandboxed App Store build keeps it across a relaunch, with the plain `customPresetsFolder` path as the fallback.
 
 **Fewer presets than expected / presets missing**: a preset that crashed on load was auto-disabled (see Crash Detection & Blacklist). Restore them via **Visuals → Visualizations → Restore Disabled ProjectM Presets**. If they were disabled by mistake rather than a real crash, they'll stay restored; a genuinely crashing preset disables itself again on next load.
 

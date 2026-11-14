@@ -6032,7 +6032,7 @@ class MenuActions: NSObject {
             }
             
             // Save the custom folder path
-            ProjectMWrapper.customPresetsFolder = url.path
+            ProjectMWrapper.customPresetsFolderSetting.set(url)
             
             // Reload presets
             WindowManager.shared.reloadVisualizationPresets()
@@ -6065,7 +6065,7 @@ class MenuActions: NSObject {
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            ProjectMWrapper.customPresetsFolder = nil
+            ProjectMWrapper.customPresetsFolderSetting.set(nil)
             WindowManager.shared.reloadVisualizationPresets()
             
             NSLog("MenuActions: Removed custom visualizations folder")
