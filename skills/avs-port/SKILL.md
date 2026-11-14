@@ -55,7 +55,7 @@ AVS is exempt from CLAUDE.md's Winamp-source rule: it is a BSD-licensed visualiz
   - The `.patch` files and licences.
 - **Not vendored:** `e_example_effect` and the ffmpeg video reader (`video_libav`, hence `NO_FFMPEG`). Upstream's library comments Text out of `effect_library.cpp`; NullPlayer builds its own (`upstream_port/e_text.cpp`).
 
-**x86_64** uses EEL2's portable bytecode interpreter (`EEL_TARGET_PORTABLE`, set in `ns-eel.h`), because EEL2's x64 JIT needs a NASM object. The whole app does not build for x86_64 on `origin/main` (M82). The port was verified there with a standalone clang harness under Rosetta, and every preset loaded except Spacefolding (since fixed by the APE aliases). The x86-only code paths that now have C ports (Texer II, Convolution) still compile there and keep their asm on i386 only.
+**x86_64** uses EEL2's portable bytecode interpreter (`EEL_TARGET_PORTABLE`, set in `ns-eel.h`), because EEL2's x64 JIT needs a NASM object. The whole app does not link for x86_64 yet: the committed `libaubio` is arm64-only (M82). The port was verified there with a standalone clang harness under Rosetta, and every preset loaded except Spacefolding (since fixed by the APE aliases). The x86-only code paths that now have C ports (Texer II, Convolution) still compile there and keep their asm on i386 only.
 
 ## Patches to upstream
 
@@ -74,7 +74,7 @@ Every edit is marked `NullPlayer:` in the source. The list:
   - `e_effectlist.cpp`: `(int)(intptr_t)parm`.
 - **Texer II** (`e_texer2.cpp`): `DrawParticle`'s clipping and texture mapping are shared; where its 32-bit MMX asm starts, anything but i386 calls `texer2_draw_scaled` / `texer2_draw_unscaled` (`upstream_port/texer2_portable.cpp`), byte-exact C ports of the two loop families. They keep the asm's quirks: the min/max select compares RGB unsigned and the fourth byte signed, the two loops order min/max operands and weight the adjustable blend differently, and masked multiply filters the product. One deliberate difference: the asm's scaling loop read one texel past the image at the last column and row; the port clamps to the last texel. `EMMS` is i386 only. `e_texer2_macros.h` uses `lrint` in place of its GCC asm `RoundToInt`.
 - **Convolution Filter** (`e_convolution.cpp`): the 32-bit x86 JIT stays on i386; elsewhere `render` plans a `Convolution_Portable` (`upstream_port/convolution_portable.cpp`) when `need_draw_update` is set, as the JIT is rebuilt, and applies it per frame. It does what the generated code does: 16-bit lanes, wrapping sums when a side's weights sum under 256 and saturating otherwise, edge rows and columns clamped as the JIT's loads were, the second pass's rotated taps, in-place filtering when no weight precedes the centre. A diff from Winamp here is a port defect.
-- **Legacy APE aliases** (`effect_library.cpp`): `Winamp Starfield v1` and `Winamp Mosaic v1` load as the built-in Starfield and Mosaic, whose config records they match byte for byte (36 and 28 bytes). `FunkyFX FyrewurX v1` has no implementation and stays Unknown Effect (M91).
+- **Legacy APE aliases** (`effect_library.cpp`): `Winamp Starfield v1` and `Winamp Mosaic v1` load as the built-in Starfield and Mosaic, whose config records they match byte for byte (36 and 28 bytes). `FunkyFX FyrewurX v1` has no implementation and stays Unknown Effect; re-creating it for two bundled presets was decided against (2026-11-13).
 - **`E_Root::swap`** (`e_root.h`): `Effect::swap` moved the children but not the config, so a loaded preset kept the previous preset's Clear flag and metadata. `E_Root` swaps its config too.
 - **Text** is added to the library (`MAKE_EFFECT_LIB_ENTRY(Text)`), from `upstream_port/`.
 - `e_blitterfeedback.cpp`: the stale `BLEND4` is renamed to `blend_bilinear_2x2`.
@@ -142,7 +142,7 @@ The full-rate stereo feed is the newest 2048 frames of each tap buffer, and the 
 | Key | Meaning |
 |-----|---------|
 | `avs.presetPath` | The preset showing, by path; the first preset when it is missing. |
-| `avs.customPresetsFolder` | The user folder from **Choose AVS Preset Folder…**, a plain path (M84: security-scoped bookmarks). |
+| `avs.customPresetsFolder` | The user folder from **Choose AVS Preset Folder…**, kept by `RememberedFolder` (`Utilities/`): a security-scoped bookmark in `avs.customPresetsFolder.bookmark`, so a sandboxed build keeps it across a relaunch, with this plain path as the fallback. |
 | `avs.advancedBeatDetection` | Beat Detection ▸ Advanced (aubio's beats); one setting for every engine instance, read each frame. |
 | `avs.cycleMode` / `avs.cycleInterval` | Manual Only / Auto-Cycle / Auto-Random and its interval, through `VisualizationCycleSettings` like every engine's. One setting for every host. |
 
@@ -200,9 +200,7 @@ The read-only arrays are effect output and are not shown.
 
 ## Gaps (tasks/MISC_TASKS.md)
 
-- M91: FyrewurX (`justin - fireworks kaliadascope mk 2`, `justin - steve likes it`) has no implementation.
-- M82: no x86_64 app build.
-- M84: preset folders are plain paths.
+- M82: no x86_64 app link (arm64-only `libaubio`).
 
 ## Licensing
 

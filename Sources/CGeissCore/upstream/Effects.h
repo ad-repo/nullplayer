@@ -80,7 +80,7 @@ void LoadPreset(int n)
     GetPrivateProfileString(section,"damping","1.0",temp,64,inifile); sscanf(temp, "%f", &new_damping);
     weightsum = GetPrivateProfileInt(section,"magic",1,inifile);
 	g_bSlideShift  = GetPrivateProfileInt(section,"shift",0,inifile);
-	gamma = GetPrivateProfileInt(section,"gamma",0,inifile);
+	geiss_gamma = GetPrivateProfileInt(section,"gamma",0,inifile);
     
     int t = GetPrivateProfileInt(section,"volpos",10,inifile);
     while (volpos < t) { volpos++; volscale *= 1.25f; };
@@ -144,7 +144,7 @@ void SavePreset(int n)
 	sprintf(string,"%d",old_weightsum); WritePrivateProfileString(section,"magic",string,inifile);
 	sprintf(string,"%d",volpos); WritePrivateProfileString(section,"volpos",string,inifile);
 	sprintf(string,"%d",g_bSlideShift); WritePrivateProfileString(section,"shift",string,inifile);
-	sprintf(string,"%d",gamma); WritePrivateProfileString(section,"gamma",string,inifile);
+	sprintf(string,"%d",geiss_gamma); WritePrivateProfileString(section,"gamma",string,inifile);
 	sprintf(string,"%d",g_bSlideShift  ); WritePrivateProfileString(section,"shift",string,inifile);
 
 	sprintf(string,"%f",old_turn1); WritePrivateProfileString(section,"t1",string,inifile);

@@ -6,9 +6,6 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
-#include <fstream>
-#include <map>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -20,6 +17,7 @@
 #include "upstream/fft.h"
 #include "VisClassicEffects.h"
 #include "VisClassicPeaks.h"
+#include "VisClassicProfile.h"
 
 thread_local int draw_height = 0;  // Used by upstream bar color helpers.
 
@@ -27,81 +25,25 @@ namespace {
 
 constexpr int kWaveCount = 576;
 constexpr int kMaxBars = 576;
-constexpr int kColorCount = 256;
 constexpr int kDefaultFFTFrequencies = 512;
 
+using visclassic::kColorCount;
 using visclassic::Palette;
 using visclassic::RGB;
+using visclassic::trim;
 
-static inline int clampInt(int v, int lo, int hi) {
-    return std::max(lo, std::min(hi, v));
-}
-
-static inline std::string trim(const std::string &s) {
-    size_t start = 0;
-    while (start < s.size() && std::isspace(static_cast<unsigned char>(s[start]))) {
-        ++start;
-    }
-    size_t end = s.size();
-    while (end > start && std::isspace(static_cast<unsigned char>(s[end - 1]))) {
-        --end;
-    }
-    return s.substr(start, end - start);
-}
+// The `[Classic Analyzer]` settings, in the plugin's file order. Each, lowercased, is also a
+// `setOption` / `getOption` key, which owns its range, its int form and what it rebuilds.
+constexpr const char *kProfileSettings[] = {
+    "Falloff", "PeakChange", "Bar Width", "X-Spacing", "Y-Spacing", "BackgroundDraw",
+    "BarColourStyle", "PeakColourStyle", "Effect", "Peak Effect", "PeakFallOffMode", "ReverseLeft",
+    "ReverseRight", "Mono", "Bar Level", "FFTEqualize", "FFTEnvelope", "FFTScale", "FitToWidth",
+};
 
 static inline std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
-
-static inline bool parseInt(const std::string &s, int &out) {
-    try {
-        size_t pos = 0;
-        int v = std::stoi(trim(s), &pos, 10);
-        if (pos == 0) return false;
-        out = v;
-        return true;
-    } catch (...) {
-        return false;
-    }
-}
-
-// Profile colours are `R G B` as they appear on screen. The original plugin's source reads them
-// into variables named `r g b` and stores `RGB(b, g, r)` into a COLORREF, but that COLORREF goes
-// straight into a 32-bit DIB whose byte order undoes the swap — its built-in default,
-// `bmpRGB(204 + i/5, i, 0)`, is the red→yellow of "Default Red & Yellow". Reading them as B G R
-// drew every bundled profile with red and blue exchanged.
-static inline bool parseRGB(const std::string &s, RGB &out) {
-    std::istringstream iss(s);
-    int r = 0, g = 0, b = 0;
-    if (!(iss >> r >> g >> b)) {
-        return false;
-    }
-    out.b = static_cast<uint8_t>(clampInt(b, 0, 255));
-    out.g = static_cast<uint8_t>(clampInt(g, 0, 255));
-    out.r = static_cast<uint8_t>(clampInt(r, 0, 255));
-    return true;
-}
-
-static inline std::string stemFromPath(const std::string &path) {
-    const size_t slash = path.find_last_of("/\\");
-    const std::string file = (slash == std::string::npos) ? path : path.substr(slash + 1);
-    const size_t dot = file.find_last_of('.');
-    if (dot == std::string::npos) return file;
-    return file.substr(0, dot);
-}
-
-struct IniProfile {
-    std::map<std::string, std::string> analyzer;
-    Palette barColors{};
-    Palette peakColors{};
-    Palette volumeColors{};
-    std::array<int, kColorCount> volumeFunc{};
-    bool hasBarColors = false;
-    bool hasPeakColors = false;
-    bool hasVolumeColors = false;
-    bool hasVolumeFunc = false;
-};
 
 class Core {
 public:
@@ -138,11 +80,11 @@ public:
         const std::string key = lower(trim(keyRaw));
 
         if (key == "falloff") {
-            falloffRate_ = clampInt(value, 0, 75);
+            falloffRate_ = std::clamp(value, 0, 75);
             return 1;
         }
         if (key == "peakchange") {
-            peakChangeRate_ = clampInt(value, 0, 255);
+            peakChangeRate_ = std::clamp(value, 0, 255);
             rebuildPeakTables_ = true;
             return 1;
         }
@@ -152,39 +94,39 @@ public:
             return 1;
         }
         if (key == "bar width" || key == "bar_width") {
-            requestedBarWidth_ = clampInt(value, 1, 64);
+            requestedBarWidth_ = std::clamp(value, 1, 64);
             recalcGeometry();
             return 1;
         }
         if (key == "x-spacing" || key == "x_spacing") {
-            xSpacing_ = clampInt(value, 0, 32);
+            xSpacing_ = std::clamp(value, 0, 32);
             recalcGeometry();
             return 1;
         }
         if (key == "y-spacing" || key == "y_spacing") {
-            ySpacing_ = clampInt(value, 1, 7);
+            ySpacing_ = std::clamp(value, 1, 7);
             return 1;
         }
         if (key == "backgrounddraw") {
-            backgroundDraw_ = clampInt(value, 0, 4);
+            backgroundDraw_ = std::clamp(value, 0, 4);
             return 1;
         }
         if (key == "barcolourstyle") {
-            barColourStyle_ = clampInt(value, 0, 4);
+            barColourStyle_ = std::clamp(value, 0, 4);
             return 1;
         }
         if (key == "peakcolourstyle") {
-            peakColourStyle_ = clampInt(value, 0, 2);
+            peakColourStyle_ = std::clamp(value, 0, 2);
             rebuildPeakTables_ = true;
             return 1;
         }
         if (key == "effect") {
-            effect_ = clampInt(value, 0, 7);
+            effect_ = std::clamp(value, 0, 7);
             ghosts_.reset(bands_, bandWidth_);
             return 1;
         }
         if (key == "peak effect" || key == "peak_effect") {
-            peakEffect_ = clampInt(value, 0, 5);
+            peakEffect_ = std::clamp(value, 0, 5);
             rebuildPeakTables_ = true;
             return 1;
         }
@@ -202,7 +144,7 @@ public:
             return 1;
         }
         if (key == "bar level" || key == "bar_level") {
-            levelBase_ = clampInt(value, 0, 1);
+            levelBase_ = std::clamp(value, 0, 1);
             return 1;
         }
         if (key == "fftequalize") {
@@ -327,44 +269,18 @@ public:
     }
 
     int loadProfile(const std::string &path) {
-        IniProfile profile;
-        if (!readProfile(path, profile)) {
+        visclassic::IniProfile profile;
+        if (!visclassic::readProfile(path, profile)) {
             setError("Failed to parse profile");
             return 0;
         }
 
-        auto readAnalyzerInt = [&](const char *key, int fallback, int lo, int hi) {
-            auto it = profile.analyzer.find(key);
-            if (it == profile.analyzer.end()) return fallback;
-            int v = fallback;
-            if (!parseInt(it->second, v)) return fallback;
-            return clampInt(v, lo, hi);
-        };
-
-        falloffRate_ = readAnalyzerInt("Falloff", falloffRate_, 0, 75);
-        peakChangeRate_ = readAnalyzerInt("PeakChange", peakChangeRate_, 0, 255);
-        requestedBarWidth_ = readAnalyzerInt("Bar Width", requestedBarWidth_, 1, 64);
-        xSpacing_ = readAnalyzerInt("X-Spacing", xSpacing_, 0, 32);
-        ySpacing_ = readAnalyzerInt("Y-Spacing", ySpacing_, 1, 7);
-        backgroundDraw_ = readAnalyzerInt("BackgroundDraw", backgroundDraw_, 0, 4);
-        barColourStyle_ = readAnalyzerInt("BarColourStyle", barColourStyle_, 0, 4);
-        peakColourStyle_ = readAnalyzerInt("PeakColourStyle", peakColourStyle_, 0, 2);
-        effect_ = readAnalyzerInt("Effect", effect_, 0, 7);
-        peakEffect_ = readAnalyzerInt("Peak Effect", peakEffect_, 0, 5);
-        peakLogFalloff_ = readAnalyzerInt("PeakFallOffMode", peakLogFalloff_ ? 1 : 0, 0, 1) != 0;
+        for (const char *key : kProfileSettings) {
+            if (auto value = profile.analyzerInt(key)) setOption(key, *value);
+        }
         rebuildPeakTables_ = true;
-        reverseLeft_ = readAnalyzerInt("ReverseLeft", reverseLeft_ ? 1 : 0, 0, 1) != 0;
-        reverseRight_ = readAnalyzerInt("ReverseRight", reverseRight_ ? 1 : 0, 0, 1) != 0;
-        mono_ = readAnalyzerInt("Mono", mono_ ? 1 : 0, 0, 1) != 0;
-        levelBase_ = readAnalyzerInt("Bar Level", levelBase_, 0, 1);
-        fftEqualize_ = readAnalyzerInt("FFTEqualize", fftEqualize_ ? 1 : 0, 0, 1) != 0;
-        fftEnvelope_ = std::max(0.01f, static_cast<float>(readAnalyzerInt("FFTEnvelope", static_cast<int>(fftEnvelope_ * 100.0f), 1, 1000)) / 100.0f);
-        fftScale_ = std::max(0.01f, static_cast<float>(readAnalyzerInt("FFTScale", static_cast<int>(fftScale_ * 100.0f), 1, 2000)) / 100.0f);
-        fitToWidth_ = readAnalyzerInt("FitToWidth", fitToWidth_ ? 1 : 0, 0, 1) != 0;
-
-        auto msgIt = profile.analyzer.find("Message");
-        if (msgIt != profile.analyzer.end()) {
-            profileMessage_ = msgIt->second;
+        if (const std::string *message = profile.analyzerValue("Message")) {
+            profileMessage_ = *message;
         }
 
         if (profile.hasBarColors) {
@@ -383,67 +299,29 @@ public:
         setupFFT();
         recalcGeometry();
         currentProfilePath_ = path;
-        currentProfileName_ = stemFromPath(path);
+        currentProfileName_ = visclassic::stemFromPath(path);
         return 1;
     }
 
     int saveProfile(const std::string &path) {
-        std::ofstream out(path, std::ios::out | std::ios::trunc);
-        if (!out) {
+        visclassic::IniProfile profile;
+        for (const char *key : kProfileSettings) {
+            int value = 0;
+            getOption(key, &value);
+            profile.analyzer.emplace_back(key, std::to_string(value));
+        }
+        profile.analyzer.emplace_back("Message", profileMessage_);
+        profile.barColors = barColors_;
+        profile.peakColors = peakColors_;
+        profile.volumeColors = volumeColors_;
+        profile.volumeFunc = volumeFunc_;
+        if (!visclassic::writeProfile(path, profile)) {
             setError("Unable to open profile for writing");
             return 0;
         }
 
-        out << "[Classic Analyzer]\n";
-        out << "Falloff=" << falloffRate_ << "\n";
-        out << "PeakChange=" << peakChangeRate_ << "\n";
-        out << "Bar Width=" << requestedBarWidth_ << "\n";
-        out << "X-Spacing=" << xSpacing_ << "\n";
-        out << "Y-Spacing=" << ySpacing_ << "\n";
-        out << "BackgroundDraw=" << backgroundDraw_ << "\n";
-        out << "BarColourStyle=" << barColourStyle_ << "\n";
-        out << "PeakColourStyle=" << peakColourStyle_ << "\n";
-        out << "Effect=" << effect_ << "\n";
-        out << "Peak Effect=" << peakEffect_ << "\n";
-        out << "PeakFallOffMode=" << (peakLogFalloff_ ? 1 : 0) << "\n";
-        out << "ReverseLeft=" << (reverseLeft_ ? 1 : 0) << "\n";
-        out << "ReverseRight=" << (reverseRight_ ? 1 : 0) << "\n";
-        out << "Mono=" << (mono_ ? 1 : 0) << "\n";
-        out << "Bar Level=" << levelBase_ << "\n";
-        out << "FFTEqualize=" << (fftEqualize_ ? 1 : 0) << "\n";
-        out << "FFTEnvelope=" << static_cast<int>(fftEnvelope_ * 100.0f + 0.5f) << "\n";
-        out << "FFTScale=" << static_cast<int>(fftScale_ * 100.0f + 0.5f) << "\n";
-        out << "FitToWidth=" << (fitToWidth_ ? 1 : 0) << "\n";
-        out << "Message=" << profileMessage_ << "\n";
-
-        out << "[BarColours]\n";
-        for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << static_cast<int>(barColors_[i].r) << " "
-                << static_cast<int>(barColors_[i].g) << " "
-                << static_cast<int>(barColors_[i].b) << "\n";
-        }
-
-        out << "[PeakColours]\n";
-        for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << static_cast<int>(peakColors_[i].r) << " "
-                << static_cast<int>(peakColors_[i].g) << " "
-                << static_cast<int>(peakColors_[i].b) << "\n";
-        }
-
-        out << "[VolumeColours]\n";
-        for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << static_cast<int>(volumeColors_[i].r) << " "
-                << static_cast<int>(volumeColors_[i].g) << " "
-                << static_cast<int>(volumeColors_[i].b) << "\n";
-        }
-
-        out << "[VolumeFunction]\n";
-        for (int i = 0; i < kColorCount; ++i) {
-            out << i << "=" << volumeFunc_[i] << "\n";
-        }
-
         currentProfilePath_ = path;
-        currentProfileName_ = stemFromPath(path);
+        currentProfileName_ = visclassic::stemFromPath(path);
         return 1;
     }
 
@@ -493,7 +371,7 @@ public:
                                  [&](int low, int high) { return stereoLevel(spectrumRight_, low, high); });
         }
 
-        volume_ = clampInt(volumeSum / bands_, 0, 255);
+        volume_ = std::clamp(volumeSum / bands_, 0, 255);
         stepGhosts(ticks);
         hasWaveform_ = false;
     }
@@ -568,7 +446,7 @@ private:
 
     std::vector<float> levelDecayAccum_;
 
-    std::array<int, kColorCount> volumeFunc_{};
+    visclassic::VolumeFunction volumeFunc_{};
     Palette barColors_{};
     Palette peakColors_{};
     Palette volumeColors_{};
@@ -583,8 +461,8 @@ private:
 
     void setDefaultColors() {
         for (int i = 0; i < kColorCount; ++i) {
-            barColors_[i] = RGB{static_cast<uint8_t>(clampInt(204 + i / 5, 0, 255)), static_cast<uint8_t>(i), 0};
-            peakColors_[i] = RGB{static_cast<uint8_t>(clampInt(92 + (163 * i) / 255, 0, 255)),
+            barColors_[i] = RGB{static_cast<uint8_t>(std::clamp(204 + i / 5, 0, 255)), static_cast<uint8_t>(i), 0};
+            peakColors_[i] = RGB{static_cast<uint8_t>(std::clamp(92 + (163 * i) / 255, 0, 255)),
                                  static_cast<uint8_t>((255 * i) / 255),
                                  static_cast<uint8_t>((255 * i) / 255)};
             volumeColors_[i] = RGB{static_cast<uint8_t>(i / 1.8), static_cast<uint8_t>(i / 1.6), static_cast<uint8_t>(i / 1.45)};
@@ -695,7 +573,7 @@ private:
             const int high = std::min(low + static_cast<int>(barTable_[static_cast<size_t>(i)]), fftFrequencies_);
             const int newLevel = levelAt(low, high);
             low = high;
-            volumeSum += volumeFunc_[static_cast<size_t>(clampInt(newLevel, 0, 255))];
+            volumeSum += volumeFunc_[static_cast<size_t>(std::clamp(newLevel, 0, 255))];
             updatePeaks(static_cast<size_t>(x), newLevel, dtScale, ticks);
         }
         return volumeSum;
@@ -732,7 +610,7 @@ private:
     // With no tick this frame, only the bar-reached restart applies, so a peak never lags under its bar.
     void stepPeak(size_t i, int ticks) {
         const auto restart = [&] {
-            const int level = clampInt(level_[i], 0, 255);
+            const int level = std::clamp(level_[i], 0, 255);
             peakChange_[i] = peakTables_.length[static_cast<size_t>(level)];
             peakRef_[i] = peakChangeRate_ > 0 ? level : 0;
             peakLevel_[i] = peakTables_.level[static_cast<size_t>(peakRef_[i])][static_cast<size_t>(peakChange_[i])];
@@ -852,67 +730,6 @@ private:
             visclassic::drawBackground(ctx, backgroundDraw_, effect_, volume_);
         }
         visclassic::drawBars(ctx, effect_, ghosts_);
-    }
-
-    static bool readProfile(const std::string &path, IniProfile &out) {
-        std::ifstream in(path);
-        if (!in) {
-            return false;
-        }
-
-        std::string section;
-        std::string line;
-        while (std::getline(in, line)) {
-            line = trim(line);
-            if (line.empty()) continue;
-            if (line[0] == ';' || line[0] == '#') continue;
-            if (line.front() == '[' && line.back() == ']') {
-                section = line.substr(1, line.size() - 2);
-                continue;
-            }
-
-            const size_t eq = line.find('=');
-            if (eq == std::string::npos) continue;
-            std::string key = trim(line.substr(0, eq));
-            std::string value = trim(line.substr(eq + 1));
-
-            if (section == "Classic Analyzer") {
-                out.analyzer[key] = value;
-                continue;
-            }
-
-            int idx = -1;
-            if (!parseInt(key, idx) || idx < 0 || idx >= kColorCount) {
-                continue;
-            }
-
-            if (section == "VolumeFunction") {  // integers, not colours
-                int v = 0;
-                if (parseInt(value, v)) {
-                    out.volumeFunc[static_cast<size_t>(idx)] = v;
-                    out.hasVolumeFunc = true;
-                }
-                continue;
-            }
-
-            RGB c;
-            if (!parseRGB(value, c)) {
-                continue;
-            }
-
-            if (section == "BarColours") {
-                out.barColors[static_cast<size_t>(idx)] = c;
-                out.hasBarColors = true;
-            } else if (section == "PeakColours") {
-                out.peakColors[static_cast<size_t>(idx)] = c;
-                out.hasPeakColors = true;
-            } else if (section == "VolumeColours") {
-                out.volumeColors[static_cast<size_t>(idx)] = c;
-                out.hasVolumeColors = true;
-            }
-        }
-
-        return true;
     }
 };
 

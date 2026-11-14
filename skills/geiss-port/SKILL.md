@@ -82,7 +82,7 @@ Mirrors upstream `main.cpp:3756 render1()`:
 Geiss has no internal FFT — upstream consumes spectrum from the Winamp host. The Swift side computes it:
 
 - `VisualizationGLView` allocates one Accelerate FFT setup per view: `vDSP_create_fftsetup(log2N=9, kFFTRadix2)`, plus a Hann window and split-complex scratch buffers (size 256 each), all reused — no per-frame allocation.
-- 256-bin magnitude spectrum from a 512-sample real FFT via `vDSP_fft_zrip`. Magnitudes normalized with `2/N` scaling (`hostSpectrumScale = 2.0/512.0`), then a `sqrt` response curve so quiet treble stays visible without clipping bass peaks.
+- 256-bin magnitude spectrum from a 512-sample real FFT via `vDSP_fft_zrip`. Magnitudes normalized with `2/N` scaling (`HostSpectrum.scale = 2.0/512.0`, `Visualization/HostSpectrum.swift`), then a `sqrt` response curve so quiet treble stays visible without clipping bass peaks.
 - `projectMPCMGain` is applied **before** the FFT, so the existing audio-sensitivity control affects Geiss too.
 - Push happens from the audio callback only when `currentEngineType == .geiss`. The push uses `engineLock.try()` to avoid blocking the audio thread behind render or engine-swap work; on contention, Geiss keeps its previous host spectrum until the next callback.
 
@@ -169,7 +169,8 @@ The inline comment `25//16//19` shows the cap moved up over upstream releases (1
 - `Sources/CGeissCore/upstream/proc_map.cpp` — `Process_Map` portable-C bilinear-blend warp; asm dispatcher `#if 0`-gated
 - `Sources/CGeissCore/PORT_NOTES.md` — developer log
 - `Sources/NullPlayer/Visualization/GeissEngine.swift` — `VisualizationEngine` conformance, GL textures, fullscreen-quad shader, `coreLock`
-- `Sources/NullPlayer/Visualization/VisualizationGLView.swift` — engine selection, FFT/spectrum compute, PCM forwarding, `engineLock`
+- `Sources/NullPlayer/Visualization/VisualizationGLView.swift` — engine selection, PCM forwarding, pushing the host spectrum to the engine under `engineLock.try()`
+- `Sources/NullPlayer/Visualization/HostSpectrum.swift` — the 256-bin host spectrum FFT, under its own lock
 - `Sources/NullPlayer/Visualization/VisualizationEngine.swift` — `VisualizationType.geiss` case
 - `Sources/NullPlayer/Windows/ModernProjectM/ModernProjectMView.swift` — engine-conditional menu, Geiss Effects submenu
 - `Sources/NullPlayer/App/AppStateManager.swift` — ProjectM preset index session restore; engine type remains a UserDefaults preference

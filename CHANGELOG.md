@@ -189,6 +189,8 @@
   wave, with the tick on the opposite item, and Geiss started in spectrum instead of its usual wave.
 - **Tripex reacts to the music as it plays.** Frames Tripex skipped drawing also skipped reading
   the audio, so its effects could fall behind the music.
+- **A chosen AVS or projectM preset folder survives a relaunch in the App Store build.** The
+  sandbox only granted the folder until quit, so both lists came back without your presets.
 
 ### Classic skins
 

@@ -6032,7 +6032,7 @@ class MenuActions: NSObject {
             }
             
             // Save the custom folder path
-            ProjectMWrapper.customPresetsFolder = url.path
+            ProjectMWrapper.customPresetsFolder.set(url)
             
             // Reload presets
             WindowManager.shared.reloadVisualizationPresets()
@@ -6048,14 +6048,14 @@ class MenuActions: NSObject {
     }
     
     @objc func showVisualizationsFolder() {
-        guard let customPath = ProjectMWrapper.customPresetsFolder else { return }
+        guard let customPath = ProjectMWrapper.customPresetsFolder.path else { return }
         
         let url = URL(fileURLWithPath: customPath)
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
     }
     
     @objc func removeVisualizationsFolder() {
-        guard ProjectMWrapper.customPresetsFolder != nil else { return }
+        guard ProjectMWrapper.customPresetsFolder.path != nil else { return }
         
         let alert = NSAlert()
         alert.messageText = "Remove Custom Presets Folder?"
@@ -6065,7 +6065,7 @@ class MenuActions: NSObject {
         alert.addButton(withTitle: "Cancel")
         
         if alert.runModal() == .alertFirstButtonReturn {
-            ProjectMWrapper.customPresetsFolder = nil
+            ProjectMWrapper.customPresetsFolder.set(nil)
             WindowManager.shared.reloadVisualizationPresets()
             
             NSLog("MenuActions: Removed custom visualizations folder")

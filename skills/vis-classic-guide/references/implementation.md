@@ -7,7 +7,8 @@
 - standalone spectrum window visualization
 
 Primary code paths:
-- `Sources/CVisClassicCore/VisClassicCore.cpp`
+- `Sources/CVisClassicCore/VisClassicCore.cpp` (geometry, FFT, frame pipeline; maps profile settings to its fields)
+- `Sources/CVisClassicCore/VisClassicProfile.{h,cpp}` (INI profile read/write: sections, colour rows, VolumeFunction)
 - `Sources/CVisClassicCore/include/VisClassicCore.h`
 - `Sources/CVisClassicCore/upstream/*.cpp` (Nullsoft upstream math/helpers)
 - `Sources/NullPlayer/Visualization/VisClassicBridge.swift`
