@@ -163,7 +163,8 @@ bool writeProfile(const std::string &path, const IniProfile &profile) {
     for (int i = 0; i < kColorCount; ++i) {
         out << i << "=" << profile.volumeFunc[i] << "\n";
     }
-    return true;
+    out.close();  // flushes; a full disk fails here
+    return !out.fail();
 }
 
 }  // namespace visclassic

@@ -24,8 +24,8 @@ final class RememberedFolder: @unchecked Sendable {  // `lock` guards the opened
     /// (a volume not mounted yet) is tried again on the next read.
     var url: URL? {
         let defaults = UserDefaults.standard
-        let data = defaults.data(forKey: bookmarkKey)
         let opened: URL? = lock.withLock {
+            let data = defaults.data(forKey: bookmarkKey)
             if data != openedData {
                 openedURL?.stopAccessingSecurityScopedResource()
                 openedURL = data.flatMap { Self.open($0, bookmarkKey: bookmarkKey) }
@@ -41,8 +41,10 @@ final class RememberedFolder: @unchecked Sendable {  // `lock` guards the opened
     /// Remembers `url`, a folder the user just chose, or forgets the folder when nil.
     func set(_ url: URL?) {
         let defaults = UserDefaults.standard
-        defaults.set(url?.path, forKey: pathKey)
-        defaults.set(url.flatMap(Self.bookmark), forKey: bookmarkKey)
+        lock.withLock {  // so a read on another thread never pairs one folder's URL with another's bookmark
+            defaults.set(url?.path, forKey: pathKey)
+            defaults.set(url.flatMap(Self.bookmark), forKey: bookmarkKey)
+        }
     }
 
     private static func bookmark(_ url: URL) -> Data? {
