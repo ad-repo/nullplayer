@@ -129,6 +129,10 @@
   format."** A search whose results included a track with a non-UTF-8 tag (such as a Latin-1
   "Mötley Crüe") failed outright; the bad characters now show as `?` and the search works. Subsonic,
   Jellyfin and Emby browse and search responses get the same protection.
+- **The Skins menu has one Original entry.** Original and Original-Metal skins now share a single
+  **Original** submenu: the Original skins, then the Metal ones, with **Load Metal Skin...** and
+  **Open Metal Skins Folder...** beside the Original ones. **Next Skin** and **Previous Skin** step
+  through both lists.
 
 ### Visualizations
 

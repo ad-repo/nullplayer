@@ -35,6 +35,38 @@ final class SkinFamilyMenuTests: XCTestCase {
         XCTAssertFalse(last.isEnabled)
     }
 
+    // MARK: - Original and Original-Metal
+
+    /// Both families share one list, Original first; only the family on screen has a checked skin,
+    /// even though each family remembers a skin of its own.
+    func testTheOriginalListHoldsBothFamiliesAndChecksOnlyTheOneOnScreen() throws {
+        try XCTSkipUnless(ContextMenuBuilder.originalFamilies == [.modern, .metal])
+        let wm = WindowManager.shared
+        let savedMode = wm.uiMode
+        let metalKey = ModernSkinFamily.metal.skinNameKey
+        let savedMetal = UserDefaults.standard.object(forKey: metalKey)
+        defer {
+            wm.uiMode = savedMode
+            UserDefaults.standard.set(savedMetal, forKey: metalKey)
+        }
+        UserDefaults.standard.set(ModernSkinFamily.metal.defaultSkinName, forKey: metalKey)
+
+        func families(_ rows: [NSMenuItem]) -> [ModernSkinFamily] {
+            rows.compactMap { ($0.representedObject as? MenuActions.ModernFamilySkinChoice)?.family }
+        }
+        let rows = ContextMenuBuilder.originalSkinRows()
+        let kinds = families(rows)
+        XCTAssertEqual(kinds.count, rows.count)
+        XCTAssertTrue(kinds.contains(.metal))
+        XCTAssertEqual(kinds, kinds.sorted { $0 == .modern && $1 == .metal }, "Original skins come first")
+
+        wm.uiMode = .metal
+        guard wm.uiMode == .metal else { throw XCTSkip("this edition cannot show Original-Metal") }
+        let checked = ContextMenuBuilder.originalSkinRows().filter { $0.state == .on }
+        XCTAssertEqual(checked.map(\.title), [ModernSkinFamily.metal.defaultSkinName])
+        XCTAssertEqual(families(checked), [.metal])
+    }
+
     // MARK: - Removing a `.wal` skin
 
     /// Deletes where the app would trash, so a test run never fills the user's Trash.
