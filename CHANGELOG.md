@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.35.1
 
 ### Winamp Modern (`.wal`) skins
 
