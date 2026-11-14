@@ -32,8 +32,6 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// The occlusion watch on whichever window this surface is in — see `viewDidMoveToWindow`.
     private var windowVisibilityObserver: NSObjectProtocol?
     private var isTornDown = false
-    /// The screen-filling window the engine moves into for `VIS_FS`, or nil when it is in the box.
-    private var fullscreenWindow: WinampModernFullscreenWindow?
 
     /// The audio engine's spectrum tap is reference-counted by consumer name, and every consumer has
     /// to be a distinct one or the first `remove` silences the others.
@@ -316,7 +314,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
 
     // MARK: - Fullscreen (`VIS_FS`)
 
-    var isFullscreen: Bool { fullscreenWindow != nil }
+    var isFullscreen: Bool { WinampModernFullscreen.shared.isPresenting(engineView) }
 
     /// Take the **engine** fullscreen, not the skin's window.
     ///
@@ -325,40 +323,15 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// visualization window fullscreen, which left a second engine running behind it in the skin's
     /// box — reported as "the viz pops out of the skin window and the two windows compete".
     ///
-    /// The engine view simply *moves*: `VisualizationGLView` re-pins its context and display link
-    /// from `viewDidMoveToWindow`, so one view serves both places and no second engine is ever
-    /// created. `.screenSaver` is the level the visualization window's own custom fullscreen uses,
-    /// and the GL view reads that level as "presenting fullscreen" when it decides whether an
-    /// occluded or dragged window may stop rendering.
+    /// The engine view simply *moves* (`WinampModernFullscreen`), so one view serves both places and
+    /// no second engine is ever created. The GL view passes every key on, so the whole map here goes
+    /// with it: there are no buttons on screen at all in fullscreen.
     func toggleFullscreen() {
-        isFullscreen ? exitFullscreen() : enterFullscreen()
-    }
-
-    private func enterFullscreen() {
-        guard !isTornDown, fullscreenWindow == nil,
-              let screen = window?.screen ?? NSScreen.main else { return }
-        let fullscreen = WinampModernFullscreenWindow.covering(screen)
-        fullscreen.onExit = { [weak self] in self?.exitFullscreen() }
-        fullscreen.onKeyDown = { [weak self] event in self?.handleKeyDown(event) ?? false }
-        guard let host = fullscreen.contentView else { return }
-        engineView.frame = host.bounds
-        host.addSubview(engineView)
-        fullscreen.makeKeyAndOrderFront(nil)
-        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
-        NSCursor.setHiddenUntilMouseMoves(true)
-        engineView.resumeRenderingAfterWindowTransition()
-        fullscreenWindow = fullscreen
-    }
-
-    private func exitFullscreen() {
-        guard let fullscreen = fullscreenWindow else { return }
-        fullscreenWindow = nil
-        NSApp.presentationOptions = []
-        engineView.frame = bounds
-        addSubview(engineView)
-        fullscreen.orderOut(nil)
-        engineView.resumeRenderingAfterWindowTransition()
-        window?.makeKeyAndOrderFront(nil)
+        guard !isTornDown else { return }
+        WinampModernFullscreen.shared.toggle(
+            engineView,
+            keyDown: { [weak self] event in self?.handleKeyDown(event) ?? false },
+            didMove: { [weak engineView] in engineView?.resumeRenderingAfterWindowTransition() })
     }
 
     /// The holder went away: the engine stops and the view leaves the hierarchy, but nothing is
@@ -366,7 +339,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
     /// time the holder appears `resumeRendering()` starts this same one again.
     func unmountFromHolder() {
         guard !isTornDown else { return }
-        exitFullscreen()
+        WinampModernFullscreen.shared.exit(presenting: engineView)
         // `engineView` stays a subview of this one: it is the engine, and the surface is what leaves
         // the holder. Detaching it here would give the remount an empty box.
         engineView.stopRendering()
@@ -375,7 +348,7 @@ final class WinampModernVisualizationSurfaceView: NSView, WinampModernVisualizat
 
     func prepareForUITeardown() {
         guard !isTornDown else { return }
-        exitFullscreen()
+        WinampModernFullscreen.shared.exit(presenting: engineView)
         isTornDown = true
         removeObservers()
         if let observer = windowVisibilityObserver {

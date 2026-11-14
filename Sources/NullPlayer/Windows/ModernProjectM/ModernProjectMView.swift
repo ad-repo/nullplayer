@@ -746,8 +746,8 @@ extension ModernProjectMView: WinampModernHostedSurface {
         updateVisualizationFrame()
         needsDisplay = true
     }
-    func resume() { startRendering() }
-    func resumeAfterWindowTransition() { resumeRenderingAfterWindowTransition() }
+    /// A transition restart, not a bare start: the view may have just moved window (fullscreen).
+    func resume() { resumeRenderingAfterWindowTransition() }
     func suspend() { stopRendering() }
     func unmountFromHolder() { removeFromSuperview() }
     func prepareForUITeardown() {

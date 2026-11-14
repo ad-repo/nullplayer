@@ -1,35 +1,98 @@
 import AppKit
 
-/// The screen-filling window a `.wal` skin's visualization goes fullscreen in, and the two ways out
-/// of it that Winamp's own fullscreen visualization has: **Esc** (or `f`) and a **double-click**.
+/// Fullscreen for a `.wal` skin's visualization: the skin's own AVS window (`VIS_FS`, F) and the
+/// NullPlayer windows a skin hosts in its frame (visualization, spectrum, PeppyMeter, Art).
 ///
 /// A skin's windows are borderless, so `NSWindow.toggleFullScreen` does nothing on them; fullscreen
-/// here always means *moving the view* into one of these and back.
-final class WinampModernFullscreenWindow: NSWindow {
+/// here always **moves the view** into a screen-filling window and back to where it came from. One
+/// at a time, as the screen allows: entering while another view is up puts that one back first.
+@MainActor
+final class WinampModernFullscreen {
+    static let shared = WinampModernFullscreen()
+
+    private var window: WinampModernFullscreenWindow?
+    private var origin: (view: NSView, superview: NSView, frame: NSRect, mask: NSView.AutoresizingMask,
+                         holderWindow: NSWindow?, didMove: () -> Void)?
+
+    func isPresenting(_ view: NSView) -> Bool { origin?.view === view }
+
+    /// `didMove` runs after each move, both ways: whatever the view pinned to its old window (a GL
+    /// context, a display link) starts again in the new one. `keyDown` gets the keys the view leaves
+    /// unanswered — a view that takes no keys of its own (the GL engine view) passes them all.
+    func toggle(_ view: NSView, keyDown: ((NSEvent) -> Bool)? = nil, didMove: @escaping () -> Void) {
+        if isPresenting(view) { exit() } else { enter(view, keyDown: keyDown, didMove: didMove) }
+    }
+
+    private func enter(_ view: NSView, keyDown: ((NSEvent) -> Bool)?, didMove: @escaping () -> Void) {
+        exit()
+        guard let superview = view.superview, let screen = view.window?.screen ?? NSScreen.main else { return }
+        origin = (view, superview, view.frame, view.autoresizingMask, view.window, didMove)
+        let fullscreen = WinampModernFullscreenWindow(covering: screen)
+        fullscreen.onExit = { [weak self] in self?.exit() }
+        fullscreen.onKeyDown = { [weak self] event in
+            if keyDown?(event) == true { return true }
+            guard event.keyCode == 53 else { return false }   // Esc
+            self?.exit()
+            return true
+        }
+        view.frame = fullscreen.host.bounds
+        view.autoresizingMask = [.width, .height]
+        fullscreen.host.addSubview(view)
+        fullscreen.makeKeyAndOrderFront(nil)
+        fullscreen.makeFirstResponder(view)
+        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+        NSCursor.setHiddenUntilMouseMoves(true)
+        window = fullscreen
+        didMove()
+    }
+
+    /// Back to where the view came from. Also the teardown path: a window hidden or a skin unloaded
+    /// while its view is fullscreen gets the view back first, so the holder's unmount finds it.
+    func exit() {
+        guard let fullscreen = window, let origin else { return }
+        window = nil
+        self.origin = nil
+        NSApp.presentationOptions = []
+        origin.view.frame = origin.frame
+        origin.view.autoresizingMask = origin.mask
+        origin.superview.addSubview(origin.view)
+        fullscreen.orderOut(nil)
+        origin.didMove()
+        origin.holderWindow?.makeKeyAndOrderFront(nil)
+        origin.holderWindow?.makeFirstResponder(origin.view)
+    }
+
+    /// `exit()`, only when `view` is the one up.
+    func exit(presenting view: NSView) {
+        if isPresenting(view) { exit() }
+    }
+}
+
+/// The borderless, black, `.screenSaver`-level window over a whole screen that `WinampModernFullscreen`
+/// moves a view into, and the ways out of it that Winamp's own fullscreen visualization has: **Esc**
+/// (and whatever the view's own keys add, such as `f`) and a **double-click**. `.screenSaver` is the
+/// level the visualization window's own custom fullscreen uses, and the GL view reads it as
+/// "presenting fullscreen".
+private final class WinampModernFullscreenWindow: NSWindow {
+    /// The black view the fullscreen view goes in.
+    let host: NSView
     var onExit: (() -> Void)?
+    /// The keys the view in it leaves unanswered.
+    var onKeyDown: ((NSEvent) -> Bool)?
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
-    /// Fullscreen is where the keyboard matters most — there are no buttons on screen at all — so the
-    /// whole map goes to the surface, not just the two ways out.
-    var onKeyDown: ((NSEvent) -> Bool)?
-
-    /// A borderless, black, `.screenSaver`-level window over all of `screen`, with an empty black
-    /// content view to put the fullscreen view in. `.screenSaver` is the level the visualization
-    /// window's own custom fullscreen uses, and the GL view reads it as "presenting fullscreen".
-    static func covering(_ screen: NSScreen) -> WinampModernFullscreenWindow {
-        let window = WinampModernFullscreenWindow(contentRect: screen.frame, styleMask: [.borderless],
-                                                  backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.isOpaque = true
-        window.backgroundColor = .black
-        window.level = .screenSaver
-        let host = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+    init(covering screen: NSScreen) {
+        host = NSView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        super.init(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
+        isOpaque = true
+        backgroundColor = .black
+        level = .screenSaver
         host.wantsLayer = true
         host.layer?.backgroundColor = NSColor.black.cgColor
-        window.contentView = host
-        return window
+        contentView = host
     }
 
     override func keyDown(with event: NSEvent) {
@@ -40,61 +103,5 @@ final class WinampModernFullscreenWindow: NSWindow {
     override func mouseDown(with event: NSEvent) {
         // A view that passes its clicks through (`hitTest` returns nil) leaves them to this window.
         if event.clickCount >= 2 { onExit?() }
-    }
-}
-
-/// Fullscreen for a NullPlayer window a `.wal` skin hosts in its own frame (the visualization,
-/// spectrum, PeppyMeter, Art): the surface's view moves into a `WinampModernFullscreenWindow` and back
-/// to the holder it came from. One at a time, as the screen allows.
-@MainActor
-final class WinampModernHostedFullscreen {
-    private var window: WinampModernFullscreenWindow?
-    private var origin: (surface: WinampModernHostedSurface, superview: NSView, frame: NSRect,
-                         mask: NSView.AutoresizingMask, holderWindow: NSWindow?)?
-
-    func toggle(_ surface: WinampModernHostedSurface) {
-        if window != nil { exit() } else { enter(surface) }
-    }
-
-    private func enter(_ surface: WinampModernHostedSurface) {
-        let view = surface.view
-        guard let superview = view.superview,
-              let screen = view.window?.screen ?? NSScreen.main else { return }
-        origin = (surface, superview, view.frame, view.autoresizingMask, view.window)
-        let fullscreen = WinampModernFullscreenWindow.covering(screen)
-        fullscreen.onExit = { [weak self] in self?.exit() }
-        // Only what the surface left unanswered reaches the window; the surface's own Esc exits
-        // only a fullscreen it owns, so the way out is here.
-        fullscreen.onKeyDown = { [weak self] event in
-            guard event.keyCode == 53 else { return false }
-            self?.exit()
-            return true
-        }
-        guard let host = fullscreen.contentView else { return }
-        view.frame = host.bounds
-        view.autoresizingMask = [.width, .height]
-        host.addSubview(view)
-        fullscreen.makeKeyAndOrderFront(nil)
-        fullscreen.makeFirstResponder(view)
-        NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
-        NSCursor.setHiddenUntilMouseMoves(true)
-        surface.resumeAfterWindowTransition()
-        window = fullscreen
-    }
-
-    /// Back to the holder. Also the teardown path: a hosted window hidden or a skin unloaded while
-    /// its view is fullscreen gets the view back first, so the holder's unmount finds it in place.
-    func exit() {
-        guard let fullscreen = window, let origin else { return }
-        window = nil
-        self.origin = nil
-        NSApp.presentationOptions = []
-        origin.surface.view.frame = origin.frame
-        origin.surface.view.autoresizingMask = origin.mask
-        origin.superview.addSubview(origin.surface.view)
-        fullscreen.orderOut(nil)
-        origin.surface.resumeAfterWindowTransition()
-        origin.holderWindow?.makeKeyAndOrderFront(nil)
-        origin.holderWindow?.makeFirstResponder(origin.surface.view)
     }
 }
