@@ -375,7 +375,7 @@ static inline v2g zoomVector(ZoomFilterFXWrapperData *data, float X, float Y)
         case OOH_UGH_MODE: {
             /* five hellscape flow fields (ooh_ugh.c picks one and moves the middle to its
              * abyss); Goom's buffer blend morphs one into the next. Maelstrom, rift and
-             * descent push into or out of their abyss whatever Goom's own speed; all run through a domain-warped
+             * vortex push into or out of their abyss whatever Goom's own speed; all run through a domain-warped
              * curl so nothing reads as a clean geometric zoom. */
             float warp = sinf(fx * 5.0f + sinf(fy * 7.0f) * 1.7f);
             switch ((unsigned char)data->oohScene % OOH_SCENES) {
@@ -399,10 +399,10 @@ static inline v2g zoomVector(ZoomFilterFXWrapperData *data, float X, float Y)
                 lift = 0.002f;
                 break;
             }
-            default:  /* descent: ash sinking towards a high abyss */
-                coefVitesse -= 0.010f;
-                spin = warp * 0.009f;
-                lift = -0.006f - 0.003f * sinf(fx * 7.0f + warp);
+            default:  /* vortex: a tunnel, rushing out of the eye faster the further out
+                       * (perspective), twisting hardest at the centre */
+                coefVitesse = 0.080f + 0.100f * sq_dist;   /* its own rush, whatever Goom's speed */
+                spin = fminf(0.010f / (sq_dist + 0.10f), 0.070f) + warp * 0.004f;
                 break;
             }
             break;

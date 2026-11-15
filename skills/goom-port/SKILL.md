@@ -75,28 +75,40 @@ commit's `Goom/` shows exactly what changed.
    modes it draws: `Sources/CGoomCore/ooh_ugh.{h,c}` (outside `upstream/`, so `goom_core.c`
    includes `"../ooh_ugh.h"`) holds its emitters and state (`update.oohUgh`, freed in
    `goom_close`). `NB_FX` and `NB_ZOOM_MODES` are 16, and the random mode roll has 46 outcomes.
-   - **Scenes**: five (`OOH_SCENES`): throat, maelstrom, pyre, rift and descent. Each one is a flow field in
+   - **Scenes**: five (`OOH_SCENES`): throat, maelstrom, pyre, rift and vortex. Each one is a flow field in
      `filters.c` (switching on `ZoomFilterData.oohScene`, which the wrapper copies) and a row in
      `ooh_ugh.c`'s `scenes` table, by the same index. A row sets the abyss (the zoom's middle) and the
      mix of emitters. `filters.c` gained a `lift` term, an upward drift in `vy`.
      `ooh_ugh_scene` runs every cycle before Goom's forced-effect check. It restates the scene's
      config, because Goom moves the middle and delivers unsettled configs on its own beats. On a
      scene change it returns 1, so `goom_update` delivers the zoom and Goom morphs the flow. The
-     emitters then cross-fade over `MORPH_CYCLES`.
+     emitters then cross-fade over `MORPH_CYCLES`. The vortex is a tunnel: it sets its own
+     outward rush (`coefVitesse`, growing with distance) instead of adding to Goom's, which was
+     too slow to carry anything past Goom's fade, and its eye throws sparks at random angles (fixed
+     spokes read as a pinwheel). A descent scene (ash sinking, no fire) was dropped as too sparse.
    - **Sparse**: in this mode `goom_core.c` skips the IFS, the point loops, the tentacles and the
      scope lines. `ooh_ugh_settle` also clears the kaleidoscope add-on: folded around an off-centre
      abyss, it floods the screen red.
-   - **Drawing**: `ooh_ugh_draw` draws fire and smoke along an undrawn, wandering burn line, plus wraiths,
+   - **Burn line**: the undrawn line the fire burns from (`burn_at`). It is turned about the
+     screen's middle (`ang`) at a distance (`reach`), and both pick new targets on a scene change,
+     every ~300 cycles, and on some big hits. It is never turned past the sides: hung from the top,
+     the fire lifts off screen and leaves it black; held near the bottom, it reads as a fixed horizon,
+     which the user rejected twice. `ooh_ugh_finish` darkens what lies behind it.
+   - **Drawing**: `ooh_ugh_draw` draws fire and smoke along the burn line, plus wraiths,
      ash and a rare, broken sigil (an inverted pentacle, a goat, a sword or an inverted cross). It
      draws into `p2` before the zoom. `ooh_ugh_finish` maps the output frame after convolve:
      the brightest channel goes through a red LUT, the dimmest through a white LUT, and a vignette
      is applied. So the frame is red, black and white only: `g == b <= r`, which a smoke test checks.
-     There are no kick rings: the user rejected the concentric-circle look. Kicks strobe the sky instead.
+     No kick rings and no glow round the abyss: the user rejected both the concentric circles and
+     the round, pulsing orb. Instead, kicks multiply the whole red ramp and add a faint wash that
+     only the vignette shapes, and a big hit flashes the hottest fire white.
    - **Low end**: `ooh_ugh_draw` low-passes the PCM (about 120 Hz) into `bass`, measured against its
      recent peak but never below an absolute floor (6000 RMS), so thin rock bass doesn't read as a
-     doom drone and flatten the kicks. `bass` heaves the burn line, grows and heats the flames, swells
-     the sky glow and spawns the **souls**: faint, wavering faces rising out of the fire. Goat souls
-     whose horns spread read as a bird, so keep the horns tight. The hottest white (g > 120) cools
+     doom drone and flatten the kicks. `bass` heaves the burn line, grows and heats the flames and
+     swells the flare. The **souls** are up to six faint, wavering skulls and goat heads rising out of the
+     fire, more on kicks, big hits and heavy bass. They use their own shapes (`SOUL_SKULL`,
+     `SOUL_GOAT`): the sigil goat's spread horns and ears read as a bird, so the soul goat's horns
+     climb straight up. The hottest white (g > 120) cools
      each cycle, so a held drone can't pile it into a white sky; kick flashes stay below that line.
 
 Tuning the new effects is by eye: render them with a scratch C harness that forces the mode every

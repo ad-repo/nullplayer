@@ -9,9 +9,9 @@
 #define MAX_SEGS 192
 #define WRAITHS 3
 #define MORPH_CYCLES 90  /* how long one scene's emitters take to hand over to the next's */
-#define SOULS 2
+#define SOULS 6
 
-enum { SIGIL_PENTACLE, SIGIL_GOAT, SIGIL_SWORD, SIGIL_CROSS, SIGIL_KINDS, SOUL_SKULL = SIGIL_KINDS };
+enum { SIGIL_PENTACLE, SIGIL_GOAT, SIGIL_SWORD, SIGIL_CROSS, SIGIL_KINDS, SOUL_SKULL = SIGIL_KINDS, SOUL_GOAT };
 
 typedef struct { float x0, y0, x1, y1; } Seg;
 
@@ -21,19 +21,19 @@ typedef struct { int kind, alive, age, life; unsigned seed; float rot; } Sigil;
 
 typedef struct { float x, y; int drawn; } Wraith;
 
-/* A soul: a skull that rises out of the fire, faint and wavering like the flames,
+/* A soul: a skull or goat face that rises out of the fire, faint and wavering like the flames,
    so the feedback's lift smears it into them. Only ever half seen. */
-typedef struct { int alive, age, life; unsigned seed; float x, size; } Soul;
+typedef struct { int kind, alive, age, life; unsigned seed; float x, size; } Soul;
 
 /* A scene: where its abyss sits (the zoom's middle, as fractions of the screen) and how much
    of each emitter it runs. filters.c holds the matching flow field, by the same index. */
-typedef struct { float ax, ay, wraiths, fire, ash; } Scene;
+typedef struct { float ax, ay, wraiths, fire, ash, sparks; } Scene;
 static const Scene scenes[OOH_SCENES] = {
-    { 0.50f, 0.75f, 0.5f, 0.8f, 0.0f },   /* throat */
-    { 0.50f, 0.50f, 1.0f, 0.3f, 0.3f },   /* maelstrom */
-    { 0.50f, 0.85f, 0.4f, 1.0f, 0.0f },   /* pyre */
-    { 0.50f, 0.50f, 0.6f, 0.2f, 0.0f },   /* rift */
-    { 0.50f, 0.15f, 0.7f, 0.0f, 1.0f },   /* descent */
+    { 0.50f, 0.75f, 0.5f, 0.8f, 0.0f, 0.0f },   /* throat */
+    { 0.50f, 0.50f, 1.0f, 0.7f, 0.3f, 0.0f },   /* maelstrom */
+    { 0.50f, 0.85f, 0.4f, 1.0f, 0.0f, 0.0f },   /* pyre */
+    { 0.50f, 0.50f, 0.6f, 0.6f, 0.0f, 0.0f },   /* rift */
+    { 0.50f, 0.48f, 0.5f, 0.0f, 0.5f, 1.0f },   /* vortex */
 };
 
 struct OohUgh {
@@ -51,7 +51,7 @@ struct OohUgh {
     float bass;            /* 0..1: how hard the thick low end is pushing right now */
     /* the burn line's frame: it turns round the screen (pi = hanging from the top), bows and
        ripples, each easing towards a target that scene changes and big hits pick */
-    float ang, spin, spinTo, bend, bendTo, twist, twistTo;
+    float ang, spin, spinTo, bend, bendTo, twist, twistTo, reach, reachTo;
     unsigned char red[256];    /* brightest channel -> red */
     unsigned char white[256];  /* dimmest channel -> white */
 };
@@ -194,6 +194,23 @@ static int build (int kind, Seg *s, const gint16 *pcm)
         for (k = -2; k <= 2; k++) add (s, &n, k * 0.09f, 0.38f, k * 0.09f, 0.52f);
         break;
     }
+    case SOUL_GOAT: {
+        /* not the sigil's goat: its spread horns and ears read as wings once they waver, so
+           these horns climb straight up like the flames they rise in */
+        int m;
+        for (m = -1; m <= 1; m += 2) {
+            bezier (s, &n, m*0.18f, -0.40f, m*0.45f, -0.70f, m*0.40f, -1.10f, m*0.15f, -1.25f);
+            bezier (s, &n, m*0.08f, -0.42f, m*0.28f, -0.68f, m*0.26f, -1.00f, m*0.15f, -1.25f);
+            add (s, &n, m*0.18f, -0.40f, m*0.30f, -0.20f);
+            bezier (s, &n, m*0.30f, -0.20f, m*0.30f, 0.15f, m*0.18f, 0.45f, m*0.08f, 0.70f);
+            add (s, &n, m*0.22f, -0.08f, m*0.07f, 0.00f);    /* slanted eyes */
+            add (s, &n, m*0.05f, 0.58f, m*0.02f, 0.66f);     /* nostrils */
+            add (s, &n, m*0.04f, 0.72f, m*0.01f, 1.00f);     /* beard */
+        }
+        add (s, &n, -0.10f, -0.25f, 0.10f, -0.25f);
+        add (s, &n, -0.08f, 0.70f, 0.08f, 0.70f);
+        break;
+    }
     case SIGIL_CROSS:
         /* inverted: the crossbar sits low */
         add (s, &n, -0.03f, -0.65f, -0.03f, 0.65f);
@@ -217,7 +234,7 @@ static float weight (struct OohUgh *st, size_t field)
 
 /* Where the flames start: a wandering line, never drawn itself, laid out along u in -1..1 in its
    own frame (y down, flames towards -y), then turned by ang about a point 0.34h behind the
-   screen's middle, so at ang 0 it sits across the lower third and at pi hangs from the top. */
+   screen's middle, so at ang 0 it sits across the lower third; ang only tilts it. */
 static void burn_local (PluginInfo *g, struct OohUgh *st, float s, float L, float *lx, float *ly)
 {
     float h = g->screen.height, u = 2 * s - 1, q = (u + 1) * L / g->screen.width * 5.0f + st->t * 0.012f;
@@ -249,8 +266,8 @@ static void burn_at (PluginInfo *g, struct OohUgh *st, float s, float *x, float 
     burn_local (g, st, s + 0.002f, L, &x1, &y1);
     tx = x1 - x0; ty = y1 - y0; len = sqrtf (tx * tx + ty * ty);
     lnx = len > 0 ? ty / len : 0; lny = len > 0 ? -tx / len : -1;
-    *x = w * 0.5f - 0.34f * h * sn + x0 * c - y0 * sn;
-    *y = h * 0.5f + 0.34f * h * c + x0 * sn + y0 * c;
+    *x = w * 0.5f - st->reach * h * sn + x0 * c - y0 * sn;
+    *y = h * 0.5f + st->reach * h * c + x0 * sn + y0 * c;
     *nx = lnx * c - lny * sn;
     *ny = lnx * sn + lny * c;
 }
@@ -306,6 +323,29 @@ static void draw_ash (PluginInfo *g, Pixel *p, float amount)
     }
 }
 
+/* The vortex's eye throws short jagged sparks at random angles every cycle; the tunnel's rush
+   and twist fling each copy outward into spiral streaks: the walls flying past. More and
+   hotter on a kick, heavier with the low end. */
+static void draw_sparks (PluginInfo *g, struct OohUgh *st, const gint16 *pcm, Pixel *p, float amount)
+{
+    int w = g->screen.width, h = g->screen.height, i, k;
+    float cx = w * st->ax, cy = h * st->ay;
+    float lit = amount * (0.5f + 0.4f * st->beat + 0.3f * st->bass);
+    if (amount < 0.02f) return;
+    for (i = (int)((7 + 8 * st->beat + 4 * st->bass) * amount); i > 0; i--) {
+        float a = frand (g) * 2 * (float)M_PI;
+        float v = fabsf ((float)pcm[goom_irand (g->gRandom, 512)]) / 32768.0f;
+        float r = h * (0.02f + 0.10f * frand (g)), len = h * (0.02f + 0.05f * v);
+        float px = cx + r * cosf (a), py = cy + r * sinf (a);
+        for (k = 1; k <= 3; k++) {   /* kinked, so a spark is never a clean ray */
+            float rr = r + len * k / 3, kink = a + (frand (g) - 0.5f) * 0.3f;
+            float x = cx + rr * cosf (kink), y = cy + rr * sinf (kink);
+            line (p, w, h, px, py, x, y, 1.0f, (int)(150 * lit), (int)(45 * lit * st->beat));
+            px = x; py = y;
+        }
+    }
+}
+
 /* Smoke wraiths: points on slow Lissajous orbits trailing ribbons the swirl twists up. */
 static void draw_wraiths (PluginInfo *g, struct OohUgh *st, Pixel *p, float volume, float amount)
 {
@@ -335,7 +375,7 @@ static void draw_souls (PluginInfo *g, struct OohUgh *st, Pixel *p, float amount
         int n;
         if (!so->alive) continue;
         life = (float)so->age / so->life;
-        lit = sinf ((float)M_PI * life) * (0.30f + 0.40f * st->bass) * amount;
+        lit = sinf ((float)M_PI * life) * (0.30f + 0.15f * st->beat + 0.30f * st->bass) * amount;
         size = h * so->size * (1.0f + 0.3f * life);
         stretch = 1.0f + 0.7f * life;
         /* rising off the burn line along its flames, upright to them */
@@ -343,7 +383,7 @@ static void draw_souls (PluginInfo *g, struct OohUgh *st, Pixel *p, float amount
         rise = h * (0.06f + 0.30f * life);
         cx += nx * rise; cy += ny * rise;
         flicker = so->seed + (unsigned)(so->age / 3) * 2654435761u;
-        n = build (SOUL_SKULL, segs, NULL);
+        n = build (so->kind, segs, NULL);
         for (i = 0; i < n; i++) {
             unsigned hs = hash (flicker + (unsigned)i * 7919u);
             float ax = segs[i].x0, ay = segs[i].y0, bx = segs[i].x1, by = segs[i].y1, heat;
@@ -353,7 +393,7 @@ static void draw_souls (PluginInfo *g, struct OohUgh *st, Pixel *p, float amount
             bx += sinf (by * 7.0f + st->t * 0.9f + so->seed) * 0.10f;
             ay *= stretch; by *= stretch;
             line (p, w, h, cx + size * (-ny * ax - nx * ay), cy + size * (nx * ax - ny * ay),
-                  cx + size * (-ny * bx - nx * by), cy + size * (nx * bx - ny * by), 1.0f, (int)(120 * heat), (int)(25 * heat));
+                  cx + size * (-ny * bx - nx * by), cy + size * (nx * bx - ny * by), 1.0f, (int)(150 * heat), (int)(30 * heat));
         }
         if (++so->age >= so->life) so->alive = 0;
     }
@@ -394,6 +434,7 @@ static struct OohUgh *state (PluginInfo *g)
         st->white[i] = i <= 140 ? 0 : (unsigned char)(255.0f * powf ((i - 140) / 115.0f, 1.5f));
     }
     st->sceneLen = 600;
+    st->reach = st->reachTo = 0.34f;
     st->morph = 1.0f;
     st->ax = scenes[0].ax;
     st->ay = scenes[0].ay;
@@ -461,13 +502,14 @@ void ooh_ugh_draw (PluginInfo *g, gint16 data[2][512], Pixel *p)
     st->beat = beat ? 1.0f : st->beat * 0.82f;
     st->hit = g->sound.timeSinceLastBigGoom == 0 ? 1.0f : st->hit * 0.7f;
     st->t += 0.25f + 0.6f * volume + 0.4f * st->beat;
-    {   /* souls rise when the low end leans on the fire */
-        int j;
+    {   /* souls rise from the fire all the time, faster on a kick and when the low end leans on it */
+        int j, odds = st->hit >= 1.0f ? 3 : beat ? 6 : st->bass >= 0.5f ? 15 : 60;
         for (j = 0; j < SOULS; j++) {
             Soul *so = &st->souls[j];
-            if (so->alive || st->bass < 0.5f || goom_irand (g->gRandom, st->hit >= 1.0f ? 4 : 50)) continue;
+            if (so->alive || goom_irand (g->gRandom, odds)) continue;
+            so->kind = goom_irand (g->gRandom, 2) ? SOUL_SKULL : SOUL_GOAT;
             so->x = 0.15f + 0.7f * frand (g);
-            so->size = 0.06f + 0.05f * frand (g);
+            so->size = 0.07f + 0.06f * frand (g);
             so->life = 45 + goom_irand (g->gRandom, 40);
             so->seed = (unsigned)goom_irand (g->gRandom, 1 << 30);
             so->age = 0;
@@ -475,20 +517,18 @@ void ooh_ugh_draw (PluginInfo *g, gint16 data[2][512], Pixel *p)
             break;
         }
     }
-    /* a new scene, or now and then a big hit, sends the burn line somewhere new: a turn,
-       sometimes a flip over, a fresh bow and ripple */
-    if (st->morph == 0.0f || (st->hit >= 1.0f && goom_irand (g->gRandom, 4) == 0)) {
-        st->spinTo += (frand (g) - 0.5f) * 1.4f + (goom_irand (g->gRandom, 3) == 0 ? (float)M_PI : 0);
+    /* a new scene, every ten seconds or so, or now and then a big hit sends the burn line
+       somewhere new: swung anywhere from one side round the bottom to the other, nearer the
+       middle or further out, with a fresh bow and ripple, so it never settles into a horizon.
+       Never over the top: hung from there, the fire left the screen black */
+    if (st->morph == 0.0f || st->sceneAge % 300 == 299 || (st->hit >= 1.0f && goom_irand (g->gRandom, 4) == 0)) {
+        st->spinTo = (frand (g) - 0.5f) * 3.6f;
+        st->reachTo = 0.16f + 0.22f * frand (g);
         st->bendTo = (frand (g) - 0.5f) * 0.6f;
         st->twistTo = frand (g) * 0.10f;
     }
-    if (st->spinTo > 2 * (float)M_PI && st->spin > 2 * (float)M_PI) {
-        st->spinTo -= 2 * (float)M_PI; st->spin -= 2 * (float)M_PI;
-    }
-    if (st->spinTo < -2 * (float)M_PI && st->spin < -2 * (float)M_PI) {
-        st->spinTo += 2 * (float)M_PI; st->spin += 2 * (float)M_PI;
-    }
     st->spin += (st->spinTo - st->spin) * 0.015f;
+    st->reach += (st->reachTo - st->reach) * 0.015f;
     st->bend += (st->bendTo - st->bend) * 0.02f;
     st->twist += (st->twistTo - st->twist) * 0.02f;
     st->ang = st->spin + 0.3f * sinf (st->t * 0.005f) * (0.5f + st->bass);
@@ -517,6 +557,7 @@ void ooh_ugh_draw (PluginInfo *g, gint16 data[2][512], Pixel *p)
             }
     }
     draw_wraiths (g, st, p, volume, WEIGHT (st, wraiths));
+    draw_sparks (g, st, data[1], p, WEIGHT (st, sparks));
     draw_fire (g, st, data[0], p, WEIGHT (st, fire));
     draw_souls (g, st, p, 0.4f + 0.6f * WEIGHT (st, fire));
     draw_ash (g, p, WEIGHT (st, ash));
@@ -527,29 +568,30 @@ void ooh_ugh_finish (PluginInfo *g, Pixel *frame)
 {
     struct OohUgh *st = state (g);
     int w, h, i, x, y;
-    float cx, cy, reach, glow, core, sn, cs;
+    float gain, wash, flash, sn, cs;
     if (st == NULL) return;
     w = g->screen.width; h = g->screen.height;
-    cx = w * st->ax; cy = h * st->ay; reach = 1.0f / (0.75f * h);
     sn = sinf (st->ang); cs = cosf (st->ang);
-    glow = 50 + 100 * st->beat * st->beat + 70 * st->bass;   /* strobes on the kick, swells with the low end */
-    core = 255 * st->hit;                    /* a big hit whitens the abyss */
+    /* the whole fire flares on a kick and swells with the low end, under a faint red wash that
+       only the vignette shapes (no glow round the abyss: a round, pulsing orb took away from
+       it), and a big hit flashes its hottest parts white */
+    gain = 1.0f + 0.8f * st->beat * st->beat + 0.25f * st->bass;
+    wash = 30 * st->beat * st->beat + 15 * st->bass;
+    flash = 0.35f * st->hit;
     for (y = 0, i = 0; y < h; y++)
         for (x = 0; x < w; x++, i++) {
             Pixel *q = &frame[i];
-            int hi = q->channels.r, lo = q->channels.r, add, white;
-            float dx = (x - cx) * 0.6f, dy = y - cy, d = 1.0f - sqrtf (dx * dx + dy * dy) * reach;
+            int hi = q->channels.r, lo = q->channels.r, white;
             if (q->channels.g > hi) hi = q->channels.g;
             if (q->channels.b > hi) hi = q->channels.b;
             if (q->channels.g < lo) lo = q->channels.g;
             if (q->channels.b < lo) lo = q->channels.b;
-            add = d > 0 ? (int)(glow * d * d) : 0;
-            white = st->white[lo] + (d > 0.7f ? (int)(core * (d - 0.7f) / 0.3f) : 0);
+            white = st->white[lo] + (int)(flash * st->red[hi]);
             {   /* darkness closes in from the edges and swallows whatever lies behind the burn line */
                 float ex = (2.0f * x / w - 1.0f);
                 float back = ((x - 0.5f * w) * -sn + (y - 0.5f * h) * cs) / h;
-                float shade = (1.0f - 0.55f * ex * ex) * (back > 0.3f ? 1.0f - (back - 0.3f) * 4.5f : 1.0f);
-                int red = (int)((st->red[hi] + add + white) * shade);
+                float shade = (1.0f - 0.55f * ex * ex) * (back > st->reach - 0.04f ? 1.0f - (back - st->reach + 0.04f) * 4.5f : 1.0f);
+                int red = (int)((st->red[hi] * gain + wash + white) * shade);
                 white = (int)(white * shade);
                 q->channels.r = red > 255 ? 255 : red < 0 ? 0 : red;
                 q->channels.g = q->channels.b = white > 255 ? 255 : white < 0 ? 0 : white;

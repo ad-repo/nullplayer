@@ -55,7 +55,7 @@ struct _ZOOM_FILTER_DATA
 #define HEART_MODE 13
 #define PENTAGRAM_MODE 14
 #define OOH_UGH_MODE 15
-#define OOH_SCENES 5   /* Ooh/Ugh's flow fields: throat, maelstrom, pyre, rift, descent */
+#define OOH_SCENES 5   /* Ooh/Ugh's flow fields: throat, maelstrom, pyre, rift, vortex */
 #define NB_ZOOM_MODES 16
 
 void pointFilter (PluginInfo *goomInfo, Pixel * pix1, Color c,

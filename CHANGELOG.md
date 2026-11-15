@@ -207,11 +207,11 @@
   Spectrum and Art windows of every skin family. ⌘ still works too, and is still needed on a main
   window, whose plain arrows seek and change the volume. Art's intensity moved to its right-click menu.
 - **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
-  Rivers of fire and smoke burn up from the waveform and drift between five scenes (a throat, a
-  maelstrom, a pyre, a rift and a descent) that morph into each other every 20 to 40 seconds or on
-  a big hit. Kicks strobe the sky and flare the fire, a big hit whitens the abyss, a heavy low end
-  heaves the fire up and makes the sky swell, faint skulls rise in the flames, and now and then an
-  inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
+  Rivers of fire and smoke burn up from the waveform, from a line that roams round the screen,
+  through five scenes (a throat, a maelstrom, a pyre, a rift and a vortex tunnel) that morph into
+  each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
+  white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
+  then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
 
 ### Classic skins
 
