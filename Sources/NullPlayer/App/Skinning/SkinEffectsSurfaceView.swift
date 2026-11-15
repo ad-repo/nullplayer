@@ -223,10 +223,7 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
-                frameTimer = Timer.scheduledTimer(withTimeInterval: Self.visClassicFrameInterval,
-                                                  repeats: true) { [weak self] _ in
-                    MainActor.assumeIsolated { self?.needsDisplay = true }
-                }
+                startFrameTimer(interval: Self.visClassicFrameInterval) { $0.needsDisplay = true }
             case .engine:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
@@ -246,9 +243,13 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
         applyPreset(to: view)
         // No display link starts it: this host drives the engine.
         view.presetCycler.start()
-        frameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
-                                          repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pullOffscreenFrame() }
+        startFrameTimer(interval: Self.engineFrameInterval) { $0.pullOffscreenFrame() }
+    }
+
+    /// `releaseEngine` and `teardown` stop it; every selection change goes through the former.
+    private func startFrameTimer(interval: TimeInterval, tick: @escaping (SkinEffectsSurfaceView) -> Void) {
+        frameTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { if let self { tick(self) } }
         }
     }
 
@@ -437,16 +438,13 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
         context.restoreGState()
     }
 
-    /// The band count comes from the reference width. Fitted, it is the 576 the standalone windows
-    /// use (`WindowManager.acquireSharedVisClassicBridge`), so a profile has as many bars here as
-    /// there; against the rect's own width a small rect got fewer, wider bars (#772). Unfitted, bars
-    /// are drawn at their own width from the left, so the rect's width is what keeps them all in it.
-    private func referenceWidth(forCanvas canvasWidth: Int) -> Int {
-        VisClassicBridge.fitToWidthDefault(for: selection.visClassicScope) ? 576 : canvasWidth
-    }
-
     private func visClassicBridge(width: Int, height: Int) -> VisClassicBridge? {
-        let reference = referenceWidth(forCanvas: width)
+        // The band count comes from the reference width. Fitted, it is the standalone windows' own,
+        // so a profile has as many bars here as there; against the rect's width a small rect got
+        // fewer, wider bars (#772). Unfitted, bars are drawn at their own width from the left, so
+        // the rect's width is what keeps them all in it.
+        let reference = VisClassicBridge.fitToWidthDefault(for: selection.visClassicScope)
+            ? VisClassicBridge.standardReferenceWidth : width
         if let visClassicBridge {
             // Only on a change: setting it clears the effects' ghosts, so Shadow and Smoke never
             // built up when it was set every frame (#735).
@@ -572,7 +570,7 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
     // MARK: - Keyboard
 
     /// **The standard visualization keys (`VisualizationKey`): ⌘↓/⌘↑ pick the effect, ⌘→/⌘← move
-    /// inside it.** The catalogue is two levels deep — eleven effects, and most of them carry a list
+    /// inside it.** The catalogue is two levels deep — thirteen effects, and most of them carry a list
     /// of their own (ProjectM's presets, Geiss's and Tripex's effects, vis_classic's profiles,
     /// Cava's mono/stereo) — so the axes are split the way a two-level list reads: **down is the
     /// next effect** and up the previous, left/right step within whatever is now selected. An effect

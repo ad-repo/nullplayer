@@ -287,6 +287,10 @@ final class VisClassicBridge {
             ?? defaults.string(forKey: legacyLastProfileNameKey)
     }
 
+    /// The width the dedicated windows compute their band count against; a fitted surface of any
+    /// size uses it too, so it draws as many bars as they do (#772).
+    static let standardReferenceWidth = 576
+
     static func fitToWidthDefault(
         for scope: PreferenceScope = .spectrumWindow,
         defaults: UserDefaults = .standard

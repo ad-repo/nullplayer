@@ -10,7 +10,7 @@ import AppKit
 /// and 51 wire an `onClick` on the rect itself to cycle. So the selector is a host property the
 /// markup reads and writes — not a menu this engine invents, and not a fixed surface (W101).
 ///
-/// **The catalogue is eight, and every one of them fills the authored rect (W140).** It used to be
+/// **The catalogue is thirteen, and every one of them fills the authored rect (W140).** It used to be
 /// five, because a full-frame renderer in the slot showed as a conspicuous black rectangle in
 /// Asimov Radio and Cerulean. That was the occlusion defect (W139), not the engines: nothing a skin
 /// drew could cover the surface, so *any* opaque renderer was a black rectangle there. With the
@@ -73,8 +73,8 @@ final class SkinEffectSelection {
     static let didChange = Notification.Name("SkinEffectSelectionDidChange")
 
     /// **Thirteen effects, all rendering the same way in the rect** (W140). The first five are drawn
-    /// by the surface itself; ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear and NullPlayer-Fractal render offscreen and
-    /// are presented as an image. Spikes stays first because it is what a skin that selects nothing shows.
+    /// by the surface itself; ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear and
+    /// NullPlayer-Fractal render offscreen and are presented as an image. Spikes stays first because it is what a skin that selects nothing shows.
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
         Effect(id: "bars", title: "Bars", style: .bars),

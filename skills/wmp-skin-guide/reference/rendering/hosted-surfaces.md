@@ -115,7 +115,7 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   testing; and **the skin's selector is not the app's preference** — cycling from the rect, its menu,
   or the arrow keys never writes `visualizationEngineType`, which the visualization window and
   menu bar share.
-  **The keys are two-level, because the catalogue is.** Eight effects, and most carry a list of
+  **The keys are two-level, because the catalogue is.** Thirteen effects, and most carry a list of
   their own, so **⌘↓/⌘↑ pick the effect and ⌘→/⌘← step inside it** — ProjectM's presets,
   Geiss's and Tripex's effects, vis_classic's profiles, Cava's mono/stereo. An effect with no
   inside (Spikes, Bars, Ambience) *refuses* ⌘→/⌘← rather than swallowing them, so the key
@@ -159,7 +159,10 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   **How the three are hosted.** `SkinEffectsSurfaceView` builds a `VisualizationGLView` and never adds
   it to the hierarchy: its display link never starts, and a 30fps timer pulls one frame at a time
   through `renderOffscreenImage(pixelWidth:pixelHeight:)` — an FBO render plus `glReadPixels` — which
-  `draw(_:)` presents like any other picture. **The GL path takes no y-flip**, where vis_classic
+  `draw(_:)` presents like any other picture. The same `frameTimer` redraws vis_classic at 60fps, as
+  its window's display link does; driven by the spectrum callback alone it ran at the audio tap's
+  buffer rate (#772). A fitted vis_classic takes its band count from
+  `VisClassicBridge.standardReferenceWidth`, as its window does, not from the rect's width. **The GL path takes no y-flip**, where vis_classic
   does: `glReadPixels` returns rows bottom-first, a `CGImage` calls row 0 its top, and this view is
   flipped, so the two reversals cancel. The view's frame is set in **points** before each pull, not
   pixels — `initializeEngineOnRenderThread` sizes the engine from `convertToBacking(bounds)`, so a
