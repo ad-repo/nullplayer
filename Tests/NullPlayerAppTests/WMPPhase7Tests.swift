@@ -38,6 +38,9 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.current.engine, .avs)
         XCTAssertTrue(selection.current.isOffscreenEngine)
         selection.step(by: 1)
+        XCTAssertEqual(selection.current.id, "goom")
+        XCTAssertEqual(selection.current.engine, .goom)
+        selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "corona")
         XCTAssertEqual(selection.current.engine, .corona)
         selection.step(by: 1)
@@ -47,7 +50,7 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.current.id, "fractal")
         XCTAssertEqual(selection.current.engine, .fractal)
         XCTAssertTrue(selection.current.isOffscreenEngine)
-        // Twelve entries, so one more step is back to the start.
+        // Thirteen entries, so one more step is back to the start.
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "spikes")
         _ = selection.select("spikes")

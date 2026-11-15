@@ -72,8 +72,8 @@ final class SkinEffectSelection {
     /// every surface on that selection follows one choice.
     static let didChange = Notification.Name("SkinEffectSelectionDidChange")
 
-    /// **Eleven effects, all rendering the same way in the rect** (W140). The first five are drawn
-    /// by the surface itself; ProjectM, Geiss, Tripex, AVS, Corona and Smear render offscreen and
+    /// **Thirteen effects, all rendering the same way in the rect** (W140). The first five are drawn
+    /// by the surface itself; ProjectM, Geiss, Tripex, AVS, Goom, Corona, Smear and NullPlayer-Fractal render offscreen and
     /// are presented as an image. Spikes stays first because it is what a skin that selects nothing shows.
     static let catalogue: [Effect] = [
         Effect(id: "spikes", title: "Spikes", style: .spikes),
@@ -85,6 +85,7 @@ final class SkinEffectSelection {
         Effect(id: "geiss", title: "Geiss", style: .engine(.geiss)),
         Effect(id: "tripex", title: "Tripex", style: .engine(.tripex)),
         Effect(id: "avs", title: "AVS", style: .engine(.avs)),
+        Effect(id: "goom", title: "Goom", style: .engine(.goom)),
         Effect(id: "corona", title: "Corona", style: .engine(.corona)),
         Effect(id: "smear", title: "Smear", style: .engine(.smear)),
         Effect(id: "fractal", title: "NullPlayer-Fractal", style: .engine(.fractal))

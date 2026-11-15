@@ -212,6 +212,11 @@
   each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
   white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
   then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
+- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
+  projectM, Geiss and the rest (#773).
+- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
+  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
+  instead of only as often as the audio arrived (#772).
 
 ### Classic skins
 

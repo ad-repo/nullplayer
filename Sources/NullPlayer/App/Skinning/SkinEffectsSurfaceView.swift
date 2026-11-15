@@ -37,15 +37,17 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
     private let visClassicWaveform: WinampModernWaveformTap
     private var visClassicBridge: VisClassicBridge?
     /// The width the bridge's reference was last set to.
-    private var visClassicWidth = 0
+    private var visClassicReferenceWidth = 0
     private var visClassicBytes: [UInt8] = []
-    /// The GL engines are pulled, not pushed: the view is never in the hierarchy, its display link
-    /// never starts, and this timer asks it for one frame at a time. 30fps rather than 60 because
-    /// every frame costs a `glReadPixels` of the rect, and the rect is small — Cerulean's is
-    /// 103x75 — so the readback is cheap but not free.
-    private var engineFrameTimer: Timer?
+    /// The surface's own clock, for the effects nothing else ticks. The GL engines are pulled, not
+    /// pushed: the view is never in the hierarchy, its display link never starts, and this timer
+    /// asks it for one frame at a time — 30fps rather than 60 because every frame costs a
+    /// `glReadPixels` of the rect. vis_classic redraws on it at 60fps, as the standalone window's
+    /// display link does; the spectrum callback alone arrived at the tap's buffer rate (#772).
+    private var frameTimer: Timer?
     private var engineImage: CGImage?
     private static let engineFrameInterval: TimeInterval = 1.0 / 30
+    private static let visClassicFrameInterval: TimeInterval = 1.0 / 60
     /// The container shape this surface is confined to, and where it sits in these bounds. See
     /// `WMPWidgetRegionMask` — a skin whose lens is a *mask* rather than overpainted artwork has
     /// nothing above this view to hide the corners of its rect.
@@ -164,7 +166,7 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
             NotificationCenter.default.removeObserver(observer)
         }
         pcmObserver = nil; selectionObserver = nil; surfaceStyleObserver = nil
-        engineFrameTimer?.invalidate(); engineFrameTimer = nil
+        frameTimer?.invalidate(); frameTimer = nil
         cavaPresenter.stop()
         visClassicWaveform.stop()
         visClassicBridge = nil
@@ -221,6 +223,10 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
                 cavaPresenter.start()
             case .visClassic:
                 visClassicWaveform.start()
+                frameTimer = Timer.scheduledTimer(withTimeInterval: Self.visClassicFrameInterval,
+                                                  repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.needsDisplay = true }
+                }
             case .engine:
                 startOffscreenEngine()
             case .bars, .spikes, .ambience:
@@ -233,15 +239,15 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
 
     /// The engine view, built but never added to the hierarchy. `makeEngineView` wires the PCM
     /// observer it needs; `startRendering` is deliberately not called, because the frames come from
-    /// `engineFrameTimer` and a display link would render onto a drawable nothing presents.
+    /// `frameTimer` and a display link would render onto a drawable nothing presents.
     private func startOffscreenEngine() {
         guard let engine = effect.engine, let view = makeEngineView() else { return }
         view.switchEngine(to: engine, persistPreference: false)
         applyPreset(to: view)
         // No display link starts it: this host drives the engine.
         view.presetCycler.start()
-        engineFrameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
-                                                repeats: true) { [weak self] _ in
+        frameTimer = Timer.scheduledTimer(withTimeInterval: Self.engineFrameInterval,
+                                          repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.pullOffscreenFrame() }
         }
     }
@@ -296,7 +302,7 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
     private func releaseEngine() {
         if let observer = pcmObserver { NotificationCenter.default.removeObserver(observer) }
         pcmObserver = nil
-        engineFrameTimer?.invalidate(); engineFrameTimer = nil
+        frameTimer?.invalidate(); frameTimer = nil
         engineImage = nil
         guard let view = engineView else { return }
         view.stopRendering()
@@ -431,21 +437,30 @@ final class SkinEffectsSurfaceView: NSView, @preconcurrency VisualizationMenuTar
         context.restoreGState()
     }
 
+    /// The band count comes from the reference width. Fitted, it is the 576 the standalone windows
+    /// use (`WindowManager.acquireSharedVisClassicBridge`), so a profile has as many bars here as
+    /// there; against the rect's own width a small rect got fewer, wider bars (#772). Unfitted, bars
+    /// are drawn at their own width from the left, so the rect's width is what keeps them all in it.
+    private func referenceWidth(forCanvas canvasWidth: Int) -> Int {
+        VisClassicBridge.fitToWidthDefault(for: selection.visClassicScope) ? 576 : canvasWidth
+    }
+
     private func visClassicBridge(width: Int, height: Int) -> VisClassicBridge? {
+        let reference = referenceWidth(forCanvas: width)
         if let visClassicBridge {
-            // Only on a new width: setting it clears the effects' ghosts, so Shadow and Smoke never
+            // Only on a change: setting it clears the effects' ghosts, so Shadow and Smoke never
             // built up when it was set every frame (#735).
-            if visClassicWidth != width {
-                visClassicBridge.setReferenceWidth(width)
-                visClassicWidth = width
+            if visClassicReferenceWidth != reference {
+                visClassicBridge.setReferenceWidth(reference)
+                visClassicReferenceWidth = reference
             }
             return visClassicBridge
         }
         guard let made = VisClassicBridge(width: width, height: height, scope: selection.visClassicScope) else {
             return nil
         }
-        made.setReferenceWidth(width)
-        visClassicWidth = width
+        made.setReferenceWidth(reference)
+        visClassicReferenceWidth = reference
         applyVisClassicSkinDefault()
         made.reloadPersistedSettings()
         // This is an overlay, not a standalone analyzer canvas. Profiles may specify a black
