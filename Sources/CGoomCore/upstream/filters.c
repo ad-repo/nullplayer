@@ -1,7 +1,7 @@
 /*
  * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
  * adds the Spiral, Vortex, Flower, Heart and Pentagram zoom modes to zoomVector and
- * raises the "Zoom Mode" parameter maximum to match.
+ * raises the "Zoom Mode" parameter maximum to match; 2026-11-14: the Ooh/Ugh mode and its scenes.
  * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
  */
 // --- CHUI EN TRAIN DE SUPPRIMER LES EXTERN RESOLX ET C_RESOLY ---
@@ -139,6 +139,7 @@ typedef struct _ZOOM_FILTER_FX_WRAPPER_DATA {
     float general_speed;
     int reverse; /* reverse the speed */
     char theMode;
+    char oohScene;   /* NullPlayer port */
     int waveEffect;
     int hypercosEffect;
     int vPlaneEffect;
@@ -308,6 +309,7 @@ static inline v2g zoomVector(ZoomFilterFXWrapperData *data, float X, float Y)
     */  
     float coefVitesse = (1.0f+ data->general_speed) / 50.0f;
     float spin = 0.0f;   /* NullPlayer port: rotation added to the radial move */
+    float lift = 0.0f;   /* NullPlayer port: upward drift (the source is read below) */
     
     // Effects
     
@@ -370,6 +372,41 @@ static inline v2g zoomVector(ZoomFilterFXWrapperData *data, float X, float Y)
             coefVitesse += sinf(h * 14.0f) / 60.0f;
             break;
         }
+        case OOH_UGH_MODE: {
+            /* five hellscape flow fields (ooh_ugh.c picks one and moves the middle to its
+             * abyss); Goom's buffer blend morphs one into the next. Maelstrom, rift and
+             * vortex push into or out of their abyss whatever Goom's own speed; all run through a domain-warped
+             * curl so nothing reads as a clean geometric zoom. */
+            float warp = sinf(fx * 5.0f + sinf(fy * 7.0f) * 1.7f);
+            switch ((unsigned char)data->oohScene % OOH_SCENES) {
+            case 0:   /* throat: twisting up out of a low abyss */
+                spin = 0.006f + warp * 0.007f;
+                lift = 0.008f + 0.004f * sinf(fx * 9.0f + warp * 2.0f);
+                break;
+            case 1:   /* maelstrom: a whirlpool, fastest at the eye */
+                spin = fminf(0.0025f / (sq_dist + 0.04f), 0.03f) + warp * 0.004f;
+                coefVitesse -= 0.012f;
+                break;
+            case 2:   /* pyre: curtains of heat climbing, barely any zoom */
+                coefVitesse *= 0.1f;
+                lift = 0.016f;
+                spin = sinf(fy * 14.0f + warp * 2.0f) * 0.012f;
+                break;
+            case 3: { /* rift: five-fold petals opening and closing */
+                float a = atan2f(-fy, fx);
+                coefVitesse += 0.004f + sinf(5.0f * a + sq_dist * 8.0f) * 0.014f;
+                spin = cosf(5.0f * a) * 0.006f + warp * 0.003f;
+                lift = 0.002f;
+                break;
+            }
+            default:  /* vortex: a tunnel, rushing out of the eye faster the further out
+                       * (perspective), twisting hardest at the centre */
+                coefVitesse = 0.080f + 0.100f * sq_dist;   /* its own rush, whatever Goom's speed */
+                spin = fminf(0.010f / (sq_dist + 0.10f), 0.070f) + warp * 0.004f;
+                break;
+            }
+            break;
+        }
         default:
             break;
     }
@@ -379,7 +416,7 @@ static inline v2g zoomVector(ZoomFilterFXWrapperData *data, float X, float Y)
     if (coefVitesse > 2.01f)
         coefVitesse = 2.01f;
     vx = coefVitesse * fx - spin * fy;
-    vy = coefVitesse * fy + spin * fx;
+    vy = coefVitesse * fy + spin * fx - lift;
     
     /* Amulette 2 */
     // vx = X * tan(dist);
@@ -1075,6 +1112,7 @@ void zoomFilterFastRGB (PluginInfo *goomInfo, Pixel * pix1, Pixel * pix2, ZoomFi
         data->middleX = zf->middleX;
         data->middleY = zf->middleY;
         data->theMode = zf->mode;
+        data->oohScene = zf->oohScene;
         data->hPlaneEffect = zf->hPlaneEffect;
         data->vPlaneEffect = zf->vPlaneEffect;
         data->waveEffect = zf->waveEffect;

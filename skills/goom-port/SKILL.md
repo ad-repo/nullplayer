@@ -1,6 +1,6 @@
 ---
 name: goom-port
-description: Implementation reference for NullPlayer's Goom visualization engine — the LGPL-2.1 Goom2k26 C core (j3k0/goom) vendored behind a small C shim, plus the port's own Spiral/Vortex/Flower/Heart/Pentagram effects and heart/star scopes, and rendered as a CPU RGBA frame blitted into the Visualizations window. Covers the CGoomCore layout and ABI, the upstream edits, the 30-per-second update cadence, the audio feed, threading, the effect menu, licensing and gotchas. Use when modifying anything under Sources/CGoomCore/, GoomEngine.swift, or the Goom case of the engine factory, preset seam or context menu.
+description: Implementation reference for NullPlayer's Goom visualization engine — the LGPL-2.1 Goom2k26 C core (j3k0/goom) vendored behind a small C shim, plus the port's own Spiral/Vortex/Flower/Heart/Pentagram/Ooh-Ugh effects and heart/star scopes, and rendered as a CPU RGBA frame blitted into the Visualizations window. Covers the CGoomCore layout and ABI, the upstream edits, the 30-per-second update cadence, the audio feed, threading, the effect menu, licensing and gotchas. Use when modifying anything under Sources/CGoomCore/, GoomEngine.swift, or the Goom case of the engine factory, preset seam or context menu.
 ---
 
 # Goom Port Guide
@@ -23,7 +23,7 @@ list) has no Goom entry, so no skin family sees it.
 | `Sources/CGoomCore/include/GoomCore.h` | The C ABI Swift imports. Upstream's headers stay private: `goom_config.h` `#define`s `guint32` and friends, which would leak into Swift. |
 | `Sources/CGoomCore/GoomCore.c` | The shim: owns a `PluginInfo *` and a pending forced mode (create returns NULL when `goom_init` fails); the effect-name table. |
 | `Sources/NullPlayer/Visualization/GoomEngine.swift` | `VisualizationEngine` conformance, GL upload + blit, effect selection, its context-menu section. |
-| `Tests/NullPlayerAppTests/GoomCoreSmokeTests.swift` | Lit frames, a forced effect landing (an upstream one and the last of the port's), a second core after the first, and a held effect surviving 1,500 cycles of loud beats, against a control run in which the same input must change effect. |
+| `Tests/NullPlayerAppTests/GoomCoreSmokeTests.swift` | Lit frames, a forced effect landing (an upstream one and the last of the port's), Ooh/Ugh staying red, black and white, a second core after the first, and a held effect surviving 1,500 cycles of loud beats, against a control run in which the same input must change effect. |
 
 `Package.swift` builds `CGoomCore` as C with `-O2` (debug too — it is a software renderer, like
 libavs; a 1024-wide frame takes about 1.5 ms) and silences only the two warning kinds upstream
@@ -33,7 +33,7 @@ which upstream's look depends on), so a warning in the port's own code still sho
 
 ### Upstream edits
 
-Nine upstream files are edited: `filters.c`, `gfontlib.c`, `goom_core.c`, `goom_filters.h`,
+Nine upstream files are edited (plus the port's own `ooh_ugh.{h,c}` beside them): `filters.c`, `gfontlib.c`, `goom_core.c`, `goom_filters.h`,
 `goom_plugin_info.h`, `goom.h`, `lines.c`, `lines.h`, `plugin_info.c`. Each opens with a dated
 "Modified for NullPlayer" notice summarising its change, as LGPL-2.1 §2(a) requires; a further
 edit to any upstream file adds or extends that notice. `diff -r` against a checkout of the pinned
@@ -44,7 +44,7 @@ commit's `Goom/` shows exactly what changed.
    port recreates the core on every resize and engine switch.
 2. **Five effects of the port's own** — Spiral, Vortex, Flower, Heart, Pentagram (modes 10–14,
    every edit marked `NullPlayer port`). They are original work, not upstream's:
-   - `goom_filters.h` defines them and `NB_ZOOM_MODES`; `goom.h` raises `NB_FX` to 15; the
+   - `goom_filters.h` defines them and `NB_ZOOM_MODES`; `goom.h` raises `NB_FX` (15 then, 16 with Ooh/Ugh); the
      "Zoom Mode" feedback param's max follows. The shim's name table is indexed by the `*_MODE`
      constants, and a `_Static_assert` ties its size, `NB_FX` and `NB_ZOOM_MODES` together.
    - `filters.c` `zoomVector`: each bends the radial zoom. Spiral and Vortex add a `spin` (a
@@ -54,7 +54,7 @@ commit's `Goom/` shows exactly what changed.
      `sin(14h)`, where `h` scales a point-up pentagram through the point — the angle is folded
      into half a point and `h` is the point's projection on that sector's edge normal, divided by
      the tip's, so the level sets are stars with sharp tips.
-   - `goom_core.c`: the random mode roll goes from 34 to 44 outcomes, two each for the new modes,
+   - `goom_core.c`: the random mode roll goes from 34 to 44 outcomes (46 with Ooh/Ugh), two each for the new modes,
      so upstream's own modes come up a little less often. `settle_port_mode`, run whenever the
      zoom changes (random or forced), centres the new modes and clears the plane, noise, wave and
      hypercos add-ons, which smear them.
@@ -70,6 +70,46 @@ commit's `Goom/` shows exactly what changed.
 4. **Hold**: `update.holdMode` (`goom_plugin_info.h`, zeroed in `plugin_info_init`) skips the
    random mode roll in `goom_update` — the only place Goom changes the mode itself. Speed, centre,
    scope, colours and the kaleidoscope add-on keep following the music; a forced mode still lands.
+
+5. **Ooh/Ugh** (`OOH_UGH_MODE`, 15), the port's own heavy-metal effect. Unlike the other port
+   modes it draws: `Sources/CGoomCore/ooh_ugh.{h,c}` (outside `upstream/`, so `goom_core.c`
+   includes `"../ooh_ugh.h"`) holds its emitters and state (`update.oohUgh`, freed in
+   `goom_close`). `NB_FX` and `NB_ZOOM_MODES` are 16, and the random mode roll has 46 outcomes.
+   - **Scenes**: five (`OOH_SCENES`): throat, maelstrom, pyre, rift and vortex. Each one is a flow field in
+     `filters.c` (switching on `ZoomFilterData.oohScene`, which the wrapper copies) and a row in
+     `ooh_ugh.c`'s `scenes` table, by the same index. A row sets the abyss (the zoom's middle) and the
+     mix of emitters. `filters.c` gained a `lift` term, an upward drift in `vy`.
+     `ooh_ugh_scene` runs every cycle before Goom's forced-effect check. It restates the scene's
+     config, because Goom moves the middle and delivers unsettled configs on its own beats. On a
+     scene change it returns 1, so `goom_update` delivers the zoom and Goom morphs the flow. The
+     emitters then cross-fade over `MORPH_CYCLES`. The vortex is a tunnel: it sets its own
+     outward rush (`coefVitesse`, growing with distance) instead of adding to Goom's, which was
+     too slow to carry anything past Goom's fade, and its eye throws sparks at random angles (fixed
+     spokes read as a pinwheel). A descent scene (ash sinking, no fire) was dropped as too sparse.
+   - **Sparse**: in this mode `goom_core.c` skips the IFS, the point loops, the tentacles and the
+     scope lines. `ooh_ugh_settle` also clears the kaleidoscope add-on: folded around an off-centre
+     abyss, it floods the screen red.
+   - **Burn line**: the undrawn line the fire burns from (`burn_at`). It is turned about the
+     screen's middle (`ang`) at a distance (`reach`), and both pick new targets on a scene change,
+     every ~300 cycles, and on some big hits. It is never turned past the sides: hung from the top,
+     the fire lifts off screen and leaves it black; held near the bottom, it reads as a fixed horizon,
+     which the user rejected twice. `ooh_ugh_finish` darkens what lies behind it.
+   - **Drawing**: `ooh_ugh_draw` draws fire and smoke along the burn line, plus wraiths,
+     ash and a rare, broken sigil (an inverted pentacle, a goat, a sword or an inverted cross). It
+     draws into `p2` before the zoom. `ooh_ugh_finish` maps the output frame after convolve:
+     the brightest channel goes through a red LUT, the dimmest through a white LUT, and a vignette
+     is applied. So the frame is red, black and white only: `g == b <= r`, which a smoke test checks.
+     No kick rings and no glow round the abyss: the user rejected both the concentric circles and
+     the round, pulsing orb. Instead, kicks multiply the whole red ramp and add a faint wash that
+     only the vignette shapes, and a big hit flashes the hottest fire white.
+   - **Low end**: `ooh_ugh_draw` low-passes the PCM (about 120 Hz) into `bass`, measured against its
+     recent peak but never below an absolute floor (6000 RMS), so thin rock bass doesn't read as a
+     doom drone and flatten the kicks. `bass` heaves the burn line, grows and heats the flames and
+     swells the flare. The **souls** are up to six faint, wavering skulls and goat heads rising out of the
+     fire, more on kicks, big hits and heavy bass. They use their own shapes (`SOUL_SKULL`,
+     `SOUL_GOAT`): the sigil goat's spread horns and ears read as a bird, so the soul goat's horns
+     climb straight up. The hottest white (g > 120) cools
+     each cycle, so a held drone can't pile it into a white sky; kick flashes stay below that line.
 
 Tuning the new effects is by eye: render them with a scratch C harness that forces the mode every
 20 updates and writes PPMs, rather than relaunching the app.
@@ -126,9 +166,9 @@ drawn) and a few animation `static`s in `ifs.c`, which are benign.
 
 ## Effects and menu
 
-Goom chooses its own zoom-filter effect from the music. The fifteen modes (`*_MODE` in
+Goom chooses its own zoom-filter effect from the music. The sixteen modes (`*_MODE` in
 `goom_filters.h`: upstream's Normal, Wave, Crystal Ball, Scrunch, Amulette, Water, Hypercos 1,
-Hypercos 2, Y Only, Speedway, and the port's Spiral, Vortex, Flower, Heart, Pentagram) are the
+Hypercos 2, Y Only, Speedway, and the port's Spiral, Vortex, Flower, Heart, Pentagram, Ooh/Ugh) are the
 engine's "presets" in `VisualizationGLView+Presets.swift`, so → / ← / R and the hosts' preset
 steps work. **Goom is always held**: it never picks its own effect. `GoomEngine` keeps the chosen
 index in `goom.heldEffect` (default 0; cleared by the Visualizations window's preference reset),

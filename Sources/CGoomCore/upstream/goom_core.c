@@ -1,7 +1,8 @@
 /*
  * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
  * adds the new zoom modes to the random mode roll, settle_port_mode, the heart and
- * star scopes, and the holdMode check that skips the roll.
+ * star scopes, and the holdMode check that skips the roll; 2026-11-14: the Ooh/Ugh
+ * effect's hooks (ooh_ugh.c), which skip the IFS, point loops, tentacles and scope.
  * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
  */
 /**
@@ -30,6 +31,7 @@
 #include "sound_tester.h"
 #include "goom_plugin_info.h"
 #include "goom_fx.h"
+#include "../ooh_ugh.h"
 //#include "goomsl.h"
 
 /* #define VERBOSE */
@@ -78,6 +80,8 @@ static void settle_port_mode (ZoomFilterData *zf, PluginInfo *goomInfo)
     }
     zf->middleX = goomInfo->screen.width / 2;
     zf->middleY = goomInfo->screen.height / 2;
+    if (zf->mode == OOH_UGH_MODE)   /* the middle is the current scene's abyss */
+        ooh_ugh_settle (goomInfo, zf);
     zf->hPlaneEffect = zf->vPlaneEffect = 0;
     zf->noisify = 0;
     zf->waveEffect = zf->hypercosEffect = 0;
@@ -200,6 +204,10 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
     Pixel *tmp;
     
     ZoomFilterData *pzfd;
+    /* NullPlayer port: Ooh/Ugh stays sparse - no IFS, point loops, tentacles or scope. Taken
+       once, before the mode roll or a forced mode can change it, and used for every Ooh/Ugh
+       check this frame, so a frame never mixes the two */
+    int sparse = goomInfo->update.zoomFilterData.mode == OOH_UGH_MODE;
     
     /* test if the config has changed, update it if so */
     pointWidth = (goomInfo->screen.width * 2) / 5;
@@ -229,10 +237,10 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
             goomInfo->update.ifs_incr = 1;
     }
     
-    if (goomInfo->update.ifs_incr > 0)
+    if (goomInfo->update.ifs_incr > 0 && !sparse)
         goomInfo->ifs_fx.apply(&goomInfo->ifs_fx, goomInfo->p2, goomInfo->p1, goomInfo);
     
-    if (goomInfo->curGState->drawPoints) {
+    if (goomInfo->curGState->drawPoints && !sparse) {
         for (i = 1; i * 15 <= goomInfo->sound.speedvar*80.0f + 15; i++) {
             goomInfo->update.loopvar += goomInfo->sound.speedvar*50 + 1;
             
@@ -320,7 +328,7 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
 
         /* changement eventuel de mode */
         if (!goomInfo->update.holdMode && goom_irand(goomInfo->gRandom,16) == 0) {
-            switch (goom_irand(goomInfo->gRandom,44)) {
+            switch (goom_irand(goomInfo->gRandom,46)) {
                 case 0:
                 case 10:
                     goomInfo->update.zoomFilterData.hypercosEffect = goom_irand(goomInfo->gRandom,2);
@@ -411,6 +419,10 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
                 case 42:
                 case 43:
                     goomInfo->update.zoomFilterData.mode = PENTAGRAM_MODE;
+                    break;
+                case 44:
+                case 45:
+                    goomInfo->update.zoomFilterData.mode = OOH_UGH_MODE;
                     break;
                 default:
                     goomInfo->update.zoomFilterData.mode = NORMAL_MODE;
@@ -705,6 +717,10 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
             goomInfo->update.zoomFilterData.sqrtperte = 16;
         }
         
+        /* NullPlayer port: an Ooh/Ugh scene change delivers the new flow field */
+        if (sparse && ooh_ugh_scene (goomInfo))
+            pzfd = &goomInfo->update.zoomFilterData;
+
         /*
          * Permet de forcer un effet.
          */
@@ -797,7 +813,8 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
          * Affichage tentacule
          */
         
-        goomInfo->tentacles_fx.apply(&goomInfo->tentacles_fx, goomInfo->p1, goomInfo->p2, goomInfo);
+        if (!sparse)
+            goomInfo->tentacles_fx.apply(&goomInfo->tentacles_fx, goomInfo->p1, goomInfo->p2, goomInfo);
         goomInfo->star_fx.apply (&goomInfo->star_fx,goomInfo->p2,goomInfo->p1,goomInfo);
         
         /*
@@ -900,7 +917,7 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
         /*
          * si on est dans un goom : afficher les lignes...
          */
-        if ((goomInfo->update.lineMode != 0) || (goomInfo->sound.timeSinceLastGoom < 5)) {
+        if (((goomInfo->update.lineMode != 0) || (goomInfo->sound.timeSinceLastGoom < 5)) && !sparse) {
             goomInfo->gmline2->power = goomInfo->gmline1->power;
             
             goom_lines_draw (goomInfo, goomInfo->gmline1, data[0], goomInfo->p2);
@@ -926,6 +943,10 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
             }
         }
         
+        /* NullPlayer port: Ooh/Ugh draws its fire and sigils where the scope draws */
+        if (sparse)
+            ooh_ugh_draw (goomInfo, data, goomInfo->p2);
+
         return_val = goomInfo->p1;
         tmp = goomInfo->p1;
         goomInfo->p1 = goomInfo->p2;
@@ -935,6 +956,8 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
         goomInfo->cycle++;
         
         goomInfo->convolve_fx.apply(&goomInfo->convolve_fx,return_val,goomInfo->outputBuf,goomInfo);
+        if (sparse)
+            ooh_ugh_finish (goomInfo, goomInfo->outputBuf);   /* NullPlayer port */
         
         return (guint32*)goomInfo->outputBuf;
 }
@@ -956,6 +979,7 @@ void goom_close (PluginInfo *goomInfo)
     goom_random_free(goomInfo->gRandom);
     goom_lines_free (&goomInfo->gmline1);
     goom_lines_free (&goomInfo->gmline2);
+    ooh_ugh_free (goomInfo);   /* NullPlayer port */
     
     /* release_ifs (); */
     goomInfo->ifs_fx.free(&goomInfo->ifs_fx);

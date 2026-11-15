@@ -1,6 +1,6 @@
 /*
  * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
- * initialises update.holdMode.
+ * initialises update.holdMode; 2026-11-14: update.oohUgh.
  * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
  */
 #include "goom_plugin_info.h"
@@ -133,6 +133,7 @@ void plugin_info_init(PluginInfo *pp, int nbVisuals) {
 	pp->update.recay_ifs = 0; /* dedisparition de l'ifs */
 	pp->update.cyclesSinceLastChange = 0;
 	pp->update.holdMode = 0;
+	pp->update.oohUgh = NULL;
 	pp->update.drawLinesDuration = 80;
 	pp->update.lineMode= pp->update.drawLinesDuration;
 	pp->update.kaleidoManualOn = 0;

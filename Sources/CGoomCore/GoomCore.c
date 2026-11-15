@@ -17,7 +17,7 @@ static const char *const effectNames[GOOM_CORE_EFFECT_COUNT] = {
     [SPEEDWAY_MODE] = "Speedway",
     /* NullPlayer port additions */
     [SPIRAL_MODE] = "Spiral", [VORTEX_MODE] = "Vortex", [FLOWER_MODE] = "Flower",
-    [HEART_MODE] = "Heart", [PENTAGRAM_MODE] = "Pentagram",
+    [HEART_MODE] = "Heart", [PENTAGRAM_MODE] = "Pentagram", [OOH_UGH_MODE] = "Ooh/Ugh",
 };
 _Static_assert(GOOM_CORE_EFFECT_COUNT == NB_FX && NB_FX == NB_ZOOM_MODES, "one name per Goom effect");
 

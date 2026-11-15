@@ -1,6 +1,6 @@
 /*
  * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
- * defines SPIRAL_MODE..PENTAGRAM_MODE and NB_ZOOM_MODES.
+ * defines SPIRAL_MODE..PENTAGRAM_MODE and NB_ZOOM_MODES; 2026-11-14: OOH_UGH_MODE, OOH_SCENES and oohScene.
  * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
  */
 #ifndef FILTERS_H
@@ -35,6 +35,7 @@ struct _ZOOM_FILTER_DATA
 	float   foldAngle;          /* rotation du eventail de miroirs (radians) */
 
 	char    noisify;           /* ajoute un bruit a la transformation */
+	char    oohScene;          /* NullPlayer port: Ooh/Ugh's scene, 0..OOH_SCENES-1 (ooh_ugh.c) */
 };
 
 #define NORMAL_MODE 0
@@ -53,7 +54,9 @@ struct _ZOOM_FILTER_DATA
 #define FLOWER_MODE 12
 #define HEART_MODE 13
 #define PENTAGRAM_MODE 14
-#define NB_ZOOM_MODES 15
+#define OOH_UGH_MODE 15
+#define OOH_SCENES 5   /* Ooh/Ugh's flow fields: throat, maelstrom, pyre, rift, vortex */
+#define NB_ZOOM_MODES 16
 
 void pointFilter (PluginInfo *goomInfo, Pixel * pix1, Color c,
                   float t1, float t2, float t3, float t4, guint32 cycle);
