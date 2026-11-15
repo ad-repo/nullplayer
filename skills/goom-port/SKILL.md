@@ -92,6 +92,12 @@ commit's `Goom/` shows exactly what changed.
      the brightest channel goes through a red LUT, the dimmest through a white LUT, and a vignette
      is applied. So the frame is red, black and white only: `g == b <= r`, which a smoke test checks.
      There are no kick rings: the user rejected the concentric-circle look. Kicks strobe the sky instead.
+   - **Low end**: `ooh_ugh_draw` low-passes the PCM (about 120 Hz) into `bass`, measured against its
+     recent peak but never below an absolute floor (6000 RMS), so thin rock bass doesn't read as a
+     doom drone and flatten the kicks. `bass` heaves the burn line, grows and heats the flames, swells
+     the sky glow and spawns the **souls**: faint, wavering faces rising out of the fire. Goat souls
+     whose horns spread read as a bird, so keep the horns tight. The hottest white (g > 120) cools
+     each cycle, so a held drone can't pile it into a white sky; kick flashes stay below that line.
 
 Tuning the new effects is by eye: render them with a scratch C harness that forces the mode every
 20 updates and writes PPMs, rather than relaunching the app.

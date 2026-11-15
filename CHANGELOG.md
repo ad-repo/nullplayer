@@ -209,8 +209,9 @@
 - **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
   Rivers of fire and smoke burn up from the waveform and drift between five scenes (a throat, a
   maelstrom, a pyre, a rift and a descent) that morph into each other every 20 to 40 seconds or on
-  a big hit. Kicks strobe the sky and flare the fire, a big hit whitens the abyss, and now and then
-  an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
+  a big hit. Kicks strobe the sky and flare the fire, a big hit whitens the abyss, a heavy low end
+  heaves the fire up and makes the sky swell, faint skulls rise in the flames, and now and then an
+  inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
 
 ### Classic skins
 
