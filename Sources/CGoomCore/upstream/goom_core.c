@@ -204,7 +204,9 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
     Pixel *tmp;
     
     ZoomFilterData *pzfd;
-    /* NullPlayer port: Ooh/Ugh stays sparse - no IFS, point loops, tentacles or scope */
+    /* NullPlayer port: Ooh/Ugh stays sparse - no IFS, point loops, tentacles or scope. Taken
+       once, before the mode roll or a forced mode can change it, and used for every Ooh/Ugh
+       check this frame, so a frame never mixes the two */
     int sparse = goomInfo->update.zoomFilterData.mode == OOH_UGH_MODE;
     
     /* test if the config has changed, update it if so */
@@ -942,7 +944,7 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
         }
         
         /* NullPlayer port: Ooh/Ugh draws its fire and sigils where the scope draws */
-        if (goomInfo->update.zoomFilterData.mode == OOH_UGH_MODE)
+        if (sparse)
             ooh_ugh_draw (goomInfo, data, goomInfo->p2);
 
         return_val = goomInfo->p1;
@@ -954,7 +956,7 @@ guint32 *goom_update (PluginInfo *goomInfo, gint16 data[2][512],
         goomInfo->cycle++;
         
         goomInfo->convolve_fx.apply(&goomInfo->convolve_fx,return_val,goomInfo->outputBuf,goomInfo);
-        if (goomInfo->update.zoomFilterData.mode == OOH_UGH_MODE)
+        if (sparse)
             ooh_ugh_finish (goomInfo, goomInfo->outputBuf);   /* NullPlayer port */
         
         return (guint32*)goomInfo->outputBuf;

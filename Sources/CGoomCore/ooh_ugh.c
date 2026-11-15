@@ -2,7 +2,6 @@
 #include "ooh_ugh.h"
 
 #include <math.h>
-#include <stddef.h>
 #include <stdlib.h>
 #include "goom_tools.h"
 
@@ -224,13 +223,8 @@ static int build (int kind, Seg *s, const gint16 *pcm)
 
 /* ---- the hellscape ---- */
 
-static float weight (struct OohUgh *st, size_t field)
-{
-    float from = *(const float *)((const char *)&scenes[st->prevScene] + field);
-    float to = *(const float *)((const char *)&scenes[st->scene] + field);
-    return from + (to - from) * st->morph;
-}
-#define WEIGHT(st, f) weight (st, offsetof (Scene, f))
+/* one of the scene table's emitter amounts, blended from the previous scene's by morph */
+#define WEIGHT(st, f) (scenes[(st)->prevScene].f + (scenes[(st)->scene].f - scenes[(st)->prevScene].f) * (st)->morph)
 
 /* Where the flames start: a wandering line, never drawn itself, laid out along u in -1..1 in its
    own frame (y down, flames towards -y), then turned by ang about a point 0.34h behind the
