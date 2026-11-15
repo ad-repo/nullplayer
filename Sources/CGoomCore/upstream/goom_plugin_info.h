@@ -1,6 +1,6 @@
 /*
  * Modified for NullPlayer, 2026-11-06 (LGPL-2.1 section 2(a)):
- * adds update.holdMode.
+ * adds update.holdMode; 2026-11-14: update.oohUgh.
  * Upstream: https://github.com/j3k0/goom at e4fc3550457cf5a5b194fa9ec8219d3f1e78acc7.
  */
 #ifndef _PLUGIN_INFO_H
@@ -174,6 +174,7 @@ struct _PLUGIN_INFO {
 		int previousZoomSpeed;
 		int timeOfTitleDisplay;
 		int holdMode;              /* NullPlayer port: 1 = Goom does not change the zoom mode itself */
+		struct OohUgh *oohUgh;     /* NullPlayer port: the Ooh/Ugh effect's state (ooh_ugh.c) */
                 char titleText[1024];
 		ZoomFilterData zoomFilterData;                
 	} update;

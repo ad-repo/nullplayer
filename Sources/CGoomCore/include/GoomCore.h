@@ -11,7 +11,7 @@ extern "C" {
 typedef struct GoomCore GoomCore;
 
 /// Number of zoom-filter effects Goom can be forced to (upstream `NB_FX`).
-#define GOOM_CORE_EFFECT_COUNT 15
+#define GOOM_CORE_EFFECT_COUNT 16
 
 GoomCore *GoomCore_create(int width, int height);
 void GoomCore_destroy(GoomCore *core);
