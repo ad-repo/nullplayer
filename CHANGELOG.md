@@ -218,6 +218,14 @@
 - **`?` and `*` in the scrolling title use the skin's own glyphs**, instead of its `Å` and `Ö`
   (Militarized showed "FREE?" as "FREE8") (#755).
 
+### Fixes
+
+- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
+  projectM, Geiss and the rest (#773).
+- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
+  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
+  instead of only as often as the audio arrived (#772).
+
 ## 0.35.0
 
 ### App

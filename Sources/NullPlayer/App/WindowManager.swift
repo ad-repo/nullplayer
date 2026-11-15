@@ -5019,7 +5019,7 @@ class WindowManager {
     func acquireSharedVisClassicBridge() -> VisClassicBridge {
         if let b = sharedVisClassicBridge { return b }
         let bridge = VisClassicBridge(width: 576, height: 128, scope: .spectrumWindow)!
-        bridge.setReferenceWidth(576)
+        bridge.setReferenceWidth(VisClassicBridge.standardReferenceWidth)
         sharedVisClassicBridge = bridge
         return bridge
     }
@@ -5032,7 +5032,7 @@ class WindowManager {
     func acquireMainWindowVisClassicBridge() -> VisClassicBridge {
         if let b = mainWindowVisClassicBridge { return b }
         let bridge = VisClassicBridge(width: 576, height: 128, scope: .mainWindow)!
-        bridge.setReferenceWidth(576)
+        bridge.setReferenceWidth(VisClassicBridge.standardReferenceWidth)
         mainWindowVisClassicBridge = bridge
         return bridge
     }

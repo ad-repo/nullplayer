@@ -12,8 +12,8 @@ core of **Goom2k26** (`https://github.com/j3k0/goom`, pinned at
 XMMS-era Goom. Only `Goom/` is vendored; upstream's SDL front-end, Fovea engine (`gametools/`,
 `iosfc/`) and `libs/` are not.
 
-It is not offered to skins: `SkinEffectSelection.catalogue` (the `.wmz`/`.wal`/Sonique effects
-list) has no Goom entry, so no skin family sees it.
+It is also an effect in the `.wmz` and Sonique effects areas (`SkinEffectSelection.catalogue`),
+rendered offscreen there like the other GL engines.
 
 ## File layout
 

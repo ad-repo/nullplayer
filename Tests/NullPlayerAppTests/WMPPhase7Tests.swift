@@ -38,6 +38,9 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.current.engine, .avs)
         XCTAssertTrue(selection.current.isOffscreenEngine)
         selection.step(by: 1)
+        XCTAssertEqual(selection.current.id, "goom")
+        XCTAssertEqual(selection.current.engine, .goom)
+        selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "corona")
         XCTAssertEqual(selection.current.engine, .corona)
         selection.step(by: 1)
@@ -47,7 +50,7 @@ final class WMPPhase7Tests: XCTestCase {
         XCTAssertEqual(selection.current.id, "fractal")
         XCTAssertEqual(selection.current.engine, .fractal)
         XCTAssertTrue(selection.current.isOffscreenEngine)
-        // Twelve entries, so one more step is back to the start.
+        // Thirteen entries, so one more step is back to the start.
         selection.step(by: 1)
         XCTAssertEqual(selection.current.id, "spikes")
         _ = selection.select("spikes")
@@ -59,20 +62,23 @@ final class WMPPhase7Tests: XCTestCase {
     /// that silently refuses to render offscreen would show only during live QA.
     @MainActor
     func testOffscreenEngineReadbackProducesAnImage() throws {
-        guard let view = VisualizationGLView(frame: NSRect(x: 0, y: 0, width: 206, height: 150),
-                                             pixelFormat: nil) else {
-            throw XCTSkip("no OpenGL pixel format on this machine")
+        for engine in [VisualizationType.geiss, .goom] {
+            guard let view = VisualizationGLView(frame: NSRect(x: 0, y: 0, width: 206, height: 150),
+                                                 pixelFormat: nil) else {
+                throw XCTSkip("no OpenGL pixel format on this machine")
+            }
+            // `persistPreference: false` is the whole of the WMP contract here: a skin cycling its
+            // slot must never write `visualizationEngineType`.
+            let before = UserDefaults.standard.string(forKey: "visualizationEngineType")
+            view.switchEngine(to: engine, persistPreference: false)
+            XCTAssertEqual(UserDefaults.standard.string(forKey: "visualizationEngineType"), before,
+                           "the skin's slot must not rewrite the app's visualization preference")
+            let image = try XCTUnwrap(view.renderOffscreenImage(pixelWidth: 206, pixelHeight: 150),
+                                      "\(engine) offscreen readback produced no image")
+            XCTAssertEqual(image.width, 206)
+            XCTAssertEqual(image.height, 150)
+            view.stopRendering()
         }
-        // `persistPreference: false` is the whole of the WMP contract here: a skin cycling its
-        // slot must never write `visualizationEngineType`.
-        let before = UserDefaults.standard.string(forKey: "visualizationEngineType")
-        view.switchEngine(to: .geiss, persistPreference: false)
-        XCTAssertEqual(UserDefaults.standard.string(forKey: "visualizationEngineType"), before,
-                       "the skin's slot must not rewrite the app's visualization preference")
-        let image = try XCTUnwrap(view.renderOffscreenImage(pixelWidth: 206, pixelHeight: 150),
-                                  "offscreen readback produced no image")
-        XCTAssertEqual(image.width, 206)
-        XCTAssertEqual(image.height, 150)
     }
 
     @MainActor
