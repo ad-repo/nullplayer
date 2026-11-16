@@ -130,6 +130,7 @@ extension WasabiSceneRenderer {
         let horizontal = horizontalClip(of: object, text: text, measured: measured, frame: frame,
                                         scrolls: scroll != nil, wraps: wraps, context: context)
         let clip = CGRect(x: horizontal.minX, y: band.minY, width: horizontal.width, height: band.height)
+        WasabiTextClipProbe.record(object, text: text, font: font, box: clip.height)
         context.saveGState()
         context.clip(to: clip)
         context.translateBy(x: 0, y: frame.midY)
@@ -521,6 +522,9 @@ extension WasabiSceneRenderer {
         var scissor = frame
         if let ticker, WasabiTextMetrics.isClockDisplay(ticker), CGFloat(charHeight) > frame.height {
             scissor.size.height = CGFloat(charHeight)
+        }
+        if let ticker {
+            WasabiTextClipProbe.record(ticker, glyph: top - scissor.minY + CGFloat(charHeight), box: scissor.height)
         }
         context.saveGState()
         context.clip(to: scissor)

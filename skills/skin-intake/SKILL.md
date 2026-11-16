@@ -71,7 +71,7 @@ Only the batch rides on its branch; an unrelated backlog row gets its own `fix/�
 
 ## The scan
 
-Two checks per skin, plus the look, all live with a track playing, all by script:
+Two checks per skin and the look, all live with a track playing, plus one headless clipping pass, all by script:
 
 1. **The main window's buttons and functions**, and 2. **the Library opens, works and closes**:
    `scripts/wal_live_smoke.sh <skin>… --out <dir>`. It clicks and drags every main-window control
@@ -84,6 +84,13 @@ Two checks per skin, plus the look, all live with a track playing, all by script
    <dir>`, in chunks that fit a 10-minute call (about 35 s a skin), then `scripts/review_sheet.py`
    per skin, `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. Open every sheet
    and judge it (§ *The visual review*).
+4. **What each window cuts off**: `scripts/wal_dump.sh "$HOME/Library/Application
+   Support/NullPlayer/WinampModernCorpus/silver"` (headless, ~1 minute per 100 skins), then
+   `grep -E '^(SKIN|OVERFLOW|TEXT-CLIP)' <out>/dump.log` and keep the batch's skins. `OVERFLOW` is a
+   window smaller than its art because the skin never stated its size; `TEXT-CLIP` is a clock or
+   display text cut by its box (`harness.md` § *Debugging a skin*). Every intake has shipped one of
+   each until a user saw it (LayerONE B453, EI B441, the Two Towers B455). Open the window's census
+   shot for every hit before filing: a parked drawer reads as overflow too.
 
 Read the smoke table, not the app. What counts as a defect:
 
