@@ -12,9 +12,9 @@
 --   windowitems <pid>             one line per window-toggle item: index|name|enabled|checked
 --   toggle <pid> <index> <name>   click Windows item <index>, refusing if its name is not <name>
 --
--- `windowitems` reads block 1 of the Windows menu up to its first separator, minus Main Window,
--- Debug Console and Recreate Windows (Debug) (a modal alert), then the next block only when it is a
--- `.wal` skin's own windows, i.e. when it does not open with Compact Mode or Always On Top. `index`
+-- `windowitems` (and `closeaux`) read every window block of the Windows menu, up to the separator
+-- before Compact Mode / Always On Top, minus Main Window, Debug Console and Recreate Windows
+-- (Debug) (a modal alert); a `.wal` skin's own windows are the last such block. `index`
 -- is the item's position in the menu as read; the menu is rebuilt on every open, so `toggle`
 -- re-checks the name.
 --
@@ -95,7 +95,7 @@ on drive(argv, targetPid)
     tell (first process whose unix id is targetPid)
       if act is "closeaux" then
         set closed to ""
-        repeat 3 times
+        repeat 25 times
           click menu bar item "Windows" of menu bar 1
           delay 0.35
           set mm to menu 1 of menu bar item "Windows" of menu bar 1
@@ -106,17 +106,18 @@ on drive(argv, targetPid)
           -- (`windowitems` reads the same blocks). Everything after is a setting, not a window --
           -- Window Shadows, Compact Mode, Always On Top -- and clicking it changes the app under
           -- test; closeaux turned Window Shadows off mid-sweep that way (2026-10-11).
-          set blockNo to 1
+          -- The window list has its own separators (EQ, vis, misc blocks), so only the block that
+          -- opens with Compact Mode / Always On Top ends it (2026-11-16: stopping at block 2 left
+          -- Visualizations, Spectrum, Art, etc. open).
           set n to count of nms
           repeat with i from 1 to n
             set nm to item i of nms
             set mk to item i of mks
             if nm is missing value or nm is "" then
-              if blockNo is 2 or i = n then exit repeat
+              if i = n then exit repeat
               set nx to item (i + 1) of nms
               if nx is "Compact Mode" or nx is "Always On Top" then exit repeat
-              set blockNo to 2
-            else if nm is not "Main Window" then
+            else if nm is not "Main Window" and nm is not "Debug Console" and nm is not "Recreate Windows (Debug)" then
               if mk is not missing value and mk is not "" then
                 set hit to i
                 exit repeat
@@ -145,17 +146,15 @@ on drive(argv, targetPid)
         set mks to value of attribute "AXMenuItemMarkChar" of every menu item of mm
         my closeMenus(targetPid)
         set out to {}
-        set blockNo to 1
         set n to count of nms
         set i to 1
         repeat while i ≤ n
           set nm to item i of nms
           if nm is missing value or nm is "" then
-            -- A separator ends block 1; the next block counts only if it is a .wal skin's windows.
-            if blockNo is 2 or i = n then exit repeat
+            -- Window blocks run until the settings block (Compact Mode / Always On Top).
+            if i = n then exit repeat
             set nx to item (i + 1) of nms
             if nx is "Compact Mode" or nx is "Always On Top" then exit repeat
-            set blockNo to 2
           else if nm is not "Main Window" and nm is not "Recreate Windows (Debug)" and nm is not "Debug Console" then
             set mk to item i of mks
             if mk is missing value or mk is "" then
