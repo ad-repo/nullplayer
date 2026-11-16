@@ -517,10 +517,12 @@ extension WasabiSceneRenderer {
         let top = frame.minY + max(0, verticalAlignment
             .offset(cell: CGFloat(charHeight), in: frame.height).rounded())
 
-        // A clock whose glyphs are taller than its box keeps its whole face (B455, as B441 does for
-        // TrueType): the Two Towers' 28px digits sit in an `h="20"` box and lost their lower rows.
+        // A skin text whose bitmap glyphs are taller than its box keeps its whole cell: a sheet's cell
+        // is the glyph, drawn as a blit, so the author sized it to be seen whole. The Two Towers' 28px
+        // clock digits sit in an `h="20"` box (B455); Mizuho's and Tessa's 8px bitrate/frequency
+        // readouts in `h="5"` lost their top rows (B459). (TrueType keeps the box except a clock, B441.)
         var scissor = frame
-        if let ticker, WasabiTextMetrics.isClockDisplay(ticker), CGFloat(charHeight) > frame.height {
+        if ticker != nil, CGFloat(charHeight) > frame.height {
             scissor.size.height = CGFloat(charHeight)
         }
         if let ticker {

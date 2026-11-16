@@ -1139,11 +1139,14 @@ anyone saw it. The first time the view reports itself on screen (`occlusionDidCh
 layer (`autoplay="1" autoreplay="0"`, no `play()`, no range) is re-stamped
 (`WasabiAnimation.restartAtFirstVisible`); loops and script-driven ranges are left alone.
 
-#### Text that the box or its padding closes (B455, B457)
+#### Text that the box or its padding closes (B455, B457, B459)
 
-A **bitmap clock** whose glyphs are taller than its box draws whole, scissored to the glyph height and
-not the box, as B441 does for TrueType (Official_LOTR_The_Two_Towers: 28 px digits in `h="20"`; Hybridv10 and
-two others gained their last pixel row). A `<text>` whose `leftpadding`/`rightpadding` leave it 4 px or less
+A **bitmap-font text** whose glyphs are taller than its box draws whole, scissored to the glyph height and
+not the box (Official_LOTR_The_Two_Towers' clock: 28 px digits in `h="20"`; Hybridv10 and two others gained
+their last pixel row). B455 did this for clocks only; B459 widened it to every skin text, since Mizuho's,
+Tessa's and GUILTY_GEAR's bitrate/frequency readouts are 8 px cells in `h="5"` and lost their top rows. A
+**TrueType** text keeps its box except a clock (B441): the render dump's `TEXT-CLIP` names a few dozen
+TrueType texts whose ink overruns the box by 1–5 px, and no screenshot yet says Winamp draws those whole. A `<text>` whose `leftpadding`/`rightpadding` leave it 4 px or less
 keeps its own box instead of being released to its group (`horizontalClip`): 666HIM666's volume readout is
 `w="15" leftpadding="12"`, a text the skin keeps out of sight, and released it overdrew the title.
 

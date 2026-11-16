@@ -59,7 +59,7 @@ Every dump also prints, unasked, what each window cuts off — the intake scan's
 - `TEXT-CLIP <container>/<layout>: text#<id> glyphs=<n> box=<n>`: a text whose glyphs are taller
   than the rect it was scissored to, from `WasabiTextClipProbe` (armed by `WINAMP_MODERN_RENDER_DUMP`
   alone). TrueType is measured by the string's ink, a bitmap font by its cell. EI's clock (B441),
-  the Two Towers' clock (B455) and Mizuho's bitrate/frequency are the measured hits. Boxes under 3px
+  the Two Towers' clock (B455) and Mizuho's bitrate/frequency (B459) were the measured hits. Boxes under 3px
   draw nothing and are skipped.
 
 A hit is a candidate, not a verdict: over intake #12's 100 skins the two lines named three more
