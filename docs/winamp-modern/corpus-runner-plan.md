@@ -370,6 +370,30 @@ press), B436 (Austin Powers' drawer opens on black, its video is not played), B4
 reported off the art, not reproduced), B439 (Skimple's spectrum sits left of its well); also B396 (the census hangs on
 the nine cPro skins) and B403 (Auriga_V5 and Buffy_the_vampire_slayer__the_codex declare no video surface).
 
+### Done: intake #12, promoted to gold (2026-11-16)
+
+100 skins were picked for batch 12 by `wal_intake_pick.sh 100` (the cap raised to 100 for this round) and scanned live
+(`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`) on `feat/wal-intake-12`. Two fix passes ran, the
+second after the user's own look at the hand-over items. All 100 were accepted by the user, one with an open row, and
+promoted to gold on 2026-11-16, with rows on `skin-compatibility.md` (100 B, graded from the ledger notes, backlog rows and
+a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/intake-12.tsv`; the row ids are in
+`backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Classix_Player_1_1 | The Library opened in NullPlayer's plain chrome although the skin ships a frame (B442) | A single-window skin's inventory synthesizes the Library (`synthesizableKinds` answers `[.library]`) |
+| Client_V2, nematicfinal | The Playlist Editor showed one row: the other five drew black on black (B443) | `listPlate` falls to white when the list text is under 2:1 on its last-resort plate; also whitens Apill, Casio-G-Shocked-V2, Software and Star_Wars_Player |
+| LayerONE | A transparent window opened over the player at launch (B447) | A `default_visible` container whose layout is `alpha="0"` is not opened (`.declaredInvisible`) |
+| Biohazard_V2, January_29, nematicfinal | Volume slider drags did nothing (B448) | Not an engine defect: the smoke dragged a vertical slider along its width; the sweep follows the slider's orientation |
+| Palillo | EQ bands 1-3 and the Thinger icons misfired (B449) | An object faded to alpha 0 takes no press |
+| capsuleII | The EQ button's press went to an undrawn Thinger bucket, so the panel never opened (B450) | A component bucket yields to a control drawn after it |
+
+Closed as not defects: Simple_Skin_V5's and FedererAmp's title clipping (B444, accepted as drawn by the user); CCZ-45's
+blank Playlist Editor (B445, read on a locked screen) and Scattershot's unopened windows (B451), neither reproducing on
+an unlocked screen.
+
+Open, promoted with the skin: B446 (YST's paired frame window over each content window, not yet seen on screen).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
