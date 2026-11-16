@@ -770,7 +770,8 @@ extension WasabiSceneRenderer {
             top.attributes["action"] == nil ? nil : nodes.firstIndex { $0.object === top }
         } ?? -1
         for (depth, node) in nodes.enumerated().reversed()
-        where depth > cover && Self.isComponentBucket(node.object) && !Self.isFadedOut(node.object) {
+        where depth > cover && node.clipping.contains(point)
+            && Self.isComponentBucket(node.object) && !Self.isFadedOut(node.object) {
             let layout = WinampModernComponentBucketLayout(object: node.object, frame: node.frame)
             guard let slot = layout.slot(at: point) else { continue }
             let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot

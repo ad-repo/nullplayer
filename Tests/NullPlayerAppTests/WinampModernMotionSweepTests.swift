@@ -76,6 +76,8 @@ final class WinampModernMotionSweepTests: XCTestCase {
         try runtime.start()
         // As the app does right after `start()` (`scriptDidStart`); see the render dump's SEED.
         for renderer in all { runtime.dispatchResize(targets: renderer.resizeTargets(), previous: nil) }
+        // Asked now, as the app asks it at startup: a timer that raises an alpha later opens nothing.
+        let opens = renderers.map { WinampModernContainerTopology.opensWithSkin($0.info) }
 
         let timer = runtime.programs.contains { program in
             program.methods.contains { method in
@@ -102,7 +104,7 @@ final class WinampModernMotionSweepTests: XCTestCase {
             let info = entry.info
             let ladder = ladders[index]
             let (layoutID, animated) = layouts[index]
-            let open = WinampModernContainerTopology.opensWithSkin(info)
+            let open = opens[index]
             // `abca`: each rung labelled by the first rung it matches, so a timer that undoes its own
             // transition reads as one, not as static (Phase 26).
             var seen: [Data] = []

@@ -143,7 +143,12 @@ final class WinampModernCanvas {
         let changed = job.rects.reduce(fresh) { updateAlpha(data, rect: $1, in: context) || $0 }
         // A frame that changed nothing still settles holes an earlier frame reused.
         let settles = job.backsHoles && holesOwed && !isHolesCacheLive
-        guard changed || settles else { return Frame(picture: picture, outline: nil, holes: nil) }
+        guard changed || settles else {
+            // Still owed (a recompute between a reuse and its settle timer): the view asks again.
+            var frame = Frame(picture: picture, outline: nil, holes: nil)
+            frame.holesOwed = job.backsHoles && holesOwed
+            return frame
+        }
         var frame = Frame(picture: picture,
                           outline: outlineImage(width: context.width, height: context.height),
                           holes: job.backsHoles ? holes(fresh: fresh, width: context.width, height: context.height) : nil)

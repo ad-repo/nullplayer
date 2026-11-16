@@ -16,7 +16,9 @@ enum WasabiTextClipProbe {
     /// A TrueType string, measured by its glyphs' ink, not the font's line box: a title with no
     /// descender in an exactly-sized box is not cut.
     static func record(_ object: WasabiObject, text: String, font: NSFont, box: CGFloat) {
-        guard isArmed, !text.isEmpty else { return }
+        guard isArmed else { return }
+        // Emptied text draws nothing, so it no longer reports a cut.
+        guard !text.isEmpty else { return record(object, glyph: 0, box: box) }
         let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]))
         record(object, glyph: CTLineGetBoundsWithOptions(line, .useGlyphPathBounds).height, box: box)
     }

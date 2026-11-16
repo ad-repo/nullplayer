@@ -115,15 +115,17 @@ final class WinampModernRenderDumpTests: XCTestCase {
     /// (LayerONE opened at 275x116 against a 286x139 player, B453). `TEXT-CLIP`: a text whose glyphs
     /// are taller than the rect it was scissored to (Two Towers' clock, B455). Both after the draw.
     ///
-    /// `OVERFLOW` is only asked of a layout that declares no size (`declared=1x1`): a sized frame
+    /// `OVERFLOW` is only asked of a layout that declares no size (no `w`/`h`/`default_*`, no container default): a sized frame
     /// crops its long side strips on purpose (LayerONE's `component.left` runs 110px past every
     /// component window), and "the window's size was never stated" is the class every intake has hit.
     private static func printClipping(of renderer: WasabiSceneRenderer, window: String) {
         let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
         var reach = canvas
         var culprits: [String] = []
-        let declared = renderer.declaredMinimumSize
-        for node in renderer.sceneNodes() where node.bitmapID != nil && declared.width <= 1 && declared.height <= 1 {
+        let layout = renderer.layout.attributes, container = renderer.layout.parent?.attributes ?? [:]
+        let sizeless = ["w", "h", "default_w", "default_h"].allSatisfy { layout[$0] == nil }
+            && container["default_w"] == nil && container["default_h"] == nil
+        for node in renderer.sceneNodes() where node.bitmapID != nil && sizeless {
             // A clip that reaches the canvas edge is the window's own: the cut being measured.
             var clip = node.clipping.rect
             if clip.maxX >= canvas.maxX - 0.5 { clip.size.width = .greatestFiniteMagnitude }

@@ -41,37 +41,36 @@ struct WinampModernHoles {
         // The marking and the fill run on raw pointers in `while` loops: in a debug build the generic
         // range iteration made this ~700 ms a frame on The_Ninja_Star's animated outline (B456) and
         // saturated the canvas queue. Release was ~4 ms either way. The stack is sized for the worst
-        // case (every pixel is pushed at most once): one zeroed allocation of `count` Ints per changed
+        // case (every pixel is pushed at most once): one allocation of `count` Ints per changed
         // outline, about 6 MB at 1084x698. The mask and backing passes are pointer loops too.
         var state = [UInt8](repeating: 0, count: count)
-        // Uninitialised: every slot is written before it is read, and a debug build fills a
-        // `repeating:` Int array element by element.
-        var stack = [Int](unsafeUninitializedCapacity: count) { _, initialized in initialized = count }
+        // A raw buffer, not an Array: every slot is written before it is read, and a debug build
+        // fills a `repeating:` Int array element by element.
+        let stack = UnsafeMutableBufferPointer<Int>.allocate(capacity: count)
+        defer { stack.deallocate() }
         state.withUnsafeMutableBufferPointer { state in
-            stack.withUnsafeMutableBufferPointer { stack in
-                alpha.withUnsafeBufferPointer { alpha in
-                    var top = 0
-                    var index = 0
-                    while index < count {
-                        if alpha[index] != 0 { state[index] = 1 }
-                        index += 1
-                    }
-                    @inline(__always) func seed(_ index: Int) {
-                        if state[index] == 0 { state[index] = 2; stack[top] = index; top += 1 }
-                    }
-                    var x = 0
-                    while x < width { seed(x); seed((height - 1) * width + x); x += 1 }
-                    var y = 0
-                    while y < height { seed(y * width); seed(y * width + width - 1); y += 1 }
-                    while top > 0 {
-                        top -= 1
-                        let index = stack[top]
-                        let x = index % width
-                        if x > 0 { seed(index - 1) }
-                        if x < width - 1 { seed(index + 1) }
-                        if index >= width { seed(index - width) }
-                        if index + width < count { seed(index + width) }
-                    }
+            alpha.withUnsafeBufferPointer { alpha in
+                var top = 0
+                var index = 0
+                while index < count {
+                    if alpha[index] != 0 { state[index] = 1 }
+                    index += 1
+                }
+                @inline(__always) func seed(_ index: Int) {
+                    if state[index] == 0 { state[index] = 2; stack[top] = index; top += 1 }
+                }
+                var x = 0
+                while x < width { seed(x); seed((height - 1) * width + x); x += 1 }
+                var y = 0
+                while y < height { seed(y * width); seed(y * width + width - 1); y += 1 }
+                while top > 0 {
+                    top -= 1
+                    let index = stack[top]
+                    let x = index % width
+                    if x > 0 { seed(index - 1) }
+                    if x < width - 1 { seed(index + 1) }
+                    if index >= width { seed(index - width) }
+                    if index + width < count { seed(index + width) }
                 }
             }
         }

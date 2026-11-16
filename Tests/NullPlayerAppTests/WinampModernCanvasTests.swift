@@ -192,9 +192,14 @@ final class WinampModernCanvasTests: XCTestCase {
         XCTAssertNotNil(filled.outline)
         XCTAssertEqual(filled.holes?.isEmpty, false, "reused from the frame before")
         XCTAssertTrue(filled.holesOwed)
+        // An unchanged frame still inside the interval (a settle timer that fired early) stays owed,
+        // so the view asks again.
+        let corner = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let early = try XCTUnwrap(canvas.render(job(scene(ring + [(hole, red)]), rects: [corner])))
+        XCTAssertNil(early.outline)
+        XCTAssertTrue(early.holesOwed)
         // Nothing changes after that; the trailing frame past the interval settles them.
         Thread.sleep(forTimeInterval: WinampModernCanvas.holesInterval + 0.05)
-        let corner = CGRect(x: 0, y: 0, width: 1, height: 1)
         let settled = try XCTUnwrap(canvas.render(job(scene(ring + [(hole, red)]), rects: [corner])))
         XCTAssertEqual(settled.holes?.isEmpty, true)
         XCTAssertFalse(settled.holesOwed)
