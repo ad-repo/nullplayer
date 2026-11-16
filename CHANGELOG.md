@@ -1,46 +1,81 @@
 # Changelog
 
+## Unreleased
+
+### Winamp Modern (`.wal`) skins
+
+- **100 more skins checked** (corpus intake twelve): A Man Apart, A NEW SKIN, Aircel Skin, Airtel,
+  All Seeing Eye, Amp3LCD, Atomic, Auburn University, B*L*E*A*C*H, Biohazard, Boarding House,
+  Boneless Knight, boxOr!, BWA, capsule (two versions), CCZ, Chasing Liberty,
+  Classic_KilJaeden_The_Deciever, Classix Player, Client V2, ClipUp, Club Dread, COD-BLACK-OPS,
+  Cosmic Ray (Golden Healer, Lazer Magick), cPro - Canus, cPro - cMP12, cPro - FlaT, cPro -
+  insekticid, cPro - ME, cPro - Opera.v.J, cPro - POP!?, cPro - U2 No Line on the Horizon, Cpro
+  Tokio, cPro: Royale XP, cPro_Celluloid, cPro_Colors, cPro_Ebonite, cPro_Fluke, D-K9, DewyTears V4,
+  Electric Guitar Skin, Energy_Hands_by_ROBODRON, EVo, FedererAmp, FierY_GEAr, Flightplan, Friends,
+  GREEN MACHINE, Harmonizer, Helios, Hot Action Cop, How to Deal, iRobot, iTunes XiAlbook, January
+  29, Jesse McCartney, Jessica Alba Modern Skin, JetBlue Card, Kids WB, LayerONE, Lord of the Rings:
+  The Two Towers, Metal Gear Solid 2, MetalEdge, Mini iPod, MIZUHO WINAMP SKIN, Mogyoro, Motorcycle,
+  nematic, Neptune, Nikki Nova V3, NINJA STAR, Nokia, Obscene.Helicopter.Extension.Part.3-SiNK,
+  Official_FreeAmp_Skin, OnePieceLover Winamp Skin 2012, OPulent Records Player, P!nk, Palillo,
+  Pebble_England, PiOnNeR_AMP2, Point Blank, Queensryche, Reliance Skin, RNZ X666X, Rolling Stones:
+  40 Licks, Scattershot, Skinit.net, Smallville, Smokin' Aces, Soundwave, TMNT, Tutorial Simple Skin
+  by Jo Imre, Venom, Wax-Skin, Winamp Notif, Winamp5 Simple Demo Skin, WTM, Y.S.T.
+
+- **A single-window skin's Library opens in the skin's own frame** (Classix Player).
+- **Playlist rows on a dark plate stay readable** instead of drawing black on black (Client V2,
+  nematic).
+- **An invisible window the skin declares open no longer opens over the player** (LayerONE), and
+  **a player that declares no size shows its whole body**.
+- **Controls a skin has faded out stop taking clicks**, and a Thinger strip under a button gives the
+  click to the button (Palillo, capsule).
+- **A skin's opening animation plays when its window first shows** instead of before (JetBlue Card).
+- **Pixel-font clocks and readouts taller than their box draw whole** (Lord of the Rings: The Two
+  Towers, Mizuho), and **a text squeezed shut by its padding no longer draws over its neighbour**
+  (666HIM666).
+- **A player whose outline animates no longer stutters** (Ninja Star).
+
+### Visualizations
+
+- **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
+  Rivers of fire and smoke burn up from the waveform, from a line that roams round the screen,
+  through five scenes (a throat, a maelstrom, a pyre, a rift and a vortex tunnel) that morph into
+  each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
+  white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
+  then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
+
+### Fixes
+
+- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
+  projectM, Geiss and the rest (#773).
+- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
+  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
+  instead of only as often as the audio arrived (#772).
+
 ## 0.35.1
 
 ### Winamp Modern (`.wal`) skins
 
-- **249 more skins checked** (corpus intakes eight to twelve): A Man Apart, A NEW SKIN, absurd, Act
-  3 Scene 2, Aircel, Aircel Skin, Airtel, Alien Skin, All Seeing Eye, Amp3LCD, AmpTunes III, Angel,
-  AOL Broadband, AR-7, Artzar, ATL, Atomic, Auburn University, Auriga V5, Austin Powers in
-  Goldmember, Axess, B*L*E*A*C*H, Batman Begins, Batman on the Move, Big Bertha Sanctuary,
-  Biohazard, blackwhite, Blink 182 - Feel This, Boarding House, Boneless Knight, boxOr!, Buffy the
-  Vampire Slayer: The Codex, BWA, Calm Mind, Candeo, Cannes, capsule, Casio G Shocked, Catwoman,
-  CCZ, Chasing Liberty, Classic_KilJaeden_The_Deciever, Classix Player, CleanAMP, CLIENT V2 Winamp5
-  audio player skin., ClipUp, Club Dread, COD-BLACK-OPS, Control Panel, Cosmic Ray, cPro - Canus,
-  cPro - cMP12, cPro - FlaT, cPro - insekticid, cPro - ME, cPro - Opera.v.J, cPro - POP!?, cPro - U2
-  \| NO LOTH, cPro Blue Green Whale Amp, cPro CirQ, cPro cMP10, cPro cMP11, cPro Expensive HiFi,
-  cPro SC, cPro smplwhite, Cpro Tokio, cPro WinampVista, cPro Windows XP, cPro: Royale XP, cPro:
-  Wii, cPro_Celluloid, cPro_Colors, cPro_Ebonite, cPro_Fluke, Crystal, CSL, CyclopVX-1, D-K9,
-  Danielle Fishel: Double Diamond, Dawn of the Dead, Dawson's Creek, DewyTears V4, Doublehelix, Dr
-  Who, Dynamic, E_I, EIV2, Electric Guitar Skin, Energy3, Energy_Hands_by_ROBODRON, Enter the
-  Matrix, EVo, Falcon, Fast And The Furious, Fast And The Furious 4, FedererAmp, FierY_GEAr,
-  Flightplan, fnk 32, FreddyvsJason, Friends, Fuzzy Muffins, G-tutorials, GC-Skin, GlassAMP, Go
-  Army, GREEN MACHINE, Guilty Gear XX, Hal's Eye, Halloween 2003, HardHouseCafeAmp, Harmonizer,
-  Helios, Helloween, Heroes, HOLO like, Hot Action Cop, How to Deal, HUD, Inima, iPAMP, iPhone
-  Theme, iPod Skin, iRobot, iTunes PowerMetal2, iTunes XiAlbook, January 29, Jesse McCartney,
-  Jessica Alba Modern Skin, JetBlue Card, Jpod, JSB, Just Buttons, K-Tech SFX 201, Kaskus, Keep on
-  Truckin', Kids WB, Lapis Lazuli, Lara Flynn Boyle - The Devil Inside, LayerONE, LCD hm1, Lelouch,
-  LiquidStar, Lithium, Liverpool F.C., Lord of the Rings: The Two Towers, Lou Reed - The Raven,
-  MacOSesque, Mercury, Metal Gear Solid 2, MetalEdge, mGen, Mini iPod, Minima, Minime2 - Reloaded,
-  miniPlayer, Miyabi, MIZUHO WINAMP SKIN, Mogyoro, Motorcycle, Multiplastic, Narnia, NaturallZ,
-  nematic, Neptune, New York Minute, Nikki Nova V3, NINJA STAR, No-Vita, Nokia, Nokia 5800
-  XpressMusic, Nokia 6600, Nokia 7210, Non Step, Obscene.Helicopter.Extension.Part.3-SiNK, Oddworld
-  Stranger's Wrath, Official Rolling Stones skin in support of their new Greatest Hits album "40
-  Licks" in stores now!, Official_FreeAmp_Skin, Olimpiadas, OnePieceLover Winamp Skin 2012, OPulent
-  Records Player, Overdrive, P!nk, Palillo, Pax, PDU Blog, Pebble_England, PiOnNeR AMP3,
-  PiOnNeR_AMP2, Pixelated, Point Blank, PokerGods, Psonidelic, Puma, Queensryche, Quinto, Qwest, Ray
-  Skin, Reliance Skin, REM, Remote, Remote Sensing, Resurgence, RNZ X666X, Sailor Moon Modern,
-  Scattershot, Scooby Doo 2, Scythe, Side Amp, Simple Amp, Simplistic Vision 2, Skimple, Skinit.net,
-  Sleeky Xtra, Slim, Slither, Smallville, Smallville Digital Album, Smokin' Aces, Snow Globe X-Mas,
-  Sony STR VA 555, Soundwave, Studiosus, sucks.com, sx.pink, T3-Amp, Te iubesc, Tessa, Tewnz,
-  Thanog, The Hobbit, TMNT, Turner Classic Movies, Tutorial Simple Skin by Jo Imre, Venom, Venus,
-  Vision, Washed, Wax-Skin, WGlass, Winamp Notif, Winamp5 Simple Demo Skin, Wrigley's Chewing Amp,
-  WTM, X Sphere, Xbox Amp, Y.S.T.
+- **149 more skins checked** (corpus intakes eight to eleven): absurd, Act 3 Scene 2, Aircel, Alien
+  Skin, AmpTunes III, Angel, AOL Broadband, AR-7, Artzar, ATL, Auriga V5, Austin Powers in
+  Goldmember, Axess, Batman Begins, Batman on the Move, Big Bertha Sanctuary, blackwhite, Blink
+  182 - Feel This, Buffy the Vampire Slayer: The Codex, Calm Mind, Candeo, Cannes, Casio G Shocked,
+  Catwoman, CleanAMP, Control Panel, cPro Blue Green Whale Amp, cPro CirQ, cPro cMP10, cPro cMP11,
+  cPro Expensive HiFi, cPro SC, cPro smplwhite, cPro WinampVista, cPro Windows XP, cPro: Wii,
+  Crystal, CSL, CyclopVX-1, Danielle Fishel: Double Diamond, Dawn of the Dead, Dawson's Creek,
+  Doublehelix, Dr Who, Dynamic, E_I, EIV2, Energy3, Enter the Matrix, Falcon, Fast And The Furious,
+  Fast And The Furious 4, fnk 32, FreddyvsJason, Fuzzy Muffins, G-tutorials, GC-Skin, GlassAMP, Go
+  Army, Guilty Gear XX, Hal's Eye, Halloween 2003, HardHouseCafeAmp, Helloween, Heroes, HOLO like,
+  HUD, Inima, iPAMP, iPhone Theme, iPod Skin, iTunes PowerMetal2, Jpod, JSB, Just Buttons, K-Tech
+  SFX 201, Kaskus, Keep on Truckin', Lapis Lazuli, Lara Flynn Boyle - The Devil Inside, LCD hm1,
+  Lelouch, LiquidStar, Lithium, Liverpool F.C., Lou Reed - The Raven, MacOSesque, Mercury, mGen,
+  Minima, Minime2 - Reloaded, miniPlayer, Miyabi, Multiplastic, Narnia, NaturallZ, New York Minute,
+  No-Vita, Nokia 5800 XpressMusic, Nokia 6600, Nokia 7210, Non Step, Oddworld Stranger's Wrath,
+  Olimpiadas, Overdrive, Pax, PDU Blog, PiOnNeR AMP3, Pixelated, PokerGods, Psonidelic, Puma,
+  Quinto, Qwest, Ray Skin, REM, Remote, Remote Sensing, Resurgence, Sailor Moon Modern, Scooby
+  Doo 2, Scythe, Side Amp, Simple Amp, Simplistic Vision 2, Skimple, Sleeky Xtra, Slim, Slither,
+  Smallville Digital Album, Snow Globe X-Mas, Sony STR VA 555, Studiosus, sucks.com, sx.pink,
+  T3-Amp, Te iubesc, Tessa, Tewnz, Thanog, The Hobbit, Turner Classic Movies, Venus, Vision, Washed,
+  WGlass, Wrigley's Chewing Amp, X Sphere, Xbox Amp.
 
 #### Windows and layouts
 
@@ -222,38 +257,11 @@
   window's mode, Art's effect group) and ← and → step the preset, without ⌘, in the Visualizations,
   Spectrum and Art windows of every skin family. ⌘ still works too, and is still needed on a main
   window, whose plain arrows seek and change the volume. Art's intensity moved to its right-click menu.
-- **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
-  Rivers of fire and smoke burn up from the waveform, from a line that roams round the screen,
-  through five scenes (a throat, a maelstrom, a pyre, a rift and a vortex tunnel) that morph into
-  each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
-  white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
-  then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
 
 ### Classic skins
 
 - **`?` and `*` in the scrolling title use the skin's own glyphs**, instead of its `Å` and `Ö`
   (Militarized showed "FREE?" as "FREE8") (#755).
-
-### Fixes
-
-- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
-  projectM, Geiss and the rest (#773).
-- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
-  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
-  instead of only as often as the audio arrived (#772).
-- **Winamp Modern skins from corpus intake twelve:**
-  - **A single-window skin's Library opens in the skin's own frame** (Classix Player).
-  - **Playlist rows on a dark plate stay readable** instead of drawing black on black (Client V2,
-    nematic).
-  - **An invisible window the skin declares open no longer opens over the player** (LayerONE), and
-    **a player that declares no size shows its whole body**.
-  - **Controls a skin has faded out stop taking clicks**, and a Thinger strip under a button gives
-    the click to the button (Palillo, capsuleII).
-  - **A skin's opening animation plays when its window first shows** instead of before (JetBlue Card).
-  - **Pixel-font clocks and readouts taller than their box draw whole** (Lord of the Rings: The Two
-    Towers, Mizuho), and **a text squeezed shut by its padding no longer draws over its neighbour**
-    (666HIM666).
-  - **A player whose outline animates no longer stutters** (Ninja Star).
 
 ## 0.35.0
 
