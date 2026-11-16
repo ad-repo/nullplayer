@@ -720,7 +720,11 @@ enum WasabiAnimation {
     /// (the first whole frame is recorded before AppKit shows the window) has already spent its
     /// start, so it starts over. JetBlue_Card's 0.8 s intro was over before the window appeared (B452).
     static func restartAtFirstVisible(_ object: WasabiObject, clock: TimeInterval) {
-        guard object.attributes["animstart"] != nil, object.attributes["playing"] == nil else { return }
+        // Only a once-only layer: a loop's start is just its phase, and a script that drives a range
+        // (`setStartFrame`/`setEndFrame`) reads the stamp it already holds (Pepsi_EVo's vis stopped).
+        guard object.attributes["animstart"] != nil, object.attributes["playing"] == nil,
+              object.attributes["autoplay"] == "1", object.attributes["autoreplay"] == "0",
+              object.attributes["endframe"] == nil else { return }
         _ = object.setAttribute("animstart", value: String(clock))
     }
 
