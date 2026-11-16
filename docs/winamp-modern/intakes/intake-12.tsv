@@ -2,11 +2,11 @@ file	sha256	stage	updated	rows	note
 Electric_Guitar_Skin.wal	1b0f5d3be866d96153884ef2b4d3869d2bb4d2a1ac71c99e5d23df812697690c	promoted	2026-11-16	-	scan clean: main 10/11, library skin-frame, visual clean
 capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	promoted	2026-11-16	B450	fix pass: B450 closed; real press on EQ was taken by the covered thinger bucket (fixed, panel slides in); thumbs drag their bands
 Golden_Healer_by_ROBODRON.wal	1b78664b4dde262aea0ab4a9963ca032e9d49d5213d68fee3b87cc09949fd0b6	promoted	2026-11-16	-	scan clean: main 10/12, library skin-frame, visual clean
-LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	filed	2026-11-16	B447,B453(open)	back from promoted: user reported B453 at the hand-over
+LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	live	2026-11-16	B447,B453	fix pass: B453 closed; a layout with no size shape-fits to its sysregion art, 286x139, whole player shows
 boxOr.wal	1c29bfbf29497ce6dec4bb4f01e0f157f758887cb0be399d0bb8895ebf2fe826	promoted	2026-11-16	-	scan clean: main 12/15, library skin-frame, visual clean
 Pepsi_EVo.wal	1cabf4644b13d54b09f798e5129ec178799875608d6eae22c5e559f57816cfd1	promoted	2026-11-16	-	scan clean: main 25/30, library skin-frame, visual clean
 MIni_Ipod.wal	1d393d28c3c9154cad3c1ded38f3b5fa0145053b7626e9580a82f2ff9e93d1c5	promoted	2026-11-16	-	scan clean: main 9/10, library skin-frame, visual clean
-Nikki_Nova_V3.wal	1e400b418df58cd395067af5248f36061bdeb1f9f37f58808c219cba90a6535d	filed	2026-11-16	B454(open)	back from promoted: user reported B454 at the hand-over
+Nikki_Nova_V3.wal	1e400b418df58cd395067af5248f36061bdeb1f9f37f58808c219cba90a6535d	live	2026-11-16	B454	fix pass: B454 explained; the tail follows the VU meters (scripts/tail.maki), seen moving live with playback; eyeanim is a one-shot
 Helios.wal	1e6c76e4d13f127aeb102f024bd5d749d52f147f6d80b88eef629969cf1a060d	promoted	2026-11-16	-	scan clean: main 9/10, library skin-frame, visual clean
 Official_How_to_Deal_Winamp3_Skin.wal	1ec63d5ec869a27aee7e803c3d2b41397b6755d970f5d3bbce2b3159c99ceb18	promoted	2026-11-16	-	scan clean: main 14/17, library skin-frame, visual clean
 Smoking.wal	1ec9c36e285a77a9571f44776274caa1cab3570fd753a962de132a71b629b266	promoted	2026-11-16	-	scan clean: main 10/12, library skin-frame, visual clean
@@ -45,12 +45,12 @@ cPro__insekticid.wal	2fd3912946ca13a3cbac70d8514e2a6dee3fd040cf6a4a047b271169bd6
 Motorcycle.wal	2fe6373317a135cc34e7fc368ebfd4c770c3ba3b1338785860a48ceabe6c860e	promoted	2026-11-16	-	scan clean: main 15/23, library skin-frame, visual clean
 Simple_Skin_V5.wal	301a68fde07c18e3245ba8c2d902f7839444db991cddaa13521a8d285ded5157	promoted	2026-11-16	B444	user review: title clipping accepted as drawn
 ModernClassic_1_1.wal	3031681c1aea68e1900c27e23cdf3b2c89b4e76d09fed3870edb16586ff81812	promoted	2026-11-16	-	scan clean: main 15/18, library skin-frame, visual clean
-Official_LOTR_The_Two_Towers_Skin.wal	3075672887da3de962ced42f9d185730340fc94b18a71ee9473eeea37006f45f	filed	2026-11-16	B455(open)	back from promoted: user reported B455 at the hand-over
+Official_LOTR_The_Two_Towers_Skin.wal	3075672887da3de962ced42f9d185730340fc94b18a71ee9473eeea37006f45f	live	2026-11-16	B455	fix pass: B455 closed; a bitmap clock taller than its box draws whole
 Biohazard_V2.wal	3082f37f95fae67ef6899fa02d74c5fc94e046f909578082476feed4636ffee3	promoted	2026-11-16	B448	fix pass: B448 was the smoke dragging a vertical 82x70 slider along its width; sweep fixed, volume 0.50>0.75
 Classix_Player_1_1.wal	308c5f17b510d515ad8738f18906aa6a13654743a06a996d898f8fe10bafc113	promoted	2026-11-16	B442	fix pass: Library synthesized into the skin frame for a single-window skin (smoke library skin-frame, close closed)
 Simple_skin_V2.wal	310cf3b4df18b05d837b9092c986c57e0280334c50b88798973a475da3db4bc6	promoted	2026-11-16	-	scan clean: main 6/7, library skin-frame, visual clean
 Classic_Jesse_McCartney.wal	316dd269406b63250e9d72300db5dfe4c74960d87e565c6c5e59e9f36885941f	promoted	2026-11-16	-	scan clean: main 10/12, library skin-frame, visual clean
-JetBlue_Card_Winamp5_Skin.wal	31b70539e8614317749fca6639d8a6385a8ccd2f3a823d237ea3a46e4c88ebc5	filed	2026-11-16	B452(open)	back from promoted: user reported B452 at the hand-over
+JetBlue_Card_Winamp5_Skin.wal	31b70539e8614317749fca6639d8a6385a8ccd2f3a823d237ea3a46e4c88ebc5	live	2026-11-16	B452	fix pass: B452 closed; the intro restarts when the window first shows (seen playing live, 8 frames)
 BWA.wal	32462f694f5b72404ac03a75c00a9ad72879ceb0a0d9884ca3c804a754126254	promoted	2026-11-16	-	scan clean: main 26/30, library skin-frame, visual clean
 U2_No_Line_on_Horizon.wal	32486a45acaec001590f626015684e9875dc78d13641dab2691f1ef836236eee	promoted	2026-11-16	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 Amp3LCD.wal	329cdfd1512648d700b58d32ce8cb07427db9c836268e7958b9d668eca7c8299	promoted	2026-11-16	-	scan clean: main 17/19, library skin-frame, visual clean
@@ -74,7 +74,7 @@ cPro__cMP12_1.wal	3896a9745648311eb74c1047c656588e18d9d373f97f60f5585a9d4bdefbe3
 One_Piece_Lover.wal	38cf9b9779b940b99d2d749c44b8e6d347502c3e44aeaf955b93f8d9764b4ee9	promoted	2026-11-16	-	scan clean: main 10/12, library skin-frame, visual clean
 cPro_Colors.wal	38d4656f9ef88e4ff4bed06c4a71c8ce92ee04e69c9fb4e2a9d2cec91b0f5e8a	promoted	2026-11-16	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 Queensryche.wal	399cd887840b52abd08e60dd977e803f99b6784675d50a5b790ed6c1f67f0631	promoted	2026-11-16	-	scan clean: main 11/12, library skin-frame, visual clean
-666HIM666.wal	39c9238b5355c4f30e558754c1848a49a9316bc9be5b175ea625fe7eb73e5482	filed	2026-11-16	B457(open)	back from promoted: user reported B457 at the hand-over
+666HIM666.wal	39c9238b5355c4f30e558754c1848a49a9316bc9be5b175ea625fe7eb73e5482	live	2026-11-16	B457	fix pass: B457 closed; a text its padding has closed keeps its box, so the volume readout no longer overdraws the title
 FedererAmp.wal	3a432ca219dfccc7cd5a7dd6e7fb8bdc4f36ddee85d1f65d8bd6fb3898092db0	promoted	2026-11-16	B444	user review: title clipping accepted as drawn
 Point_Blank.wal	3b133ac63de12ec0eef576f7c13ece42eba1bde37dcf5d1f772582e72b6def3b	promoted	2026-11-16	-	scan clean: main 10/12, library skin-frame, visual clean
 Atomic_v1-1.wal	3b978f72822b0126296c5b1bd5f2168deb9bcdd041e86dc901e164238ba423af	promoted	2026-11-16	-	scan clean: main 8/9, library skin-frame, visual clean
@@ -82,7 +82,7 @@ YoungJin_Kwak.wal	3beb325f9946597cec97eb8588ba2587dd0cc4b8ac6f819643469756bfe222
 cPro__Royale_XP.wal	3bf5aee75dca8f31dfb36508b9a0116d712575e989d11af76010d0771e4e7f57	promoted	2026-11-16	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 D-K9.wal	3c150ba1be24aea53b31102fab7b3e0dea312aa2610eea409972e3dbd6c1ed89	promoted	2026-11-16	-	scan clean: main 12/14, library skin-frame, visual clean
 MetalEdge_v1.wal	3c5084a5bf64d9e76012a60b197c7cd7c4029797aa103d5f09b70ca9c659782f	promoted	2026-11-16	-	scan clean: main 17/19, library skin-frame, visual clean
-The_Ninja_Star.wal	3d0b8472543ee9a437d2f7c889e6a99ffd5e39a7bbcd84b96a4577f2c1f1cbfa	filed	2026-11-16	B456(open)	back from promoted: user reported B456 at the hand-over
+The_Ninja_Star.wal	3d0b8472543ee9a437d2f7c889e6a99ffd5e39a7bbcd84b96a4577f2c1f1cbfa	live	2026-11-16	B456	fix pass: B456 closed; the per-frame hole flood fill was the whole frame cost, now throttled and loop-tight
 CANUS__by_d4f_Mac.wal	3da9c3ec841b250c3421df62197fb01019cebfa10d36e43d1c196d57ee36965d	promoted	2026-11-16	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 cPro__POP_1.wal	3dd2076a6b0fb188364a04031dab8e138472615676e2ef6e3504911c0bf0fc96	promoted	2026-11-16	-	scan clean: main 25/39, library embedded, census skipped (cPro, B396)
 Cpro_Tokio.wal	3dec937e57d752249251c8afa61b4cdd2f5b59b0fe4b26068717e4264267ce75	promoted	2026-11-16	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
