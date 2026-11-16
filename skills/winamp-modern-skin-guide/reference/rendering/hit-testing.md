@@ -445,3 +445,10 @@ object whose `alpha` is 0 **and** whose `targeta` is `0` (`WasabiSceneRenderer.i
 unless a script hooks a press on it, as it already did for an `animatedLayer` at alpha 0 (B393). A
 markup `alpha="0"` hot zone has no `targeta` and stays live. `componentBucketIcon(at:)` applies the same
 test: a faded `<componentbucket>` opened and closed the Playlist Editor under Palillo's EQ bands 5-7.
+
+A bucket also yields to a control drawn **after** it (`isCoveredByControl`: the topmost object at the
+point has an `action=` and a later scene index). capsuleII parks its thinger under the display glass,
+where the bucket's undrawn icons took the press meant for the `EQ` button and the skin's
+`onLeftClick` (which slides the equalizer in) never ran; only a `WINAMP_MODERN_DEBUG_CLICK` replay,
+which skips `mouseDown`, reached it (B450). Check a dead toggle with a real `winhelper click`, not the
+replay.

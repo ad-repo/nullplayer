@@ -1,6 +1,6 @@
 file	sha256	stage	updated	rows	note
 Electric_Guitar_Skin.wal	1b0f5d3be866d96153884ef2b4d3869d2bb4d2a1ac71c99e5d23df812697690c	live	2026-11-15	-	scan clean: main 10/11, library skin-frame, visual clean
-capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	live	2026-11-16	B450	fix pass: B450 not a defect at the drawn thumbs (presses hit each slider; report aimed at the gap x=121); smoke order artifact
+capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	live	2026-11-16	B450	fix pass: B450 closed; real press on EQ was taken by the covered thinger bucket (fixed, panel slides in); thumbs drag their bands
 Golden_Healer_by_ROBODRON.wal	1b78664b4dde262aea0ab4a9963ca032e9d49d5213d68fee3b87cc09949fd0b6	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	live	2026-11-16	B447	fix pass: colorthemes (layout alpha=0, default_visible=1) no longer opens as an invisible window; Playlist Editor draws
 boxOr.wal	1c29bfbf29497ce6dec4bb4f01e0f157f758887cb0be399d0bb8895ebf2fe826	live	2026-11-15	-	scan clean: main 12/15, library skin-frame, visual clean
