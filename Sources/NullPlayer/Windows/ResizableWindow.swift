@@ -102,6 +102,8 @@ class ResizableWindow: NSWindow {
     /// Detect which edges the mouse is near for a given point in window coordinates
     private func detectEdges(at windowPoint: NSPoint) -> ResizeEdges {
         let size = frame.size
+        // A key window keeps getting mouse-moved events outside its frame; none of those is an edge (#779).
+        guard NSRect(origin: .zero, size: size).contains(windowPoint) else { return .none }
 
         // The title bar drags the window, and holds the menu button on the left and the window
         // buttons on the right. Only its top frame band resizes, and never over a button.

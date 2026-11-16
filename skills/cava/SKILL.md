@@ -18,7 +18,9 @@ via **Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or
 surface's context menu. The classic browser's library window (Classic, and the `.wal` fallback,
 `.wmz`, Audion and Sonique library windows) offers **Visuals > Library Window** too, with Cava behind the
 list area only, so a hosted frame's keyed-out corners stay clear. The `.wal` embedded library
-holder and classic Compact Mode never show it. Each backdrop has its own settings scope and lifecycle; neither borrows the
+holder offers it too (#780): the backdrop is a sibling in `WinampModernMainView`, added and removed
+as the browser mounts and unmounts, and `setLibraryBackdropMode` reaches it through
+`WinampModernLibrarySurface.refreshBackdrop()`. Classic Compact Mode never shows it. Each backdrop has its own settings scope and lifecycle; neither borrows the
 standalone or main-window presenter.
 The window menus expose **Cava**, **Art**, and **Cava + Art** separately. Art always uses the legacy
 browser list-area renderer and geometry; there is no second full-window artwork renderer. Both

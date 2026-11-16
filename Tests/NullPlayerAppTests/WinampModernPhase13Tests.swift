@@ -1533,6 +1533,8 @@ final class WinampModernPhase13Tests: XCTestCase {
         func showLinkSheet() { linkSheets += 1 }
         func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
         func applyContentScale(_ scale: CGFloat) { scaleUpdates += 1; lastScale = scale }
+        var backdropPresenter: CavaPresenter? { nil }
+        func refreshBackdrop() {}
         func prepareForUITeardown() {
             guard !isTornDown else { return }
             teardowns += 1

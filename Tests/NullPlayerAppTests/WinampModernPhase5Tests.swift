@@ -450,6 +450,8 @@ final class WinampModernPhase5Tests: XCTestCase {
         func showLinkSheet() { linkSheets += 1 }
         func applyPalette(_ palette: WasabiPalette) { paletteUpdates += 1 }
         func applyContentScale(_ scale: CGFloat) { scaleUpdates += 1 }
+        var backdropPresenter: CavaPresenter? { nil }
+        func refreshBackdrop() {}
         func prepareForUITeardown() {
             isTornDown = true
             view.removeFromSuperview()
