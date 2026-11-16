@@ -49,6 +49,23 @@ WINAMP_MODERN_RENDER_BITMAPS=1 WINAMP_MODERN_RENDER_SCRIPTS=bindings WINAMP_MODE
 invocation — the corpus sweep, 79 archives in about five minutes as of 2026-09-06. The count is
 whatever the directories hold at run time (the corpus scripts default to gold+silver); the sweep prints it rather than asserting one. See *The corpus render sweep* below.
 
+Every dump also prints, unasked, what each window cuts off — the intake scan's clipping check
+(`skin-intake` § *The scan*), so a cut-off window or clock is found without anyone spotting it:
+
+- `OVERFLOW <container>/<layout>: art reaches WxH past canvas WxH: <culprits>`: opaque art, placed
+  from the origin, that runs past the canvas edge. Asked only of a layout that declares no size
+  (no `w`/`h`/`default_*`/`minimum_*`, no container default), the class every intake has hit: LayerONE opened at 275x116 against its 286x139
+  `main.back` (B453). A sized frame's long side strips are cropped on purpose and are not asked.
+- `TEXT-CLIP <container>/<layout>: text#<id> glyphs=<n> box=<n>`: a text whose glyphs are taller
+  than the rect it was scissored to, from `WasabiTextClipProbe` (armed by `WINAMP_MODERN_RENDER_DUMP`
+  alone). TrueType is measured by the string's ink, a bitmap font by its cell. EI's clock (B441),
+  the Two Towers' clock (B455) and Mizuho's bitrate/frequency (B459) were the measured hits. Boxes under 3px
+  draw nothing and are skipped.
+
+A hit is a candidate, not a verdict: over intake #12's 100 skins the two lines named three more
+that are not defects (Green_Machine's drawer parked past the edge, an 8px sliver on Client_V2,
+Club_Dread's clock), so each is judged against the window's census shot.
+
 Optional env switches, all off by default:
 
 | Variable | Effect |
@@ -984,8 +1001,8 @@ comes, not when the run starts: an earlier click can move it or cover it (Fantan
 carries its transport 70 px down, B370; zechitoplayer's vis button lays an `alpha="1"` click
 blocker over its volume, B371); `CLOSE`, `MINIMIZE`,
 `EXIT`, `QUIT` and `EJECT` are skipped. A `slider` takes its value on press and drag, which
-`debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
-released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5; 1.2 s after each click it logs a
+`debugClick` never replays, so it is pressed, dragged a quarter of the way along its `orientation` (a vertical slider can be wider than it is tall, B448) and
+released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5, and the Library pass from 0.5 again (the main pass's last slider drag leaves 0.25, which a Library slider dragged to the same quarter reads as `nochange`); 1.2 s after each click it logs a
 `WM-SMOKE|key=value|…` row (keys in the sweep's `fields` order, the TSV's columns, read by name), then restores the starting layout and resumes playback if the click changed them,
 and dismisses any menu or modal alert the click popped. Then the Library: the sweep opens it the way the Windows menu does (from closed), logs an `open`
 row whose `note` says what came up (`skin-frame`, `embedded` in a skin window already open, `plain-chrome` for NullPlayer's own

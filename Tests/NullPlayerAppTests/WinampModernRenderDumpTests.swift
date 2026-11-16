@@ -110,6 +110,54 @@ final class WinampModernRenderDumpTests: XCTestCase {
 
     /// Everything the harness does for one archive. Split out of the test body for B72's directory
     /// mode; the body itself is unchanged.
+    /// What the window cuts off, for the intake scan (`skin-intake` § *The scan*). `OVERFLOW`: drawn
+    /// art its own clip lets past the canvas edge, so the window is smaller than the skin's body
+    /// (LayerONE opened at 275x116 against a 286x139 player, B453). `TEXT-CLIP`: a text whose glyphs
+    /// are taller than the rect it was scissored to (Two Towers' clock, B455). Both after the draw.
+    ///
+    /// `OVERFLOW` is only asked of a layout that declares no size (no `w`/`h`/`default_*`/`minimum_*`, no container default): a sized frame
+    /// crops its long side strips on purpose (LayerONE's `component.left` runs 110px past every
+    /// component window), and "the window's size was never stated" is the class every intake has hit.
+    private static func printClipping(of renderer: WasabiSceneRenderer, window: String) {
+        let canvas = CGRect(origin: .zero, size: renderer.canvasSize)
+        var reach = canvas
+        var culprits: [String] = []
+        let layout = renderer.layout.attributes, container = renderer.layout.parent?.attributes ?? [:]
+        let sizeless = ["w", "h", "default_w", "default_h", "minimum_w", "minimum_h"].allSatisfy { layout[$0] == nil }
+            && container["default_w"] == nil && container["default_h"] == nil
+        for node in renderer.sceneNodes() where node.bitmapID != nil && sizeless {
+            // A clip that reaches the canvas edge is the window's own: the cut being measured.
+            var clip = node.clipping.rect
+            if clip.maxX >= canvas.maxX - 0.5 { clip.size.width = .greatestFiniteMagnitude }
+            if clip.maxY >= canvas.maxY - 0.5 { clip.size.height = .greatestFiniteMagnitude }
+            // Opaque art only, placed from the origin, as the shape fit measures it: a body bitmap with a
+            // transparent margin (iTunes_Mini_XiDGAlbook's 460x309 `playerbody`) is not cut by the window,
+            // and art anchored to the far edge or stretched with it is cropped on purpose.
+            let art = node.object.attributes
+            guard art["relatx"] != "1", art["relaty"] != "1", art["relatw"] != "1", art["relath"] != "1",
+                  (Int(art["alpha"] ?? "255") ?? 255) > 0,
+                  let id = node.bitmapID, let bitmap = renderer.resources.bitmap(identifier: id),
+                  let opaque = WasabiResourceCache.opaqueBounds(of: bitmap.image) else { continue }
+            let scaleX = node.frame.width / CGFloat(bitmap.width), scaleY = node.frame.height / CGFloat(bitmap.height)
+            let ink = CGRect(x: node.frame.minX + opaque.minX * scaleX, y: node.frame.minY + opaque.minY * scaleY,
+                             width: opaque.width * scaleX, height: opaque.height * scaleY)
+            let drawn = ink.intersection(clip)
+            guard !drawn.isNull, drawn.intersects(canvas),
+                  drawn.maxX > canvas.maxX + 2 || drawn.maxY > canvas.maxY + 2 else { continue }
+            reach = reach.union(drawn)
+            culprits.append("\(node.object.typeName)#\(node.object.xmlID ?? "-")")
+        }
+        if !culprits.isEmpty {
+            print("OVERFLOW \(window): art reaches \(Int(reach.maxX))x\(Int(reach.maxY)) past canvas "
+                  + "\(Int(canvas.width))x\(Int(canvas.height)): \(culprits.prefix(6).joined(separator: " "))")
+        }
+        // A box under 3px draws nothing to cut: a collapsed title bar, a hidden grab strip.
+        for cut in WasabiTextClipProbe.cuts.values where cut.box >= 3 {
+            print("TEXT-CLIP \(window): \(cut.object.typeName)#\(cut.object.xmlID ?? "-") "
+                  + "glyphs=\(Int(cut.glyph.rounded())) box=\(Int(cut.box.rounded()))")
+        }
+    }
+
     private func render(wal: URL,
                         dumpDirectory: URL,
                         store: ClassicProEngineStore?,
@@ -776,8 +824,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                              "\(kind.rawValue) is embedded; synthesizing a window would duplicate it")
             }
             if let synthesized {
-                XCTAssertEqual(inventory.arrangement, .separateWindows,
-                               "an SUI skin's surfaces are embedded, not missing")
+                XCTAssertTrue(inventory.arrangement == .separateWindows
+                                || WinampModernSurfaceInventory.singleWindowSynthesizableKinds.contains(kind),
+                              "an SUI skin's surfaces are embedded, not missing; only the library is synthesized (B442)")
                 XCTAssertNil(declared, "\(kind.rawValue) already has a declared window")
                 XCTAssertTrue(hostedIDs.contains(synthesized),
                               "synthesized container '\(synthesized)' never opened")
@@ -929,6 +978,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                 let entryParts = entry.split(separator: "@", maxSplits: 1).map(String.init)
                 let layoutID = entryParts[0]
                 _ = try? renderer.activateLayout(id: layoutID)
+                WasabiTextClipProbe.reset()
                 if entryParts.count == 2 {
                     let wh = entryParts[1].lowercased().split(separator: "x").compactMap { Double($0) }
                     if wh.count == 2 {
@@ -1682,6 +1732,7 @@ final class WinampModernRenderDumpTests: XCTestCase {
                     }
                 }
                 NSGraphicsContext.current = previous
+                Self.printClipping(of: renderer, window: "\(info.id)/\(layoutID)")
                 guard let image = context.makeImage() else { continue }
                 let url = dumpDirectory.appendingPathComponent(
                     // A sequence run visits a layout more than once, so each pass needs its own

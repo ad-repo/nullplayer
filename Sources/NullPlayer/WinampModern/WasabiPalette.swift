@@ -262,6 +262,11 @@ struct WasabiPalette: Equatable {
     /// is the next link and reads at 4.2:1. A borrowed link nothing can be read on is passed over,
     /// then Winamp's black, then — when the text is too dark even for that — the chain's first answer
     /// as before. Corpus-wide this moves two skins, Symplicipod and JRS (1.14:1 → 3.4:1).
+    ///
+    /// That last answer is kept only while the text can still be told from it. Client_V2 declares
+    /// black list text and a black column colour and nothing else, so its five unselected rows drew
+    /// black on black (B443); an answer the text is under `invisibleContrast` from is replaced by
+    /// white, while Moonkore's and Apill's deliberate blue plates (poor, but legible) stand.
     private static func listPlate(for listText: NSColor, resolve: (String) -> NSColor?) -> NSColor {
         let links = Role.contentBackground.identifiers
         if let declared = resolve(links[0]) { return declared }
@@ -269,9 +274,14 @@ struct WasabiPalette: Equatable {
         let readable = { (plate: NSColor) in
             WinampModernSurfaceStyle.contrastRatio(plate, listText) >= WinampModernSurfaceStyle.minimumContrast
         }
-        return (borrowed + [contentBackgroundFallback]).first(where: readable)
-            ?? borrowed.first ?? contentBackgroundFallback
+        if let plate = (borrowed + [contentBackgroundFallback]).first(where: readable) { return plate }
+        let first = borrowed.first ?? contentBackgroundFallback
+        return WinampModernSurfaceStyle.contrastRatio(first, listText) < invisibleContrast
+            ? NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1) : first
     }
+
+    /// Below this the text cannot be told from its plate at all.
+    private static let invisibleContrast: CGFloat = 2
 
     /// Whether the user set this role by hand — what the legibility guards check before deciding they
     /// know better than the colour in front of them.

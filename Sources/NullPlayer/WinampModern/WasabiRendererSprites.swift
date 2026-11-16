@@ -323,6 +323,13 @@ extension WasabiSceneRenderer {
         }
     }
 
+    /// `WasabiAnimation.restartAtFirstVisible` for every animated layer of the active layout.
+    func restartSelfPlayingAnimations() {
+        for node in sceneNodes() where node.object.tag.is(.animatedLayer) {
+            WasabiAnimation.restartAtFirstVisible(node.object, clock: clock())
+        }
+    }
+
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject,
                                     grid: AnimationGrid) -> CGImage? {
         WasabiAnimation.stampFirstShow(object, clock: clock())

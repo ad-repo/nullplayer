@@ -56,6 +56,8 @@ Then, **by looking at the screen**, confirm before starting:
 - a track playing (the display, time readout and spectrum are only alive during playback)
 - spectrum analyzer on
 - playlist loaded — skins with an embedded playlist pane photograph it
+- **Windows ▸ UI Size at 100%** — it scales the `.wal` main window, and the site sizes each skin
+  from the shot, so a 150% sweep displays 1.5× too big and soft (2026-11-16)
 
 None of those four can be checked programmatically. Volume in particular lives in the state file,
 written on quit: it is not in `UserDefaults`, cannot be read live, and the Up/Down volume keys are

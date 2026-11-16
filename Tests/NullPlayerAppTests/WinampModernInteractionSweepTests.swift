@@ -110,10 +110,7 @@ final class WinampModernInteractionSweepTests: XCTestCase {
         let stored = everything.filter { $0.key.hasPrefix(namespace) }
         defer { restore(stored, prefix: namespace) }
         let containers = WinampModernContainerTopology.windowContainers(graph: census.loaded.runtime.graph)
-            .filter { info in
-                info.isMainPlayer
-                    || (info.opensByDefault && WinampModernContainerTopology.defaultVisibilitySuppression(of: info) == nil)
-            }
+            .filter(WinampModernContainerTopology.opensWithSkin)
         var targets: [(container: String, layout: String, path: [Int], label: String,
                        point: CGPoint?, blocker: String, gestures: [String])] = []
         for info in containers {

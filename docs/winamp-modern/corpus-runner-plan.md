@@ -370,6 +370,39 @@ press), B436 (Austin Powers' drawer opens on black, its video is not played), B4
 reported off the art, not reproduced), B439 (Skimple's spectrum sits left of its well); also B396 (the census hangs on
 the nine cPro skins) and B403 (Auriga_V5 and Buffy_the_vampire_slayer__the_codex declare no video surface).
 
+### Done: intake #12, promoted to gold (2026-11-16)
+
+100 skins were picked for batch 12 by `wal_intake_pick.sh 100` (the cap raised to 100 for this round) and scanned live
+(`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`) on `feat/wal-intake-12`. Three fix passes ran, the
+second and third after the user's own looks at the hand-over items. All 100 were accepted by the user, one with an open row, and
+promoted to gold on 2026-11-16, with rows on `skin-compatibility.md` (100 B, graded from the ledger notes, backlog rows and
+a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/intake-12.tsv`; the row ids are in
+`backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Classix_Player_1_1 | The Library opened in NullPlayer's plain chrome although the skin ships a frame (B442) | A single-window skin's inventory synthesizes the Library (`synthesizableKinds` answers `[.library]`) |
+| Client_V2, nematicfinal | The Playlist Editor showed one row: the other five drew black on black (B443) | `listPlate` falls to white when the list text is under 2:1 on its last-resort plate; also whitens Apill, Casio-G-Shocked-V2, Software and Star_Wars_Player |
+| LayerONE | A transparent window opened over the player at launch (B447) | A `default_visible` container whose layout is still `alpha="0"` once its scripts have started is not opened (`WinampModernContainerTopology.isInvisible`) |
+| Biohazard_V2, January_29, nematicfinal | Volume slider drags did nothing (B448) | Not an engine defect: the smoke dragged a vertical slider along its width; the sweep follows the slider's orientation |
+| Palillo | EQ bands 1-3 and the Thinger icons misfired (B449) | An object faded to alpha 0 takes no press |
+| capsuleII | The EQ button's press went to an undrawn Thinger bucket, so the panel never opened (B450) | A component bucket yields to a control drawn after it |
+| JetBlue_Card_Winamp5_Skin | The opening card slide had already run before the window showed (B452) | A once-only self-playing layer restarts when the window first shows (`WasabiAnimation.restartAtFirstVisible`) |
+| LayerONE | The player was cut off on its right and bottom (B453) | A layout that declares no size shape-fits to its sysregion art (not a dynamic container) |
+| Official_LOTR_The_Two_Towers_Skin, Mizuho_Winamp_Skin | A bitmap clock or readout taller than its box lost its bottom or top (B455, B459) | A bitmap ticker taller than a non-empty box keeps its whole cell |
+| The_Ninja_Star | Its animation stuttered at a low frame rate (B456) | The click-through-hole fill is pointer loops and refills at most 4 Hz, with a trailing frame to settle it |
+| 666HIM666 | The volume readout drew over the song title (B457) | A text its padding has closed keeps its box |
+
+The scan gained a headless clipping check after LayerONE's cut-off (`OVERFLOW`, `TEXT-CLIP` in the render dump; `harness.md`).
+Explained, no code change: Nikki_Nova_V3's tail follows the VU meters and its eye blinks once (B454); the motion sweep's other
+still layers are transparent or played by no script (B458).
+
+Closed as not defects: Simple_Skin_V5's and FedererAmp's title clipping (B444, accepted as drawn by the user); CCZ-45's
+blank Playlist Editor (B445, read on a locked screen) and Scattershot's unopened windows (B451), neither reproducing on
+an unlocked screen.
+
+Open, promoted with the skin: B446 (YST's paired frame window over each content window, not yet seen on screen).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
@@ -767,6 +800,10 @@ so a corpus run can't lose lines, not *what* is measured.
   crawl: the next 50 bronze of `intake-6.ranking.tsv`. Wurlitzer_v2 stays in silver from #10 (B414, B422).
   **84 silver, 579 bronze, 0 quarantine.** Batch:
   cPro_Expensive_Hi_Fi, Akbank, The_Hobbit, iTunes_Mini_PowerMetal2_by_newaveCR, cPro__cirQ, CLS-JO, PUMA_v1.08_Speed_Boot_Winamp5_Skin, Calm_Mind_by_ROBODRON, Keep_on_truckin, cPro__cMP11, T3-Amp, sucksdotcomwinamp, Oddworld_Stranger's_Wrath_1, Skimple, New_York_Minute_Winamp5_Skin, Hals_Eye_1_3, Fuzzy_Muffins, EI, Tessa_Winamp5_Skin, Auriga_V5, mcgen v1.2, Scooby_Doo_2, Sailor_Moon_Modern_version_1, Official_Austin_Powers_3_Skin, Crystal_Skin, Doublehelix, Mini_Me_2_-_Reloaded, PioNner3, Syncrosect_01, Cannes, cPro__Blue_Green_Whale_Amp, Multiplastic, cPro_Candeo, blink182_feeling_this, heart_, batman_on_the_move, Nonstep, cPro__Windows_XP, fnk_32v1R10, cPro_WinampVista, sx-2, cPro__cMP10, Buffy_the_vampire_slayer__the_codex, cPro_smplwhite, True_Blood, VISION_WINAMP_SKIN_, Venus, Snow_AMp, Kaskus_, The_Control_Panel.
+- **Intake #12 picked 2026-11-15** (`feat/wal-intake-12`, rev `f6fd28be`) by `wal_intake_pick.sh 100`, no
+  crawl: the next 100 bronze of `intake-6.ranking.tsv` (100 at the user's request; the pick's cap is now 100).
+  **134 silver, 479 bronze, 0 quarantine.** Batch:
+  Electric_Guitar_Skin, capsuleII, Golden_Healer_by_ROBODRON, LayerONE, boxOr, Pepsi_EVo, MIni_Ipod, Nikki_Nova_V3, Helios, Official_How_to_Deal_Winamp3_Skin, Smoking, Official_A_Man_Apart_Skin, nematicfinal, January_29, Official_FreeAmp_Skin, Classic_KilJaeden_The_Deciever, Nokia_3650____Version_2, Friends_nbc, ClipUp_101, cPro_Opera.v.J, The_KidsWB_Winamp_3_Skin, Club_Dread, venom, Green_Machine, Pioneer_Stereo_V1, CALL_OF_DUTY_BLACK_OPS_'NAZ_PLAYER, Palillo, WTM, iTunes_Mini_XiDGAlbook_by_newaveCR, Soundwave, Mizuho_Winamp_Skin, Pebble_-_England, Smokin_Aces, Energy_Hands_by_ROBODRON, _Neptune, Client_V2, _Fiery_Gear_, Mogyoro, Skinit-net, Harmonizer_by_ROBODRON, Jessica_Alba_Modern_Skin_ver_1, cPro_Celluloid, cPro__insekticid, Motorcycle, Simple_Skin_V5, ModernClassic_1_1, Official_LOTR_The_Two_Towers_Skin, Biohazard_V2, Classix_Player_1_1, Simple_skin_V2, Classic_Jesse_McCartney, JetBlue_Card_Winamp5_Skin, BWA, U2_No_Line_on_Horizon, Amp3LCD, cPro__FlaT, Lazer_Magick_by_ROBODRON, Fc_Vaslui, Boarding_House_Winamp3_Skin, OHE3, iRobot, Marko_Egger, Official_Hot_Action_Cop_Skin, Scattershot, Capsule_II, Pink_Alicia_Moore, Chasing_Liberty_Winamp5_Skin, GhostSlate, Official_Smallville_Winamp5_Skin, Official_Rolling_Stones_skin_, Auburn_, cPro__cMP12_1, One_Piece_Lover, cPro_Colors, Queensryche, 666HIM666, FedererAmp, Point_Blank, Atomic_v1-1, YoungJin_Kwak, cPro__Royale_XP, D-K9, MetalEdge_v1, The_Ninja_Star, CANUS__by_d4f_Mac, cPro__POP_1, Cpro_Tokio, CCZ-45, Modern_Bleach, ROBODRONRobert_V_Padron_1, Teenage_Mutant_Ninja_Turtles, cPro_Ebonite, agulial_del_america_skin, Boneless_Knight, FLIGHTPLAN, Metal_Gear_Solid_2_Skin, Reliance_Mobile, cPro_Fluke, YST, Opulent_Records_Player (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 

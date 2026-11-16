@@ -81,10 +81,21 @@ final class WinampModernFrames {
     }
     /// Repaints skipped while hidden: the window redraws whole the next time it shows.
     var owesWholeFrame = false
+    private var hasShown = false
+
+    /// True exactly once: the first time the window is on screen. The view restarts once-only
+    /// self-playing layers then, since the first whole frame is recorded before AppKit shows the
+    /// window (`WasabiAnimation.restartAtFirstVisible`, B452).
+    func claimFirstShow() -> Bool {
+        guard isOnScreen, !hasShown else { return false }
+        hasShown = true
+        return true
+    }
 
     /// Rects owed a new frame, in view points.
     private var pendingDirty: [NSRect] = []
     private var isScheduled = false
+    private var isHoleSettleScheduled = false
     private var isInFlight = false
     /// The geometry the canvas was last drawn whole at; any other needs a whole frame.
     private var drawnGeometry: Geometry?
@@ -173,7 +184,20 @@ final class WinampModernFrames {
             holes = frame.holes
             NotificationCenter.default.post(name: .winampModernOutlineDidChange, object: nil)
         }
+        if frame.holesOwed { settleHolesLater() }
         present(frame, rects)
+    }
+
+    /// One more frame after the hole cache's interval, so holes an animating outline reused are
+    /// re-found where it came to rest (`WinampModernCanvas.Frame.holesOwed`).
+    private func settleHolesLater() {
+        guard !isHoleSettleScheduled else { return }
+        isHoleSettleScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + WinampModernCanvas.holesInterval) { [weak self] in
+            guard let self else { return }
+            self.isHoleSettleScheduled = false
+            self.request(NSRect(x: 0, y: 0, width: 1, height: 1))
+        }
     }
 
     /// A turn's dirt without the rects another one already covers: the same meter box invalidated

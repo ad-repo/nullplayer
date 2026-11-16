@@ -1653,4 +1653,4 @@ the handler have to be in the same turn.
 
 ### Shape-fitted layouts (B395)
 
-A layout stating only `w`/`h` (no `default_*`, `minimum_*`, `background`, `alphabackground`) grows to where its `sysregion` layers' opaque pixels end (`shapeFittedSize` in `WasabiRendererLayoutSizing.swift`), and the main window follows the post-start fit in `WinampModernMainWindowController` ("contentFit" resize). AR-7: 320 declared, 362 drawn.
+A layout stating only `w`/`h` (or nothing at all, which would open at the classic 275x116: LayerONE's 286x139 body, B453; not inside a script-created `dynamic` container, where WTM's `cont.clear.ml` moved 461 to 200) (no `default_*`, `minimum_*`, `background`, `alphabackground`) grows to where its `sysregion` layers' opaque pixels end (`shapeFittedSize` in `WasabiRendererLayoutSizing.swift`), and the main window follows the post-start fit in `WinampModernMainWindowController` ("contentFit" resize). AR-7: 320 declared, 362 drawn.

@@ -271,6 +271,23 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue }, [.library])
     }
 
+    /// B442: a skin that embeds its playlist in the player and reaches no library is still given a
+    /// library window in the skin's frame, and nothing else is synthesized into it.
+    func testSingleWindowSkinWithoutLibraryIsSynthesizedALibraryOnly() throws {
+        let inventory = try makeInventory(xml: """
+        <WasabiXML>
+          <groupdef id="pl.group">
+            <component param="guid:{45F3F7C1-A6F3-4ee6-A15E-125E92FC3F8D}" x="0" y="0" w="10" h="10"/>
+          </groupdef>
+          <container id="main"><layout id="normal" default_w="400" default_h="200">
+            <group id="pl.group" x="0" y="0"/>
+          </layout></container>
+        </WasabiXML>
+        """)
+        XCTAssertEqual(inventory.arrangement, .singleWindowSUI)
+        XCTAssertEqual(inventory.synthesizableKinds, [.library])
+    }
+
     /// Reachability follows a standard frame's `content=` into the group it names, and on through
     /// `inherit_group`, XUI tags, and `Wasabi:Frame` panes.
     func testInventoryFollowsContentInheritanceAndFramePanes() throws {
@@ -302,7 +319,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                        "content= → inherit_group → frame panes are all reachable")
         XCTAssertTrue(main.hasEqualizerControls, "an EQ_BAND slider inside a pane is an EQ surface")
         XCTAssertEqual(inventory.arrangement, .singleWindowSUI)
-        XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin is never synthesized into")
+        XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin that reaches its library is not synthesized into")
     }
 
     /// The inventory and retained graph must agree about a group id redefined between two layouts.

@@ -1,6 +1,6 @@
 ---
 name: skin-intake
-description: Processes the .wal candidate corpus in batches of 25 (up to 50 on request) — pick, an automated live scan (main-window controls, the Library, every window's look), one fix pass, the user's go, promote — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the pick and status scripts (scripts/wal_intake_pick.sh, scripts/wal_intake_status.sh), and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
+description: Processes the .wal candidate corpus in batches of 25 (up to 100 on request) — pick, an automated live scan (main-window controls, the Library, every window's look), one fix pass, the user's go, promote — and owns the batch ledger docs/winamp-modern/intakes/intake-<n>.tsv, the pick and status scripts (scripts/wal_intake_pick.sh, scripts/wal_intake_status.sh), and the only route to editing docs/winamp-modern/corpus-runner-plan.md. Use at the start of any intake session, when asked where the corpus or a batch stands or what is next, before any edit to the corpus-runner plan, or when a loop drives intakes unattended.
 ---
 
 # Processing the corpus
@@ -8,7 +8,7 @@ description: Processes the .wal candidate corpus in batches of 25 (up to 50 on r
 | Level | Is | Done when | Recorded in |
 |---|---|---|---|
 | **Corpus** | ~750 candidates in Bronze | every candidate is Gold or quarantined | `corpus-manifest.tsv` tiers |
-| **Batch** | 25 skins by default, up to 50 (`wal_intake_pick.sh <count>`, intake #10 took 50), one branch, one ledger | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
+| **Batch** | 25 skins by default, up to 100 (`wal_intake_pick.sh <count>`, intake #12 took 100), one branch, one ledger | every skin `promoted` and the PR merged | `docs/winamp-modern/intakes/intake-<n>.tsv` |
 
 **One batch is open at a time.** The next is picked only when the last is merged.
 
@@ -61,7 +61,7 @@ A stage moves only on its evidence, in the commit that carries it; it moves back
 | `accepted` | **Promote** every skin in one commit, then the pre-PR code-quality review (CLAUDE.md) and the PR | → `promoted` |
 | `promoted` | **Close** once the PR is merged: `rm -rf WinampModernCorpus/runs`, then pick batch n+1 | — |
 
-`wal_intake_pick.sh [count]` takes the next 25 (or `count`, at most 50) still-bronze skins in the newest `intakes/*.ranking.tsv`'s
+`wal_intake_pick.sh [count]` takes the next 25 (or `count`, at most 100) still-bronze skins in the newest `intakes/*.ranking.tsv`'s
 order. A crawl of *new* candidates still goes through `wal_intake.sh` (about 47 minutes; run it with
 `run_in_background`, check for its `wal_intake: … -> intake.tsv` line, not the exit code), which
 writes a fresh ranking.
@@ -71,7 +71,7 @@ Only the batch rides on its branch; an unrelated backlog row gets its own `fix/�
 
 ## The scan
 
-Two checks per skin, plus the look, all live with a track playing, all by script:
+Two checks per skin and the look, all live with a track playing, plus one headless clipping pass, all by script:
 
 1. **The main window's buttons and functions**, and 2. **the Library opens, works and closes**:
    `scripts/wal_live_smoke.sh <skin>… --out <dir>`. It clicks and drags every main-window control
@@ -84,6 +84,13 @@ Two checks per skin, plus the look, all live with a track playing, all by script
    <dir>`, in chunks that fit a 10-minute call (about 35 s a skin), then `scripts/review_sheet.py`
    per skin, `--ref` from `scripts/wal_skin_src.sh <skin>`'s `references:` line. Open every sheet
    and judge it (§ *The visual review*).
+4. **What each window cuts off**: `scripts/wal_dump.sh "$HOME/Library/Application
+   Support/NullPlayer/WinampModernCorpus/silver"` (headless, ~1 minute per 100 skins), then
+   `grep -E '^(SKIN|OVERFLOW|TEXT-CLIP)' <out>/dump.log` and keep the batch's skins. `OVERFLOW` is a
+   window smaller than its art because the skin never stated its size; `TEXT-CLIP` is a clock or
+   display text cut by its box (`harness.md` § *Debugging a skin*). Every intake has shipped one of
+   each until a user saw it (LayerONE B453, EI B441, the Two Towers B455). Open the window's census
+   shot for every hit before filing: a parked drawer reads as overflow too.
 
 Read the smoke table, not the app. What counts as a defect:
 

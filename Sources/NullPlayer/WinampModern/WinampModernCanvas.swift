@@ -57,6 +57,9 @@ final class WinampModernCanvas {
         let outline: CGImage?
         /// The outline's enclosed holes, whenever `outline` is set (empty when there are none).
         let holes: WinampModernHoles?
+        /// The holes are an earlier outline's (`holesInterval`): the view asks for one more frame
+        /// after the interval, which re-finds them however the outline has settled.
+        var holesOwed = false
     }
 
     /// The canvas space for a window or context in `space`: that space when it is an RGB one, which
@@ -138,12 +141,43 @@ final class WinampModernCanvas {
         guard let picture = context.makeImage() else { return nil }
         // A new canvas always reports its outline, even an empty one: the last was another size.
         let changed = job.rects.reduce(fresh) { updateAlpha(data, rect: $1, in: context) || $0 }
-        guard changed else { return Frame(picture: picture, outline: nil, holes: nil) }
-        return Frame(picture: picture,
-                     outline: outlineImage(width: context.width, height: context.height),
-                     holes: job.backsHoles
-                        ? WinampModernHoles(alpha: alpha, width: context.width, height: context.height) : nil)
+        // A frame that changed nothing still settles holes an earlier frame reused.
+        let settles = job.backsHoles && holesOwed && !isHolesCacheLive
+        guard changed || settles else {
+            // Still owed (a recompute between a reuse and its settle timer): the view asks again.
+            var frame = Frame(picture: picture, outline: nil, holes: nil)
+            frame.holesOwed = job.backsHoles && holesOwed
+            return frame
+        }
+        var frame = Frame(picture: picture,
+                          outline: outlineImage(width: context.width, height: context.height),
+                          holes: job.backsHoles ? holes(fresh: fresh, width: context.width, height: context.height) : nil)
+        frame.holesOwed = holesOwed
+        return frame
     }
+
+    /// The outline's holes, re-found at most every `holesInterval` for an outline that keeps changing
+    /// (B456: The_Ninja_Star's sysregion LED layers change it every frame, and the flood fill is most
+    /// of a debug frame). A new canvas always re-finds them. A reused answer sets `holesOwed`, and the
+    /// view's trailing frame (`Frame.holesOwed`) re-finds them once the outline settles, so a hole is
+    /// never more than the interval behind.
+    private func holes(fresh: Bool, width: Int, height: Int) -> WinampModernHoles {
+        if !fresh, isHolesCacheLive, let last = lastHoles, last.width == width, last.height == height {
+            holesOwed = true
+            return last
+        }
+        let found = WinampModernHoles(alpha: alpha, width: width, height: height)
+        lastHoles = found
+        lastHolesAt = ProcessInfo.processInfo.systemUptime
+        holesOwed = false
+        return found
+    }
+
+    private var isHolesCacheLive: Bool { ProcessInfo.processInfo.systemUptime - lastHolesAt < Self.holesInterval }
+    static let holesInterval: TimeInterval = 0.25
+    private var holesOwed = false
+    private var lastHoles: WinampModernHoles?
+    private var lastHolesAt: TimeInterval = 0
 
     /// `image` in `space`, matched once and kept. An image already in it, or one that is not 8-bit
     /// RGB, draws as it is. Bounded by pixels like the renderer's prescale cache, which feeds it.

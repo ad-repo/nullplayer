@@ -37,9 +37,9 @@ struct WinampModernContainerInfo {
 }
 
 /// How a skin lays its surfaces out. cPro-Bento embeds everything in one window; mmd3, CornerAmp,
-/// and Winamp Modern each declare separate windows for the surfaces they support. Synthesis only
-/// ever applies to the separate-window arrangement — an SUI skin's missing container is not missing,
-/// it is embedded.
+/// and Winamp Modern each declare separate windows for the surfaces they support. An SUI skin's
+/// missing container is usually not missing but embedded, so synthesis into one is limited to the
+/// library (`WasabiSurfaceInventory.synthesizableKinds`, B442).
 ///
 /// Container *count* cannot answer this (cPro also declares a notifier, a widget manager, and a
 /// browser window), so the verdict comes from the declarative surface inventory: a skin whose main
@@ -188,6 +188,22 @@ enum WinampModernContainerTopology {
     static func isNotifier(id: String) -> Bool {
         let id = id.lowercased()
         return id == "notifier" || id.hasPrefix("notifier.")
+    }
+
+    /// Whether the container's opening layout is fully transparent **now**. Asked when the skin's
+    /// default windows open, after its scripts have started, so a script that raises the alpha at load
+    /// wins: LayerONE's `colorthemes` (`default_visible="1"`, layout `alpha="0"`, nothing raises it)
+    /// opened as an invisible 286x160 pane under the player that no menu could find (B447).
+    static func isInvisible(_ info: WinampModernContainerInfo) -> Bool {
+        WasabiSceneRenderer.primaryLayout(of: info.object).map(WasabiSceneRenderer.isFullyTransparent) ?? false
+    }
+
+    /// Whether the container opens with the skin, asked once its scripts have started: the player, or
+    /// a `default_visible="1"` window nothing suppresses and nothing left invisible. The sweeps open
+    /// what the app opens (the app folds the suppression into `opensByDefault` earlier).
+    static func opensWithSkin(_ info: WinampModernContainerInfo) -> Bool {
+        info.isMainPlayer
+            || (info.opensByDefault && defaultVisibilitySuppression(of: info) == nil && !isInvisible(info))
     }
 
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it

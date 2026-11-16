@@ -211,6 +211,20 @@ final class WinampModernPhase10Tests: XCTestCase {
         XCTAssertFalse(done.isPlaying, "isPlaying() must go false so the driving timer can finish")
     }
 
+    /// B452 — a once-only intro drawn while the window was still ordered out has spent its start;
+    /// the first time the window shows it starts over. A layer a script plays (`playing`) is left alone.
+    func testRestartAtFirstVisibleRestampsASelfPlayingLayerOnly() throws {
+        let intro = try makeAnimatedLayer(attributes: ["autoplay": "1", "autoreplay": "0", "animstart": "5"])
+        WasabiAnimation.restartAtFirstVisible(intro, clock: 90)
+        XCTAssertEqual(intro.attributes["animstart"], "90.0")
+        let scripted = try makeAnimatedLayer(attributes: ["playing": "1", "animstart": "5"])
+        WasabiAnimation.restartAtFirstVisible(scripted, clock: 90)
+        XCTAssertEqual(scripted.attributes["animstart"], "5")
+        let unstamped = try makeAnimatedLayer(attributes: ["autoplay": "1"])
+        WasabiAnimation.restartAtFirstVisible(unstamped, clock: 90)
+        XCTAssertNil(unstamped.attributes["animstart"], "an undrawn layer is stamped by its first draw")
+    }
+
     /// B256 — an unranged `play()` loops, unless the layer says `autoreplay="0"`: then it plays once
     /// to the last frame and stops, so its `onStop` arrives (Moon Groove's PLAY/PAUSE/STOP status).
     func testAnUnrangedPlayWithoutAutoreplayStopsOnTheLastFrame() throws {

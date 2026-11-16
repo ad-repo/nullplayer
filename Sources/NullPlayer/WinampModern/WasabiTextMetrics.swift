@@ -529,7 +529,7 @@ final class WasabiTextMetrics {
     }
 
     /// Whether this object's text is a playback time — the only text drawn as a clock run.
-    private static func isClockDisplay(_ object: WasabiObject) -> Bool {
+    static func isClockDisplay(_ object: WasabiObject) -> Bool {
         switch object.attributes["display"]?.lowercased() {
         case "time", "timeelapsed", "songlength": return true
         default: return false
@@ -922,10 +922,16 @@ final class WasabiTextMetrics {
             || Self.fixedPitch(of: object, font: font) != nil
     }
 
+    /// A text's `leftpadding`/`rightpadding`, 0 where absent or unreadable.
+    static func padding(of object: WasabiObject) -> (left: CGFloat, right: CGFloat) {
+        let value = { (name: String) in CGFloat(Double(object.attributes[name] ?? "0") ?? 0) }
+        return (value("leftpadding"), value("rightpadding"))
+    }
+
     /// The string itself, without the box margin `width(of:text:)` adds.
     func contentWidth(of object: WasabiObject, text: String) -> CGFloat {
-        let padding = CGFloat((Double(object.attributes["leftpadding"] ?? "0") ?? 0)
-                              + (Double(object.attributes["rightpadding"] ?? "0") ?? 0))
+        let (left, right) = Self.padding(of: object)
+        let padding = left + right
         if let fontID = object.attributes["font"],
            let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {

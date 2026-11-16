@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// The see-through holes inside a `.wal` window's outline: alpha-0 pixels the window's edge cannot
 /// reach through other alpha-0 pixels.
@@ -10,8 +11,8 @@ import CoreGraphics
 /// alpha 1 (`backing`), which the eye cannot see and the window server delivers, and claims the press
 /// in `hitTest` (`contains`).
 ///
-/// ponytail: a Swift flood fill over the canvas, run only when a frame changed the outline. Fine at
-/// the corpus's window sizes; an outline that animates every frame at a large size pays it per frame.
+/// ponytail: a Swift flood fill over the canvas, run only when a frame changed the outline: ~4 ms at
+/// 1084x698 in a release build, so an outline that animates every frame (B456) still fits a 30 Hz tick.
 struct WinampModernHoles {
     let width: Int
     let height: Int
@@ -37,19 +38,34 @@ struct WinampModernHoles {
             mask = []; backing = nil; return
         }
         // 0 = transparent and not yet reached, 1 = opaque, 2 = transparent and reached from the edge.
+        // The marking and the fill run on raw pointers in `while` loops: in a debug build the generic
+        // range iteration made this ~700 ms a frame on The_Ninja_Star's animated outline (B456) and
+        // saturated the canvas queue. Release was ~4 ms either way. The stack is sized for the worst
+        // case (every pixel is pushed at most once): one allocation of `count` Ints per changed
+        // outline, about 6 MB at 1084x698. The mask and backing passes are pointer loops too.
         var state = [UInt8](repeating: 0, count: count)
-        var stack: [Int] = []
-        alpha.withUnsafeBufferPointer { alpha in
-            state.withUnsafeMutableBufferPointer { state in
-                for index in 0..<count where alpha[index] != 0 { state[index] = 1 }
-                func seed(_ index: Int) {
-                    guard state[index] == 0 else { return }
-                    state[index] = 2
-                    stack.append(index)
+        // A raw buffer, not an Array: every slot is written before it is read, and a debug build
+        // fills a `repeating:` Int array element by element.
+        let stack = UnsafeMutableBufferPointer<Int>.allocate(capacity: count)
+        defer { stack.deallocate() }
+        state.withUnsafeMutableBufferPointer { state in
+            alpha.withUnsafeBufferPointer { alpha in
+                var top = 0
+                var index = 0
+                while index < count {
+                    if alpha[index] != 0 { state[index] = 1 }
+                    index += 1
                 }
-                for x in 0..<width { seed(x); seed((height - 1) * width + x) }
-                for y in 0..<height { seed(y * width); seed(y * width + width - 1) }
-                while let index = stack.popLast() {
+                @inline(__always) func seed(_ index: Int) {
+                    if state[index] == 0 { state[index] = 2; stack[top] = index; top += 1 }
+                }
+                var x = 0
+                while x < width { seed(x); seed((height - 1) * width + x); x += 1 }
+                var y = 0
+                while y < height { seed(y * width); seed(y * width + width - 1); y += 1 }
+                while top > 0 {
+                    top -= 1
+                    let index = stack[top]
                     let x = index % width
                     if x > 0 { seed(index - 1) }
                     if x < width - 1 { seed(index + 1) }
@@ -58,10 +74,21 @@ struct WinampModernHoles {
                 }
             }
         }
-        guard state.contains(0) else { mask = []; backing = nil; return }
-        mask = state.map { $0 == 0 ? 1 : 0 }
+        guard memchr(state, 0, count) != nil else { mask = []; backing = nil; return }
+        var hole = [UInt8](repeating: 0, count: count)
         var pixels = [UInt8](repeating: 0, count: count * 4)
-        for index in 0..<count where mask[index] == 1 { pixels[index * 4 + 3] = 1 }
+        state.withUnsafeBufferPointer { state in
+            hole.withUnsafeMutableBufferPointer { hole in
+                pixels.withUnsafeMutableBufferPointer { pixels in
+                    var index = 0
+                    while index < count {
+                        if state[index] == 0 { hole[index] = 1; pixels[index * 4 + 3] = 1 }
+                        index += 1
+                    }
+                }
+            }
+        }
+        mask = hole
         backing = pixels.withUnsafeMutableBytes { bytes in
             CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),

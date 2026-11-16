@@ -1133,6 +1133,36 @@ wipe and thinger strips sat on their last frame (B280). A layer a script hides a
 rung 0, so a loop a script timer stops on its first tick reads `stuck` there, not `moving` (cPro
 Venus, MIDISUI `vis.animation`) — a classification of rung 0, the pixels are unchanged.
 
+The first draw is not the first *showing*: the first whole frame of a window is recorded before AppKit
+orders it in, so a short intro (JetBlue_Card's 8-frame, 0.8 s `player.intro`, B452) was spent before
+anyone saw it. The first time the view reports itself on screen (`occlusionDidChange`), a once-only
+layer (`autoplay="1" autoreplay="0"`, no `play()`, no range) is re-stamped
+(`WasabiAnimation.restartAtFirstVisible`); loops and script-driven ranges are left alone.
+
+#### Text that the box or its padding closes (B455, B457, B459)
+
+A **bitmap-font text** whose glyphs are taller than its box draws whole, scissored to the glyph height and
+not the box (Official_LOTR_The_Two_Towers' clock: 28 px digits in `h="20"`; Hybridv10 and two others gained
+their last pixel row). B455 did this for clocks only; B459 widened it to every skin text, since Mizuho's,
+Tessa's and GUILTY_GEAR's bitrate/frequency readouts are 8 px cells in `h="5"` and lost their top rows. A
+**TrueType** text keeps its box except a clock (B441): the render dump's `TEXT-CLIP` names a few dozen
+TrueType texts whose ink overruns the box by 1–5 px, and no screenshot yet says Winamp draws those whole. A `<text>` whose `leftpadding`/`rightpadding` leave it 4 px or less
+keeps its own box instead of being released to its group (`horizontalClip`): 666HIM666's volume readout is
+`w="15" leftpadding="12"`, a text the skin keeps out of sight, and released it overdrew the title.
+
+#### Per-frame cost of a window whose outline animates (B456)
+
+`WinampModernHoles` (the click-through-hole flood fill) ran on every frame whose outline changed.
+The_Ninja_Star's `sysregion` LED layers change the outline every frame at 542x349 (2x): the fill was
+most of a debug frame, 132 ms/render before and 4 ms mean after (`WinampModernCanvas.holes`
+re-finds them at most every 0.25 s for a non-fresh canvas; a new canvas always does). A release build
+runs the fill in ~4 ms at 1084x698, so the report was mostly a debug-build number. Each refill still
+blocks the canvas queue, so its debug cost shows as a stutter at 4 Hz even at ~80 renders/s: the
+mask and backing passes and the stack's allocation were generic too (~90 ms a fill), and as pointer
+loops over an uninitialised stack they are ~26 ms (~97 renders/s, 2026-11-16). A VU-driven range layer
+(`customvis`: `setStartFrame(last)`, `setEndFrame(level)`, `play()` every 50 ms) shows `last` until
+50 ms have elapsed, so it steps at the script's own 20 Hz.
+
 #### `relat*="2"` is a **percentage**, every other non-zero value is additive
 
 `relatx`/`relaty`/`relatw`/`relath` read as `atoi(value)`, and the number matters:

@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased
+
+### Winamp Modern (`.wal`) skins
+
+- **100 more skins checked** (corpus intake twelve): A Man Apart, A NEW SKIN, Aircel Skin, Airtel,
+  All Seeing Eye, Amp3LCD, Atomic, Auburn University, B*L*E*A*C*H, Biohazard, Boarding House,
+  Boneless Knight, boxOr!, BWA, capsule (two versions), CCZ, Chasing Liberty,
+  Classic_KilJaeden_The_Deciever, Classix Player, Client V2, ClipUp, Club Dread, COD-BLACK-OPS,
+  Cosmic Ray (Golden Healer, Lazer Magick), cPro - Canus, cPro - cMP12, cPro - FlaT, cPro -
+  insekticid, cPro - ME, cPro - Opera.v.J, cPro - POP!?, cPro - U2 No Line on the Horizon, Cpro
+  Tokio, cPro: Royale XP, cPro_Celluloid, cPro_Colors, cPro_Ebonite, cPro_Fluke, D-K9, DewyTears V4,
+  Electric Guitar Skin, Energy_Hands_by_ROBODRON, EVo, FedererAmp, FierY_GEAr, Flightplan, Friends,
+  GREEN MACHINE, Harmonizer, Helios, Hot Action Cop, How to Deal, iRobot, iTunes XiAlbook, January
+  29, Jesse McCartney, Jessica Alba Modern Skin, JetBlue Card, Kids WB, LayerONE, Lord of the Rings:
+  The Two Towers, Metal Gear Solid 2, MetalEdge, Mini iPod, MIZUHO WINAMP SKIN, Mogyoro, Motorcycle,
+  nematic, Neptune, Nikki Nova V3, NINJA STAR, Nokia, Obscene.Helicopter.Extension.Part.3-SiNK,
+  Official_FreeAmp_Skin, OnePieceLover Winamp Skin 2012, OPulent Records Player, P!nk, Palillo,
+  Pebble_England, PiOnNeR_AMP2, Point Blank, Queensryche, Reliance Skin, RNZ X666X, Rolling Stones:
+  40 Licks, Scattershot, Skinit.net, Smallville, Smokin' Aces, Soundwave, TMNT, Tutorial Simple Skin
+  by Jo Imre, Venom, Wax-Skin, Winamp Notif, Winamp5 Simple Demo Skin, WTM, Y.S.T.
+
+- **A single-window skin's Library opens in the skin's own frame** (Classix Player).
+- **Playlist rows on a dark plate stay readable** instead of drawing black on black (Client V2,
+  nematic).
+- **An invisible window the skin declares open no longer opens over the player** (LayerONE), and
+  **a player that declares no size shows its whole body**.
+- **Controls a skin has faded out stop taking clicks**, and a Thinger strip under a button gives the
+  click to the button (Palillo, capsule).
+- **A skin's opening animation plays when its window first shows** instead of before (JetBlue Card).
+- **Pixel-font clocks and readouts taller than their box draw whole** (Lord of the Rings: The Two
+  Towers, Mizuho), and **a text squeezed shut by its padding no longer draws over its neighbour**
+  (666HIM666).
+- **A player whose outline animates no longer stutters** (Ninja Star).
+
+### Visualizations
+
+- **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
+  Rivers of fire and smoke burn up from the waveform, from a line that roams round the screen,
+  through five scenes (a throat, a maelstrom, a pyre, a rift and a vortex tunnel) that morph into
+  each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
+  white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
+  then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
+
+### Fixes
+
+- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
+  projectM, Geiss and the rest (#773).
+- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
+  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
+  instead of only as often as the audio arrived (#772).
+
 ## 0.35.1
 
 ### Winamp Modern (`.wal`) skins
@@ -206,25 +257,11 @@
   window's mode, Art's effect group) and ← and → step the preset, without ⌘, in the Visualizations,
   Spectrum and Art windows of every skin family. ⌘ still works too, and is still needed on a main
   window, whose plain arrows seek and change the volume. Art's intensity moved to its right-click menu.
-- **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
-  Rivers of fire and smoke burn up from the waveform, from a line that roams round the screen,
-  through five scenes (a throat, a maelstrom, a pyre, a rift and a vortex tunnel) that morph into
-  each other every 20 to 40 seconds or on a big hit. Kicks flare the fire, a big hit flashes it
-  white, a heavy low end heaves it up, skulls and goat heads half-form in the flames, and now and
-  then an inverted pentagram, a goat's head, a sword or an inverted cross flickers out of the dark.
 
 ### Classic skins
 
 - **`?` and `*` in the scrolling title use the skin's own glyphs**, instead of its `Å` and `Ö`
   (Militarized showed "FREE?" as "FREE8") (#755).
-
-### Fixes
-
-- **Goom is an effect in a Windows Media Player or Sonique skin's visualization area**, beside
-  projectM, Geiss and the rest (#773).
-- **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
-  window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
-  instead of only as often as the audio arrived (#772).
 
 ## 0.35.0
 
