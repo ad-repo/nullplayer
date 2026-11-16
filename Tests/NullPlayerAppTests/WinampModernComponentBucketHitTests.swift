@@ -63,6 +63,7 @@ final class WinampModernB447B448Tests: XCTestCase {
             WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph).map { ($0.id, $0) })
         let themes = try XCTUnwrap(byID["colorthemes"])
         XCTAssertTrue(WinampModernContainerTopology.isInvisible(themes))
+        XCTAssertFalse(WinampModernContainerTopology.opensWithSkin(themes), "the sweeps open what the app opens")
         XCTAssertFalse(WinampModernContainerTopology.isInvisible(try XCTUnwrap(byID["pledit"])))
         let layout = try XCTUnwrap(WasabiSceneRenderer.primaryLayout(of: themes.object))
         _ = layout.setAttribute("alpha", value: "255")

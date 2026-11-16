@@ -102,8 +102,7 @@ final class WinampModernMotionSweepTests: XCTestCase {
             let info = entry.info
             let ladder = ladders[index]
             let (layoutID, animated) = layouts[index]
-            let open = info.isMainPlayer
-                || (info.opensByDefault && WinampModernContainerTopology.defaultVisibilitySuppression(of: info) == nil)
+            let open = WinampModernContainerTopology.opensWithSkin(info)
             // `abca`: each rung labelled by the first rung it matches, so a timer that undoes its own
             // transition reads as one, not as static (Phase 26).
             var seen: [Data] = []

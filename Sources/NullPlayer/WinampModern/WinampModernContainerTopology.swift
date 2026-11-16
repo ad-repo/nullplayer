@@ -198,6 +198,14 @@ enum WinampModernContainerTopology {
         WasabiSceneRenderer.primaryLayout(of: info.object).map(WasabiSceneRenderer.isFullyTransparent) ?? false
     }
 
+    /// Whether the container opens with the skin, asked once its scripts have started: the player, or
+    /// a `default_visible="1"` window nothing suppresses and nothing left invisible. The sweeps open
+    /// what the app opens (the app folds the suppression into `opensByDefault` earlier).
+    static func opensWithSkin(_ info: WinampModernContainerInfo) -> Bool {
+        info.isMainPlayer
+            || (info.opensByDefault && defaultVisibilitySuppression(of: info) == nil && !isInvisible(info))
+    }
+
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it
     /// should not. `nil` means "open it"; embedded browser windows are usable and follow the same
     /// default-visibility rule as any other ordinary container.
