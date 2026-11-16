@@ -529,7 +529,7 @@ final class WasabiTextMetrics {
     }
 
     /// Whether this object's text is a playback time — the only text drawn as a clock run.
-    private static func isClockDisplay(_ object: WasabiObject) -> Bool {
+    static func isClockDisplay(_ object: WasabiObject) -> Bool {
         switch object.attributes["display"]?.lowercased() {
         case "time", "timeelapsed", "songlength": return true
         default: return false

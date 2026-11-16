@@ -97,7 +97,9 @@ extension WasabiSceneRenderer {
         return fit
     }
 
-    /// Grow a layout whose only size is a bare `w`/`h` to where its `sysregion` artwork ends.
+    /// Grow a layout whose only size is a bare `w`/`h` — or none at all, which opens at the classic
+    /// 275x116 (LayerONE's 286x139 body lost its bottom bar and right column, B453) — to where its
+    /// `sysregion` artwork ends.
     ///
     /// A layout that states nothing but `w`/`h` — no `default_*`, `minimum_*` or `background` of its
     /// own, no container default — and is shaped by `sysregion` layers is a shaped window, and a
@@ -111,8 +113,7 @@ extension WasabiSceneRenderer {
         let attributes = layout.attributes
         let container = layout.parent?.attributes ?? [:]
         let states = ["default_w", "default_h", "minimum_w", "minimum_h", "background", "alphabackground"]
-        guard attributes["w"] != nil || attributes["h"] != nil,
-              !states.contains(where: { attributes[$0] != nil }),
+        guard !states.contains(where: { attributes[$0] != nil }),
               container["default_w"] == nil, container["default_h"] == nil else { return size }
         // One layout pass, and `opaqueBounds` draws each sysregion bitmap whole: paid once per layout,
         // since `contentFit()` caches the answer.

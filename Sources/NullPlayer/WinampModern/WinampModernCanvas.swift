@@ -141,9 +141,27 @@ final class WinampModernCanvas {
         guard changed else { return Frame(picture: picture, outline: nil, holes: nil) }
         return Frame(picture: picture,
                      outline: outlineImage(width: context.width, height: context.height),
-                     holes: job.backsHoles
-                        ? WinampModernHoles(alpha: alpha, width: context.width, height: context.height) : nil)
+                     holes: job.backsHoles ? holes(fresh: fresh, width: context.width, height: context.height) : nil)
     }
+
+    /// The outline's holes, re-found at most every `holesInterval` for an outline that keeps changing
+    /// (B456: The_Ninja_Star's sysregion LED layers change it every frame, and the flood fill is most
+    /// of a debug frame). A new canvas always re-finds them. ponytail: a hole in an animating
+    /// outline catches a press from a frame up to the interval old; add a trailing refresh if a skin
+    /// ever needs a hole to track motion.
+    private func holes(fresh: Bool, width: Int, height: Int) -> WinampModernHoles {
+        let now = ProcessInfo.processInfo.systemUptime
+        if !fresh, let last = lastHoles, now - lastHolesAt < Self.holesInterval,
+           last.width == width, last.height == height { return last }
+        let found = WinampModernHoles(alpha: alpha, width: width, height: height)
+        lastHoles = found
+        lastHolesAt = now
+        return found
+    }
+
+    private static let holesInterval: TimeInterval = 0.25
+    private var lastHoles: WinampModernHoles?
+    private var lastHolesAt: TimeInterval = 0
 
     /// `image` in `space`, matched once and kept. An image already in it, or one that is not 8-bit
     /// RGB, draws as it is. Bounded by pixels like the renderer's prescale cache, which feeds it.

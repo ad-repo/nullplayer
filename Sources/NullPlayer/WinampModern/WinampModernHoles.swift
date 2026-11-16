@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// The see-through holes inside a `.wal` window's outline: alpha-0 pixels the window's edge cannot
 /// reach through other alpha-0 pixels.
@@ -10,8 +11,8 @@ import CoreGraphics
 /// alpha 1 (`backing`), which the eye cannot see and the window server delivers, and claims the press
 /// in `hitTest` (`contains`).
 ///
-/// ponytail: a Swift flood fill over the canvas, run only when a frame changed the outline. Fine at
-/// the corpus's window sizes; an outline that animates every frame at a large size pays it per frame.
+/// ponytail: a Swift flood fill over the canvas, run only when a frame changed the outline: ~4 ms at
+/// 1084x698 in a release build, so an outline that animates every frame (B456) still fits a 30 Hz tick.
 struct WinampModernHoles {
     let width: Int
     let height: Int
@@ -37,28 +38,41 @@ struct WinampModernHoles {
             mask = []; backing = nil; return
         }
         // 0 = transparent and not yet reached, 1 = opaque, 2 = transparent and reached from the edge.
+        // Raw pointers and `while` loops, not `0..<count` iterators and a nested `seed` closure: this
+        // runs on every frame of an animated outline (B456: The_Ninja_Star's sysregion LED layers),
+        // and the generic range iteration made it ~700 ms a frame in a debug build, saturating the
+        // canvas queue; the loop below is the same fill without it.
         var state = [UInt8](repeating: 0, count: count)
-        var stack: [Int] = []
-        alpha.withUnsafeBufferPointer { alpha in
-            state.withUnsafeMutableBufferPointer { state in
-                for index in 0..<count where alpha[index] != 0 { state[index] = 1 }
-                func seed(_ index: Int) {
-                    guard state[index] == 0 else { return }
-                    state[index] = 2
-                    stack.append(index)
-                }
-                for x in 0..<width { seed(x); seed((height - 1) * width + x) }
-                for y in 0..<height { seed(y * width); seed(y * width + width - 1) }
-                while let index = stack.popLast() {
-                    let x = index % width
-                    if x > 0 { seed(index - 1) }
-                    if x < width - 1 { seed(index + 1) }
-                    if index >= width { seed(index - width) }
-                    if index + width < count { seed(index + width) }
+        var stack = [Int](repeating: 0, count: count)
+        state.withUnsafeMutableBufferPointer { state in
+            stack.withUnsafeMutableBufferPointer { stack in
+                alpha.withUnsafeBufferPointer { alpha in
+                    var top = 0
+                    var index = 0
+                    while index < count {
+                        if alpha[index] != 0 { state[index] = 1 }
+                        index += 1
+                    }
+                    @inline(__always) func seed(_ index: Int) {
+                        if state[index] == 0 { state[index] = 2; stack[top] = index; top += 1 }
+                    }
+                    var x = 0
+                    while x < width { seed(x); seed((height - 1) * width + x); x += 1 }
+                    var y = 0
+                    while y < height { seed(y * width); seed(y * width + width - 1); y += 1 }
+                    while top > 0 {
+                        top -= 1
+                        let index = stack[top]
+                        let x = index % width
+                        if x > 0 { seed(index - 1) }
+                        if x < width - 1 { seed(index + 1) }
+                        if index >= width { seed(index - width) }
+                        if index + width < count { seed(index + width) }
+                    }
                 }
             }
         }
-        guard state.contains(0) else { mask = []; backing = nil; return }
+        guard memchr(state, 0, count) != nil else { mask = []; backing = nil; return }
         mask = state.map { $0 == 0 ? 1 : 0 }
         var pixels = [UInt8](repeating: 0, count: count * 4)
         for index in 0..<count where mask[index] == 1 { pixels[index * 4 + 3] = 1 }

@@ -423,6 +423,12 @@ extension WasabiSceneRenderer {
         // on a 180px box inside an LCD as wide as the whole player, and a long title released to that
         // group ran across the window's chrome.
         guard !scrolls, !wraps, object.parent?.tag.is(.layout) != true else { return frame }
+        // A box its own padding has closed (666HIM666's volume readout: `w="15" leftpadding="12"`, 3px
+        // left for a string that draws ~90px, B457) is a text the skin keeps out of sight, not a box
+        // it undersized: released, the readout drew over the song title it sits on.
+        let padded = (Double(object.attributes["leftpadding"] ?? "0") ?? 0)
+            + (Double(object.attributes["rightpadding"] ?? "0") ?? 0) > 0
+        if padded, frame.width <= WasabiTextMetrics.boxMargin { return frame }
         if measured - frame.width <= WasabiTextMetrics.boxMargin
             || !WasabiTextMetrics.showsTrackData(object, text: text, host: host) {
             let ambient = context.boundingBoxOfClipPath
@@ -510,8 +516,14 @@ extension WasabiSceneRenderer {
         let top = frame.minY + max(0, verticalAlignment
             .offset(cell: CGFloat(charHeight), in: frame.height).rounded())
 
+        // A clock whose glyphs are taller than its box keeps its whole face (B455, as B441 does for
+        // TrueType): the Two Towers' 28px digits sit in an `h="20"` box and lost their lower rows.
+        var scissor = frame
+        if let ticker, WasabiTextMetrics.isClockDisplay(ticker), CGFloat(charHeight) > frame.height {
+            scissor.size.height = CGFloat(charHeight)
+        }
         context.saveGState()
-        context.clip(to: frame)
+        context.clip(to: scissor)
         for origin in [CGFloat.zero] + repeats {
             var x = startX + origin
             for character in text.lowercased() {

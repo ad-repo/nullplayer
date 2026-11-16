@@ -716,6 +716,14 @@ enum WasabiAnimation {
     /// is first drawn. Without a stamp `state` counted from uptime 0, so a once-only intro was over
     /// before the window opened: Official_Zwan_Skin's rainbow wipe and thinger strips sat on their
     /// last frame (B280). A loop is periodic, so its start only sets its phase.
+    /// The window just came on screen: a self-playing layer drawn while it was still ordered out
+    /// (the first whole frame is recorded before AppKit shows the window) has already spent its
+    /// start, so it starts over. JetBlue_Card's 0.8 s intro was over before the window appeared (B452).
+    static func restartAtFirstVisible(_ object: WasabiObject, clock: TimeInterval) {
+        guard object.attributes["animstart"] != nil, object.attributes["playing"] == nil else { return }
+        _ = object.setAttribute("animstart", value: String(clock))
+    }
+
     static func stampFirstShow(_ object: WasabiObject, clock: TimeInterval) {
         let attributes = object.attributes
         guard attributes["animstart"] == nil, attributes["playing"] == nil,
