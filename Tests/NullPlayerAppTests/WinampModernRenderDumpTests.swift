@@ -776,8 +776,9 @@ final class WinampModernRenderDumpTests: XCTestCase {
                              "\(kind.rawValue) is embedded; synthesizing a window would duplicate it")
             }
             if let synthesized {
-                XCTAssertEqual(inventory.arrangement, .separateWindows,
-                               "an SUI skin's surfaces are embedded, not missing")
+                XCTAssertTrue(inventory.arrangement == .separateWindows
+                                || WinampModernSurfaceInventory.singleWindowSynthesizableKinds.contains(kind),
+                              "an SUI skin's surfaces are embedded, not missing; only the library is synthesized (B442)")
                 XCTAssertNil(declared, "\(kind.rawValue) already has a declared window")
                 XCTAssertTrue(hostedIDs.contains(synthesized),
                               "synthesized container '\(synthesized)' never opened")
