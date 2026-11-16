@@ -114,7 +114,10 @@ extension WasabiSceneRenderer {
         let container = layout.parent?.attributes ?? [:]
         let states = ["default_w", "default_h", "minimum_w", "minimum_h", "background", "alphabackground"]
         guard !states.contains(where: { attributes[$0] != nil }),
-              container["default_w"] == nil, container["default_h"] == nil else { return size }
+              container["default_w"] == nil, container["default_h"] == nil,
+              // A script-created overlay (WTM's and YST's `cont.clear.*`) is sized by its host, and
+              // measured, this fit moved its Media Library overlay from 461 to 200 wide.
+              attributes["w"] != nil || attributes["h"] != nil || container["dynamic"] != "1" else { return size }
         // One layout pass, and `opaqueBounds` draws each sysregion bitmap whole: paid once per layout,
         // since `contentFit()` caches the answer.
         let nodes = sceneNodes(canvas: size)
