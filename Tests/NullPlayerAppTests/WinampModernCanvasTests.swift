@@ -174,4 +174,29 @@ final class WinampModernCanvasTests: XCTestCase {
         XCTAssertNil(frame.holes)
         XCTAssertEqual(try XCTUnwrap(WinampModernCanvas().render(job(scene))).holes?.isEmpty, false)
     }
+
+    /// B456's hole cache reuses the last holes for an outline that changes again within the interval;
+    /// the reused frame says so, and the view's trailing frame re-finds them once the outline settles.
+    func testReusedHolesAreSettledByTheNextFrameAfterTheInterval() throws {
+        let ring = [(CGRect(x: 0, y: 0, width: width, height: 5), red),
+                    (CGRect(x: 0, y: 9, width: width, height: height - 9), red),
+                    (CGRect(x: 0, y: 5, width: 5, height: 4), red),
+                    (CGRect(x: 9, y: 5, width: width - 9, height: 4), red)]
+        let canvas = WinampModernCanvas()
+        let first = try XCTUnwrap(canvas.render(job(scene(ring))))
+        XCTAssertEqual(first.holes?.isEmpty, false)
+        XCTAssertFalse(first.holesOwed)
+        // The hole fills in at once: inside the interval, so the old holes are reused and owed.
+        let hole = CGRect(x: 5, y: 5, width: 4, height: 4)
+        let filled = try XCTUnwrap(canvas.render(job(scene(ring + [(hole, red)]), rects: [hole])))
+        XCTAssertNotNil(filled.outline)
+        XCTAssertEqual(filled.holes?.isEmpty, false, "reused from the frame before")
+        XCTAssertTrue(filled.holesOwed)
+        // Nothing changes after that; the trailing frame past the interval settles them.
+        Thread.sleep(forTimeInterval: WinampModernCanvas.holesInterval + 0.05)
+        let corner = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let settled = try XCTUnwrap(canvas.render(job(scene(ring + [(hole, red)]), rects: [corner])))
+        XCTAssertEqual(settled.holes?.isEmpty, true)
+        XCTAssertFalse(settled.holesOwed)
+    }
 }

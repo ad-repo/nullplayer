@@ -6,9 +6,12 @@ import AppKit
 /// everywhere else `record` returns at its first line.
 enum WasabiTextClipProbe {
     static let isArmed = ProcessInfo.processInfo.environment["WINAMP_MODERN_RENDER_DUMP"] != nil
+    typealias Cut = (object: WasabiObject, glyph: CGFloat, box: CGFloat)
     /// Per object: what it needed and what it got, in skin pixels. Keyed by identity, so a redraw
-    /// overwrites rather than repeats.
-    private(set) static var cuts: [ObjectIdentifier: (object: WasabiObject, glyph: CGFloat, box: CGFloat)] = [:]
+    /// overwrites rather than repeats. Locked: a window's text draws on its canvas queue (off main).
+    private static var store: [ObjectIdentifier: Cut] = [:]
+    private static let lock = NSLock()
+    static var cuts: [ObjectIdentifier: Cut] { lock.withLock { store } }
 
     /// A TrueType string, measured by its glyphs' ink, not the font's line box: a title with no
     /// descender in an exactly-sized box is not cut.
@@ -21,9 +24,8 @@ enum WasabiTextClipProbe {
     /// A bitmap run: its cell bottom against the scissor's, both measured from the scissor's top.
     static func record(_ object: WasabiObject, glyph: CGFloat, box: CGFloat) {
         guard isArmed else { return }
-        if glyph > box + 1 { cuts[ObjectIdentifier(object)] = (object, glyph, box) }
-        else { cuts[ObjectIdentifier(object)] = nil }
+        lock.withLock { store[ObjectIdentifier(object)] = glyph > box + 1 ? (object, glyph, box) : nil }
     }
 
-    static func reset() { cuts = [:] }
+    static func reset() { lock.withLock { store = [:] } }
 }

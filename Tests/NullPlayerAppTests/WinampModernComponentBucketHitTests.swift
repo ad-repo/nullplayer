@@ -43,10 +43,13 @@ final class WinampModernComponentBucketHitTests: XCTestCase {
     }
 }
 
-/// B447: a window the skin opens by default but draws at `alpha="0"` (LayerONE's `colorthemes`) is
-/// not opened. B448: the click sweep drags a slider along its own orientation.
+/// B447: a window the skin opens by default but still draws at `alpha="0"` once its scripts have
+/// started (LayerONE's `colorthemes`) is not opened. B448: the click sweep drags a slider along its
+/// own orientation.
 final class WinampModernB447B448Tests: XCTestCase {
-    func testADefaultVisibleWindowDrawnAtAlphaZeroIsNotOpened() throws {
+    /// Asked as the default windows open, after the scripts have started: a script that raised the
+    /// layout's alpha by then wins.
+    func testAWindowIsInvisibleOnlyWhileItsLayoutIsAtAlphaZero() throws {
         let loaded = try makeWinampModernSkin(xml: """
         <WasabiXML>
           <container id="main"><layout id="normal" w="275" h="116"/></container>
@@ -58,11 +61,12 @@ final class WinampModernB447B448Tests: XCTestCase {
         """, files: [:])
         let byID = Dictionary(uniqueKeysWithValues:
             WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph).map { ($0.id, $0) })
-        let suppression = { (id: String) in
-            WinampModernContainerTopology.defaultVisibilitySuppression(of: try XCTUnwrap(byID[id]))
-        }
-        XCTAssertEqual(try suppression("colorthemes"), .declaredInvisible)
-        XCTAssertNil(try suppression("pledit"))
+        let themes = try XCTUnwrap(byID["colorthemes"])
+        XCTAssertTrue(WinampModernContainerTopology.isInvisible(themes))
+        XCTAssertFalse(WinampModernContainerTopology.isInvisible(try XCTUnwrap(byID["pledit"])))
+        let layout = try XCTUnwrap(WasabiSceneRenderer.primaryLayout(of: themes.object))
+        _ = layout.setAttribute("alpha", value: "255")
+        XCTAssertFalse(WinampModernContainerTopology.isInvisible(themes), "a script raised it at load")
     }
 
     func testTheSweepDragsAVerticalSliderAlongItsHeight() {

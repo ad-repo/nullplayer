@@ -61,14 +61,8 @@ enum WinampModernDefaultVisibilitySuppression: String {
     /// Love is War Miku ships `<container id="notifier" default_visible="1" nomenu="1">`, and opening
     /// it at load leaves a popup reading "Nothing / Next track" on screen for the whole session.
     case hostManagedTransient
-    /// LayerONE's `colorthemes` (`default_visible="1"`, layout `alpha="0"`): a window its own markup
-    /// declares fully transparent, with no script raising it, opens as an invisible 286x160 pane under
-    /// the player that nothing can see and the user cannot find in any menu.
-    case declaredInvisible
     var reason: String {
         switch self {
-        case .declaredInvisible:
-            return "its layout declares alpha=\"0\", so it would open fully transparent"
         case .hostManagedTransient:
             return "it is a host-managed notifier/tooltip — the host triggers it on track change"
         }
@@ -196,14 +190,20 @@ enum WinampModernContainerTopology {
         return id == "notifier" || id.hasPrefix("notifier.")
     }
 
+    /// Whether the container's opening layout is fully transparent **now**. Asked when the skin's
+    /// default windows open, after its scripts have started, so a script that raises the alpha at load
+    /// wins: LayerONE's `colorthemes` (`default_visible="1"`, layout `alpha="0"`, nothing raises it)
+    /// opened as an invisible 286x160 pane under the player that no menu could find (B447).
+    static func isInvisible(_ info: WinampModernContainerInfo) -> Bool {
+        WasabiSceneRenderer.primaryLayout(of: info.object).map(WasabiSceneRenderer.isFullyTransparent) ?? false
+    }
+
     /// Whether `default_visible="1"` should be *acted on* for this container, and why not when it
     /// should not. `nil` means "open it"; embedded browser windows are usable and follow the same
     /// default-visibility rule as any other ordinary container.
     static func defaultVisibilitySuppression(of info: WinampModernContainerInfo)
         -> WinampModernDefaultVisibilitySuppression? {
         guard info.opensByDefault, !info.isMainPlayer else { return nil }
-        if let layout = WasabiSceneRenderer.primaryLayout(of: info.object),
-           WasabiSceneRenderer.isFullyTransparent(layout) { return .declaredInvisible }
         // The id is the only name Wasabi gives these — there is no notifier component GUID to match
         // on — and the corpus spells them exactly this way (`notifier`, `notifier.preferences`,
         // `tooltip`). Scoped to auto-opening, so a mis-match costs nothing a user can see.

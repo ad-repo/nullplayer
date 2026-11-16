@@ -383,7 +383,7 @@ a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/inta
 |---|---|---|
 | Classix_Player_1_1 | The Library opened in NullPlayer's plain chrome although the skin ships a frame (B442) | A single-window skin's inventory synthesizes the Library (`synthesizableKinds` answers `[.library]`) |
 | Client_V2, nematicfinal | The Playlist Editor showed one row: the other five drew black on black (B443) | `listPlate` falls to white when the list text is under 2:1 on its last-resort plate; also whitens Apill, Casio-G-Shocked-V2, Software and Star_Wars_Player |
-| LayerONE | A transparent window opened over the player at launch (B447) | A `default_visible` container whose layout is `alpha="0"` is not opened (`.declaredInvisible`) |
+| LayerONE | A transparent window opened over the player at launch (B447) | A `default_visible` container whose layout is still `alpha="0"` once its scripts have started is not opened (`WinampModernContainerTopology.isInvisible`) |
 | Biohazard_V2, January_29, nematicfinal | Volume slider drags did nothing (B448) | Not an engine defect: the smoke dragged a vertical slider along its width; the sweep follows the slider's orientation |
 | Palillo | EQ bands 1-3 and the Thinger icons misfired (B449) | An object faded to alpha 0 takes no press |
 | capsuleII | The EQ button's press went to an undrawn Thinger bucket, so the panel never opened (B450) | A component bucket yields to a control drawn after it |

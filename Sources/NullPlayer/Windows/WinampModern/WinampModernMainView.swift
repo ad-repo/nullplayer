@@ -1122,15 +1122,10 @@ final class WinampModernMainView: NSView {
     /// `WINAMP_MODERN_ASSUME_VISIBLE=1` (`SkinWindowShadow.assumesParentVisible`) treats the window as
     /// on screen whatever its occlusion says, so a locked screen does not stop it painting.
     /// Self-playing layers start over the first time the window shows (`restartAtFirstVisible`).
-    private var hasRestartedAnimations = false
-
     private func occlusionDidChange() {
         frames.isOnScreen = SkinWindowShadow.assumesParentVisible
             || (window?.occlusionState.contains(.visible) ?? false)
-        if frames.isOnScreen, !hasRestartedAnimations {
-            hasRestartedAnimations = true
-            renderer.restartSelfPlayingAnimations()
-        }
+        if frames.claimFirstShow() { renderer.restartSelfPlayingAnimations() }
         guard !isTornDown, frames.isOnScreen, frames.owesWholeFrame else { return }
         frames.owesWholeFrame = false
         invalidateRectCaches()

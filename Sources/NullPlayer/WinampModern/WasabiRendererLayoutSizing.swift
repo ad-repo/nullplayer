@@ -101,23 +101,25 @@ extension WasabiSceneRenderer {
     /// 275x116 (LayerONE's 286x139 body lost its bottom bar and right column, B453) — to where its
     /// `sysregion` artwork ends.
     ///
-    /// A layout that states nothing but `w`/`h` — no `default_*`, `minimum_*` or `background` of its
-    /// own, no container default — and is shaped by `sysregion` layers is a shaped window, and a
+    /// A layout that states nothing but `w`/`h` (or nothing at all) — no `default_*`, `minimum_*` or
+    /// `background` of its own, no container default — and is shaped by `sysregion` layers is a shaped window, and a
     /// shaped window ends where its shape does (the same rule `alphabackground` follows in
     /// `defaultSize`, B254). AR-7 declares `w="320" h="225"` over a body whose artwork runs to 362,
     /// so the ML button and the readout were clipped at the right edge (B395). Measured on the
     /// artwork's own pixels, not its box: that body is a 400x405 sheet whose opaque part ends at 362
     /// by 213. Only art placed from the origin counts, and only on an axis a control overruns. Only ever
-    /// grows, clamped by `maximum_*`.
+    /// grows, clamped by `maximum_*`. A script-created (`dynamic`) container with no size is left alone:
+    /// its host sizes it.
     private func shapeFittedSize(_ size: CGSize) -> CGSize {
         let attributes = layout.attributes
         let container = layout.parent?.attributes ?? [:]
         let states = ["default_w", "default_h", "minimum_w", "minimum_h", "background", "alphabackground"]
         guard !states.contains(where: { attributes[$0] != nil }),
-              container["default_w"] == nil, container["default_h"] == nil,
-              // A script-created overlay (WTM's and YST's `cont.clear.*`) is sized by its host, and
-              // measured, this fit moved its Media Library overlay from 461 to 200 wide.
-              attributes["w"] != nil || attributes["h"] != nil || container["dynamic"] != "1" else { return size }
+              container["default_w"] == nil, container["default_h"] == nil else { return size }
+        // A script-created overlay (WTM's and YST's `cont.clear.*`) is sized by its host: measured,
+        // this fit moved its Media Library overlay from 461 to 200 wide.
+        let sizeless = attributes["w"] == nil && attributes["h"] == nil
+        if sizeless, container["dynamic"] == "1" { return size }
         // One layout pass, and `opaqueBounds` draws each sysregion bitmap whole: paid once per layout,
         // since `contentFit()` caches the answer.
         let nodes = sceneNodes(canvas: size)

@@ -38,10 +38,11 @@ struct WinampModernHoles {
             mask = []; backing = nil; return
         }
         // 0 = transparent and not yet reached, 1 = opaque, 2 = transparent and reached from the edge.
-        // Raw pointers and `while` loops, not `0..<count` iterators and a nested `seed` closure: this
-        // runs on every frame of an animated outline (B456: The_Ninja_Star's sysregion LED layers),
-        // and the generic range iteration made it ~700 ms a frame in a debug build, saturating the
-        // canvas queue; the loop below is the same fill without it.
+        // The marking and the fill run on raw pointers in `while` loops: in a debug build the generic
+        // range iteration made this ~700 ms a frame on The_Ninja_Star's animated outline (B456) and
+        // saturated the canvas queue. Release was ~4 ms either way. The stack is sized for the worst
+        // case (every pixel is pushed at most once): one zeroed allocation of `count` Ints per changed
+        // outline, about 6 MB at 1084x698. The mask and backing passes below are still generic.
         var state = [UInt8](repeating: 0, count: count)
         var stack = [Int](repeating: 0, count: count)
         state.withUnsafeMutableBufferPointer { state in

@@ -21,11 +21,12 @@ extension WasabiSceneRenderer {
     /// counts a press of either.
     func object(at point: CGPoint, interactiveOnly: Bool = true, includingGhosts: Bool = false,
                 button: WasabiPressButton? = nil,
-                ignoring shouldIgnore: ((WasabiObject) -> Bool)? = nil) -> WasabiObject? {
+                ignoring shouldIgnore: ((WasabiObject) -> Bool)? = nil,
+                in scene: [WasabiSceneNode]? = nil) -> WasabiObject? {
         // Outside the window's own shape there is nothing to hit: a corner the skin trimmed away is
         // gone for the pointer as well as for the eye (B76).
         guard containsRegionPixel(at: point) else { return nil }
-        for node in sceneNodes().reversed() where node.clipping.contains(point) && lands(point, on: node) {
+        for node in (scene ?? sceneNodes()).reversed() where node.clipping.contains(point) && lands(point, on: node) {
             let object = node.object
             guard isVisible(object), includingGhosts || object.attributes["ghost"] != "1" else { continue }
             if shouldIgnore?(object) == true { continue }
@@ -40,8 +41,7 @@ extension WasabiSceneRenderer {
             // Palillo's Thinger buttons and bucket are faded out beside its equalizer, and its script
             // never re-ghosts the left button, which then took every press on EQ bands 1-3 (B449).
             // A markup `alpha="0"` hot zone is not faded by a script and stays live.
-            if Self.isFullyTransparent(object), object.tag.is(.animatedLayer) || Self.isFadedOutByScript(object),
-               pressBindingProvider?(object, button) != true { continue }
+            if Self.isFadedOut(object), pressBindingProvider?(object, button) != true { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
             // alpha question, and testing the bitmap anyway contradicts the attribute. Defix's four
@@ -102,10 +102,12 @@ extension WasabiSceneRenderer {
         return sliderThumbFrame(node.object, thumb: thumb, in: node.frame).contains(point)
     }
 
-    /// Whether a script drove the object's alpha to 0 (`settargeta(0)`), as opposed to the markup
-    /// declaring it: a skin fades a panel out and expects its controls to stop taking presses.
-    static func isFadedOutByScript(_ object: WasabiObject) -> Bool {
-        isFullyTransparent(object) && object.attributes["targeta"] == "0"
+    /// Whether the object is faded out and so takes no press of its own: an animated layer at alpha 0
+    /// (B393), or anything a script drove to alpha 0 (`settargeta(0)`, B449) — as opposed to a markup
+    /// `alpha="0"` hot zone, which stays live. A skin fades a panel out and expects its controls to stop
+    /// taking presses.
+    static func isFadedOut(_ object: WasabiObject) -> Bool {
+        isFullyTransparent(object) && (object.tag.is(.animatedLayer) || object.attributes["targeta"] == "0")
     }
 
     /// Whether a declared `alpha` of 0 makes the object paint nothing.
@@ -760,15 +762,15 @@ extension WasabiSceneRenderer {
     /// not under the pointer: Palillo's Thinger strip sits over its equalizer bands (B449). Nor is
     /// one a button is drawn over: capsuleII parks its thinger under the display glass, where its
     /// icons took the press meant for the `EQ` button above them (B450). Runs on every hover, so the
-    /// covering control is looked up once, not per bucket.
+    /// scene is resolved once and shared by the cover lookup and the bucket walk.
     func componentBucketIcon(at point: CGPoint) -> (icon: WinampModernBucketIcon, index: Int)? {
         let state = componentBucket
         let nodes = sceneNodes()
-        let cover = object(at: point).flatMap { top in
+        let cover = object(at: point, in: nodes).flatMap { top in
             top.attributes["action"] == nil ? nil : nodes.firstIndex { $0.object === top }
         } ?? -1
         for (depth, node) in nodes.enumerated().reversed()
-        where depth > cover && Self.isComponentBucket(node.object) && !Self.isFadedOutByScript(node.object) {
+        where depth > cover && Self.isComponentBucket(node.object) && !Self.isFadedOut(node.object) {
             let layout = WinampModernComponentBucketLayout(object: node.object, frame: node.frame)
             guard let slot = layout.slot(at: point) else { continue }
             let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot

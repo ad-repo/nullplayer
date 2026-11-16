@@ -441,7 +441,7 @@ which moves for anything a script writes; a canvas-sized rebuild per frame is no
 A skin fades a whole panel out with `settargeta(0)` and expects its controls to stop taking presses; a
 script that forgets to re-ghost one of them (Palillo's Thinger `thleft`, set once for `thright` and
 never for itself) leaves a transparent button over the panel that replaced it. `object(at:)` skips an
-object whose `alpha` is 0 **and** whose `targeta` is `0` (`WasabiSceneRenderer.isFadedOutByScript`),
+object whose `alpha` is 0 **and** whose `targeta` is `0` (`WasabiSceneRenderer.isFadedOut`, which also covers an `animatedLayer` at alpha 0),
 unless a script hooks a press on it, as it already did for an `animatedLayer` at alpha 0 (B393). A
 markup `alpha="0"` hot zone has no `targeta` and stays live. `componentBucketIcon(at:)` applies the same
 test: a faded `<componentbucket>` opened and closed the Playlist Editor under Palillo's EQ bands 5-7.

@@ -26,8 +26,7 @@ extension WasabiSceneRenderer {
         // `leftpadding`/`rightpadding` inset the text inside its own rect. They are part of the width
         // a script measures with `getAutoWidth()`, so honouring them here is what makes a box sized
         // from that measurement fit the string it was sized for (ClassicPro's menu bar and SUI tabs).
-        let left = CGFloat(Double(object.attributes["leftpadding"] ?? "0") ?? 0)
-        let right = CGFloat(Double(object.attributes["rightpadding"] ?? "0") ?? 0)
+        let (left, right) = WasabiTextMetrics.padding(of: object)
         let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
                            width: max(0, rawFrame.width - left - right), height: rawFrame.height)
         if let fontID = object.attributes["font"],
@@ -423,13 +422,13 @@ extension WasabiSceneRenderer {
         // `getTextWidth()` already reports: Anunaki's "Classic No Scroll" songticker turns `ticker` off
         // on a 180px box inside an LCD as wide as the whole player, and a long title released to that
         // group ran across the window's chrome.
-        guard !scrolls, !wraps, object.parent?.tag.is(.layout) != true else { return frame }
-        // A box its own padding has closed (666HIM666's volume readout: `w="15" leftpadding="12"`, 3px
-        // left for a string that draws ~90px, B457) is a text the skin keeps out of sight, not a box
-        // it undersized: released, the readout drew over the song title it sits on.
-        let padded = (Double(object.attributes["leftpadding"] ?? "0") ?? 0)
-            + (Double(object.attributes["rightpadding"] ?? "0") ?? 0) > 0
-        if padded, frame.width <= WasabiTextMetrics.boxMargin { return frame }
+        //
+        // A box its own padding has closed keeps it too (666HIM666's volume readout: `w="15"
+        // leftpadding="12"`, 3px left for a string that draws ~90px, B457): a text the skin keeps out
+        // of sight, not a box it undersized. Released, the readout drew over the song title it sits on.
+        let padding = WasabiTextMetrics.padding(of: object)
+        let closedByPadding = padding.left + padding.right > 0 && frame.width <= WasabiTextMetrics.boxMargin
+        guard !scrolls, !wraps, !closedByPadding, object.parent?.tag.is(.layout) != true else { return frame }
         if measured - frame.width <= WasabiTextMetrics.boxMargin
             || !WasabiTextMetrics.showsTrackData(object, text: text, host: host) {
             let ambient = context.boundingBoxOfClipPath

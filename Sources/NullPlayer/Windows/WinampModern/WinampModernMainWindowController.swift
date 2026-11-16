@@ -1767,7 +1767,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             // every launch, with nothing in the Windows menu to close it from.
             let hostsVideo = container.kind == .video
                 || routedSurfaceKind(ofContainer: container.containerID) == .video
-            guard Self.opensAtLoad(opensByDefault: container.opensByDefault,
+            guard Self.opensAtLoad(opensByDefault: container.opensByDefault
+                                       && !WinampModernContainerTopology.isInvisible(container.info),
                                    remembered: rememberedContainerVisibility(id: container.containerID),
                                    hostsVideo: hostsVideo)
             else { continue }
