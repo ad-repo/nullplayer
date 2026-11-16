@@ -373,8 +373,8 @@ the nine cPro skins) and B403 (Auriga_V5 and Buffy_the_vampire_slayer__the_codex
 ### Done: intake #12, promoted to gold (2026-11-16)
 
 100 skins were picked for batch 12 by `wal_intake_pick.sh 100` (the cap raised to 100 for this round) and scanned live
-(`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`) on `feat/wal-intake-12`. Two fix passes ran, the
-second after the user's own look at the hand-over items. All 100 were accepted by the user, one with an open row, and
+(`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`) on `feat/wal-intake-12`. Three fix passes ran, the
+second and third after the user's own looks at the hand-over items. All 100 were accepted by the user, one with an open row, and
 promoted to gold on 2026-11-16, with rows on `skin-compatibility.md` (100 B, graded from the ledger notes, backlog rows and
 a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/intake-12.tsv`; the row ids are in
 `backlog-archive.md`.
@@ -387,6 +387,15 @@ a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/inta
 | Biohazard_V2, January_29, nematicfinal | Volume slider drags did nothing (B448) | Not an engine defect: the smoke dragged a vertical slider along its width; the sweep follows the slider's orientation |
 | Palillo | EQ bands 1-3 and the Thinger icons misfired (B449) | An object faded to alpha 0 takes no press |
 | capsuleII | The EQ button's press went to an undrawn Thinger bucket, so the panel never opened (B450) | A component bucket yields to a control drawn after it |
+| JetBlue_Card_Winamp5_Skin | The opening card slide had already run before the window showed (B452) | A once-only self-playing layer restarts when the window first shows (`WasabiAnimation.restartAtFirstVisible`) |
+| LayerONE | The player was cut off on its right and bottom (B453) | A layout that declares no size shape-fits to its sysregion art (not a dynamic container) |
+| Official_LOTR_The_Two_Towers_Skin, Mizuho_Winamp_Skin | A bitmap clock or readout taller than its box lost its bottom or top (B455, B459) | A bitmap ticker taller than a non-empty box keeps its whole cell |
+| The_Ninja_Star | Its animation stuttered at a low frame rate (B456) | The click-through-hole fill is pointer loops and refills at most 4 Hz, with a trailing frame to settle it |
+| 666HIM666 | The volume readout drew over the song title (B457) | A text its padding has closed keeps its box |
+
+The scan gained a headless clipping check after LayerONE's cut-off (`OVERFLOW`, `TEXT-CLIP` in the render dump; `harness.md`).
+Explained, no code change: Nikki_Nova_V3's tail follows the VU meters and its eye blinks once (B454); the motion sweep's other
+still layers are transparent or played by no script (B458).
 
 Closed as not defects: Simple_Skin_V5's and FedererAmp's title clipping (B444, accepted as drawn by the user); CCZ-45's
 blank Playlist Editor (B445, read on a locked screen) and Scattershot's unopened windows (B451), neither reproducing on
