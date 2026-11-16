@@ -1156,7 +1156,10 @@ keeps its own box instead of being released to its group (`horizontalClip`): 666
 The_Ninja_Star's `sysregion` LED layers change the outline every frame at 542x349 (2x): the fill was
 most of a debug frame, 132 ms/render before and 4 ms mean after (`WinampModernCanvas.holes`
 re-finds them at most every 0.25 s for a non-fresh canvas; a new canvas always does). A release build
-runs the fill in ~4 ms at 1084x698, so the report was mostly a debug-build number. A VU-driven range layer
+runs the fill in ~4 ms at 1084x698, so the report was mostly a debug-build number. Each refill still
+blocks the canvas queue, so its debug cost shows as a stutter at 4 Hz even at ~80 renders/s: the
+mask and backing passes and the stack's allocation were generic too (~90 ms a fill), and as pointer
+loops over an uninitialised stack they are ~26 ms (~97 renders/s, 2026-11-16). A VU-driven range layer
 (`customvis`: `setStartFrame(last)`, `setEndFrame(level)`, `play()` every 50 ms) shows `last` until
 50 ms have elapsed, so it steps at the script's own 20 Hz.
 

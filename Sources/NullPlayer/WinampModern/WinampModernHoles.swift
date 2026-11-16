@@ -42,9 +42,11 @@ struct WinampModernHoles {
         // range iteration made this ~700 ms a frame on The_Ninja_Star's animated outline (B456) and
         // saturated the canvas queue. Release was ~4 ms either way. The stack is sized for the worst
         // case (every pixel is pushed at most once): one zeroed allocation of `count` Ints per changed
-        // outline, about 6 MB at 1084x698. The mask and backing passes below are still generic.
+        // outline, about 6 MB at 1084x698. The mask and backing passes are pointer loops too.
         var state = [UInt8](repeating: 0, count: count)
-        var stack = [Int](repeating: 0, count: count)
+        // Uninitialised: every slot is written before it is read, and a debug build fills a
+        // `repeating:` Int array element by element.
+        var stack = [Int](unsafeUninitializedCapacity: count) { _, initialized in initialized = count }
         state.withUnsafeMutableBufferPointer { state in
             stack.withUnsafeMutableBufferPointer { stack in
                 alpha.withUnsafeBufferPointer { alpha in
@@ -74,9 +76,20 @@ struct WinampModernHoles {
             }
         }
         guard memchr(state, 0, count) != nil else { mask = []; backing = nil; return }
-        mask = state.map { $0 == 0 ? 1 : 0 }
+        var hole = [UInt8](repeating: 0, count: count)
         var pixels = [UInt8](repeating: 0, count: count * 4)
-        for index in 0..<count where mask[index] == 1 { pixels[index * 4 + 3] = 1 }
+        state.withUnsafeBufferPointer { state in
+            hole.withUnsafeMutableBufferPointer { hole in
+                pixels.withUnsafeMutableBufferPointer { pixels in
+                    var index = 0
+                    while index < count {
+                        if state[index] == 0 { hole[index] = 1; pixels[index * 4 + 3] = 1 }
+                        index += 1
+                    }
+                }
+            }
+        }
+        mask = hole
         backing = pixels.withUnsafeMutableBytes { bytes in
             CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8,
                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
