@@ -521,8 +521,10 @@ extension WasabiSceneRenderer {
         // is the glyph, drawn as a blit, so the author sized it to be seen whole. The Two Towers' 28px
         // clock digits sit in an `h="20"` box (B455); Mizuho's and Tessa's 8px bitrate/frequency
         // readouts in `h="5"` lost their top rows (B459). (TrueType keeps the box except a clock, B441.)
+        // A box with no height stays shut: Casio-G-Shocked-V2's bucket caption declares no `h`, and
+        // nothing says Winamp shows a text sized that way.
         var scissor = frame
-        if ticker != nil, CGFloat(charHeight) > frame.height {
+        if ticker != nil, frame.height > 0, CGFloat(charHeight) > frame.height {
             scissor.size.height = CGFloat(charHeight)
         }
         if let ticker {
