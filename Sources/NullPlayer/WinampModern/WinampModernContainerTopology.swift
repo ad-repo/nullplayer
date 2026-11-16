@@ -37,9 +37,9 @@ struct WinampModernContainerInfo {
 }
 
 /// How a skin lays its surfaces out. cPro-Bento embeds everything in one window; mmd3, CornerAmp,
-/// and Winamp Modern each declare separate windows for the surfaces they support. Synthesis only
-/// ever applies to the separate-window arrangement — an SUI skin's missing container is not missing,
-/// it is embedded.
+/// and Winamp Modern each declare separate windows for the surfaces they support. An SUI skin's
+/// missing container is usually not missing but embedded, so synthesis into one is limited to the
+/// library (`WasabiSurfaceInventory.synthesizableKinds`, B442).
 ///
 /// Container *count* cannot answer this (cPro also declares a notifier, a widget manager, and a
 /// browser window), so the verdict comes from the declarative surface inventory: a skin whose main
@@ -203,7 +203,7 @@ enum WinampModernContainerTopology {
         -> WinampModernDefaultVisibilitySuppression? {
         guard info.opensByDefault, !info.isMainPlayer else { return nil }
         if let layout = WasabiSceneRenderer.primaryLayout(of: info.object),
-           (Int(layout.attributes["alpha"] ?? "255") ?? 255) <= 0 { return .declaredInvisible }
+           WasabiSceneRenderer.isFullyTransparent(layout) { return .declaredInvisible }
         // The id is the only name Wasabi gives these — there is no notifier component GUID to match
         // on — and the corpus spells them exactly this way (`notifier`, `notifier.preferences`,
         // `tooltip`). Scoped to auto-opening, so a mis-match costs nothing a user can see.

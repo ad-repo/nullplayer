@@ -50,6 +50,8 @@ struct WinampModernSurfaceInventory {
 
     /// The surfaces Phase 13 can host and therefore cares about.
     static let managedKinds: [WinampModernComponentKind] = [.playlist, .equalizer, .library]
+    /// The one kind synthesized into an SUI skin (see `synthesizableKinds`).
+    static let singleWindowSynthesizableKinds: [WinampModernComponentKind] = [.library]
 
     /// The surfaces the catalog routes. `.video` is routed but **not managed** (B20), and the
     /// distinction is doing three separate jobs:
@@ -94,7 +96,7 @@ struct WinampModernSurfaceInventory {
     /// corpus skins embed their playlist, reach no library and opened NullPlayer's plain window for it
     /// (B442, Classix_Player_1_1 — its Playlist wears the skin's frame, its Library did not).
     var synthesizableKinds: [WinampModernComponentKind] {
-        let candidates = arrangement == .separateWindows ? Self.managedKinds : [.library]
+        let candidates = arrangement == .separateWindows ? Self.managedKinds : Self.singleWindowSynthesizableKinds
         return candidates.filter {
             // The **equalizer** is never synthesized. A synthesized window's body is always a
             // component holder we invented, and unlike the playlist's and the library's, the

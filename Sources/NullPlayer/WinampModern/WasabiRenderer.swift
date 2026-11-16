@@ -1784,32 +1784,6 @@ final class WasabiSceneRenderer {
         }
     }
 
-    /// The icon under a point, with its index in the published set. A bucket a script faded out is
-    /// not under the pointer: Palillo's Thinger strip sits over its equalizer bands (B449). Nor is
-    /// one a button is drawn over: capsuleII parks its thinger under the display glass, where its
-    /// icons took the press meant for the `EQ` button above them (B450).
-    func componentBucketIcon(at point: CGPoint) -> (icon: WinampModernBucketIcon, index: Int)? {
-        let state = componentBucket
-        for entry in componentBuckets().reversed()
-        where !Self.isFadedOutByScript(entry.object) && !isCoveredByControl(entry.object, at: point) {
-            let layout = WinampModernComponentBucketLayout(object: entry.object, frame: entry.frame)
-            guard let slot = layout.slot(at: point) else { continue }
-            let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot
-            guard state.icons.indices.contains(index) else { continue }
-            return (state.icons[index], index)
-        }
-        return nil
-    }
-
-    /// Whether the topmost object at `point` is an `action=` control drawn after `object`.
-    private func isCoveredByControl(_ object: WasabiObject, at point: CGPoint) -> Bool {
-        guard let top = self.object(at: point), top.attributes["action"] != nil else { return false }
-        let nodes = sceneNodes()
-        guard let under = nodes.firstIndex(where: { $0.object === object }),
-              let over = nodes.firstIndex(where: { $0.object === top }) else { return false }
-        return over > under
-    }
-
     /// `CB_NEXT`/`CB_PREV` (`page: false`) and `CB_NEXTPAGE`/`CB_PREVPAGE`.
     ///
     /// A `CB_*` button names no bucket — in Winamp it is simply the button beside the strip — so the

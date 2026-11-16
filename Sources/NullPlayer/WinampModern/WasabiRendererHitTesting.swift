@@ -109,7 +109,7 @@ extension WasabiSceneRenderer {
     }
 
     /// Whether a declared `alpha` of 0 makes the object paint nothing.
-    private static func isFullyTransparent(_ object: WasabiObject) -> Bool {
+    static func isFullyTransparent(_ object: WasabiObject) -> Bool {
         (Int(object.attributes["alpha"] ?? "255") ?? 255) <= 0
     }
 
@@ -752,6 +752,28 @@ extension WasabiSceneRenderer {
         while let next = ancestor {
             if let frame = frameOf(next), frame.width > 0, frame.height > 0 { return frame }
             ancestor = next.parent
+        }
+        return nil
+    }
+
+    /// The icon under a point, with its index in the published set. A bucket a script faded out is
+    /// not under the pointer: Palillo's Thinger strip sits over its equalizer bands (B449). Nor is
+    /// one a button is drawn over: capsuleII parks its thinger under the display glass, where its
+    /// icons took the press meant for the `EQ` button above them (B450). Runs on every hover, so the
+    /// covering control is looked up once, not per bucket.
+    func componentBucketIcon(at point: CGPoint) -> (icon: WinampModernBucketIcon, index: Int)? {
+        let state = componentBucket
+        let nodes = sceneNodes()
+        let cover = object(at: point).flatMap { top in
+            top.attributes["action"] == nil ? nil : nodes.firstIndex { $0.object === top }
+        } ?? -1
+        for (depth, node) in nodes.enumerated().reversed()
+        where depth > cover && Self.isComponentBucket(node.object) && !Self.isFadedOutByScript(node.object) {
+            let layout = WinampModernComponentBucketLayout(object: node.object, frame: node.frame)
+            guard let slot = layout.slot(at: point) else { continue }
+            let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot
+            guard state.icons.indices.contains(index) else { continue }
+            return (state.icons[index], index)
         }
         return nil
     }

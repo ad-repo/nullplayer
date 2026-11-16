@@ -319,7 +319,7 @@ final class WinampModernPhase13Tests: XCTestCase {
                        "content= → inherit_group → frame panes are all reachable")
         XCTAssertTrue(main.hasEqualizerControls, "an EQ_BAND slider inside a pane is an EQ surface")
         XCTAssertEqual(inventory.arrangement, .singleWindowSUI)
-        XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin is never synthesized into")
+        XCTAssertTrue(inventory.synthesizableKinds.isEmpty, "an SUI skin that reaches its library is not synthesized into")
     }
 
     /// The inventory and retained graph must agree about a group id redefined between two layouts.

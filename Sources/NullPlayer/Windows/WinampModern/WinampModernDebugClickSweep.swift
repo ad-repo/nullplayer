@@ -9,11 +9,12 @@ import AppKit
 ///
 /// Clickable means a markup `action=` or a script left-press hook. A slider takes its value on press
 /// and drag, which `debugClick` (the release path) never replays, so a slider is dragged
-/// (`WinampModernMainView.debugDrag`) to a quarter of the way along its `orientation`. Window commands that would end the
-/// run (close, minimize, quit) and `EJECT`'s modal file panel are skipped; a menu or modal alert a click
-/// pops up is dismissed and noted. Between clicks the sweep puts back the starting layout and resumes playback,
-/// and the run starts from volume 0.5 so a control that pins it to either end shows. (Not reset per
-/// click: a skin's mute re-asserts 0 on every volume change, which would mark every later row.)
+/// (`WinampModernMainView.debugDrag`) to a quarter of the way along its `orientation`. Window commands
+/// that would end the run (close, minimize, quit) and `EJECT`'s modal file panel are skipped; a menu or
+/// modal alert a click pops up is dismissed and noted. Between clicks the sweep puts back the starting
+/// layout and resumes playback, and the run starts from volume 0.5 so a control that pins it to either
+/// end shows. (Not reset per click: a skin's mute re-asserts 0 on every volume change, which would mark
+/// every later row.)
 ///
 /// Then the Library, the one other window an intake checks (`skills/skin-intake` § *The scan*): it is
 /// opened the way the Windows menu opens it, its `open` row says what came up (`skin-frame`, `embedded`
@@ -179,8 +180,9 @@ final class WinampModernDebugClickSweep {
         let later = targets[(index + 1)...].filter { visibleBefore.contains(ObjectIdentifier($0.object)) }
         menuOpened = false
         modalOpened = false
+        let vertical = WasabiSceneRenderer.isVerticalOrientation(target.object)
         let dragEnd = target.object.tag.is(.slider)
-            ? view.renderer.frame(of: target.object).map { Self.quarterPoint(along: $0, vertical: WasabiSceneRenderer.isVerticalOrientation(target.object)) } : nil
+            ? view.renderer.frame(of: target.object).map { Self.quarterPoint(along: $0, vertical: vertical) } : nil
         pressUnblocked {
             if let dragEnd { view.debugDrag(fromSkinPoint: point, to: dragEnd) } else { view.debugClick(atSkinPoint: point) }
         }
@@ -262,7 +264,7 @@ final class WinampModernDebugClickSweep {
 
     /// The axis is the slider's own `orientation`, not its box: Biohazard_V2's vertical volume is 82x70,
     /// and a drag along its width ended at the middle, the 0.5 the run starts from (B448).
-    private static func quarterPoint(along frame: CGRect, vertical: Bool) -> CGPoint {
+    static func quarterPoint(along frame: CGRect, vertical: Bool) -> CGPoint {
         vertical ? CGPoint(x: frame.midX, y: frame.minY + frame.height / 4)
             : CGPoint(x: frame.minX + frame.width / 4, y: frame.midY)
     }
