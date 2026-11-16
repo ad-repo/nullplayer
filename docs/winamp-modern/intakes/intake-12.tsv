@@ -1,6 +1,6 @@
 file	sha256	stage	updated	rows	note
 Electric_Guitar_Skin.wal	1b0f5d3be866d96153884ef2b4d3869d2bb4d2a1ac71c99e5d23df812697690c	live	2026-11-15	-	scan clean: main 10/11, library skin-frame, visual clean
-capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	live	2026-11-15	-	scan clean: main 34/45, library skin-frame, visual clean
+capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	filed	2026-11-16	B450(open)	scan: main 34/45, library skin-frame, visual clean; open: B450 (hand-over check)
 Golden_Healer_by_ROBODRON.wal	1b78664b4dde262aea0ab4a9963ca032e9d49d5213d68fee3b87cc09949fd0b6	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	filed	2026-11-15	B447(open)	scan: main 12/17, library skin-frame; open: B447
 boxOr.wal	1c29bfbf29497ce6dec4bb4f01e0f157f758887cb0be399d0bb8895ebf2fe826	live	2026-11-15	-	scan clean: main 12/15, library skin-frame, visual clean
@@ -62,7 +62,7 @@ OHE3.wal	35ccf764933119d28d8b97f41b09ffc8a46e283dfaab1a3f999b0230948f742f	live	2
 iRobot.wal	36402b2bfbaaf87621210fec644ae1e4254359c2a32e1ca8c76d7020e6b8c6fc	live	2026-11-15	-	scan clean: main 27/33, library skin-frame, visual clean
 Marko_Egger.wal	3673fd0c3a239ec3455910fc1251b70d6479dda67ff9fe72acb08748cf3fa47b	live	2026-11-15	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 Official_Hot_Action_Cop_Skin.wal	368bda372951aed57bac29dcd2f475821213cc58c4427abf1ae304c948b86fdf	live	2026-11-15	-	scan clean: main 25/31, library skin-frame, visual clean
-Scattershot.wal	36eeab255b4d3759a33b4f72d1771ce587995eecb1788e4b06f1a6e8962e8919	live	2026-11-15	-	scan clean: main 3/10, library skin-frame, visual clean
+Scattershot.wal	36eeab255b4d3759a33b4f72d1771ce587995eecb1788e4b06f1a6e8962e8919	filed	2026-11-16	B451(open)	scan: main 3/10, library skin-frame, visual clean; open: B451 (hand-over check)
 Capsule_II.wal	37af92e61eb992921f5438b7b171f9019576bace097dfd15bcf9efbcba2e7571	live	2026-11-15	-	scan clean: main 38/44, library skin-frame, visual clean
 Pink_Alicia_Moore.wal	37c731944927fdd6fdca021f47ac36265f5c92eb88b3e7edffb4a2da0e763516	live	2026-11-15	-	scan clean: main 10/11, library skin-frame, visual clean
 Chasing_Liberty_Winamp5_Skin.wal	37cf45f7d767974743f3a007698ace197b81b1b3e631d746920d2ba3080a1439	live	2026-11-15	-	scan clean: main 13/14, library skin-frame, visual clean
