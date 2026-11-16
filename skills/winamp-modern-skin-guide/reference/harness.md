@@ -984,8 +984,8 @@ comes, not when the run starts: an earlier click can move it or cover it (Fantan
 carries its transport 70 px down, B370; zechitoplayer's vis button lays an `alpha="1"` click
 blocker over its volume, B371); `CLOSE`, `MINIMIZE`,
 `EXIT`, `QUIT` and `EJECT` are skipped. A `slider` takes its value on press and drag, which
-`debugClick` never replays, so it is pressed, dragged a quarter of the way along its long axis and
-released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5; 1.2 s after each click it logs a
+`debugClick` never replays, so it is pressed, dragged a quarter of the way along its `orientation` (a vertical slider can be wider than it is tall, B448) and
+released through the view's own mouse handlers (`WinampModernMainView.debugDrag`). The run starts from volume 0.5, and the Library pass from 0.5 again (the main pass's last slider drag leaves 0.25, which a Library slider dragged to the same quarter reads as `nochange`); 1.2 s after each click it logs a
 `WM-SMOKE|key=value|…` row (keys in the sweep's `fields` order, the TSV's columns, read by name), then restores the starting layout and resumes playback if the click changed them,
 and dismisses any menu or modal alert the click popped. Then the Library: the sweep opens it the way the Windows menu does (from closed), logs an `open`
 row whose `note` says what came up (`skin-frame`, `embedded` in a skin window already open, `plain-chrome` for NullPlayer's own

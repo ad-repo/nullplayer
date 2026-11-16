@@ -36,7 +36,11 @@ extension WasabiSceneRenderer {
             // visible again the moment the script raises the alpha (`setTargetA`). Unless a script hooks
             // a press on it: Shield_Amp's vis animation is faded out when the vis is off and its
             // `onLeftButtonDown` is the only way to turn it back on.
-            if object.tag.is(.animatedLayer), Self.isFullyTransparent(object),
+            // Any other object a script has faded out (`settargeta(0)`) is inert on the same terms:
+            // Palillo's Thinger buttons and bucket are faded out beside its equalizer, and its script
+            // never re-ghosts the left button, which then took every press on EQ bands 1-3 (B449).
+            // A markup `alpha="0"` hot zone is not faded by a script and stays live.
+            if Self.isFullyTransparent(object), object.tag.is(.animatedLayer) || Self.isFadedOutByScript(object),
                pressBindingProvider?(object, button) != true { continue }
             if !interactiveOnly && !isRenderable(object, bitmapID: node.bitmapID) { continue }
             // `rectrgn="1"` *is* the region — the whole rect, artwork or not — so it also settles the
@@ -96,6 +100,12 @@ extension WasabiSceneRenderer {
               let thumb = sliderThumb(node.object, pressed: false, hovered: true)
         else { return false }
         return sliderThumbFrame(node.object, thumb: thumb, in: node.frame).contains(point)
+    }
+
+    /// Whether a script drove the object's alpha to 0 (`settargeta(0)`), as opposed to the markup
+    /// declaring it: a skin fades a panel out and expects its controls to stop taking presses.
+    static func isFadedOutByScript(_ object: WasabiObject) -> Bool {
+        isFullyTransparent(object) && object.attributes["targeta"] == "0"
     }
 
     /// Whether a declared `alpha` of 0 makes the object paint nothing.

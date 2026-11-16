@@ -88,12 +88,14 @@ struct WinampModernSurfaceInventory {
     /// and the coordinator makes them open the skin window instead of a competing NullPlayer window.
     static let windowMenuRoutedKinds: Set<WinampModernComponentKind> = [.video, .visualization]
 
-    /// Surfaces with no home in this skin: not embedded, no declared container, not ambiguous, and
-    /// only ever non-empty for the separate-window arrangement — an SUI skin that appears to be
-    /// missing a surface is not missing it, it builds it from a script at runtime.
+    /// Surfaces with no home in this skin: not embedded, no declared container, not ambiguous. An SUI
+    /// skin that appears to be missing a surface may build it from a script at runtime, so it is
+    /// synthesized into only for the **library**, which no SUI skin measured builds that way: nine
+    /// corpus skins embed their playlist, reach no library and opened NullPlayer's plain window for it
+    /// (B442, Classix_Player_1_1 — its Playlist wears the skin's frame, its Library did not).
     var synthesizableKinds: [WinampModernComponentKind] {
-        guard arrangement == .separateWindows else { return [] }
-        return Self.managedKinds.filter {
+        let candidates = arrangement == .separateWindows ? Self.managedKinds : [.library]
+        return candidates.filter {
             // The **equalizer** is never synthesized. A synthesized window's body is always a
             // component holder we invented, and unlike the playlist's and the library's, the
             // equalizer's hosted surface is a stand-in — eleven painted tracks with no on/off, auto,

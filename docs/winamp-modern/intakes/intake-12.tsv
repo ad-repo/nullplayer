@@ -11,8 +11,8 @@ Helios.wal	1e6c76e4d13f127aeb102f024bd5d749d52f147f6d80b88eef629969cf1a060d	live
 Official_How_to_Deal_Winamp3_Skin.wal	1ec63d5ec869a27aee7e803c3d2b41397b6755d970f5d3bbce2b3159c99ceb18	live	2026-11-15	-	scan clean: main 14/17, library skin-frame, visual clean
 Smoking.wal	1ec9c36e285a77a9571f44776274caa1cab3570fd753a962de132a71b629b266	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Official_A_Man_Apart_Skin.wal	1f0027b7c42cdbabfd05615e18474400f96e5fb8034aeee1173a89e548abf9dd	live	2026-11-15	-	scan clean: main 19/22, library skin-frame, visual clean
-nematicfinal.wal	20a0e4d1158009013fb039a6beffb72feed8f089e411c24e8655f5c8468d75ff	filed	2026-11-15	B443(open),B448(open)	scan: main 33/35, library skin-frame; open: B443,B448
-January_29.wal	20d4b5f4f26b9fd9870c5b87bbcf8f9ab4e528f58faad4094926ed666c66ec44	filed	2026-11-15	B448(open)	scan: main 21/24, library skin-frame; open: B448
+nematicfinal.wal	20a0e4d1158009013fb039a6beffb72feed8f089e411c24e8655f5c8468d75ff	filed	2026-11-15	B443(open),B448	fix pass: B448 closed (smoke artifact, library slider reads volume); open: B443
+January_29.wal	20d4b5f4f26b9fd9870c5b87bbcf8f9ab4e528f58faad4094926ed666c66ec44	live	2026-11-15	B448	fix pass: B448 was the smoke leaving volume at 0.25 for the Library drag; sweep fixed, ml slider reads volume
 Official_FreeAmp_Skin.wal	21c1fd2945662524a93150238cf3bb4370ee44405c6cbbab0ae91de756fa88aa	live	2026-11-15	-	scan clean: main 8/10, library skin-frame, visual clean
 Classic_KilJaeden_The_Deciever.wal	21e94121d36b4a049c5e3155b97aadfd28752b16780159d48219fb7c7121c076	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Nokia_3650____Version_2.wal	21fabc4a487f6ce16a23b4bfc7f6c8bdf30f05e8fb6ef3c1f843a716d3650d5a	live	2026-11-15	-	scan clean: main 11/15, library skin-frame, visual clean
@@ -25,7 +25,7 @@ venom.wal	22aadb14223111df8e9da7103483d2bf49ed57ac4d0193b22696bc5e17510a52	live	
 Green_Machine.wal	24a6bf947e998f93be6fb6386a8f17847e7d8c59a51872c19d13bc6d92c2c30d	live	2026-11-15	-	scan clean: main 24/30, library skin-frame, visual clean
 Pioneer_Stereo_V1.wal	25a586c19826f7129142acebc69e45ba0a66d827bb8233869ba3d0b79c2833af	live	2026-11-15	-	scan clean: main 16/23, library skin-frame, visual clean
 CALL_OF_DUTY_BLACK_OPS_'NAZ_PLAYER.wal	261ea944f88470aaf1b582a20cdfb770bc82b7051dea5700d913391ec5bdac41	live	2026-11-15	-	scan clean: main 49/57, library skin-frame, visual clean
-Palillo.wal	26a4d194f8f947557ffcbe9d7671b3711c5ab748d74d65e8a59c4cb40a70fbaa	filed	2026-11-15	B449(open)	scan: main 20/26, library skin-frame; open: B449
+Palillo.wal	26a4d194f8f947557ffcbe9d7671b3711c5ab748d74d65e8a59c4cb40a70fbaa	live	2026-11-15	B449	fix pass: faded Thinger buttons and bucket no longer take presses; smoke eq1-eq10 all eq, no windows change
 WTM.wal	27673c078aba8aa4d37337ac1946bae393a760afa91f7e6a7b7ab972865850e7	live	2026-11-15	-	scan clean: main 9/9, library skin-frame, visual clean
 iTunes_Mini_XiDGAlbook_by_newaveCR.wal	27d47f3133795b5262fe5a13a78ba711bd56fe567a4eecedc7e76f2600ee43b0	live	2026-11-15	-	scan clean: main 20/21, library skin-frame, visual clean
 Soundwave.wal	28772e776a1f7c693509f24b96495e6fabb8cae6e3c62506104bfbedab9c48f6	live	2026-11-15	-	scan clean: main 9/10, library skin-frame, visual clean
@@ -46,8 +46,8 @@ Motorcycle.wal	2fe6373317a135cc34e7fc368ebfd4c770c3ba3b1338785860a48ceabe6c860e	
 Simple_Skin_V5.wal	301a68fde07c18e3245ba8c2d902f7839444db991cddaa13521a8d285ded5157	filed	2026-11-15	B444(open)	scan: main 7/8, library skin-frame; open: B444
 ModernClassic_1_1.wal	3031681c1aea68e1900c27e23cdf3b2c89b4e76d09fed3870edb16586ff81812	live	2026-11-15	-	scan clean: main 15/18, library skin-frame, visual clean
 Official_LOTR_The_Two_Towers_Skin.wal	3075672887da3de962ced42f9d185730340fc94b18a71ee9473eeea37006f45f	live	2026-11-15	-	scan clean: main 10/13, library skin-frame, visual clean
-Biohazard_V2.wal	3082f37f95fae67ef6899fa02d74c5fc94e046f909578082476feed4636ffee3	filed	2026-11-15	B448(open)	scan: main 9/12, library skin-frame; open: B448
-Classix_Player_1_1.wal	308c5f17b510d515ad8738f18906aa6a13654743a06a996d898f8fe10bafc113	filed	2026-11-15	B442(open)	scan: main 19/23, library plain-chrome; open: B442
+Biohazard_V2.wal	3082f37f95fae67ef6899fa02d74c5fc94e046f909578082476feed4636ffee3	live	2026-11-15	B448	fix pass: B448 was the smoke dragging a vertical 82x70 slider along its width; sweep fixed, volume 0.50>0.75
+Classix_Player_1_1.wal	308c5f17b510d515ad8738f18906aa6a13654743a06a996d898f8fe10bafc113	live	2026-11-15	B442	fix pass: Library synthesized into the skin frame for a single-window skin (smoke library skin-frame, close closed)
 Simple_skin_V2.wal	310cf3b4df18b05d837b9092c986c57e0280334c50b88798973a475da3db4bc6	live	2026-11-15	-	scan clean: main 6/7, library skin-frame, visual clean
 Classic_Jesse_McCartney.wal	316dd269406b63250e9d72300db5dfe4c74960d87e565c6c5e59e9f36885941f	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 JetBlue_Card_Winamp5_Skin.wal	31b70539e8614317749fca6639d8a6385a8ccd2f3a823d237ea3a46e4c88ebc5	live	2026-11-15	-	scan clean: main 10/14, library skin-frame, visual clean
@@ -97,5 +97,5 @@ FLIGHTPLAN.wal	3f02eb88cd096bb2f73d0d961df31731e66db8f7a1bee681408462d153750c8f	
 Metal_Gear_Solid_2_Skin.wal	3f3792a94c39c0f9cce2be22f01bf2bacd630720e7cf9b3a2a60136ccf5cefd4	live	2026-11-15	-	scan clean: main 6/9, library skin-frame, visual clean
 Reliance_Mobile.wal	3f3f38e8709fb7a4a0ebd43bcda78afe7642e3f5ca0c924711fb4f9ae3bc9913	live	2026-11-15	-	scan clean: main 15/18, library skin-frame, visual clean
 cPro_Fluke.wal	3f6f3af97206f85bc12df4465017688a85a7bea553fe433e8e64e2af479b750b	live	2026-11-15	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
-YST.wal	3f75f99677770172fb734676359af33f43d9a5d71702f42f0f75e0562c3fa310	filed	2026-11-15	B446(open)	scan: main 11/11, library skin-frame; open: B446
+YST.wal	3f75f99677770172fb734676359af33f43d9a5d71702f42f0f75e0562c3fa310	live	2026-11-15	B446(open)	fix pass: B446 is the paired cont.clear.* frame window over each content window (skill: chrome in a second window), a hole by design; open until seen on screen
 Opulent_Records_Player.wal	41af6168fbf68d9ee3b0b67d7ec35b8c9bfc9ae448f6f7938dea0d8c4209b7c0	live	2026-11-15	-	scan clean: main 28/33, library skin-frame, visual clean

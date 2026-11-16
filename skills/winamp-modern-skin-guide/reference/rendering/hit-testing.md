@@ -435,3 +435,13 @@ which moves for anything a script writes; a canvas-sized rebuild per frame is no
 
 - An `<animatedlayer>` a script has faded to `alpha="0"` is not hit: its union-of-frames region would otherwise cover whatever is under it (Tokyo_Drift's full-window `eq.anim` over the transport). **Unless a script binds that press on it**: Shield_Amp's faded vis animation is the only way to turn its vis back on.
 - The window's fallback close corner (`hostChromeHit`) yields to any object that takes a press — a control by tag, an action, or any press a script binds, a double-click-only handler included (`takesPress`). A scripted drawer handle ends up in that corner and its press quit the app (-Lithium-).
+
+#### An object a script faded out takes no press (B449, 2026-11-15)
+
+A skin fades a whole panel out with `settargeta(0)` and expects its controls to stop taking presses; a
+script that forgets to re-ghost one of them (Palillo's Thinger `thleft`, set once for `thright` and
+never for itself) leaves a transparent button over the panel that replaced it. `object(at:)` skips an
+object whose `alpha` is 0 **and** whose `targeta` is `0` (`WasabiSceneRenderer.isFadedOutByScript`),
+unless a script hooks a press on it, as it already did for an `animatedLayer` at alpha 0 (B393). A
+markup `alpha="0"` hot zone has no `targeta` and stays live. `componentBucketIcon(at:)` applies the same
+test: a faded `<componentbucket>` opened and closed the Playlist Editor under Palillo's EQ bands 5-7.

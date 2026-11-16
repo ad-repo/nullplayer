@@ -839,6 +839,7 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
 - **Winamp defines no equalizer component GUID.** An equalizer is recognized by its controls
   (`EQ_BAND`/`EQ_PREAMP`/`<eqvis>`) and a synthesized one uses `guid:eq`. `EQ_TOGGLE`/`EQ_AUTO` do not
   count as evidence — a button that opens the EQ is not an EQ.
+- **A single-window skin is synthesized a Library and nothing else** (B442): one that embeds its playlist reaches no library of its own, and used to open NullPlayer's plain window for it. Nine corpus skins are of that shape.
 - **An equalizer is never synthesized** (`synthesizableKinds` excludes it). Synthesis always builds
   the same body — a standard frame around a `<component>` holder *we* invented — and never wraps the
   skin's own controls. For the playlist and the library that holder resolves to a complete NullPlayer

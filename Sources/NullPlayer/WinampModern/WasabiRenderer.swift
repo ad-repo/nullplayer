@@ -1784,10 +1784,11 @@ final class WasabiSceneRenderer {
         }
     }
 
-    /// The icon under a point, with its index in the published set.
+    /// The icon under a point, with its index in the published set. A bucket a script faded out is
+    /// not under the pointer: Palillo's Thinger strip sits over its equalizer bands (B449).
     func componentBucketIcon(at point: CGPoint) -> (icon: WinampModernBucketIcon, index: Int)? {
         let state = componentBucket
-        for entry in componentBuckets().reversed() {
+        for entry in componentBuckets().reversed() where !Self.isFadedOutByScript(entry.object) {
             let layout = WinampModernComponentBucketLayout(object: entry.object, frame: entry.frame)
             guard let slot = layout.slot(at: point) else { continue }
             let index = state.clampedOffset(state.offset, visibleCount: layout.visibleCount) + slot
