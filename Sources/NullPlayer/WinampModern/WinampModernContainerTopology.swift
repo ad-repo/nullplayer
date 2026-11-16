@@ -61,8 +61,14 @@ enum WinampModernDefaultVisibilitySuppression: String {
     /// Love is War Miku ships `<container id="notifier" default_visible="1" nomenu="1">`, and opening
     /// it at load leaves a popup reading "Nothing / Next track" on screen for the whole session.
     case hostManagedTransient
+    /// LayerONE's `colorthemes` (`default_visible="1"`, layout `alpha="0"`): a window its own markup
+    /// declares fully transparent, with no script raising it, opens as an invisible 286x160 pane under
+    /// the player that nothing can see and the user cannot find in any menu.
+    case declaredInvisible
     var reason: String {
         switch self {
+        case .declaredInvisible:
+            return "its layout declares alpha=\"0\", so it would open fully transparent"
         case .hostManagedTransient:
             return "it is a host-managed notifier/tooltip — the host triggers it on track change"
         }
@@ -196,6 +202,8 @@ enum WinampModernContainerTopology {
     static func defaultVisibilitySuppression(of info: WinampModernContainerInfo)
         -> WinampModernDefaultVisibilitySuppression? {
         guard info.opensByDefault, !info.isMainPlayer else { return nil }
+        if let layout = WasabiSceneRenderer.primaryLayout(of: info.object),
+           (Int(layout.attributes["alpha"] ?? "255") ?? 255) <= 0 { return .declaredInvisible }
         // The id is the only name Wasabi gives these — there is no notifier component GUID to match
         // on — and the corpus spells them exactly this way (`notifier`, `notifier.preferences`,
         // `tooltip`). Scoped to auto-opening, so a mis-match costs nothing a user can see.

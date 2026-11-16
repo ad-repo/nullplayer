@@ -2,7 +2,7 @@ file	sha256	stage	updated	rows	note
 Electric_Guitar_Skin.wal	1b0f5d3be866d96153884ef2b4d3869d2bb4d2a1ac71c99e5d23df812697690c	live	2026-11-15	-	scan clean: main 10/11, library skin-frame, visual clean
 capsuleII.wal	1b68669acfb2683505b88eac5c04896751a9c224a4e63c484a081a0796b97aa4	filed	2026-11-16	B450(open)	scan: main 34/45, library skin-frame, visual clean; open: B450 (hand-over check)
 Golden_Healer_by_ROBODRON.wal	1b78664b4dde262aea0ab4a9963ca032e9d49d5213d68fee3b87cc09949fd0b6	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
-LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	filed	2026-11-15	B447(open)	scan: main 12/17, library skin-frame; open: B447
+LayerONE.wal	1bfe6947701d0ef7fc9222c5ffcbf6e1fda5a205220cd8e849c7744e763b5293	live	2026-11-16	B447	fix pass: colorthemes (layout alpha=0, default_visible=1) no longer opens as an invisible window; Playlist Editor draws
 boxOr.wal	1c29bfbf29497ce6dec4bb4f01e0f157f758887cb0be399d0bb8895ebf2fe826	live	2026-11-15	-	scan clean: main 12/15, library skin-frame, visual clean
 Pepsi_EVo.wal	1cabf4644b13d54b09f798e5129ec178799875608d6eae22c5e559f57816cfd1	live	2026-11-15	-	scan clean: main 25/30, library skin-frame, visual clean
 MIni_Ipod.wal	1d393d28c3c9154cad3c1ded38f3b5fa0145053b7626e9580a82f2ff9e93d1c5	live	2026-11-15	-	scan clean: main 9/10, library skin-frame, visual clean
@@ -86,7 +86,7 @@ The_Ninja_Star.wal	3d0b8472543ee9a437d2f7c889e6a99ffd5e39a7bbcd84b96a4577f2c1f1c
 CANUS__by_d4f_Mac.wal	3da9c3ec841b250c3421df62197fb01019cebfa10d36e43d1c196d57ee36965d	live	2026-11-15	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
 cPro__POP_1.wal	3dd2076a6b0fb188364a04031dab8e138472615676e2ef6e3504911c0bf0fc96	live	2026-11-15	-	scan clean: main 25/39, library embedded, census skipped (cPro, B396)
 Cpro_Tokio.wal	3dec937e57d752249251c8afa61b4cdd2f5b59b0fe4b26068717e4264267ce75	live	2026-11-15	-	scan clean: main 24/38, library embedded, census skipped (cPro, B396)
-CCZ-45.wal	3e06102fc9136bf3693695424cd544dc8a3ad9bfff6ca2decc753f346ba624e6	filed	2026-11-15	B445(open)	scan: main 19/20, library skin-frame; open: B445
+CCZ-45.wal	3e06102fc9136bf3693695424cd544dc8a3ad9bfff6ca2decc753f346ba624e6	live	2026-11-16	B445	fix pass: Playlist Editor draws (275x300, six tracks); the 100% transparent reading was the locked screen
 Modern_Bleach.wal	3e3da1abb514369fced0fb9e6c4f779d1254e0c8ef53cf0e2ca450bd574e7ab0	live	2026-11-15	-	scan clean: main 23/24, library skin-frame, visual clean
 ROBODRONRobert_V_Padron_1.wal	3e6914ca0c841e946b45225fa4be72b3fdee4f3fad06fb4af6913ebc57f6cce4	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Teenage_Mutant_Ninja_Turtles.wal	3e9b9fca5a318ae4b0d022a02bbc096913a983813172f7cf882928edfdb0cd54	live	2026-11-15	-	scan clean: main 25/31, library skin-frame, visual clean
