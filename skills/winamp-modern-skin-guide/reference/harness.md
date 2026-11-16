@@ -54,7 +54,7 @@ Every dump also prints, unasked, what each window cuts off — the intake scan's
 
 - `OVERFLOW <container>/<layout>: art reaches WxH past canvas WxH: <culprits>`: opaque art, placed
   from the origin, that runs past the canvas edge. Asked only of a layout that declares no size
-  (`declared=1x1`), the class every intake has hit: LayerONE opened at 275x116 against its 286x139
+  (no `w`/`h`/`default_*`/`minimum_*`, no container default), the class every intake has hit: LayerONE opened at 275x116 against its 286x139
   `main.back` (B453). A sized frame's long side strips are cropped on purpose and are not asked.
 - `TEXT-CLIP <container>/<layout>: text#<id> glyphs=<n> box=<n>`: a text whose glyphs are taller
   than the rect it was scissored to, from `WasabiTextClipProbe` (armed by `WINAMP_MODERN_RENDER_DUMP`
