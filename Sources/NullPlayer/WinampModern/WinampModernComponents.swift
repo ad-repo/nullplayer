@@ -394,7 +394,7 @@ extension WinampModernComponentHost {
 /// about to be removed", so its in-flight server tasks and timers outlived it. This is the typed
 /// handle instead: the component bridge creates and owns it, the view positions its `view`, and every
 /// lifecycle event has a name.
-protocol WinampModernLibrarySurface: AnyObject {
+protocol WinampModernLibrarySurface: LibraryBackdropHosting {
     var view: NSView { get }
     /// Browse mode, for session save/restore through `LibraryBrowserWindowProviding`.
     var browseModeRawValue: Int { get set }
@@ -407,9 +407,6 @@ protocol WinampModernLibrarySurface: AnyObject {
     /// proportion inside the browser is derived from it — and it is pushed rather than pulled so the
     /// library can never disagree with the playlist drawn beside it.
     func applyContentScale(_ scale: CGFloat)
-    /// The library backdrop's Cava, while it shows; and re-read the backdrop mode (#780).
-    var backdropPresenter: CavaPresenter? { get }
-    func refreshBackdrop()
     /// Cancel work and release resources before the view is removed. Must be idempotent, and it is
     /// **terminal**: the surface never works again after it.
     func prepareForUITeardown()

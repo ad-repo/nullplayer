@@ -157,10 +157,12 @@ class ClassicLibraryBrowserView: NSView {
     var backdropPresenter: CavaPresenter? { backdrop.presenter }
     private static let backdropScrimAlpha: CGFloat = 0.72
 
-    /// A library window of its own, or a `.wal` holder (which has no controller), offers the library
-    /// backdrop; Compact Mode does not.
+    /// In a window of its own (a controller) or a `.wal` holder (none); false only before either.
+    private var isHosted: Bool { controller != nil || isEmbeddedInSkin }
+
+    /// Every host but Compact Mode offers the library backdrop.
     private var hasLibraryBackdrop: Bool {
-        isEmbeddedInSkin || controller?.isCompactMode == false
+        isHosted && controller?.isCompactMode != true
     }
 
     private var showsCavaBackdrop: Bool {
@@ -175,7 +177,7 @@ class ClassicLibraryBrowserView: NSView {
 
     /// The backdrop mode, skin or window changed: show, restyle or remove the backdrop.
     func refreshBackdrop() {
-        guard controller != nil || isEmbeddedInSkin else { return }
+        guard isHosted else { return }
         refreshHistoryHostingColors()
         art.showPlayingTrack(WindowManager.shared.audioEngine.currentTrack)
         backdrop.refresh(beneath: self, showsCava: showsCavaBackdrop, scope: .libraryWindow, sharpCorners: [])

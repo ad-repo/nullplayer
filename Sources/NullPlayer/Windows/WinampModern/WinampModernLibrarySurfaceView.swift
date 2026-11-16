@@ -70,9 +70,9 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
         browser.needsDisplay = true
     }
 
-    var backdropPresenter: CavaPresenter? { browser.backdropPresenter }
+    var libraryBackdropPresenter: CavaPresenter? { browser.backdropPresenter }
 
-    func refreshBackdrop() {
+    func refreshLibraryBackdrop() {
         guard !isTornDown else { return }
         browser.refreshBackdrop()
     }

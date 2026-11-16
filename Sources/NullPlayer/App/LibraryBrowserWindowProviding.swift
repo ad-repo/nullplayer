@@ -7,7 +7,20 @@ import AppKit
 ///
 /// Follows the same pattern as `MainWindowProviding`, `PlaylistWindowProviding`,
 /// `EQWindowProviding`, and `SpectrumWindowProviding`.
-protocol LibraryBrowserWindowProviding: ModeDependentWindow {
+/// A library browser that can show the Library Window backdrop: a library window, or a `.wal`
+/// skin's embedded library. The defaults are for a host without one.
+protocol LibraryBackdropHosting: AnyObject {
+    var libraryBackdropPresenter: CavaPresenter? { get }
+    /// Re-read the backdrop mode: show, restyle or remove the backdrop.
+    func refreshLibraryBackdrop()
+}
+
+extension LibraryBackdropHosting {
+    var libraryBackdropPresenter: CavaPresenter? { nil }
+    func refreshLibraryBackdrop() {}
+}
+
+protocol LibraryBrowserWindowProviding: ModeDependentWindow, LibraryBackdropHosting {
     /// The underlying window
     var window: NSWindow? { get }
 
@@ -29,14 +42,4 @@ protocol LibraryBrowserWindowProviding: ModeDependentWindow {
     /// Current browse mode raw value (artists, albums, playlists, movies, shows, search, radio, history).
     /// Used by AppStateManager to save/restore the active tab
     var browseModeRawValue: Int { get set }
-
-    /// Modern/Metal Library backdrop integration. Classic uses the no-op defaults below.
-    var libraryBackdropPresenter: CavaPresenter? { get }
-    func refreshLibraryBackdrop()
-
-}
-
-extension LibraryBrowserWindowProviding {
-    var libraryBackdropPresenter: CavaPresenter? { nil }
-    func refreshLibraryBackdrop() {}
 }
