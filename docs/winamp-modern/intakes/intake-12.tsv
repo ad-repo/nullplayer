@@ -11,7 +11,7 @@ Helios.wal	1e6c76e4d13f127aeb102f024bd5d749d52f147f6d80b88eef629969cf1a060d	live
 Official_How_to_Deal_Winamp3_Skin.wal	1ec63d5ec869a27aee7e803c3d2b41397b6755d970f5d3bbce2b3159c99ceb18	live	2026-11-15	-	scan clean: main 14/17, library skin-frame, visual clean
 Smoking.wal	1ec9c36e285a77a9571f44776274caa1cab3570fd753a962de132a71b629b266	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Official_A_Man_Apart_Skin.wal	1f0027b7c42cdbabfd05615e18474400f96e5fb8034aeee1173a89e548abf9dd	live	2026-11-15	-	scan clean: main 19/22, library skin-frame, visual clean
-nematicfinal.wal	20a0e4d1158009013fb039a6beffb72feed8f089e411c24e8655f5c8468d75ff	filed	2026-11-15	B443(open),B448	fix pass: B448 closed (smoke artifact, library slider reads volume); open: B443
+nematicfinal.wal	20a0e4d1158009013fb039a6beffb72feed8f089e411c24e8655f5c8468d75ff	live	2026-11-16	B443,B448	fix pass: B448 closed (smoke artifact); B443 closed (rows were black on black; row-1 left cut is the marquee)
 January_29.wal	20d4b5f4f26b9fd9870c5b87bbcf8f9ab4e528f58faad4094926ed666c66ec44	live	2026-11-15	B448	fix pass: B448 was the smoke leaving volume at 0.25 for the Library drag; sweep fixed, ml slider reads volume
 Official_FreeAmp_Skin.wal	21c1fd2945662524a93150238cf3bb4370ee44405c6cbbab0ae91de756fa88aa	live	2026-11-15	-	scan clean: main 8/10, library skin-frame, visual clean
 Classic_KilJaeden_The_Deciever.wal	21e94121d36b4a049c5e3155b97aadfd28752b16780159d48219fb7c7121c076	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
@@ -34,7 +34,7 @@ Pebble_-_England.wal	2a4e44f7b75309c49f8d81293df2540418fc2c457f47f4b169cc3634e1a
 Smokin_Aces.wal	2b3f6d2b4db6b23f6aca55b50aa1af33ee38cef28441003a4c328284d9f93566	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Energy_Hands_by_ROBODRON.wal	2c61790eddbf0a37f898e3ead3f3c0071fcf715bb32fed329874df337e076b90	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 _Neptune.wal	2c6618c38837040585a3532a6659634ecd9dcf37abc7bec85fdc422665737826	live	2026-11-15	-	scan clean: main 25/28, library skin-frame, visual clean
-Client_V2.wal	2ccc40df7d418b9688c5159381bd655059d47e89896fa7edc76964c2ea1964f6	filed	2026-11-15	B443(open)	scan: main 12/18, library skin-frame; open: B443
+Client_V2.wal	2ccc40df7d418b9688c5159381bd655059d47e89896fa7edc76964c2ea1964f6	live	2026-11-16	B443	fix pass: list plate falls to white when the text reads on neither borrowed links nor black; all six rows draw
 _Fiery_Gear_.wal	2d2e619cb1141091632dd97eea0cf65cdcdcdc50f0b2bb0ee5740fe6876f80b0	live	2026-11-15	-	scan clean: main 8/9, library skin-frame, visual clean
 Mogyoro.wal	2d9285e42295ead6f33f1576b5409deb92fc554c13a1483b6999243a4b1c5399	live	2026-11-15	-	scan clean: main 10/12, library skin-frame, visual clean
 Skinit-net.wal	2ea2acd78c6fc19722985d39c43c13b006ab9e80c6c2c0d3646d224a03ed83d6	live	2026-11-15	-	scan clean: main 13/17, library skin-frame, visual clean

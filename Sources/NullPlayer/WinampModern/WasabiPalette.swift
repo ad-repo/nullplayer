@@ -260,8 +260,10 @@ struct WasabiPalette: Equatable {
     /// never named. Symplicipod names none, so the chain took its text-field white
     /// (`wasabi.edit.background`) and drew its 230-grey rows on it at 1.25:1; its column grey (108)
     /// is the next link and reads at 4.2:1. A borrowed link nothing can be read on is passed over,
-    /// then Winamp's black, then — when the text is too dark even for that — the chain's first answer
-    /// as before. Corpus-wide this moves two skins, Symplicipod and JRS (1.14:1 → 3.4:1).
+    /// then Winamp's black, then white — Client_V2 declares black list text and a black column
+    /// colour only, so its five unselected rows drew black on black (B443) — and only when the text
+    /// reads on neither, the chain's first answer as before. Corpus-wide the black step moved two
+    /// skins, Symplicipod and JRS (1.14:1 → 3.4:1).
     private static func listPlate(for listText: NSColor, resolve: (String) -> NSColor?) -> NSColor {
         let links = Role.contentBackground.identifiers
         if let declared = resolve(links[0]) { return declared }
@@ -269,7 +271,7 @@ struct WasabiPalette: Equatable {
         let readable = { (plate: NSColor) in
             WinampModernSurfaceStyle.contrastRatio(plate, listText) >= WinampModernSurfaceStyle.minimumContrast
         }
-        return (borrowed + [contentBackgroundFallback]).first(where: readable)
+        return (borrowed + [contentBackgroundFallback, NSColor(deviceRed: 1, green: 1, blue: 1, alpha: 1)]).first(where: readable)
             ?? borrowed.first ?? contentBackgroundFallback
     }
 
