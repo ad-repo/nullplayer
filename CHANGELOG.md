@@ -4,22 +4,46 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **100 more skins checked** (corpus intake twelve): A Man Apart, A NEW SKIN, Aircel Skin, Airtel,
-  All Seeing Eye, Amp3LCD, Atomic, Auburn University, B*L*E*A*C*H, Biohazard, Boarding House,
-  Boneless Knight, boxOr!, BWA, capsule (two versions), CCZ, Chasing Liberty,
-  Classic_KilJaeden_The_Deciever, Classix Player, Client V2, ClipUp, Club Dread, COD-BLACK-OPS,
-  Cosmic Ray (Golden Healer, Lazer Magick), cPro - Canus, cPro - cMP12, cPro - FlaT, cPro -
-  insekticid, cPro - ME, cPro - Opera.v.J, cPro - POP!?, cPro - U2 No Line on the Horizon, Cpro
-  Tokio, cPro: Royale XP, cPro_Celluloid, cPro_Colors, cPro_Ebonite, cPro_Fluke, D-K9, DewyTears V4,
-  Electric Guitar Skin, Energy_Hands_by_ROBODRON, EVo, FedererAmp, FierY_GEAr, Flightplan, Friends,
-  GREEN MACHINE, Harmonizer, Helios, Hot Action Cop, How to Deal, iRobot, iTunes XiAlbook, January
-  29, Jesse McCartney, Jessica Alba Modern Skin, JetBlue Card, Kids WB, LayerONE, Lord of the Rings:
-  The Two Towers, Metal Gear Solid 2, MetalEdge, Mini iPod, MIZUHO WINAMP SKIN, Mogyoro, Motorcycle,
-  nematic, Neptune, Nikki Nova V3, NINJA STAR, Nokia, Obscene.Helicopter.Extension.Part.3-SiNK,
-  Official_FreeAmp_Skin, OnePieceLover Winamp Skin 2012, OPulent Records Player, P!nk, Palillo,
-  Pebble_England, PiOnNeR_AMP2, Point Blank, Queensryche, Reliance Skin, RNZ X666X, Rolling Stones:
-  40 Licks, Scattershot, Skinit.net, Smallville, Smokin' Aces, Soundwave, TMNT, Tutorial Simple Skin
-  by Jo Imre, Venom, Wax-Skin, Winamp Notif, Winamp5 Simple Demo Skin, WTM, Y.S.T.
+- **250 more skins checked** (corpus intakes twelve and thirteen): (M)XP Green Flavour, 1 Giant
+  Leap, 10-10-220, _Hand ComputerV2, _SD_, A Man Apart, A NEW SKIN, Act 3 Scene 1, Aircel Skin,
+  Airtel, Airtel SongCatcher (two versions), All Seeing Eye, Alpine amp V2.0 (two versions), Alyson
+  Hannigan Hottie AMP, Amp3LCD, Angel Beats!, Angelic Blessings, Angelic Light, AR-7, arachnid,
+  Atomic, Auburn University, AxessTeknoPuan, Aya Kiguchi, Azenis_2, B*L*E*A*C*H, Bingo Red Chilli
+  Bijli Skin, Biohazard, BLACK SONG, blue tech, Boarding House, Bon Jovi, Boneless Knight, boxOr!,
+  Braun CC 4, BUSTER, BWA, candybar, capsule (two versions), Carma Clearing, CCZ, Chasing Liberty,
+  Chicken Little, Classic_KilJaeden_The_Deciever, Classix Player, Client V2, ClipUp, Club Dread,
+  Coca-Cola Musica, COD-BLACK-OPS, Copter, Cosmic Ray (Golden Healer, Lazer Magick), cPro - Bento
+  (two versions), cPro - Braun atelier, cPro - Canus, cPro - cMP12, cPro - Contemporary Vision, cPro
+  - FlaT, cPro - Gothic_metal, cPro - Gothic_metal-v2.0, cPro - HI-FI 73, cPro - insekticid, cPro -
+  ME, cPro - minimal, cPro - Opera.v.J, cPro - POP!?, cPro - Steam, cPro - U2 No Line on the
+  Horizon, cPro - Winamp3000, cPro Pure Winamp, cPro Relax, cPro Stress, Cpro Tokio, cPro2 -
+  Aluminum, cPro: Royale XP, cPro_Celluloid, cPro_Chinese_Democracy, cPro_Colors, cPro_Ebonite,
+  cPro_Fluke, cPro_RadioPlay, CROSSNET, Crystal Power, D-K9, Daniel Martin Diaz Skin (two versions),
+  David Beckham, DEMO, Desktop Energy, DewyTears V4, Dr Who - Tenth Doctor Adventures, Eeyore-toy,
+  Electric Guitar Skin, Energy_Hands_by_ROBODRON, EVo, evolver, FedererAmp,
+  Fenerbahce_Old_Flag_1907, FierY_GEAr, Fifi, Flightplan, Friends, Godsend_Winamp5_Skin, GREEN
+  MACHINE, Gs, HALO-REACH-ELITE-PLAYER, Harmonizer, Helios, Hong Kong Phoo3y!, Hoop Life!, Hot
+  Action Cop, How to Deal, I-M-S, informatika6, iRobot, IronCross, iSkin, iTunes Silvier, iTunes
+  XiAlbook, J5, January 29, Jelly Fingers, Jesse McCartney, Jessica Alba Modern Skin, JetBlue Card,
+  Jukebox (two versions), Justin_Bieber_Skin_Winamp, K-Jofol_V5, Kaskus KRKT, Kaskus Winamp Skin,
+  Kaskus Winamp Skin 2010, Kids WB, KTENSION, LayerONE, Linkin Park, Lord of the Rings: The Two
+  Towers, Lounge, Manhunt, Matrix_beta1, Media Whore, Mein Teil, MERV_skin_v2, Metal Gear Solid 2,
+  Metal Vista, MetalEdge, MINCH YODA, Mini iPod, Minim3 2003, Minime3 - Revolutions, MIZUHO WINAMP
+  SKIN, Mogyoro, Morning - 27, Motorcycle, nematic, Neo iPod, Neptune, Nikki Nova V3, NINJA STAR,
+  Nintendo, Noinc, Nokia, Nokia 3200, Nokia 3300, Obscene.Helicopter.Extension.Part.3-SiNK,
+  Official_FreeAmp_Skin, OnePieceLover Winamp Skin 2012, OPulent Records Player, Oven Winamp, OXAmp,
+  P!nk, Palillo, PDU, Pebble_England, phaze one small, Pimeer, PiOnNeR_AMP2, Point Blank, POWERPAK,
+  Project D.U, Proper Records, ProStak 1, ProtoType, Punisher, QuadCore, Queensryche, Red Button,
+  Red Hot Chili Peppers - By The Way, Reliance Skin, Remote, RNZ X666X, Rolling Stones: 40 Licks,
+  SA, Saphire_Glass_m, Scattershot, SCCT-it, Six Miller FTF (Forget The Face), Skinit.net,
+  Smallville, Smallville Metropolis, Smokin' Aces, Sonara, Sony Mobile, Soundwave, Space Invaders,
+  Special Forces, Spiderman Skin, Starsky and Hutch, SteauaFC, Suicide Commando Winamp 5 Skin,
+  Sungmin Ping2, Sync, t.a.l. 96, T_624, Te iubesc (four versions), team mclaren mercedes 06 (two
+  versions), team mclaren mercedes 08, technolize, Tewnz, The Ben Tjibe Skin,
+  The_Amityville_Horror_Winamp_Skin, Times Square Live, TMNT, Torque, Tutorial Simple Skin by Jo
+  Imre, Venom, Vice City, Virginia Tech Skin, Vista Green, Wax-Skin, Wilfrid Laurier University,
+  Winamp Notif, Winamp5 Simple Demo Skin, Witchblade, WM_Player, WTM, XMP, Y.S.T, ZDL-GOLD-STACK
+  STEREO SYSTEM for Winamp-5 (two versions).
 
 - **A single-window skin's Library opens in the skin's own frame** (Classix Player).
 - **Playlist rows on a dark plate stay readable** instead of drawing black on black (Client V2,
@@ -33,6 +57,13 @@
   Towers, Mizuho), and **a text squeezed shut by its padding no longer draws over its neighbour**
   (666HIM666).
 - **A player whose outline animates no longer stutters** (Ninja Star).
+- **A Library in its own window keeps its background over the skin's later art**, so its rows
+  read clearly (KTENSION).
+- **A Library in a frame NullPlayer builds for the skin has no see-through strip** (M3).
+- **The Visualizations window's MilkDrop picture fills the skin's frame square** instead of with
+  rounded corners ((M)XP).
+- **A skin's built-in Library offers Library Background**: Cava, Art or both from its
+  right-click menu or Visuals > Library Window, as the library window does (#780).
 
 ### Visualizations
 
@@ -50,8 +81,6 @@
 - **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
   window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
   instead of only as often as the audio arrived (#772).
-- **A `.wal` skin's built-in Library offers Library Background**: Cava, Art or both from its
-  right-click menu or Visuals > Library Window, as the library window does (#780).
 - **The resize cursor no longer follows the mouse away from a window** after hovering its edge, in
   Classic, `.wal`, Windows Media Player, Audion and Sonique skins (#779).
 

@@ -2438,7 +2438,7 @@ final class WasabiSceneRenderer {
     /// `layoutBitmapArt`'s answers, by source and id (`WasabiRendererStrayText.swift`).
     var layoutBitmapArtCache: [String: LayoutBitmapArt] = [:]
 
-    var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
+    var windowRegionCache: (cuts: [WasabiRegionCut], clients: [CGRect], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?
 
     /// An object's `alpha` as a 0…1 fraction. An absent or unparsable value is opaque.
@@ -3375,11 +3375,14 @@ final class WasabiSceneRenderer {
                                context: WasabiDrawList) {
         let object = node.object, frame = node.frame
         guard frame.width > 1, frame.height > 1 else { return }
-        if Self.defersToOverlayPass(kind) {
+        context.setAlpha(Self.hostComponentAlpha(of: object))
+        // The library's bled plate is drawn here, under the border it is bled beneath, deferred or not;
+        // a deferred one gets the exact plate over the scene in the overlay pass as well.
+        if kind == .library { drawLibraryComponent(frame: bledHostComponentRect(frame), context: context) }
+        if defersToOverlayPass(kind) {
             deferredHostComponents.append((kind, node))
             return
         }
-        context.setAlpha(Self.hostComponentAlpha(of: object))
         switch kind {
         case .playlist: drawPlaylistComponent(object, frame: frame, context: context)
         case .equalizer: drawEqualizerComponent(frame: frame, context: context)
@@ -3401,9 +3404,7 @@ final class WasabiSceneRenderer {
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bledHostComponentRect(frame))
         case .waveformSeeker: break // always deferred, above
-        case .library:
-            context.setFillColor(palette.contentBackground.cgColor)
-            context.fill(bledHostComponentRect(frame))
+        case .library: break // its plate is drawn above
         case .other:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)

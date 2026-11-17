@@ -2,6 +2,30 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B462 — KTENSION's Library rows and tab labels are unreadable — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B462 | **KTENSION's Library rows and tab labels are unreadable: their text colour almost matches the list's teal plate.** Found in intake #13's visual review (2026-11-17, census `--shots`, playing). In `Library_Browser.png` the artist names, the `Albums`…`Sort` tabs and the column text are teal-on-teal; only the selected `Artists` tab and the row icons show. Find which skin colour the list text takes (and whether the 3:1 contrast guard in `WinampModernSurfaceStyle` should have caught it). Done when the Library's rows and tabs read clearly against its plate | KTENSION | ? | 1 |
+
+**Closed 2026-11-17 (intake #13 fix pass).** KTENSION declares `ml.frame.layout background="wasabi.frame.basetexture"` after the library holder, so its teal texture painted over our plate and the list's teal text sat on teal (the palette's plate was the dark `22,19,35`). In a window of its own the library plate is now redrawn over the scene (`defersToOverlayPass`, B292's recipe, same A/B switch). About 20 other skins' library windows draw their plate over layers declared after the holder; Ryoko_Asakura, Winamp_Skin_Yuki_Morikawa, Jessica_Alba, hm_Touch, X-Theme and Love Is War lose a few pixels of character art under it, as Winamp's child window would.
+
+## B461 — M3's Library leaves a see-through strip down the right of its list — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B461 | **M3's Library leaves a see-through strip down the right of its list.** Found in intake #13's visual review (2026-11-17, census `--shots`, playing). In `Library_Browser.png` (674x442 px at 2x) a band at x 605–646, y 85–372 inside the frame is magenta (`HOLES`, 11767 px enclosed), between the list's last column and the alphabet index; the smoke reads `holes in library backed (pixels=58560)`, so a press there stays in the window. Find whether the list is narrower than the area the skin gives it or the skin's frame leaves that band for a component we do not fill. Done when the band is filled (list or skin art) and the census shows no enclosed hole there | M3 | ? | 1 |
+
+**Closed 2026-11-17 (intake #13 fix pass).** The synthesized frame wraps its marks in the window region and the content group, its sibling, was never marked, so only the resize disabler and the border layers kept pixels and a band was cut. The content group now carries `nullplayer.client` and `buildWindowRegion` keeps it. M3's dump and census show no hole.
+
+## B460 — Angel_Beats!'s Playlist Editor draws nothing and its Library draws no body — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B460 | **Angel_Beats!'s Playlist Editor draws nothing and its Library draws no body: both are see-through.** Found in intake #13's visual review (2026-11-17, census `--shots`, playing). `Playlist_Editor.png` (275x116) is `transparent=100%`: no frame, no rows, nothing at all; `Library_Browser.png` (640x400) is `transparent=77%`: the tab bar, headers and row text draw straight over the desktop with no plate behind them. Each opens as one window (`windows.tsv`, 376399 and 376400, both at 762,409), so this is not B446's frame-plus-content pair. The smoke opens and closes the skin-frame Library (`library skin-frame, close closed`). Done when the Playlist Editor shows the queued tracks inside the skin's frame and the Library has an opaque body, census shots without `HOLES`/near-total transparency | Angel_Beats! | ? | 1 |
+
+**Closed 2026-11-17 (intake #13 fix pass), not reproducing.** Two fresh `window-census.sh --shots` runs on the full path and one on the bare name, plus the headless dump of `Pledit/normal`, all draw the frame, rows and an opaque library body (transparent=0%); the intake scan's capture was a one-off. If it returns, the window region (`buildWindowRegion`) cutting the whole canvas is the first suspect.
+
 ## B441 — EI's timer is cut off at the top — closed 2026-11-11
 
 | Id | Item | Reach | Effort | Tier |

@@ -693,6 +693,9 @@ deferred node is replayed under its own clip and alpha. Across gold+silver the o
 the list (Moon_Groove pl, NEO / NEO_CLASSIC, WMP12 Portrait Connect, LCDx, Sencillo, cPro Mecha).
 It needed B295 first: krazyPlayer's holder resolved 20 px too tall and the deferred list then covered
 its ADD/REM bar. `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
+The library's plate is the third (B462): in a window of its own it is drawn again over the scene at the
+holder's exact box (never embedded in the player: Kepler's sun is drawn over it on purpose). A
+synthesized window's content group carries `nullplayer.client`, which the window region keeps (B461).
 
 #### Where a surface lives
 
