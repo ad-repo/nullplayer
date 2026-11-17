@@ -709,6 +709,7 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
         hostedContext = context
         autoresizingMask = [.width, .height]
+        updateCornerMask()
     }
 
     // MARK: - Layout
@@ -716,18 +717,21 @@ class ModernProjectMView: NSView, VisualizationMenuTarget {
     override func layout() {
         super.layout()
         updateVisualizationFrame()
-        if hostedContext == nil { updateCornerMask() }
+        updateCornerMask()
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         layer?.isOpaque = false
-        if hostedContext == nil { updateCornerMask() }
+        updateCornerMask()
     }
 
     private func updateCornerMask() {
         guard let layer = self.layer else { return }
-        let cornerRadius = (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+        // Inside a `.wal` holder the skin's frame owns the window shape, so the content stays square.
+        let cornerRadius = hostedContext == nil
+            ? (ModernSkinEngine.shared.currentSkin ?? ModernSkinLoader.shared.loadDefault()).config.window.cornerRadius ?? 0
+            : 0
         layer.cornerRadius = cornerRadius
         layer.masksToBounds = cornerRadius > 0
         guard cornerRadius > 0 else { return }
