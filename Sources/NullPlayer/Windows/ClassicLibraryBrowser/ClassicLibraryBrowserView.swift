@@ -120,9 +120,9 @@ class ClassicLibraryBrowserView: NSView {
                     placeholderTextColor: colors.normalText.withAlphaComponent(0.6)
                 )
             },
-            // Neither an embedded `.wal` browser nor Compact Mode has a library backdrop to offer.
+            // Compact Mode has no library backdrop to offer; an embedded `.wal` browser does (#780).
             backdropMenu: { [unowned self] in
-                controller?.isCompactMode == false
+                hasLibraryBackdrop
                     ? ContextMenuBuilder.browserBackdropMenuItem(compact: false, presenter: backdropPresenter) : nil
             }
         ))
@@ -157,10 +157,16 @@ class ClassicLibraryBrowserView: NSView {
     var backdropPresenter: CavaPresenter? { backdrop.presenter }
     private static let backdropScrimAlpha: CGFloat = 0.72
 
-    /// Cava shows in a library window of its own: never embedded in a `.wal` holder (which has no
-    /// controller) or in Compact Mode.
+    /// In a window of its own (a controller) or a `.wal` holder (none); false only before either.
+    private var isHosted: Bool { controller != nil || isEmbeddedInSkin }
+
+    /// Every host but Compact Mode offers the library backdrop.
+    private var hasLibraryBackdrop: Bool {
+        isHosted && controller?.isCompactMode != true
+    }
+
     private var showsCavaBackdrop: Bool {
-        controller?.isCompactMode == false && WindowManager.shared.libraryBackdropMode.showsCava
+        hasLibraryBackdrop && WindowManager.shared.libraryBackdropMode.showsCava
     }
 
     /// The list's background: translucent over a Cava backdrop, so the bars show through.
@@ -171,7 +177,7 @@ class ClassicLibraryBrowserView: NSView {
 
     /// The backdrop mode, skin or window changed: show, restyle or remove the backdrop.
     func refreshBackdrop() {
-        guard controller != nil else { return }
+        guard isHosted else { return }
         refreshHistoryHostingColors()
         art.showPlayingTrack(WindowManager.shared.audioEngine.currentTrack)
         backdrop.refresh(beneath: self, showsCava: showsCavaBackdrop, scope: .libraryWindow, sharpCorners: [])

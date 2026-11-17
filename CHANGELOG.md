@@ -50,6 +50,10 @@
 - **vis_classic in a Windows Media Player or Sonique skin's visualization area matches its own
   window**: the same number of bars rather than fewer, wider ones, and redrawn 60 times a second
   instead of only as often as the audio arrived (#772).
+- **A `.wal` skin's built-in Library offers Library Background**: Cava, Art or both from its
+  right-click menu or Visuals > Library Window, as the library window does (#780).
+- **The resize cursor no longer follows the mouse away from a window** after hovering its edge, in
+  Classic, `.wal`, Windows Media Player, Audion and Sonique skins (#779).
 
 ## 0.35.1
 

@@ -521,12 +521,18 @@ class WindowManager {
     }
 
     var libraryBackdropPresenter: CavaPresenter? {
-        plexBrowserWindowController?.libraryBackdropPresenter
+        libraryBackdropHost?.libraryBackdropPresenter
+    }
+
+    /// Whichever library is showing the backdrop: a `.wal` skin's embedded one, else the window.
+    private var libraryBackdropHost: LibraryBackdropHosting? {
+        if let surface = winampModernLibrarySurface { return surface }
+        return plexBrowserWindowController
     }
 
     func setLibraryBackdropMode(_ mode: BrowserBackdropMode) {
         UserDefaults.standard.set(mode.rawValue, forKey: libraryBackdropPreferenceKey)
-        plexBrowserWindowController?.refreshLibraryBackdrop()
+        libraryBackdropHost?.refreshLibraryBackdrop()
     }
 
     /// Marks mode-dependent player windows so stale instances can be distinguished from

@@ -70,6 +70,13 @@ final class WinampModernLibrarySurfaceView: WinampModernLibrarySurface {
         browser.needsDisplay = true
     }
 
+    var libraryBackdropPresenter: CavaPresenter? { browser.backdropPresenter }
+
+    func refreshLibraryBackdrop() {
+        guard !isTornDown else { return }
+        browser.refreshBackdrop()
+    }
+
     /// The holder went away — a tab switched, a layout changed. The browser leaves the screen and
     /// nothing else happens to it: the bridge owns one browser per skin and hands this same instance
     /// back when the holder returns, so cancelling its server work here would return a dead browser

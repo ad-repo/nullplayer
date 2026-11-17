@@ -13,13 +13,16 @@ Open **Windows > Cava** in the menu bar or right-click any main window to toggle
 Cava window. Cava is also available inside the 76×16 main-window visualization area via
 **Visuals > Main Window > Mode > Cava**.
 
-Modern and Metal Library and Compact Window surfaces can also use Cava as a full-window backdrop
-via **Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or the corresponding
+Modern and Metal Library and Compact Window surfaces can also use Cava as a full-window backdrop via
+**Visuals > Library Window > Cava**, **Visuals > Compact Window > Cava**, or the corresponding
 surface's context menu. The classic browser's library window (Classic, and the `.wal` fallback,
-`.wmz`, Audion and Sonique library windows) offers **Visuals > Library Window** too, with Cava behind the
-list area only, so a hosted frame's keyed-out corners stay clear. The `.wal` embedded library
-holder and classic Compact Mode never show it. Each backdrop has its own settings scope and lifecycle; neither borrows the
-standalone or main-window presenter.
+`.wmz`, Audion and Sonique library windows) offers **Visuals > Library Window** too, with Cava
+behind the list area only, so a hosted frame's keyed-out corners stay clear. The `.wal` embedded
+library holder offers it too (#780): the backdrop is a sibling in `WinampModernMainView`, added and
+removed as the browser mounts and unmounts, and `setLibraryBackdropMode` reaches it through
+`LibraryBackdropHosting.refreshLibraryBackdrop()`. Classic Compact Mode never shows it. Each
+backdrop has its own settings scope and lifecycle; neither borrows the standalone or main-window
+presenter.
 The window menus expose **Cava**, **Art**, and **Cava + Art** separately. Art always uses the legacy
 browser list-area renderer and geometry; there is no second full-window artwork renderer. Both
 windows default to **Cava + Art** on first use while preserving an existing saved selection. On
