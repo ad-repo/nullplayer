@@ -3375,7 +3375,13 @@ final class WasabiSceneRenderer {
                                context: WasabiDrawList) {
         let object = node.object, frame = node.frame
         guard frame.width > 1, frame.height > 1 else { return }
-        if Self.defersToOverlayPass(kind) {
+        if defersToOverlayPass(kind) {
+            // The library keeps its bled plate here, under the border it is bled beneath, and gets the
+            // exact one over the scene in the overlay pass.
+            if kind == .library {
+                context.setAlpha(Self.hostComponentAlpha(of: object))
+                drawLibraryComponent(frame: bledHostComponentRect(frame), context: context)
+            }
             deferredHostComponents.append((kind, node))
             return
         }
@@ -3401,9 +3407,7 @@ final class WasabiSceneRenderer {
             context.setFillColor(NSColor.black.cgColor)
             context.fill(bledHostComponentRect(frame))
         case .waveformSeeker: break // always deferred, above
-        case .library:
-            context.setFillColor(palette.contentBackground.cgColor)
-            context.fill(bledHostComponentRect(frame))
+        case .library: drawLibraryComponent(frame: bledHostComponentRect(frame), context: context)
         case .other:
             context.setFillColor(palette.contentBackground.cgColor)
             context.fill(frame)
@@ -3949,6 +3953,14 @@ final class WasabiSceneRenderer {
         let ink = CGRect(x: textRect.maxX - timeWidth, y: textRect.minY,
                          width: timeWidth, height: textRect.height)
         return (label, ink)
+    }
+
+    /// The library's plate; the browser view floats over it. Drawn again in the overlay pass
+    /// (`defersToOverlayPass`) at the holder's own box, so a skin layer declared after the holder never
+    /// covers it (KTENSION's `ml.frame.layout`, B462) while the border keeps the bleed's pixels.
+    func drawLibraryComponent(frame: CGRect, context: WasabiDrawList) {
+        context.setFillColor(palette.contentBackground.cgColor)
+        context.fill(frame)
     }
 
     func drawPlaylistComponent(_ holder: WasabiObject, frame: CGRect, context: WasabiDrawList) {

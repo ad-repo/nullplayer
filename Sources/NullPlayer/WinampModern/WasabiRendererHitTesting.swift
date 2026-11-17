@@ -581,6 +581,14 @@ extension WasabiSceneRenderer {
                 fillMarks(marks, in: context)
                 context.restoreGState()
             }
+            // A synthesized window's client box is window, whatever the frame's marks left out.
+            context.setBlendMode(.normal)
+            for node in sceneNodes() where node.object.attributes[WasabiSurfaceSynthesizer.clientAttribute] == "1" {
+                context.saveGState()
+                context.clip(to: node.clip)
+                context.fill(node.frame)
+                context.restoreGState()
+            }
             for cut in drawnCuts {
                 context.saveGState()
                 context.clip(to: cut.clip)

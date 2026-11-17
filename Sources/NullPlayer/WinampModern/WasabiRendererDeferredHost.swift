@@ -8,8 +8,13 @@ extension WasabiSceneRenderer {
 
     /// Whether `drawComponent` collects this kind for `drawDeferredHostComponents` instead of
     /// drawing it where the walk meets it. The one place the deferral is decided.
-    static func defersToOverlayPass(_ kind: WinampModernComponentKind) -> Bool {
-        kind == .waveformSeeker || (kind == .playlist && !drawsPlaylistInline)
+    ///
+    /// The library defers only in a window of its own: embedded in the player it shares the canvas with
+    /// art the skin draws over it on purpose (Kepler's sun, shown while the tab is closed).
+    func defersToOverlayPass(_ kind: WinampModernComponentKind) -> Bool {
+        let inMainPlayer = container.attributes["id"]?.caseInsensitiveCompare("main") == .orderedSame
+        return kind == .waveformSeeker || (kind == .playlist && !Self.drawsPlaylistInline)
+            || (kind == .library && !inMainPlayer && !Self.drawsPlaylistInline)
     }
 
     /// Host components the skin backs with its **own** artwork, drawn after the whole scene.
@@ -32,7 +37,11 @@ extension WasabiSceneRenderer {
     /// The playlist is the second (B292): Ryoko_Asakura declares its character art `pledit.char`
     /// after the list's holder, and Winamp's list window floats over it. Each node is replayed under
     /// its own clip and alpha, which the walk's `saveGState` no longer holds.
-    /// `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw.
+    /// `WINAMP_MODERN_INLINE_PLAYLIST=1` is the A/B switch back to the inline draw (the library's too).
+    ///
+    /// The library is the third (B462): KTENSION declares `ml.frame.layout background="wasabi.frame.basetexture"`
+    /// over the whole window after the library's holder, which painted its teal texture over the plate
+    /// and left the list's teal text on teal. Winamp's media library is a child window above it.
     func drawDeferredHostComponents(in context: WasabiDrawList) {
         let pending = deferredHostComponents
         deferredHostComponents.removeAll(keepingCapacity: true)
@@ -42,6 +51,7 @@ extension WasabiSceneRenderer {
             context.setAlpha(Self.hostComponentAlpha(of: node.object))
             switch kind {
             case .playlist: drawPlaylistComponent(node.object, frame: node.frame, context: context)
+            case .library: drawLibraryComponent(frame: node.frame, context: context)
             default: drawWaveformSeeker(frame: node.frame, context: context)
             }
             context.restoreGState()

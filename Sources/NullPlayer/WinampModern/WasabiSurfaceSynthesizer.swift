@@ -795,7 +795,7 @@ enum WasabiSurfaceSynthesizer {
                     "id": contentGroupID,
                     "x": String(Int(insets.left)), "y": String(Int(insets.top)),
                     "w": String(Int(-insets.horizontal)), "h": String(Int(-insets.vertical)),
-                    "relatw": "1", "relath": "1",
+                    "relatw": "1", "relath": "1", clientAttribute: "1",
                 ], location: location),
             ]
         }
@@ -807,7 +807,7 @@ enum WasabiSurfaceSynthesizer {
                        ]) { _, new in new },
                        location: location),
             WalXMLNode(name: "group",
-                       attributes: bled(exemplar.content).merging(["id": contentGroupID]) { _, new in new },
+                       attributes: bled(exemplar.content).merging(["id": contentGroupID, clientAttribute: "1"]) { _, new in new },
                        location: location),
         ]
     }
@@ -822,6 +822,12 @@ enum WasabiSurfaceSynthesizer {
     /// is what the skin does deliberately elsewhere — its download window puts content at `36,36`
     /// under a hole at `33,55`.
     static let clientBleed = 2.0
+
+    /// Set on the content group of a window we synthesized: its box is window by construction, so the
+    /// window region keeps it (`buildWindowRegion`). A frame that wraps its marks cleared the interior
+    /// and the group, a sibling of the frame here, was never marked: M3's Library had a see-through
+    /// band where no frame layer happened to reach (B461).
+    static let clientAttribute = "nullplayer.client"
 
     private static func bled(_ rect: [String: String]) -> [String: String] {
         var result = rect
