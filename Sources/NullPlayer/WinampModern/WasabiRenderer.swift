@@ -2438,7 +2438,7 @@ final class WasabiSceneRenderer {
     /// `layoutBitmapArt`'s answers, by source and id (`WasabiRendererStrayText.swift`).
     var layoutBitmapArtCache: [String: LayoutBitmapArt] = [:]
 
-    var windowRegionCache: (cuts: [WasabiRegionCut], canvas: CGSize,
+    var windowRegionCache: (cuts: [WasabiRegionCut], clients: [CGRect], canvas: CGSize,
                                     region: (cut: CGImage, alpha: [UInt8], width: Int, height: Int)?)?
 
     /// An object's `alpha` as a 0…1 fraction. An absent or unparsable value is opaque.

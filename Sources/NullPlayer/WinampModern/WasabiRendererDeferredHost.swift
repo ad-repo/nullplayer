@@ -60,6 +60,7 @@ extension WasabiSceneRenderer {
         for (kind, node) in pending {
             context.saveGState()
             node.clipping.apply(to: context)
+            applyRegionClip(of: node.object, frame: node.frame, context: context)
             context.setAlpha(Self.hostComponentAlpha(of: node.object))
             switch kind {
             case .playlist: drawPlaylistComponent(node.object, frame: node.frame, context: context)

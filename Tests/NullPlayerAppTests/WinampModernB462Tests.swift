@@ -10,7 +10,7 @@ final class WinampModernB462Tests: XCTestCase {
     func testTheLibraryDefersOnlyInAWindowOfItsOwn() throws {
         let own = try makeRenderer(containerID: "ml")
         let player = try makeRenderer(containerID: "main")
-        XCTAssertTrue(own.defersToOverlayPass(.library))
+        XCTAssertEqual(own.defersToOverlayPass(.library), !WasabiSceneRenderer.drawsPlaylistInline)
         XCTAssertFalse(player.defersToOverlayPass(.library))
         for renderer in [own, player] {
             XCTAssertTrue(renderer.defersToOverlayPass(.waveformSeeker))

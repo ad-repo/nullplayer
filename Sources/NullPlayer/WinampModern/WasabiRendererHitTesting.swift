@@ -485,11 +485,16 @@ extension WasabiSceneRenderer {
 
     private func windowRegion() -> (cut: CGImage, alpha: [UInt8], width: Int, height: Int)? {
         let cuts = regionCuts()
-        if let cache = windowRegionCache, cache.canvas == canvasSize, cache.cuts == cuts {
+        // A synthesized window's client box is window, whatever the frame's marks left out (B461).
+        let clients = sceneNodes()
+            .filter { $0.object.attributes[WasabiSurfaceSynthesizer.clientAttribute] == "1" }
+            .map { $0.frame.intersection($0.clip) }
+        if let cache = windowRegionCache, cache.canvas == canvasSize, cache.cuts == cuts,
+           cache.clients == clients {
             return cache.region
         }
-        let region = buildWindowRegion(cuts: cuts)
-        windowRegionCache = (cuts, canvasSize, region)
+        let region = buildWindowRegion(cuts: cuts, clients: clients)
+        windowRegionCache = (cuts, clients, canvasSize, region)
         return region
     }
 
@@ -508,7 +513,7 @@ extension WasabiSceneRenderer {
             .map(ObjectIdentifier.init))
     }
 
-    private func buildWindowRegion(cuts: [WasabiRegionCut])
+    private func buildWindowRegion(cuts: [WasabiRegionCut], clients: [CGRect])
         -> (cut: CGImage, alpha: [UInt8], width: Int, height: Int)? {
         // **A window is never shrunk by additions alone.** 672 of the corpus's 926 `sysregion`
         // declarations are positive, and most are ordinary painted artwork saying "I am part of the
@@ -581,14 +586,10 @@ extension WasabiSceneRenderer {
                 fillMarks(marks, in: context)
                 context.restoreGState()
             }
-            // A synthesized window's client box is window, whatever the frame's marks left out.
-            for node in sceneNodes() where node.object.attributes[WasabiSurfaceSynthesizer.clientAttribute] == "1" {
-                context.saveGState()
-                context.setBlendMode(.normal)
-                context.clip(to: node.clip)
-                context.fill(node.frame)
-                context.restoreGState()
-            }
+            context.saveGState()
+            context.setBlendMode(.normal)
+            context.fill(clients)
+            context.restoreGState()
             for cut in drawnCuts {
                 context.saveGState()
                 context.clip(to: cut.clip)
