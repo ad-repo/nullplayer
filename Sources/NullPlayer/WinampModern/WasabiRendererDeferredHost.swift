@@ -12,9 +12,21 @@ extension WasabiSceneRenderer {
     /// The library defers only in a window of its own: embedded in the player it shares the canvas with
     /// art the skin draws over it on purpose (Kepler's sun, shown while the tab is closed).
     func defersToOverlayPass(_ kind: WinampModernComponentKind) -> Bool {
-        let inMainPlayer = container.attributes["id"]?.caseInsensitiveCompare("main") == .orderedSame
-        return kind == .waveformSeeker || (kind == .playlist && !Self.drawsPlaylistInline)
-            || (kind == .library && !inMainPlayer && !Self.drawsPlaylistInline)
+        if kind == .waveformSeeker { return true }
+        guard !Self.drawsPlaylistInline else { return false }
+        switch kind {
+        case .playlist: return true
+        case .library: return container.xmlID?.caseInsensitiveCompare("main") != .orderedSame
+        default: return false
+        }
+    }
+
+    /// The library's plate; the browser view floats over it. Drawn again in the overlay pass
+    /// (`defersToOverlayPass`) at the holder's own box, so a skin layer declared after the holder never
+    /// covers it (KTENSION's `ml.frame.layout`, B462) while the border keeps the bleed's pixels.
+    func drawLibraryComponent(frame: CGRect, context: WasabiDrawList) {
+        context.setFillColor(palette.contentBackground.cgColor)
+        context.fill(frame)
     }
 
     /// Host components the skin backs with its **own** artwork, drawn after the whole scene.
