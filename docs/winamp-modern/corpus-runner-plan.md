@@ -403,6 +403,27 @@ an unlocked screen.
 
 Open, promoted with the skin: B446 (YST's paired frame window over each content window, not yet seen on screen).
 
+### Done: intake #13, promoted to gold (2026-11-17)
+
+150 skins were picked for batch 13 by `wal_intake_pick.sh 150` (the cap raised to 150 for this round) and scanned live
+(`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`, about 85 s a skin) on `feat/wal-intake-13`. One
+fix pass ran. All 150 were accepted by the user, two with an open row, and promoted to gold on 2026-11-17, with rows on
+`skin-compatibility.md` (146 B, 4 C for a Media Library in NullPlayer's plain chrome, graded from the ledger notes, backlog
+rows and a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/intake-13.tsv`; the row ids are in
+`backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| M3 | A see-through band down the Library's right side (B461) | The synthesized frame's content group carries `nullplayer.client`, so `buildWindowRegion` keeps it |
+| KTENSION | Library rows and tabs teal on teal: the skin's `ml.frame.layout` background painted over the library plate (B462) | A Library in a window of its own redraws its plate over the scene (B292's playlist recipe); about 20 skins' Library windows now cover later skin layers, accepted by the user |
+| (M)XP Green Flavour, every `.wal` skin | The Visualizations window's MilkDrop view kept the Modern skin's rounded corners inside the square frame | `ModernProjectMView` answers corner radius 0 while hosted, and applies it when hosted |
+
+Closed as not a defect: Angel_Beats!'s blank Playlist and see-through Library (B460), not reproducing in two fresh census
+runs or the dump. Left as the skin draws it: CocaCola_Musica's title does not scroll (its markup spells `tikcer`).
+
+Open, promoted with the skin: B446 (Azenis_2 and WM_Player join YST: a paired frame window over each content window, not
+yet seen on screen).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
