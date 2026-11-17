@@ -34,6 +34,37 @@
   (666HIM666).
 - **A player whose outline animates no longer stutters** (Ninja Star).
 
+- **150 more skins checked** (corpus intake thirteen): (M)XP Green Flavour, 1 Giant Leap, 10-10-220,
+  _Hand ComputerV2, _SD_, Act 3 Scene 1, Airtel SongCatcher (two versions), Alpine amp V2.0 (two
+  versions), Alyson Hannigan Hottie AMP, Angel Beats!, Angelic Blessings, Angelic Light, AR-7,
+  arachnid, AxessTeknoPuan, Aya Kiguchi, Azenis_2, Bingo Red Chilli Bijli Skin, BLACK SONG, blue
+  tech, Bon Jovi, Braun CC 4, BUSTER, candybar, Carma Clearing, Chicken Little, Coca-Cola Musica,
+  Copter, cPro - Bento (two versions), cPro - Braun atelier, cPro - Contemporary Vision, cPro -
+  Gothic_metal, cPro - Gothic_metal-v2.0, cPro - HI-FI 73, cPro - minimal, cPro - Steam, cPro -
+  Winamp3000, cPro Pure Winamp, cPro Relax, cPro Stress, cPro2 - Aluminum, cPro_Chinese_Democracy,
+  cPro_Fluke, cPro_RadioPlay, CROSSNET, Crystal Power, Daniel Martin Diaz Skin (two versions), David
+  Beckham, DEMO, Desktop Energy, Dr Who - Tenth Doctor Adventures, Eeyore-toy, evolver,
+  Fenerbahce_Old_Flag_1907, Fifi, Godsend_Winamp5_Skin, Gs, HALO-REACH-ELITE-PLAYER, Hong Kong
+  Phoo3y!, Hoop Life!, I-M-S, informatika6, IronCross, iSkin, iTunes Silvier, J5, Jelly Fingers,
+  Jukebox (two versions), Justin_Bieber_Skin_Winamp, K-Jofol_V5, Kaskus KRKT, Kaskus Winamp Skin,
+  Kaskus Winamp Skin 2010, KTENSION, Linkin Park, Lounge, Manhunt, Matrix_beta1, Media Whore, Mein
+  Teil, MERV_skin_v2, Metal Vista, MINCH YODA, Minim3 2003, Minime3 - Revolutions, Morning - 27, Neo
+  iPod, Nintendo, Noinc, Nokia 3200, Nokia 3300, Oven Winamp, OXAmp, PDU, phaze one small, Pimeer,
+  POWERPAK, Project D.U., Proper Records, ProStak 1, ProtoType, Punisher, QuadCore, Red Button, Red
+  Hot Chili Peppers - By The Way, Remote, SA, Saphire_Glass_m, SCCT-it, Six Miller FTF (Forget The
+  Face), Smallville Metropolis, Sonara, Sony Mobile, Space Invaders, Special Forces, Spiderman Skin,
+  Starsky and Hutch, SteauaFC, Suicide Commando Winamp 5 Skin, Sungmin Ping2, Sync, t.a.l. 96,
+  T_624, Te iubesc (four versions), team mclaren mercedes 06 (two versions), team mclaren mercedes
+  08, technolize, Tewnz, The Ben Tjibe Skin, The_Amityville_Horror_Winamp_Skin, Times Square Live,
+  Torque, Vice City, Virginia Tech Skin, Vista Green, Wilfrid Laurier University, Witchblade,
+  WM_Player, XMP, ZDL-GOLD-STACK STEREO SYSTEM for Winamp-5 (two versions).
+
+- **A Library in its own window keeps its background over the skin's later art**, so its rows
+  read clearly (KTENSION).
+- **A Library in a frame NullPlayer builds for the skin has no see-through strip** (M3).
+- **The Visualizations window's MilkDrop picture fills the skin's frame square** instead of with
+  rounded corners ((M)XP).
+
 ### Visualizations
 
 - **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
