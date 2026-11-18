@@ -1828,7 +1828,12 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     /// classic skin's close button does the same), closing an auxiliary window hides just it, and
     /// minimize takes the whole set down together instead of leaving the rest of the skin on screen.
     private func installMainWindowCommands() {
-        skinView?.closeRequested = { NSApplication.shared.terminate(nil) }
+        skinView?.closeRequested = {
+            #if DEBUG
+            if WinampModernDebugClickSweep.refuseQuit() { return }
+            #endif
+            NSApplication.shared.terminate(nil)
+        }
         skinView?.minimizeRequested = { [weak self] in self?.minimizeAllWindows() }
     }
 

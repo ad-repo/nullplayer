@@ -214,6 +214,9 @@ extension WinampModernScriptRuntime {
             if let near = runtime.descendant(of: call.object, xmlID: wanted) { return runtime.objectValue(near) }
             let layout = WinampModernScriptRuntime.findObjectStopsAtLayout ? runtime.ancestor(of: call.object, type: .layout) : nil
             guard let root = layout ?? runtime.ancestor(of: call.object, type: .container) else { return .null }
+            // The window includes its root: Ryoko Asakura's notifier asks its own layout for
+            // `findObject("notifier.layout")` and slides that layout in.
+            if root.xmlID?.caseInsensitiveCompare(wanted) == .orderedSame { return runtime.objectValue(root) }
             return runtime.objectValue(runtime.descendant(of: root, xmlID: wanted))
         }
         // `Layout.getContainer()` takes nothing; `System`'s form names the container.
@@ -666,9 +669,15 @@ extension WasabiObject {
     /// and a `frame` group, declared first, holding another; `getObject("center")` took the frame's, so
     /// the ticker text ran from x=27 under the transport buttons instead of from x=158 (B390). A match
     /// `isDead` rejects is answered only when no live one exists.
+    /// `WINAMP_MODERN_GETOBJECT_SELF=1`: the A/B switch back to a lookup that can answer the receiver.
+    static let lookupMatchesSelf = ProcessInfo.processInfo.environment["WINAMP_MODERN_GETOBJECT_SELF"] == "1"
+
     func nearestDescendant(xmlID: String, isDead: (WasabiObject) -> Bool) -> WasabiObject? {
         var deadMatch: WasabiObject?
-        var queue = [self]
+        // The receiver's subtree, not the receiver: Steamed up's bitrate group is `id="br"` and holds
+        // `<text id="br">`, and `getScriptGroup().getObject("br")` answered the group itself, so the
+        // script's `setText` landed on the group and the readout kept its `default="1024"`.
+        var queue = Self.lookupMatchesSelf ? [self] : children
         var head = 0
         while head < queue.count {
             let node = queue[head]

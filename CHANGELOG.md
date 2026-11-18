@@ -4,46 +4,83 @@
 
 ### Winamp Modern (`.wal`) skins
 
-- **250 more skins checked** (corpus intakes twelve and thirteen): (M)XP Green Flavour, 1 Giant
-  Leap, 10-10-220, _Hand ComputerV2, _SD_, A Man Apart, A NEW SKIN, Act 3 Scene 1, Aircel Skin,
-  Airtel, Airtel SongCatcher (two versions), All Seeing Eye, Alpine amp V2.0 (two versions), Alyson
-  Hannigan Hottie AMP, Amp3LCD, Angel Beats!, Angelic Blessings, Angelic Light, AR-7, arachnid,
-  Atomic, Auburn University, AxessTeknoPuan, Aya Kiguchi, Azenis_2, B*L*E*A*C*H, Bingo Red Chilli
-  Bijli Skin, Biohazard, BLACK SONG, blue tech, Boarding House, Bon Jovi, Boneless Knight, boxOr!,
-  Braun CC 4, BUSTER, BWA, candybar, capsule (two versions), Carma Clearing, CCZ, Chasing Liberty,
-  Chicken Little, Classic_KilJaeden_The_Deciever, Classix Player, Client V2, ClipUp, Club Dread,
-  Coca-Cola Musica, COD-BLACK-OPS, Copter, Cosmic Ray (Golden Healer, Lazer Magick), cPro - Bento
-  (two versions), cPro - Braun atelier, cPro - Canus, cPro - cMP12, cPro - Contemporary Vision, cPro
-  - FlaT, cPro - Gothic_metal, cPro - Gothic_metal-v2.0, cPro - HI-FI 73, cPro - insekticid, cPro -
-  ME, cPro - minimal, cPro - Opera.v.J, cPro - POP!?, cPro - Steam, cPro - U2 No Line on the
-  Horizon, cPro - Winamp3000, cPro Pure Winamp, cPro Relax, cPro Stress, Cpro Tokio, cPro2 -
-  Aluminum, cPro: Royale XP, cPro_Celluloid, cPro_Chinese_Democracy, cPro_Colors, cPro_Ebonite,
-  cPro_Fluke, cPro_RadioPlay, CROSSNET, Crystal Power, D-K9, Daniel Martin Diaz Skin (two versions),
-  David Beckham, DEMO, Desktop Energy, DewyTears V4, Dr Who - Tenth Doctor Adventures, Eeyore-toy,
-  Electric Guitar Skin, Energy_Hands_by_ROBODRON, EVo, evolver, FedererAmp,
-  Fenerbahce_Old_Flag_1907, FierY_GEAr, Fifi, Flightplan, Friends, Godsend_Winamp5_Skin, GREEN
-  MACHINE, Gs, HALO-REACH-ELITE-PLAYER, Harmonizer, Helios, Hong Kong Phoo3y!, Hoop Life!, Hot
-  Action Cop, How to Deal, I-M-S, informatika6, iRobot, IronCross, iSkin, iTunes Silvier, iTunes
-  XiAlbook, J5, January 29, Jelly Fingers, Jesse McCartney, Jessica Alba Modern Skin, JetBlue Card,
-  Jukebox (two versions), Justin_Bieber_Skin_Winamp, K-Jofol_V5, Kaskus KRKT, Kaskus Winamp Skin,
-  Kaskus Winamp Skin 2010, Kids WB, KTENSION, LayerONE, Linkin Park, Lord of the Rings: The Two
-  Towers, Lounge, Manhunt, Matrix_beta1, Media Whore, Mein Teil, MERV_skin_v2, Metal Gear Solid 2,
-  Metal Vista, MetalEdge, MINCH YODA, Mini iPod, Minim3 2003, Minime3 - Revolutions, MIZUHO WINAMP
-  SKIN, Mogyoro, Morning - 27, Motorcycle, nematic, Neo iPod, Neptune, Nikki Nova V3, NINJA STAR,
-  Nintendo, Noinc, Nokia, Nokia 3200, Nokia 3300, Obscene.Helicopter.Extension.Part.3-SiNK,
-  Official_FreeAmp_Skin, OnePieceLover Winamp Skin 2012, OPulent Records Player, Oven Winamp, OXAmp,
-  P!nk, Palillo, PDU, Pebble_England, phaze one small, Pimeer, PiOnNeR_AMP2, Point Blank, POWERPAK,
-  Project D.U, Proper Records, ProStak 1, ProtoType, Punisher, QuadCore, Queensryche, Red Button,
-  Red Hot Chili Peppers - By The Way, Reliance Skin, Remote, RNZ X666X, Rolling Stones: 40 Licks,
-  SA, Saphire_Glass_m, Scattershot, SCCT-it, Six Miller FTF (Forget The Face), Skinit.net,
-  Smallville, Smallville Metropolis, Smokin' Aces, Sonara, Sony Mobile, Soundwave, Space Invaders,
-  Special Forces, Spiderman Skin, Starsky and Hutch, SteauaFC, Suicide Commando Winamp 5 Skin,
-  Sungmin Ping2, Sync, t.a.l. 96, T_624, Te iubesc (four versions), team mclaren mercedes 06 (two
-  versions), team mclaren mercedes 08, technolize, Tewnz, The Ben Tjibe Skin,
-  The_Amityville_Horror_Winamp_Skin, Times Square Live, TMNT, Torque, Tutorial Simple Skin by Jo
-  Imre, Venom, Vice City, Virginia Tech Skin, Vista Green, Wax-Skin, Wilfrid Laurier University,
-  Winamp Notif, Winamp5 Simple Demo Skin, Witchblade, WM_Player, WTM, XMP, Y.S.T, ZDL-GOLD-STACK
-  STEREO SYSTEM for Winamp-5 (two versions).
+- **450 more skins checked** (corpus intakes twelve to fourteen): (M)XP Blue Flavour, (M)XP Green
+  Flavour, (M)XP Rainbow Flavour, (M)XP Silver Flavour, ..::crysis wars::.. (two versions),
+  ..::modern_warfare_2::.., 1 Giant Leap, 10-10-220, 15 June, :... Xplod ...:, _Hand ComputerV2,
+  _SD_, A Man Apart, A NEW SKIN (two versions), Act 3 Scene 1, Aircel Skin, Airtel, Airtel
+  SongCatcher (two versions), Alfa Romeo History, All Seeing Eye, Alpine amp V2.0 (two versions),
+  Alyson Hannigan Hottie AMP, Amp3LCD, ANDROMEDA WINAMP5 SKIN, Angel Beats!, Angelic Blessings,
+  Angelic Light, Anging Mammiri Winamp Skin, Anime Shogo, AQUA V1, AR-7, arachnid, asnw player,
+  Assmosis, Atomic, Auburn University, AudioRack, AxessTeknoPuan, Aya Kiguchi, Ayumi Hamasaki,
+  Azenis_2, AZUMANGA WINAMP5 SKIN, B*L*E*A*C*H, Bad Syntax by Norbika, Baroque, Ben Tjibe - SM,
+  Bingo Red Chilli Bijli Skin, Biohazard, BLACK SONG (two versions), Bleuthing, blue tech, Boarding
+  House, Bon Jovi, Boneless Knight, boxOr!, Braun CC 4, Brown Sherina, buffy the vampire slayer,
+  BUSTER, BWA, candybar, capsule (two versions), Carma Clearing, CCZ, Center Fresh Winamp Skin,
+  Channel 1, Chasing Liberty, Chevy - Gold, Chicken Little, Classic_KilJaeden_The_Deciever, Classix
+  Player, CLIENT V2 Winamp5 audio player skin., ClipUp, Club Dread, CNY, Coca-Cola Musica,
+  COD-BLACK-OPS, Compact-SE, Copter, Cosmic Ray (Golden Healer, Lazer Magick), cPro - ACDC - Black
+  Ice, cPro - Aperture, cPro - Bento (two versions), cPro - Braun atelier, cPro - Canus, cPro -
+  Classix, cPro - cMP11B, cPro - cMP12, cPro - Contemporary Vision, cPro - FlaT (two versions), cPro
+  - Fryamp, cPro - FutureUncertain, cPro - Gothic_metal, cPro - Gothic_metal-v2.0, cPro - HI-FI 73,
+  cPro - insekticid, cPro - ME, cPro - Metallica - Death Magnetic, cPro - minimal, cPro - Opera.v.J,
+  cPro - POP!?, cPro - Satin Carbon v1.1, cPro - Satin v1.1, cPro - Steam, cPro - U2 \| NO LOTH,
+  cPro - Winamp Azenis, cPro - Winamp3000, cPro - XPS, cPro Pure Winamp, cPro Relax, cPro Stress,
+  Cpro Tokio, cPro2 - Aluminum, cPro: Ashen Tundra, cPro: NV7382, cPro: Royale XP, cPro_Azior,
+  cPro_Celluloid (two versions), cPro_Chinese_Democracy, cPro_Colors, cPro_Ebonite, cPro_Fluke (two
+  versions), cPro_Orca, cPro_RadioPlay, CROSSNET, Crystal Power, CSA Skin (Cricket South Africa),
+  CTI, D-K9, Daniel Martin Diaz Skin (two versions), Dark Knight, David Beckham, Deals And You,
+  DEMO, Desktop Energy, Devay, Deviantart Tattoo, DewyTears V4, Dill Mill Gaye, Dna Repair-Vibe
+  Machine, Domino Movie, donaumarkt.com, Dr Who - Tenth Doctor Adventures, Dr Who - The Ten Doctors,
+  DreddfulAmp, Drone, Echerry, Eeyore-toy, EGG, ELECTRA WINAMP SKIN, Electric Guitar Skin,
+  Electronica Industriala, EndlesS, Energy_Hands_by_ROBODRON, Epsilux, EVo, evolver, FedererAmp,
+  Fenerbahce_Old_Flag_1907, FierY_GEAr, Fifi, Flightplan, flipclock, Ford GT40 V1.0, Friends,
+  FRIENDS, Gateway VR 46, Godsend_Winamp5_Skin, Godsmack, GOKS, Graviton, Green Dream, GREEN
+  MACHINE, Gs, Gunslinger Girl Winamp 5 Skin, HALO-REACH-ELITE-PLAYER, Harmonizer, Haruhi WINAMP5
+  SKIN, Heart of Steel, Helios, Hong Kong Phoo3y!, Hoop Life!, Hot Action Cop, House of Evil EP
+  (Evil Player), House of Evil Portable, How to Deal, hpcalc HP49G, I N D U C E R Version 1.0,
+  I-M-S, iAmp, Ice Bear the Third, Ichigo Mashimaro, Impulse, informatika6, Insomniac V1.2,
+  iNTELLIdesign, Intruder, iPhone, iRobot, IronCross, iSkin, iTunes Mini LabelOS, iTunes Silvier,
+  iTunes XiAlbook, J5, James Kellison, January 29, Jelly Fingers, Jesse McCartney, Jessica Alba
+  Modern Skin, JetBlue Card, Jukebox (two versions), Justin_Bieber_Skin_Winamp, K-Jofol_V5, K-ON! -
+  Hirasawa Ui Winamp Skin, Kaolla2, Kaskus KRKT, Kaskus Winamp Skin, Kaskus Winamp Skin 2010, Kids
+  WB, Kite-Liberator, KTENSION, LayerONE (two versions), Leviathan, lexicon, LichtenStein, Linkin
+  Park, Loonatics, Looney Tunes, Lord of the Rings: The Two Towers, Lounge, mac os x, MalteseXpSkin,
+  Manhunt, Matrix_beta1, Max Payne 2, Media Whore, Mein Teil, MERV_skin_v2, Metal Gear Solid 2,
+  Metal Vista, MetalEdge, MINCH YODA, Mini iPod, Minim3 2003, Minime IV - Resurrection, Minime3 -
+  Revolutions, MIZUHO WINAMP SKIN, Mogyoro, MoodLogic 2.1, Morlock, Morning - 27, Motorcycle,
+  MusicPad Classic, Nascar 3D, Nathalie Hayashi, National Treasure, nematic, Neo iPod, Neo Kaskus
+  Winamp Skin, Neptune, NewAMP, Nikki Nova V3, NINJA STAR, Nintendo, Noinc, Noir's Merielle, Nokia,
+  Nokia 3200, Nokia 3300, Nokia 3650 Amp, Nokia 5800 XpressMusic, Nokia Mobile,
+  Obscene.Helicopter.Extension.Part.3-SiNK, Official Digizaar.com Skin, Official Rolling Stones skin
+  in support of their new Greatest Hits album "40 Licks" in stores now!, Official Tom Petty and the
+  Heartbreakers skin in support of their new album "The Last DJ" in stores now!,
+  Official_FreeAmp_Skin, Official_Merv4_Skin, One piece winamp, OnePieceLover Winamp Skin 2012, Opal
+  Redemption, Optimus Prime Transformer, OPulent Records Player, Orbis, Orbital, Orion, Oven Winamp,
+  OXAmp, P!nk, Padd Musical Interface Mk7, Palillo, PDU, Peanut ALPHA, Pebble, Pebble_England, phaze
+  one small, Pimeer (two versions), PiOnNeR_AMP2, Point Blank, POWERPAK, Pro Stak II, Probe for
+  Winamp 5, Project D.U., Project DU, Proper Records, ProStak 1, ProtoType, Punisher, QuadCore,
+  Queensryche, Radiance Corrected version, Radiate, RadioHead, Rapid Bucuresti, Red Button, Red Hot
+  Chili Peppers - By The Way, reflexion dark w, Reliance Skin, Remote, Resin, Resurgence,
+  REVIVAL-XMAS, RNZ X666X, Roy Keane, rpg-club Winamp skin, Rumbling Amp, S3, SA, Samsung Corby
+  Skin, Saphire_Glass_m, Scattershot, SCCT DigitalWinamp, SCCT-it, Sencillo, Sero.Overdose, Seta,
+  Side Amp, SimpleSkin, Sirius skin, Six Miller FTF (Forget The Face), Skinit.net, Smallville,
+  Smallville Metropolis, Smokin' Aces, Sonara, Sonic Skin, Sony Media Tower, Sony Mobile, Sony
+  MPFX3-WA5, Sony XPlod Skin, Soundwave, Space Invaders, Special Forces, Spiderman Skin, Sreet
+  Fighter, Starsky and Hutch, Steamed, SteauaFC, Stylize - The Upgrade, Suicide Commando Winamp 5
+  Skin, Sungmin Ping2, sx, Sync, t-shirts fc Vaslui, t.a.l. 96, T_624, TANKCSApDA by Jo Imre, Te
+  iubesc (five versions), team mclaren mercedes 06 (two versions), team mclaren mercedes 08,
+  technolize, Terminus 3000, Tewnz, The Ben Tjibe Skin, The Cap, The Chronicles of Riddick, The
+  Dukes of Hazzard, The Flames of Hell, The Metallica Skin, The Official Private Law Unlam Winamp5
+  Skin, The Unauthorized Matrix SKin, The Wb, The WolfPack Clan, The_Amityville_Horror_Winamp_Skin,
+  Times Square Live, TiMoKi.NET, TMNT, Tomb Raider: Angel of Darkness, Torque, Trance Critic v2.0,
+  Tutorial Simple Skin by Jo Imre, Type-A, Underworld Evolution, Van Helsing, Venom (two versions),
+  Vice City, Vindow, Virginia Tech Skin, Vista Green, WalkHard, Watchmen, Wax-Skin, west mclaren
+  mercedes 04, west mclaren mercedes 05, west mclaren mercedes skin, What A Girl Wants, Wilfrid
+  Laurier University, Winamp Holiday Skin, 2005, Winamp Media Tower, Winamp Notif, Winamp Zune,
+  WinaMP3, Winamp5 Simple Demo Skin, Windpws Media Player 11 (two versions), WinPlain All Res,
+  Witchblade, WM_Player, WTM, XMP, Y.S.T, yaXay 3, ZDL-ANALOG HOME STUDIO for WINAMP-5 (two
+  versions), ZDL-AUDIOPHILE Stereo System for WINAMP-5, ZDL-GOLD-STACK STEREO SYSTEM for Winamp-5
+  (two versions), Zelda.
 
 - **A single-window skin's Library opens in the skin's own frame** (Classix Player).
 - **Playlist rows on a dark plate stay readable** instead of drawing black on black (Client V2,
@@ -64,6 +101,23 @@
   rounded corners ((M)XP).
 - **A skin's built-in Library offers Library Background**: Cava, Art or both from its
   right-click menu or Visuals > Library Window, as the library window does (#780).
+- **A frame's own decoration no longer sizes the window**: SOS_Brigade's Library, Playlist Editor,
+  Visualizations and Play History open at the skin's width instead of 2600 px.
+- **Text draws in the skin's font when a colour shares the font's id** (Tattoo_Amp's title,
+  LayerONE's title bars and notifier), and **text sizes up to 512 px are honoured** (previously
+  capped at 256).
+- **Script-driven tickers scroll smoothly**: a move shorter than one frame lands at once, so
+  Steamed up's marquee no longer jumps back a character as it scrolls.
+- **A `relat*` value other than 1 or 2 places an object absolutely**: Steamed up's preamp dial
+  draws over its placeholder instead of leaving a pink disc, uDesignIT's Playlist Editor lists its
+  tracks, and the Dr Who skins' and
+  Samurai_Champloo's frame edges reach the top of their windows.
+- **A bitmap font no longer hides the image of the same name it is cut from**: Steamed up's clock,
+  bitrate and sample rate draw.
+- **A script's lookup inside a group finds the child, not the group with the same id**: Steamed
+  up's bitrate shows the track's instead of 1024.
+- **A script calling `play()` on an animation already playing leaves it running**: pumaSKIN's
+  puma emblem moves with the music.
 
 ### Visualizations
 

@@ -1,7 +1,7 @@
 import XCTest
 @testable import NullPlayer
 
-/// Phase 56 — `relatx`/`relaty`/`relatw`/`relath` are read as `atoi(value) != 0`, not as `== 1`.
+/// Phase 56 — `relatx`/`relaty`/`relatw`/`relath`: `1` is additive, `2` a percentage, anything else absolute (B473).
 ///
 /// Found live on Big Bento Modern: the Multi Content View drew the album cover **twice**, the second
 /// a small crisp copy beside the real one. The object is the dimmed oversized backdrop in
@@ -83,12 +83,13 @@ final class WinampModernPhase56Tests: XCTestCase {
         XCTAssertNil(WasabiGeometrySpec(attributes: ["w": "auto"]).width)
     }
 
-    /// The_Nokia_5220 ships `relatw="5"`. Nothing about 5 is special; it is simply non-zero, and
-    /// stays additive — only `2` is the percentage.
-    func testAnyNonZeroNumberOtherThanTwoIsAdditive() {
-        for value in ["3", "5", "17", "-1"] {
+    /// Only `1` adds the parent's span and only `2` is a percentage; any other number is absolute.
+    /// Steamed up's preamp dial is `x="20" relatx="10"`, and only absolute covers the magenta
+    /// placeholder its background paints for it (B473).
+    func testAnyOtherNumberIsAbsolute() {
+        for value in ["3", "5", "10", "17", "-1"] {
             let spec = WasabiGeometrySpec(attributes: ["w": "10", "relatw": value])
-            XCTAssertEqual(spec.resolve(in: parent).width, 310, "relatw=\"\(value)\" is additive")
+            XCTAssertEqual(spec.resolve(in: parent).width, 10, "relatw=\"\(value)\" is absolute")
         }
     }
 
@@ -133,11 +134,13 @@ final class WinampModernPhase56Tests: XCTestCase {
     }
 
     /// The position flags go through the same reader, so they split the same way: `2` is a
-    /// percentage of the parent's span, every other non-zero value adds it.
+    /// percentage of the parent's span, `1` adds it, any other number is absolute.
     func testThePositionFlagsUseTheSameRule() {
         let spec = WasabiGeometrySpec(attributes: ["x": "5", "y": "6", "relatx": "2", "relaty": "5"])
         let resolved = spec.resolve(in: parent)
         XCTAssertEqual(resolved.x, 25, "parent.x + 5% of the parent width")
-        XCTAssertEqual(resolved.y, 226, "parent.y + 6 + parent.height")
+        XCTAssertEqual(resolved.y, 26, "parent.y + 6")
+        XCTAssertEqual(WasabiGeometrySpec(attributes: ["y": "6", "relaty": "1"]).resolve(in: parent).y, 226,
+                       "parent.y + 6 + parent.height")
     }
 }

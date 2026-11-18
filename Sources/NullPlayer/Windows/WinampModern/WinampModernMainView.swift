@@ -1716,6 +1716,10 @@ final class WinampModernMainView: NSView {
     }
 
     #if DEBUG
+    /// A skin point answered as the mouse position (`isMouseOverRect`, `getMousePos*`) while set, so the
+    /// smoke can hover a control whose skin script reveals it only under the pointer (B467).
+    var debugPointer: CGPoint?
+
     /// Drive a left click at a skin point without a mouse — the app-side counterpart of the
     /// harness's `WINAMP_MODERN_RENDER_CLICK`, reached through `WINAMP_MODERN_DEBUG_CLICK`.
     ///
@@ -2709,6 +2713,9 @@ final class WinampModernMainView: NSView {
     /// window. Every container window answers for its own scene, which is what `isMouseOverRect` needs
     /// from the window that actually renders the receiver.
     func currentMousePositionInSkinPixels() -> CGPoint? {
+        #if DEBUG
+        if let debugPointer { return debugPointer }
+        #endif
         guard let window else { return nil }
         return skinPoint(convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil))
     }

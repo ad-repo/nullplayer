@@ -29,9 +29,7 @@ extension WasabiSceneRenderer {
         let (left, right) = WasabiTextMetrics.padding(of: object)
         let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
                            width: max(0, rawFrame.width - left - right), height: rawFrame.height)
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if let definition = resources.metrics.bitmapFont(of: object) {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }
@@ -719,7 +717,7 @@ extension WasabiSceneRenderer {
     /// returns the resolved resource so the caller can take the right path, never a bare id.
     private var surfaceFont: WalResourceDefinition? {
         for identifier in ["pledit.font", "wasabi.list.font", "studio.list.font"] {
-            if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+            if let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: identifier),
                definition.kind == "bitmapfont" || definition.kind == "truetypefont" {
                 return definition
             }

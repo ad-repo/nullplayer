@@ -101,7 +101,10 @@ on drive(argv, targetPid)
           set mm to menu 1 of menu bar item "Windows" of menu bar 1
           set nms to name of every menu item of mm
           set mks to value of attribute "AXMenuItemMarkChar" of every menu item of mm
+          set ens to enabled of every menu item of mm
           set hit to 0
+          -- A checked but disabled toggle is a window the skin pins open (its own EQ): clicking it
+          -- does nothing and leaves the menu up over the screen, so skip it.
           -- Only the window toggles: block 1, then a `.wal` skin's own block when one follows
           -- (`windowitems` reads the same blocks). Everything after is a setting, not a window --
           -- Window Shadows, Compact Mode, Always On Top -- and clicking it changes the app under
@@ -118,7 +121,7 @@ on drive(argv, targetPid)
               set nx to item (i + 1) of nms
               if nx is "Compact Mode" or nx is "Always On Top" then exit repeat
             else if nm is not "Main Window" and nm is not "Debug Console" and nm is not "Recreate Windows (Debug)" then
-              if mk is not missing value and mk is not "" then
+              if mk is not missing value and mk is not "" and (item i of ens) then
                 set hit to i
                 exit repeat
               end if

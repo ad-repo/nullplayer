@@ -69,6 +69,12 @@ extension WasabiStandardFrames {
         Flavour.tags.contains(object.tag)
     }
 
+    /// A standard frame however the skin spelled it: the XUI tag, or `<group id="wasabi.standardframe.*">`,
+    /// which is shorthand for the same groupdef (iCandy-2's Component layouts, B276).
+    static func isFrame(_ object: WasabiObject) -> Bool {
+        isStandardFrame(object) || (object.tag.is(.group) && isStandardFrameIdentifier(object.xmlID ?? ""))
+    }
+
     /// Set on a `<Wasabi:StandardFrame:*>` instance whose groupdef the skin never supplied, so the
     /// renderer knows to paint the chrome Winamp's own frame would have drawn.
     static let hostedAttribute = "nullplayer.standardframe"

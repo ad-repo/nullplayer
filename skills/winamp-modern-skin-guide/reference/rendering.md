@@ -770,6 +770,16 @@ centre slice): below `minimumContrast` it falls back to black or white. MMD3's `
 button colour and drew list white on light art; Nebular, meridian, Styx, Moonkore and Tristania declared
 one too close to their art. The gold+silver sweep moved 23 button labels and nothing else.
 
+##### A frame's own decoration never sizes the window (B468)
+
+The content fit (`contentFittedSize`) grows a layout that states no size until nothing escapes its
+parent. SOS_Brigade's standard frame ends in `<layer image="line" x="0" y="-50" relaty="1"/>`, a
+2600 px rule with no `w`, which Winamp clips to the window; the fit chased it and the Library,
+Playlist Editor, Visualizations and Play History opened 2600 wide. A bare `<layer>` that is a
+**direct child of a standard frame** (tag or `wasabi.standardframe.*` group) is skipped by the fit
+(`isFrameChromeArt`); the frame's content group is not a direct child, so a header inside it still
+sizes the window (ClassicPro's Widgets Manager).
+
 ##### A standard frame in a layout with no backing (2026-10-20)
 
 Winamp's own `wasabi.standardframe.*` groupdefs carry `background="wasabi.frame.basetexture"`
