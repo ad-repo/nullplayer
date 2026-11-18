@@ -44,7 +44,8 @@ def wms_def(base): return base.endswith(".wms")
 def theme_name(files):
     data = next((b for n, b in sorted(files.items()) if n.lower().endswith(".wms")), b"")
     text = decode(data)[0] or ""
-    tag = (re.search(r"<theme\b[^>]*>", text, re.I) or [""])[0]
+    t = re.search(r"<theme\b[^>]*>", text, re.I)
+    tag = t.group(0) if t else ""
     # title before id: Stardock SkinStudio writes id="Summary" into every skin it generates
     m = re.search(r"\btitle\s*=\s*\"([^\"]*)\"", tag, re.I) or re.search(r"\bid\s*=\s*\"([^\"]*)\"", tag, re.I)
     return m.group(1).strip() if m else ""
