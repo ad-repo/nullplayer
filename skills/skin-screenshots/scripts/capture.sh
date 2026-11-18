@@ -72,6 +72,10 @@ rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4
 [ -r "$LOG" ] || echo "note  no app log at $LOG: .wal and .sgf renders are confirmed by the family settle alone"
 
 cursys=""; touched=""  # newline-separated: a skin id may contain spaces
+# The skin the Skins menu has checked before the run (a skin opened by path leaves the tick where it
+# was), switched to at the end so the last swept skin saves its state before the cleanup.
+startfam=$(timeout 30 osascript "$MENU" family "$PID" 2>/dev/null)
+startskin=$([ -n "$startfam" ] && timeout 30 osascript "$MENU" current "$PID" "$startfam" 2>/dev/null)
 while IFS=$'\t' read -r sys sub item label; do
   [ -z "${label:-}" ] && continue
   [ -n "$ONLY" ] && { echo "$label" | grep -Eq "$ONLY" || continue; }
@@ -121,7 +125,7 @@ while IFS=$'\t' read -r sys sub item label; do
   tabbed=""
   if [ "$sys" = modern ]; then
     wal=$(find "$HOME/Library/Application Support/NullPlayer/WinampModernSkins" -name "$item.wal" -print -quit)
-    [ -n "$wal" ] && unzip -p "$wal" skin.xml 2>/dev/null | grep -Eiq 'cpro|bento' && tabbed=1
+    [ -n "$wal" ] && unzip -C -p "$wal" skin.xml 2>/dev/null | grep -Eiq 'cpro|bento' && tabbed=1
     # The app's config namespace keeps letters, digits, `_`, space and `-` (WinampModernConfiguration
     # safeComponent) and turns anything else into `_`.
     touched="$touched
@@ -164,7 +168,11 @@ $(printf '%s' "$item" | sed 's/[^A-Za-z0-9_ -]/_/g')"
 done < "$LIST"
 # closeaux's closes are saved per skin (_nullplayer_windows/tabs/frames) when the app switches
 # AWAY from it, so clear them once at the end: the user gets each skin's own layout back, not
-# every player window shut. The skin still on screen saves again on its next switch.
+# every player window shut. The last skin swept saves only when the app switches away from it, so
+# switch to the skin checked before the run first, and let that save land before clearing.
+if [ -n "$touched" ] && [ -n "$startskin" ]; then
+  timeout 30 osascript "$MENU" skin "$PID" "$startfam" "$startskin" >/dev/null 2>&1; sleep 4
+fi
 cleared=0
 while IFS= read -r sid; do
   [ -z "$sid" ] && continue

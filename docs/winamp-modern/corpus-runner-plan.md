@@ -439,6 +439,11 @@ the ledger notes, backlog rows and a `wal_skin_census.sh` run over the batch). T
 | Tattoo_Amp, LayerONE, LayerONE-2 | The 450 pt tattoo title drew nothing; title bars and notifier text drew in the fallback sans (B470) | `font=` looks ids up in a font index of their own, so a `<color>` with the same id no longer shadows a `<truetypefont>`; the `fontsize` cap is 512 |
 | Epsilux | The Library frame's `exit` button lies under a cover layer `panel.maki` ghosts only on hover; the smoke found no close (B467) | The smoke hovers a covered CLOSE before clicking it |
 | Sony_Media_Tower, Watchmen_-_Modern | A clicked control's script quit the app, ending the smoke (B469) | Debug builds refuse a script's `shutdown()` while the sweep runs (`quit-refused`) |
+| Steamed up 1.0 (user round) | The track marquee jittered (B472) | A target move shorter than one frame lands at once |
+| Steamed up 1.0, uDesignIT, Dr Who ×3, Samurai_Champloo (user round) | A pink placeholder showed under the preamp dial; uDesignIT's playlist sat outside its window (B473, B372) | Only `relat*` `1` and `2` are relative; any other number is absolute |
+| Steamed up 1.0 (user round) | No clock, bitrate or sample rate (B474) | A font no longer takes the id of a same-name bitmap; `getObject` searches below its receiver; `findObject` may answer its root; `play()` keeps a playing layer's clock |
+
+User round, working as the markup asks: Project_DU's closed-looking panel is its EQ door (EQUALIZER opens it); iAmp's faded title edge and vis/clock overlap both show in its own `screenshot.png`; iPhone's spectrum box covers the middle of its seek bar (noted on its compatibility row).
 
 Closed as not a defect: LayerONE-2's empty Color Themes window (B466, its layout is `alpha="0"` and nothing raises it,
 like B447) and Andromeda_Winamp5_Skin's unframed windows (B463, not reproducing in two census runs). The 2026-11-17 scan

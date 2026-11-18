@@ -51,7 +51,8 @@ and left 50–100 wasted shots plus a frustrated operator. Rules:
   what is still wrong, and ask before any further run. A new quirk is a reason to stop, not to rerun.
 - **Retake only the rows that are wrong**, with `--only` or a short list, never a whole family again.
   Look at each raw shot first: a manifest `ok` can still be the wrong tab or even the wrong skin.
-- **Stopping a sweep:** `pkill -f "capture.sh --list"; pkill -f menu.applescript`, then confirm with
+- **Stopping a sweep:** `pkill -f '\./capture\.sh'; pkill -f menu.applescript` (with or without
+  `--list`), then confirm with
   `pgrep -fl "capture.sh|menu.applescript"` that nothing is left. The process runs as `./capture.sh`,
   so a pattern with the script's path matches nothing, and the "stopped" sweep keeps running beside
   the next one. Two sweeps at once switch skins under each other and save shots under the wrong

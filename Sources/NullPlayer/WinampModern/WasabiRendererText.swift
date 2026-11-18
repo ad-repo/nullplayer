@@ -717,7 +717,7 @@ extension WasabiSceneRenderer {
     /// returns the resolved resource so the caller can take the right path, never a bare id.
     private var surfaceFont: WalResourceDefinition? {
         for identifier in ["pledit.font", "wasabi.list.font", "studio.list.font"] {
-            if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+            if let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: identifier),
                definition.kind == "bitmapfont" || definition.kind == "truetypefont" {
                 return definition
             }

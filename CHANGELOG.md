@@ -106,6 +106,16 @@
 - **Text draws in the skin's font when a colour shares the font's id** (Tattoo_Amp's title,
   LayerONE's title bars and notifier), and **text sizes up to 512 px are honoured** (previously
   capped at 256).
+- **Script-driven tickers scroll smoothly**: a move shorter than one frame lands at once, so
+  Steamed up's marquee no longer jumps back a character as it scrolls.
+- **A `relat*` value other than 1 or 2 places an object absolutely**: Steamed up's preamp dial
+  draws over its placeholder instead of leaving a pink disc, uDesignIT's Playlist Editor lists its
+  tracks, and the Dr Who skins' and
+  Samurai_Champloo's frame edges reach the top of their windows.
+- **A bitmap font no longer hides the image of the same name it is cut from**: Steamed up's clock,
+  bitrate and sample rate draw.
+- **A script's lookup inside a group finds the child, not the group with the same id**: Steamed
+  up's bitrate shows the track's instead of 1024.
 
 ### Visualizations
 

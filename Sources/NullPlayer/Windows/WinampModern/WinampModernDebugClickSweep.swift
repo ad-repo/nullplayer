@@ -200,7 +200,6 @@ final class WinampModernDebugClickSweep {
             guard let self, let view = self.view, let main = self.main else { return self?.finish() ?? () }
             let after = self.snapshot(view)
             var notes: [String] = []
-            if self.quitRefused { notes.append("quit-refused"); self.quitRefused = false }
             if self.menuOpened { notes.append("menu") }
             if self.modalOpened { notes.append("modal") }
             if after.layout != self.startLayout, view.activateLayout(id: self.startLayout) {
@@ -224,6 +223,8 @@ final class WinampModernDebugClickSweep {
                 pressUnblocked { view.debugClick(atSkinPoint: point) }
                 notes.append("pressed-back")
             }
+            // Read after the press-back, which can ask the app to quit too.
+            if self.quitRefused { notes.append("quit-refused"); self.quitRefused = false }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
             }.sorted().joined(separator: ",")

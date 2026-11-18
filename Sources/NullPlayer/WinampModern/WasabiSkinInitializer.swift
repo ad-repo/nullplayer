@@ -72,6 +72,15 @@ final class WalResourceRegistry {
         definitions.append(definition)
         guard let identifier = definition.identifier, !identifier.isEmpty else { return }
         let key = Self.fold(identifier)
+        if Self.isFont(definition) {
+            fontsByIdentifier[key] = definition
+            // A font answers through its own index, so it never takes an id the general table already
+            // gives to something else. Steamed up declares each digit sheet as `<bitmap id="numfont12">`
+            // and the font cut from it as `<bitmapfont id="numfont12" file="numfont12">`; replaced by
+            // the font, `file=` resolved to the font itself and its clock and bitrate drew nothing.
+            // `WINAMP_MODERN_FONT_TAKES_ID=1` is the A/B switch back to the font taking the id.
+            if !Self.fontTakesIdentifier, let previous = byIdentifier[key], !Self.isFont(previous) { return }
+        }
         // A *different* definition replacing an earlier one is worth saying; the same definition read
         // twice is not. A skin sharing an elements file between two containers re-includes every
         // resource in it, which is ordinary Winamp practice — 198 of LOBE's 233 findings were this,
@@ -85,9 +94,6 @@ final class WalResourceRegistry {
             ))
         }
         byIdentifier[key] = definition
-        if ["bitmapfont", "truetypefont"].contains(definition.kind) {
-            fontsByIdentifier[key] = definition
-        }
         // Later wins among equals, but a real `<color>` outranks a generated bitmap however late the
         // bitmap arrives. Ebonite_2_1 declares `wasabi.list.background` as **both**: a `<color>` at
         // 70,70,70 ("lists/trees item background") and a `$solid` at 237,237,237 ("Tree background
@@ -98,6 +104,13 @@ final class WalResourceRegistry {
             (Self.colorRank(definition) == Self.colorRank(colorsByIdentifier[key]) && Self.colorRank(definition) > 0) {
             colorsByIdentifier[key] = definition
         }
+    }
+
+    private static let fontTakesIdentifier =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_FONT_TAKES_ID"] == "1"
+
+    private static func isFont(_ definition: WalResourceDefinition) -> Bool {
+        definition.kind == "bitmapfont" || definition.kind == "truetypefont"
     }
 
     /// How well a declaration answers a **colour** request: a `<color>` best, then one of the

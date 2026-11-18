@@ -152,6 +152,7 @@ for every sweep twice. Brief it with the rows, these rules, and `skin-triage` Ph
   4-dreliction, cPro_T2T, Winamp_Single_GUI, LG_Free's clock frame; Symplicipod's `tLayer`;
   hatsune_miku_5's `visual.trigger` aim point; HALOAMP's `cont.clear.*` and `PLEdit` sizes;
   GlassAMPfinal's and GlassAMP2's `DLibrary` size, 200x152 or 330x220 across dumps of one build;
+  WTM's and YST's `cont.clear.*` sizes; MoonLight's `DLibrary` size;
   Official_Honda_Element_Skin's time-of-day seek dial; B296) is noise unless that skin is in the
   batch; where the list names a field, only that field is.
 - Re-check only what a fix touched, with the scan's own tools on only those skins: the smoke for a

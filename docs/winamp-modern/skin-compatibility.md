@@ -475,7 +475,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Inter-Pol.info AMP**<br>`ipamp14.wal` | Guljay Sergey Viktorovich aka Serg from Belarus, Mozur | B<br><sub>provisional</sub> | Fully skinned | its now-playing notifier draws its title, artist and album text out of place (open B309) |
 | **Intruder**<br>`Intruder.wal` | Quadhelix | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Invicta**<br>`Invicta.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **iPhone**<br>`iPhone.wal` | Michael Keiller | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `player.glass`, `player.jeepbt`, `player.linksbt`, `player.picsbt`, `player.ws.jeepbt` |
+| **iPhone**<br>`iPhone.wal` | Michael Keiller | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `player.glass`, `player.jeepbt`, `player.linksbt`, `player.picsbt`, `player.ws.jeepbt`. Its markup lays the spectrum box (x 73–243) over the middle of the vertical seek bar (x 75–89), so a press there toggles the vis instead of seeking; seek works above and below it |
 | **iPlay**<br>`iPlay.wal` | playboy | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **IPod Skin**<br>`Snow_AMp.wal` | CarlosP | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **iRobot**<br>`iRobot.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |

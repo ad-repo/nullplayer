@@ -236,6 +236,10 @@ extension WinampModernScriptRuntime {
         return layout.map(scriptCollapsedLayouts.contains) ?? false
     }
 
+    /// `WINAMP_MODERN_PLAY_RESTARTS=1`: `AnimatedLayer.play()` restarts a layer that is still playing.
+    static let playRestartsPlayingLayer =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_PLAY_RESTARTS"] == "1"
+
     static let dispatchesSnapTargetSynchronously =
         ProcessInfo.processInfo.environment["WINAMP_MODERN_SYNC_SNAP_TARGET"] == "1"
 
@@ -262,7 +266,12 @@ extension WinampModernScriptRuntime {
         let hasA = object.attributes["targeta"] != nil
 
         let rawSpeed = Double(object.attributes["targetspeed"] ?? "0.5") ?? 0.5
-        if rawSpeed <= 0 {
+        // A move shorter than one animation tick has no in-between frame to show, so it lands now,
+        // with the rest of the handler's changes. Tweened, it landed a tick later: Steamed up's
+        // ticker rotates its string with `setText` and moves it back one glyph with a 0.01 s
+        // `gotoTarget` in the same handler, and the frame between drew the rotated string at the old
+        // x, a jump of one glyph and back once per character.
+        if rawSpeed < Self.targetAnimationTick {
             if hasX { _ = object.moveForTarget("x", to: object.attributes["targetx"]!) }
             if hasY { _ = object.moveForTarget("y", to: object.attributes["targety"]!) }
             if hasW { _ = object.moveForTarget("w", to: object.attributes["targetw"]!) }
@@ -320,7 +329,7 @@ extension WinampModernScriptRuntime {
         // `goingtotarget` forever, with no tick to clear it.
         let timerID = TimerNamespace.targetAnimation.id(for: id)
         do {
-            try timers.schedule(id: timerID, period: 1.0 / 60.0) { [weak self] in
+            try timers.schedule(id: timerID, period: Self.targetAnimationTick) { [weak self] in
                 self?.tickTargetAnimation(objectID: id)
             }
         } catch let failure as WalFailure {
@@ -332,6 +341,8 @@ extension WinampModernScriptRuntime {
         _ = object.setAttribute("goingtotarget", value: "1")
         activeTargetAnimations[id] = state
     }
+
+    private static let targetAnimationTick = 1.0 / 60.0
 
     private func tickTargetAnimation(objectID: WasabiObjectID) {
         guard var state = activeTargetAnimations[objectID] else { return }

@@ -478,7 +478,10 @@ extension WasabiSceneRenderer {
     private func intrinsicContentExtent(at canvas: CGSize) -> CGSize {
         let growth = CGSize(width: Self.canvasProbeGrowth, height: Self.canvasProbeGrowth)
         var extent = CGSize.zero
-        for (node, grown) in canvasProbe(at: canvas, grownBy: growth) where node.object !== layout {
+        // Frame decoration is excluded here as in the fit loop, so the missing-background seed does not
+        // start from it either (B468).
+        for (node, grown) in canvasProbe(at: canvas, grownBy: growth)
+            where node.object !== layout && !Self.isFrameChromeArt(node.object) {
             if abs(grown.maxX - node.frame.maxX) < Self.canvasProbeTolerance {
                 extent.width = max(extent.width, node.frame.maxX)
             }
