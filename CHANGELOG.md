@@ -116,6 +116,8 @@
   bitrate and sample rate draw.
 - **A script's lookup inside a group finds the child, not the group with the same id**: Steamed
   up's bitrate shows the track's instead of 1024.
+- **A script calling `play()` on an animation already playing leaves it running**: pumaSKIN's
+  puma emblem moves with the music.
 
 ### Visualizations
 
