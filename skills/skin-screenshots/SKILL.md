@@ -42,6 +42,47 @@ enumeration by the ledger's `file` column instead of shooting the whole menu.
 A skin that opens extra windows by design (`Winamp_Media_Tower_v11`'s stack windows) comes back
 `EXTRA-WINDOWS`; re-run it with `--only <name> --allow-extra .`.
 
+## Running a sweep: no retake loops
+
+On 2026-11-17 an agent re-shot the same 16 cPro skins about six times, patching one quirk per run,
+and left 50–100 wasted shots plus a frustrated operator. Rules:
+
+- **One sweep, then one retake pass, then stop and show the operator.** Montage the retakes, list
+  what is still wrong, and ask before any further run. A new quirk is a reason to stop, not to rerun.
+- **Retake only the rows that are wrong**, with `--only` or a short list, never a whole family again.
+  Look at each raw shot first: a manifest `ok` can still be the wrong tab or even the wrong skin.
+- **Stopping a sweep:** `pkill -f "capture.sh --list"; pkill -f menu.applescript`, then confirm with
+  `pgrep -fl "capture.sh|menu.applescript"` that nothing is left. The process runs as `./capture.sh`,
+  so a pattern with the script's path matches nothing, and the "stopped" sweep keeps running beside
+  the next one. Two sweeps at once switch skins under each other and save shots under the wrong
+  name (`cPro_Relax.png` held HiFi 73).
+- Each run also writes a new timestamped framed PNG and manifest. Retakes leave older copies behind,
+  so clean them up (keep the newest) when the batch is done.
+
+## cPro / Bento skins
+
+ClassicPro (cPro) and Bento host the app's **Library Browser and Playlist Editor as tabs inside the
+main window**, plus their own widgets (Video, Visualization, Browser, BrowserPro, Now Playing) in the
+skin's block of the Windows menu. Detect them by `skin.xml` mentioning `cpro` or `bento`, not by the
+name: Blue_Tech and Gothic_Metal_v2_1 are cPro skins.
+
+- **Never `closeaux` them.** Closing Library/Playlist closes those tabs, and the skin falls back to an
+  empty black **Video** tab. `capture.sh` skips `closeaux` for these skins.
+- **Bring the Library tab to the front:** toggling Windows ▸ Library Browser off and on (on if it was
+  closed) makes its tab active with every tab kept. `capture.sh` does this before each cPro shot.
+  Never photograph the Video tab.
+- `cPro__Contemporary_Vision_1_1_1` pegs the app (~140% CPU) with the library open, and every menu
+  call after it times out (`MENU-FAIL` on the next skins). Shoot it last, on its own.
+
+## Window closes are saved per skin
+
+Closing a `.wal` skin's windows is persisted as
+`winampModern.config.<skin>._nullplayer_{windows,tabs,frames}.*` in the app's defaults, and is written
+when the app switches **away** from the skin. So a sweep leaves every skin it touched with its player
+windows (or cPro tabs) shut for the user. `capture.sh` deletes those keys for the skins it touched at
+the end of a run. A killed run skips that, so clear them by hand (`defaults delete NullPlayer <key>`),
+after switching to a skin outside the batch.
+
 ## The operator has to set the app up first
 
 **Launch NullPlayer from a real terminal, never from the agent's shell.** A binary started with
@@ -144,6 +185,8 @@ the sweep makes times out and it restores on the next launch too (2026-10-11).
 
 `capture.sh` matches the main window by its **exact** title for the family (`main_title`), never by
 prefix: `NullPlayer Analyzer`, `NullPlayer Art` and the WMP view windows all start with `NullPlayer`.
+`closeaux` runs before every shot (except cPro/Bento, above); it skips checked-but-disabled toggles,
+which a skin pins open and which otherwise left the Windows menu hanging over the screen.
 Per row it records `no-main`, `ambiguous` (two windows with the title) or `extra-windows` (anything
 else still on screen after `closeaux`) and does not shoot; the manifest carries the title and window
 id of every row. "Loaded" is the Skins menu naming the skin as checked, plus the log's

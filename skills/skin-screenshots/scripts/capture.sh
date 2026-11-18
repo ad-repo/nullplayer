@@ -71,7 +71,7 @@ shadows() { local v; v=$(defaults read NullPlayer skinWindowShadows 2>/dev/null)
 rec() { printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "${5:-}" "${6:-}" "${7:-}" "${8:-}" "${9:-}" "${10:-}" "$(shadows)" >> "$MAN"; }
 [ -r "$LOG" ] || echo "note  no app log at $LOG: .wal and .sgf renders are confirmed by the family settle alone"
 
-cursys=""
+cursys=""; touched=""
 while IFS=$'\t' read -r sys sub item label; do
   [ -z "${label:-}" ] && continue
   [ -n "$ONLY" ] && { echo "$label" | grep -Eq "$ONLY" || continue; }
@@ -112,9 +112,27 @@ while IFS=$'\t' read -r sys sub item label; do
 
   # Nothing but the main window may be on screen: screencapture -l returns a docked group as
   # one image, and a sub-window opened by the skin must not be mistaken for the main one.
-  extras=$(wins | awk -F'\t' -v t="$want" '$8!=t' | wc -l | tr -d ' ')
-  if [ "$extras" -gt 0 ]; then
-    timeout 30 osascript "$MENU" closeaux "$PID" >/dev/null 2>&1; sleep 1
+  # Always close every window toggle, not only when extras are listed: a skin's windows can be
+  # mid-open, or off layer 0, when `wins` looks (2026-11-17).
+  # cPro and Bento list their internal tabs as skin windows: closing them breaks the skin.
+  # cPro/Bento host the app's Library and Playlist (and their own widgets) as tabs inside the
+  # main window: closeaux would close them and leave the empty Video tab up. Close nothing.
+  # Named in skin.xml, not always in the skin's name (Blue_Tech, Gothic_Metal_v2_1).
+  tabbed=""
+  if [ "$sys" = modern ]; then
+    wal=$(find "$HOME/Library/Application Support/NullPlayer/WinampModernSkins" -name "$item.wal" -print -quit)
+    [ -n "$wal" ] && unzip -p "$wal" skin.xml 2>/dev/null | grep -Eiq 'cpro|bento' && tabbed=1
+    touched="$touched $(printf '%s' "$item" | sed 's/[^A-Za-z0-9_-]/_/g')"
+  fi
+  [ -z "$tabbed" ] && { timeout 30 osascript "$MENU" closeaux "$PID" >/dev/null 2>&1; sleep 1; }
+  # Many cPro skins open on the empty Video tab. Reopening Library Browser brings its tab to the
+  # front with every tab kept (2026-11-17).
+  if [ -n "$tabbed" ]; then
+    lib=$(timeout 30 osascript "$MENU" windowitems "$PID" 2>/dev/null | awk -F'|' '$2=="Library Browser"{print $1"|"$4; exit}')
+    if [ -n "$lib" ]; then
+      [ "${lib#*|}" = 1 ] && { timeout 30 osascript "$MENU" toggle "$PID" "${lib%|*}" "Library Browser" >/dev/null 2>&1; sleep 1.5; }
+      timeout 30 osascript "$MENU" toggle "$PID" "${lib%|*}" "Library Browser" >/dev/null 2>&1; sleep 4
+    fi
   fi
   all=$(wins)
   mains=$(printf '%s\n' "$all" | awk -F'\t' -v t="$want" '$8==t')
@@ -141,4 +159,11 @@ while IFS=$'\t' read -r sys sub item label; do
   echo "$status ${w}x${h}pt art=$art $framing"
   rec "$label" "$sys" "$item" "$status" "${w}x${h}" "$art" "$framing" "$file" "$title" "$id"
 done < "$LIST"
+# closeaux's closes are saved per skin (_nullplayer_windows/tabs/frames) when the app switches
+# AWAY from it, so clear them once at the end: the user gets each skin's own layout back, not
+# every player window shut (2026-11-17). The skin still on screen saves again on its next switch.
+for sid in ${touched:-}; do
+  defaults read NullPlayer | sed -n "s/^ *\"\(winampModern\.config\.$sid\._nullplayer_[a-z]*\.[^\"]*\)\" = .*/\1/p" |
+    while IFS= read -r k; do defaults delete NullPlayer "$k"; done
+done
 echo "DONE  manifest: $MAN"
