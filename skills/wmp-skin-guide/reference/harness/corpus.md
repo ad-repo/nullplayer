@@ -18,11 +18,14 @@ one** — the corpus moves, and a document quoting a frozen number goes wrong in
 right. Each row carries a sha256 so byte-identical archives under two filenames are visible as
 duplicates instead of counted twice.
 
-**The measured corpus is 179, not the 180 in `WMPSkins/`.** `scripts/wmp_corpus_exclusions.txt`
+**The measured corpus is 224, not the 225 in `WMPSkins/`.** `scripts/wmp_corpus_exclusions.txt`
 holds `Darkling.wmz`, and `harness/scripts.md` § *`scripts/wmp_corpus_exclusions.txt`* says why and what qualifies.
 An excluded archive is not a defect and never ranks work. **The corpus grew from 14 archives to 180
 on 2026-09-07**; it reads 184 from 2026-09-18 and 185 from 2026-09-19 as new archives landed, which
-is why every count on this page carries the archive number it was taken over.
+is why every count on this page carries the archive number it was taken over. **It grew from 179 to
+225 on 2026-11-18** with the crawler's 46 finds (`scripts.md` § the crawler), all loading; their
+source URLs are in `WMPCandidates/manifest.tsv`. The crawled `gnome` is a different 2001 gallery
+release of the corpus's `gnome` and went in as `gnome-2001.wmz`.
 
 **Two byte-identical archives were deleted. Five *name*-similar pairs were kept deliberately** —
 `Ginger Man`/`Ginger_man`, `QuickSilver`/`QuickSilver (2)`, `Revert`/`Revert (1)`,

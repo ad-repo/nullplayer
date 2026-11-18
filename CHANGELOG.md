@@ -119,6 +119,20 @@
 - **A script calling `play()` on an animation already playing leaves it running**: pumaSKIN's
   puma emblem moves with the music.
 
+### Windows Media Player skins
+
+- **46 more skins checked**, found by crawling archived skin galleries: Advanced Sound Settings,
+  Azenis Mini, Chameleon, ChromeDome, El Diablo, Eddie T. Head, Evil Headspace, Faith Hill, gnome
+  (2001 release), Gradiente Music Controller, Half-Life 2, Han-d-1, iRiver, iTunes9series, izdata,
+  JayAss, Lord of the Rings: The Battle for Middle Earth, MediaCenter 2005, mk2 Frosty, MyPod,
+  NASCAR PC, Orange Army, palm, PinStriped, PixOS, Play-Ahhh, Ratings skin, Shape, Smart Display
+  (Blue and Silver), SPAWN, Steel and Glass, Superman, Surviver, The Girl Next Door, The Movies,
+  TheThing, Tiny iTunes, Titania, To End All Wars, Trinity, Windows Media Player 8 and 9 Redux,
+  wmpTunes, wt00 and Zippo.
+- **A skin missing one of its script files still loads.** Orange Army and Titania were refused
+  whole because their archives leave out a `.js` that the skin names. They now load without the
+  functions that file would have defined.
+
 ### Visualizations
 
 - **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.

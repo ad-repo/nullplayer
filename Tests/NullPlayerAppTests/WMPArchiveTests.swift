@@ -146,6 +146,22 @@ final class WMPArchiveTests: XCTestCase {
         XCTAssertEqual(nodeCode, .expandedNodeLimitExceeded)
     }
 
+    /// `OrangeArmy` names `NFL.js` and `Titania` names `actions.js`, and neither archive ships
+    /// it. The skin loads without that script's functions and carries a warning; it is not refused.
+    func testAMissingScriptFileIsAWarningNotARefusal() async throws {
+        let skin = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive([
+            WMPTestArchiveEntry("skin.wms", data: Data("""
+            <THEME><VIEW id="main" width="20" height="20" scriptFile="here.js;gone.js"/></THEME>
+            """.utf8)),
+            WMPTestArchiveEntry("here.js", data: Data("function f() {}".utf8))
+        ]))
+        XCTAssertEqual(skin.scripts.map(\.status), [.available, .missing])
+        XCTAssertEqual(skin.scriptSources.count, 1)
+        XCTAssertTrue(skin.diagnostics.contains {
+            $0.code == .resourceMissing && $0.severity == .warning && $0.message.contains("gone.js")
+        })
+    }
+
     func testRejectsEveryDeclaredArchiveLimit() throws {
         let countURL = try WMPSkinTestSupport.makeArchive([
             WMPTestArchiveEntry("theme.wms", data: Data("<THEME/>".utf8)),

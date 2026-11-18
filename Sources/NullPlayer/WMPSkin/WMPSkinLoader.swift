@@ -144,10 +144,18 @@ struct WMPSkinLoader {
                                     severity: .warning, location: node.location))
                             }
                         } else {
-                            let resolved = try archive.resolve(authored, relativeTo: path)
-                            guard let resolved else {
-                                throw WMPFailure(WMPDiagnostic(.resourceMissing,
-                                    "Script resource '\(authored)' does not exist.", location: node.location))
+                            // A script the archive never shipped costs only the functions it would
+                            // have defined; markup and built-in handlers still work. `OrangeArmy`
+                            // (`NFL.js`, `gearman.js`) and `Titania` (`actions.js`) were refused whole.
+                            guard let resolved = try archive.resolve(authored, relativeTo: path) else {
+                                if registeredScriptKeys.insert("missing:\(WMPPath.fold(authored))").inserted {
+                                    scripts.append(WMPScriptRegistration(authoredPath: authored, resolvedPath: nil,
+                                        declaringPath: path, status: .missing))
+                                    diagnostics.append(WMPDiagnostic(.resourceMissing,
+                                        "Optional script resource '\(authored)' does not exist.",
+                                        severity: .warning, location: node.location))
+                                }
+                                continue
                             }
                             guard let entry = archive.entryInfo(for: resolved) else {
                                 throw WMPFailure(WMPDiagnostic(.resourceMissing,
