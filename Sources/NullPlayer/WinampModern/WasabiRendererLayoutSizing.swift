@@ -438,15 +438,15 @@ extension WasabiSceneRenderer {
         return size
     }
 
-    /// A bare `<layer>` that is a direct child of a standard frame: the frame's own decoration, which
+    /// A bare `<layer>` (no `w` or `h`) that is a direct child of a standard frame: the frame's own decoration, which
     /// Winamp clips to the window and never sizes it to. SOS_Brigade's frame ends in
     /// `<layer image="line" x="0" y="-50" relaty="1"/>`, a 2600 px rule with no `w`, and the fit
     /// chased it: its Library, Playlist, Visualizations and Play History opened 2600 wide (B468).
     /// The frame's content group is not a direct child, so a header inside it still sizes the window.
     private static func isFrameChromeArt(_ object: WasabiObject) -> Bool {
-        guard object.tag.is(.layer), let parent = object.parent else { return false }
-        return WasabiStandardFrames.isStandardFrame(parent)
-            || (parent.tag.is(.group) && WasabiStandardFrames.isStandardFrameIdentifier(parent.xmlID ?? ""))
+        guard object.tag.is(.layer), object.attributes["w"] == nil, object.attributes["h"] == nil,
+              let parent = object.parent else { return false }
+        return WasabiStandardFrames.isFrame(parent)
     }
 
     /// How far the probes below grow the canvas. Any growth separates the two kinds of node: one that

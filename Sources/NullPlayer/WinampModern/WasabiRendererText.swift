@@ -29,9 +29,7 @@ extension WasabiSceneRenderer {
         let (left, right) = WasabiTextMetrics.padding(of: object)
         let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
                            width: max(0, rawFrame.width - left - right), height: rawFrame.height)
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if let definition = resources.metrics.bitmapFont(of: object) {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }

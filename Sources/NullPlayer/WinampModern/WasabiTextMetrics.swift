@@ -913,9 +913,7 @@ final class WasabiTextMetrics {
     /// Whether the object's text is laid out in cells rather than measured as a string — see
     /// `boxMargin`.
     private func isCellRun(_ object: WasabiObject, text: String) -> Bool {
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if bitmapFont(of: object) != nil {
             return true
         }
         let size = Self.pointSize(of: object)
@@ -935,9 +933,7 @@ final class WasabiTextMetrics {
     func contentWidth(of object: WasabiObject, text: String) -> CGFloat {
         let (left, right) = Self.padding(of: object)
         let padding = left + right
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if let definition = bitmapFont(of: object) {
             return BitmapRun(definition: definition, colonWidth: Self.bitmapColonWidth(of: object))
                 .width(of: text) + padding
         }

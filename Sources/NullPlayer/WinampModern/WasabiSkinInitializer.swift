@@ -85,7 +85,7 @@ final class WalResourceRegistry {
             ))
         }
         byIdentifier[key] = definition
-        if ["bitmapfont", "truetypefont"].contains(definition.kind.lowercased()) {
+        if ["bitmapfont", "truetypefont"].contains(definition.kind) {
             fontsByIdentifier[key] = definition
         }
         // Later wins among equals, but a real `<color>` outranks a generated bitmap however late the

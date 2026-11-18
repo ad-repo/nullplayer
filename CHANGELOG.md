@@ -66,7 +66,9 @@
   right-click menu or Visuals > Library Window, as the library window does (#780).
 - **SOS_Brigade's Library, Playlist Editor, Visualizations and Play History open at the skin's
   400 px width** instead of 2600, and **Tattoo_Amp's title glyph draws in the skin's own font** at
-  the size its markup asks for.
+  the size its markup asks for. Any Winamp Modern skin that gives a font and a colour the same id now
+  draws its text in that font (LayerONE's title bars and notifier too), and text sizes up to 512 px
+  are honoured in every Winamp Modern skin (previously capped at 256).
 
 ### Visualizations
 

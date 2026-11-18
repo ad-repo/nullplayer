@@ -104,7 +104,7 @@ on drive(argv, targetPid)
           set ens to enabled of every menu item of mm
           set hit to 0
           -- A checked but disabled toggle is a window the skin pins open (its own EQ): clicking it
-          -- does nothing and leaves the menu up over the screen, so skip it (2026-11-17).
+          -- does nothing and leaves the menu up over the screen, so skip it.
           -- Only the window toggles: block 1, then a `.wal` skin's own block when one follows
           -- (`windowitems` reads the same blocks). Everything after is a setting, not a window --
           -- Window Shadows, Compact Mode, Always On Top -- and clicking it changes the app under
