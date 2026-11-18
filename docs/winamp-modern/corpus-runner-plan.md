@@ -424,6 +424,30 @@ runs or the dump. Left as the skin draws it: CocaCola_Musica's title does not sc
 Open, promoted with the skin: B446 (Azenis_2 and WM_Player join YST: a paired frame window over each content window, not
 yet seen on screen).
 
+### Done: intake #14, promoted to gold (2026-11-17)
+
+200 skins were picked for batch 14 by `wal_intake_pick.sh 200` (the cap raised to 200 for this round) and scanned live
+(`wal_live_smoke.sh` with its Library pass, about 50 s a skin; `window-census.sh --shots`, about 75 s a skin; a headless
+`wal_dump.sh` for overflow and text clips) on `feat/wal-intake-14`. One fix pass ran. All 200 were accepted by the user,
+four with an open row, and promoted to gold on 2026-11-17, with rows on `skin-compatibility.md` (197 B, 3 C, graded from
+the ledger notes, backlog rows and a `wal_skin_census.sh` run over the batch). The per-skin record is
+`intakes/intake-14.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| SOS_Brigade_Winamp5_skin | Library, Playlist, Visualizations and Play History opened 2600 px wide (B468) | A bare layer that is a direct child of a standard frame (its 2600 px `line.jpg`) no longer counts toward the content fit |
+| Tattoo_Amp, LayerONE, LayerONE-2 | The 450 pt tattoo title drew nothing; title bars and notifier text drew in the fallback sans (B470) | `font=` looks ids up in a font index of their own, so a `<color>` with the same id no longer shadows a `<truetypefont>`; the `fontsize` cap is 512 |
+| Epsilux | The Library frame's `exit` button lies under a cover layer `panel.maki` ghosts only on hover; the smoke found no close (B467) | The smoke hovers a covered CLOSE before clicking it |
+| Sony_Media_Tower, Watchmen_-_Modern | A clicked control's script quit the app, ending the smoke (B469) | Debug builds refuse a script's `shutdown()` while the sweep runs (`quit-refused`) |
+
+Closed as not a defect: LayerONE-2's empty Color Themes window (B466, its layout is `alpha="0"` and nothing raises it,
+like B447) and Andromeda_Winamp5_Skin's unframed windows (B463, not reproducing in two census runs). The 2026-11-17 scan
+also lost the ClassicPro engine store (moved into `WinampModernSkins/old/`), which reads as every cPro skin failing to
+load; `classicpro.md` now says never to move it.
+
+Open, promoted with the skin: B464 (Trance_Critic_v2_0's opaque frame plate leaves an 11 px content band) and B465
+(Center_Fresh, EGG, Anime_Shogo: some hosted windows intermittently open without the skin's frame).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
