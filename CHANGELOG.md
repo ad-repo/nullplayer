@@ -4,6 +4,42 @@
 
 ### Winamp Modern (`.wal`) skins
 
+- **200 more skins checked** (corpus intake fourteen): (M)XP Blue Flavour, (M)XP Rainbow Flavour,
+  (M)XP Silver Flavour, ..::crysis wars::.. (two versions), ..::modern_warfare_2::.., 15 June, :...
+  Xplod ...:, A NEW SKIN, Alfa Romeo History, ANDROMEDA WINAMP5 SKIN, Anging Mammiri Winamp Skin,
+  Anime Shogo, AQUA V1, asnw player, Assmosis, AudioRack, Ayumi Hamasaki, AZUMANGA WINAMP5 SKIN, Bad
+  Syntax by Norbika, Baroque, Ben Tjibe - SM, BLACK SONG, Bleuthing, Brown Sherina, buffy the
+  vampire slayer, Center Fresh Winamp Skin, Channel 1, Chevy - Gold, CNY, Compact-SE, cPro - ACDC -
+  Black Ice, cPro - Aperture, cPro - Classix, cPro - cMP11B, cPro - FlaT, cPro - Fryamp, cPro -
+  FutureUncertain, cPro - Metallica - Death Magnetic, cPro - Satin Carbon v1.1, cPro - Satin v1.1,
+  cPro - Winamp Azenis, cPro - XPS, cPro: Ashen Tundra, cPro: NV7382, cPro_Azior, cPro_Celluloid,
+  cPro_Orca, CSA Skin (Cricket South Africa), CTI, Dark Knight, Deals And You, Devay, Deviantart
+  Tattoo, Dill Mill Gaye, Dna Repair-Vibe Machine, Domino Movie, donaumarkt.com, Dr Who - The Ten
+  Doctors, DreddfulAmp, Drone, Echerry, EGG, ELECTRA WINAMP SKIN, Electronica Industriala, EndlesS,
+  Epsilux, flipclock, Ford GT40 V1.0, FRIENDS, Gateway VR 46, Godsmack, GOKS, Graviton, Green Dream,
+  Gunslinger Girl Winamp 5 Skin, Haruhi WINAMP5 SKIN, Heart of Steel, House of Evil EP (Evil
+  Player), House of Evil Portable, hpcalc HP49G, I N D U C E R Version 1.0, iAmp, Ice Bear the
+  Third, Ichigo Mashimaro, Impulse, Insomniac V1.2, iNTELLIdesign, Intruder, iPhone, iTunes Mini
+  LabelOS, James Kellison, K-ON! - Hirasawa Ui Winamp Skin, Kaolla2, Kite-Liberator, LayerONE,
+  Leviathan, lexicon, LichtenStein, Loonatics, Looney Tunes, mac os x, MalteseXpSkin, Max Payne 2,
+  Minime IV - Resurrection, MoodLogic 2.1, Morlock, MusicPad Classic, Nascar 3D, Nathalie Hayashi,
+  National Treasure, Neo Kaskus Winamp Skin, NewAMP, Noir's Merielle, Nokia 3650 Amp, Nokia 5800
+  XpressMusic, Nokia Mobile, Official Digizaar.com Skin, Official Tom Petty and the Heartbreakers
+  skin in support of their new album "The Last DJ" in stores now!, Official_Merv4_Skin, One piece
+  winamp, Opal Redemption, Optimus Prime Transformer, Orbis, Orbital, Orion, Padd Musical Interface
+  Mk7, Peanut ALPHA, Pebble, Pimeer, Pro Stak II, Probe for Winamp 5, Project DU, Radiance Corrected
+  version, Radiate, RadioHead, Rapid Bucuresti, reflexion dark w, Resin, Resurgence, REVIVAL-XMAS,
+  Roy Keane, rpg-club Winamp skin, Rumbling Amp, S3, Samsung Corby Skin, SCCT DigitalWinamp,
+  Sencillo, Sero.Overdose, Seta, Side Amp, SimpleSkin, Sirius skin, Sonic Skin, Sony Media Tower,
+  Sony MPFX3-WA5, Sony XPlod Skin, Sreet Fighter, Steamed, Stylize - The Upgrade, sx, t-shirts fc
+  Vaslui, TANKCSApDA by Jo Imre, Te iubesc, Terminus 3000, The Cap, The Chronicles of Riddick, The
+  Dukes of Hazzard, The Flames of Hell, The Metallica Skin, The Official Private Law Unlam Winamp5
+  Skin, The Unauthorized Matrix SKin, The Wb, The WolfPack Clan, TiMoKi.NET, Tomb Raider: Angel of
+  Darkness, Trance Critic v2.0, Type-A, Underworld Evolution, Van Helsing, Venom, Vindow, WalkHard,
+  Watchmen, west mclaren mercedes 04, west mclaren mercedes 05, west mclaren mercedes skin, What A
+  Girl Wants, Winamp Holiday Skin, 2005, Winamp Media Tower, Winamp Zune, WinaMP3, Windpws Media
+  Player 11 (two versions), WinPlain All Res, yaXay 3, ZDL-ANALOG HOME STUDIO for WINAMP-5 (two
+  versions), ZDL-AUDIOPHILE Stereo System for WINAMP-5, Zelda.
 - **250 more skins checked** (corpus intakes twelve and thirteen): (M)XP Green Flavour, 1 Giant
   Leap, 10-10-220, _Hand ComputerV2, _SD_, A Man Apart, A NEW SKIN, Act 3 Scene 1, Aircel Skin,
   Airtel, Airtel SongCatcher (two versions), All Seeing Eye, Alpine amp V2.0 (two versions), Alyson
