@@ -30,7 +30,7 @@ extension WasabiSceneRenderer {
         let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
                            width: max(0, rawFrame.width - left - right), height: rawFrame.height)
         if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return

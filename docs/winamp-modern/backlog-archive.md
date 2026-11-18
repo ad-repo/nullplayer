@@ -2,6 +2,54 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B470 — Tattoo_Amp's `tattoo` window opens fully transparent: its 450 pt title glyph never draws — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B470 | **Tattoo_Amp's `tattoo` window opens fully transparent: its 450 pt title glyph never draws.** Found in intake #14's census (2026-11-17, `--shots`, playing; no ref): the default-visible `tattoo` container (700x651, `xml/tattoo.xml`) captures 100% transparent. Its layout is `desktopalpha="1"` with an `alpha="1"` `sysregion` overlay and `<text id="title.text" default="d" font="font.title" fontsize="450" color="0,0,0" h="500" relatw="1">`; `tattoo.m` sets that text from the private string `title` (default `d`) on load. Done when the window shows the glyph in the skin's font on the desktop, or the census shows why it should not draw | Tattoo_Amp | ? | 1 |
+
+**Closed 2026-11-17 (intake #14 fix pass).** Two causes, neither the glyph being absent: the skin declares `font.title` as a `<truetypefont>` (`main/college.ttf`) and, in a file included after it, as a `<color>`, and the flat resource table kept the colour, so the title drew in the fallback sans; and `fontsize="450"` was clamped to 256. `WalResourceRegistry` now keeps a font index beside the colour one (`resolvedFontDefinition`, every `font=` lookup) and the pixel-height cap is 512. Dump: the `tattoo` window draws the skin's glyph, 290 px across. Render sweep: LayerONE and LayerONE-2 (`component.title` is both a font and a colour there) now draw their title bars, tips and notifier text in the skin's own small-caps face instead of the fallback sans.
+
+## B469 — The click smoke ends early when a clicked control's script quits the app — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B469 | **The click smoke ends early when a clicked control's script quits the app.** Found in intake #14's smoke (2026-11-17): Sony_Media_Tower's `butt.power` runs `goodbye.m`, which presses `closewinamp` 2 s later, and Watchmen_-_Modern's `close2` does the same; both runs end `INCOMPLETE (timeout or app exit)` with the Library never reached. The sweep skips only controls whose own action is in `skippedActions` (CLOSE, MINIMIZE, EXIT, QUIT, EJECT, `WinampModernDebugClickSweep.swift`), not a script-driven quit. Done when both skins' smokes run to the end (the sweep refuses a quit while it runs, or skips the control with a row saying why) | Sony_Media_Tower, Watchmen_-_Modern | S | 2 |
+
+**Closed 2026-11-17 (intake #14 fix pass).** A script's `Application.shutdown()` (Sony_Media_Tower's `goodbye.m`, Watchmen_-_Modern's `close2`) reaches the player's close, which terminates the app. While the click sweep runs, the controller's `closeRequested` now refuses the quit (`WinampModernDebugClickSweep.refuseQuit`, DEBUG only) and the row of the press it followed says `quit-refused`. Smoke: both skins run to `done` with the Library closed.
+
+## B468 — SOS_Brigade_Winamp5_skin opens its Library, Playlist Editor, Visualizations and Play History 2600 px wide — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B468 | **SOS_Brigade_Winamp5_skin opens its Library, Playlist Editor, Visualizations and Play History 2600 px wide.** Found in intake #14's census (2026-11-17, `--shots`, playing; no ref): `windows.tsv` records each at 2600x300 (Playlist 2600x200), every other window at its own size. The layouts declare only `minimum_w="400"` and `default_h` (`xml/windows.xml:739,836,913,936`), no `default_w`, and contain a `Wasabi:StandardFrame:Status` sized `relatw="1"`; where 2600 comes from is not known. Done when those windows open at a width taken from the skin (or the 400 minimum) and the census shows it | SOS_Brigade_Winamp5_skin | ? | 1 |
+
+**Closed 2026-11-17 (intake #14 fix pass).** Not a width the skin states: the standard frame ends in `<layer image="line" x="0" y="-50" relaty="1"/>`, `line.jpg` 2600 px wide with no `w`, and the content fit (`contentFittedSize`) grew the layout 2200 px to hold it. A bare layer that is a direct child of a standard frame is now left out of the fit (`isFrameChromeArt`). Render dump: those four windows are 400 wide (the Library 434, its own list floor). Render sweep: SOS_Brigade is the only skin whose windows move for it.
+
+## B467 — Epsilux's Library frame has no close the smoke can reach — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B467 | **Epsilux's Library frame has no close the smoke can reach: its `exit` button lives in a script-animated panel.** Found in intake #14's click smoke (2026-11-17, playing): the Library opens in the skin's frame and reads `close no-close-control`. The frame's `exit` button (`action=close`) sits inside the `was.rpanel` group, which `panel.maki` slides; the smoke's row reads `skip` and its on-screen search for a close control finds none. Done when the Library can be closed from the skin's frame (the panel's button reachable on screen), or the smoke records why the control is off screen by design | Epsilux | ? | 1 |
+
+**Closed 2026-11-17 (intake #14 fix pass).** The `exit` button (`action=close`, 6x4) sits under the animated `panel` layer of `was.rpanel`, which `panel.maki` ghosts only while `isMouseOverRect()` is true, so a user hovering it reaches the button and the smoke, which has no pointer, never did. The sweep now hovers a covered `CLOSE` first (`WinampModernMainView.debugPointer` answers the script's pointer query) and the row says `hovered`. Smoke: Epsilux `library skin-frame, close closed`.
+
+## B466 — LayerONE-2's Color Themes window opens empty — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B466 | **LayerONE-2's Color Themes window opens empty.** Found in intake #14's census (2026-11-17, `--shots`, playing; no ref): `Color_Themes` is 100% transparent, while the skin's other windows draw. Done when the window lists the skin's color themes as its XML lays them out | LayerONE-2 | ? | 1 |
+
+**Closed 2026-11-17 (intake #14 fix pass) as by design.** `colorthemes` declares its layout `alpha="0"` (`xml/colorsets.xml:593`, no `desktopalpha`) and no script raises it, so Winamp's window is invisible too; this is B447's LayerONE window (intake #12, closed with `.declaredInvisible`: not opened with the skin, still reachable from the Windows menu), and LayerONE-2 ships the same file. The census opens it through the menu, which is why the shot is 100% transparent.
+
+## B463 — Andromeda_Winamp5_Skin opens its hosted windows without their skin frame — closed 2026-11-17
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B463 | **Andromeda_Winamp5_Skin opens its hosted windows without their skin frame: eleven are see-through, and About and the Playlist Editor draw nothing.** Found in intake #14's census (2026-11-17, `--shots`, playing; no ref). Art, Audio Analyzer, Cava, EQ Studio, Flow, Library, PeppyMeter, Sonos Rooms, Spectrum, Visualizations and Waveform each open as one window with no `-1` frame partner, 30–42% of its pixels transparent where the border should be; `About` and `Playlist_Editor` are 100% transparent. The skin ships `frame.xml` with a `wasabi.frame.layout` and `frame/std.png` art. Done when those windows draw inside the skin's frame and About and the Playlist Editor show content | Andromeda_Winamp5_Skin | ? | 1 |
+
+**Closed 2026-11-17 (intake #14 fix pass) as not reproducing.** Rerun on this build, `window-census.sh Andromeda_Winamp5_Skin --shots` twice (by name and by the silver path): all 14 opened windows, About and the Playlist Editor included, draw the skin's frame (0% transparent besides the frame's own rounded corners). The scan's captures (frameless, About and the Playlist 100% transparent) read like the locked-screen blanks B443/B445 closed on; no code was changed for this row.
+
 ## B462 — KTENSION's Library rows and tab labels are unreadable — closed 2026-11-17
 
 | Id | Item | Reach | Effort | Tier |

@@ -51,6 +51,16 @@ final class WinampModernDebugClickSweep {
     /// The sweep keeps itself alive until `done`.
     private static var running: WinampModernDebugClickSweep?
 
+    /// The player's own close, asked by a script (Sony_Media_Tower's `goodbye.m`, Watchmen_-_Modern's
+    /// `close2`) rather than by a control the sweep skips by action (B469): refused while the sweep
+    /// runs, and noted on the row of the press it followed. Returns false when no sweep is running.
+    static func refuseQuit() -> Bool {
+        guard let sweep = running else { return false }
+        sweep.quitRefused = true
+        return true
+    }
+    private var quitRefused = false
+
     /// The window being swept: the main player, then the Library's.
     private weak var view: WinampModernMainView?
     private weak var main: WinampModernMainView?
@@ -190,6 +200,7 @@ final class WinampModernDebugClickSweep {
             guard let self, let view = self.view, let main = self.main else { return self?.finish() ?? () }
             let after = self.snapshot(view)
             var notes: [String] = []
+            if self.quitRefused { notes.append("quit-refused"); self.quitRefused = false }
             if self.menuOpened { notes.append("menu") }
             if self.modalOpened { notes.append("modal") }
             if after.layout != self.startLayout, view.activateLayout(id: self.startLayout) {
@@ -308,13 +319,34 @@ final class WinampModernDebugClickSweep {
 
     /// Press the Library's own close control and say whether its window went.
     private func closeLibrary() {
-        let manager = WindowManager.shared
         // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
         let close = view.flatMap { view in
             targets.lazy.filter({ $0.action == "CLOSE" })
                 .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first
         }
+        // A CLOSE the skin's own script keeps covered until the pointer is over it (Epsilux's
+        // `was.rpanel` slides a cover off its `exit` button on hover, B467): hover it, as a user would.
+        if close == nil, let view, let hidden = targets.first(where: { $0.action == "CLOSE" }),
+           let box = view.renderer.sceneNodes().first(where: { $0.object === hidden.object })
+            .map({ $0.frame.intersection($0.clip) }), !box.isEmpty {
+            view.debugPointer = CGPoint(x: box.midX, y: box.midY)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.pressClose(hovering: true)
+            }
+            return
+        }
+        pressClose(hovering: false)
+    }
+
+    private func pressClose(hovering: Bool) {
+        let manager = WindowManager.shared
+        defer { view?.debugPointer = nil }
+        let close = view.flatMap { view in
+            targets.lazy.filter({ $0.action == "CLOSE" })
+                .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first
+        }
         var row = ["window": "library", "idx": "close", "action": "CLOSE"]
+        if hovering { row["note"] = "hovered" }
         if let view, let (target, point) = close {
             row.merge(["object": target.label, "action": target.action,
                        "point": "\(Int(point.x)),\(Int(point.y))"]) { $1 }

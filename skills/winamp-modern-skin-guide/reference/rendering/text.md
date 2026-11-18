@@ -229,6 +229,15 @@ render is the ground truth for this kind of thing):
   between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
   Bento's; the arithmetic is what identifies them, not the spelling.
 
+#### A font id and a colour id may be one name; the cap is 512 px (B470)
+
+Fonts, like colours and bitmaps, live in their own table in Wasabi. Tattoo_Amp declares `font.title`
+as a `<truetypefont>` (`main/college.ttf`) and, in a file included after it, as a `<color>`; the flat
+table kept the colour, so its title drew in the fallback sans. `WalResourceRegistry.resolvedFontDefinition`
+(a third index beside `colorsByIdentifier`) answers every `font=` lookup, falling back to the general
+table for an installed family name. The same title is `fontsize="450"` in a 700x651 window: the pixel
+height is clamped to 512 (it was 256, which drew the glyph at 57% of its size).
+
 #### `alpha=` dims a `<text>`, and `bold="1"` does not invent a weight (B285)
 
 Text alpha applies to the glyphs whatever the font source is. Love is War Miku (system Arial) and

@@ -178,7 +178,7 @@ final class WasabiTextMetrics {
 
     private func resolvedFont(identifier: String?, size: CGFloat, traits: NSFontTraitMask) -> NSFont? {
         guard !isTornDown, let identifier,
-              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+              let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: identifier),
               definition.kind == "truetypefont", let path = definition.logicalFile else {
             // `font=` is an id **or** a plain family name. A skin that ships no font resource simply
             // names one it expects the system to have ("Arial", "Tahoma"), which is what Winamp asks
@@ -199,7 +199,7 @@ final class WasabiTextMetrics {
                 // opposite of what happened, and the commonest case in the corpus (25 of 73 skins,
                 // the whole cPro family's `font.ttf`).
                 let declared = loadedSkin.runtime.resources
-                    .resolvedDefinition(identifier: identifier)?.kind == "truetypefont"
+                    .resolvedFontDefinition(identifier: identifier)?.kind == "truetypefont"
                 recordUnresolved(identifier, declared
                                  ? "is declared as a <truetypefont> whose file is not in the archive"
                                  : "is neither a declared font resource nor a font installed on this "
@@ -640,10 +640,13 @@ final class WasabiTextMetrics {
     /// before the conversion to a point size the drawing needs.
     static func pixelHeight(of object: WasabiObject) -> Double {
         let requested = Double(object.attributes["fontsize"] ?? "11") ?? 11
-        return requested.isFinite ? min(max(requested, 1), 256) : 11
+        return requested.isFinite ? min(max(requested, 1), maximumPixelHeight) : 11
     }
 
     static let pixelHeightToPointSize = 0.8
+    /// Tattoo_Amp's title is one `fontsize="450"` glyph filling a 700x651 window (B470); the old 256
+    /// cap drew it at 57% of that size.
+    private static let maximumPixelHeight = 512.0
 
     /// The one place a component's own text comes from.
     ///
@@ -911,7 +914,7 @@ final class WasabiTextMetrics {
     /// `boxMargin`.
     private func isCellRun(_ object: WasabiObject, text: String) -> Bool {
         if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
             return true
         }
@@ -933,7 +936,7 @@ final class WasabiTextMetrics {
         let (left, right) = Self.padding(of: object)
         let padding = left + right
         if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+           let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
            definition.kind == "bitmapfont" {
             return BitmapRun(definition: definition, colonWidth: Self.bitmapColonWidth(of: object))
                 .width(of: text) + padding
@@ -953,7 +956,7 @@ final class WasabiTextMetrics {
     /// The `<bitmapfont>` a text object draws in, or nil for any other font.
     func bitmapFont(of object: WasabiObject) -> WalResourceDefinition? {
         guard let fontID = object.attributes["font"],
-              let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
+              let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: fontID),
               definition.kind == "bitmapfont" else { return nil }
         return definition
     }

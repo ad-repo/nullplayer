@@ -37,6 +37,10 @@ final class WalResourceRegistry {
     /// the bitmap won, a colour lookup found an image with no `color=` attribute, and every surface
     /// that asked the skin for its list background fell through to the black literal instead (BB2a).
     private var colorsByIdentifier: [String: WalResourceDefinition] = [:]
+    /// The font declarations only, for the same reason: a font and a colour may share an id. Tattoo_Amp
+    /// declares `font.title` as a `<truetypefont>` and, in a file included after it, as a `<color>`;
+    /// with the flat table the colour won and its title drew in the fallback face (B470).
+    private var fontsByIdentifier: [String: WalResourceDefinition] = [:]
     private var aliases: [String: String] = [:]
     /// `fold(_:)` memoized, because it is not the cheap string op it looks like.
     ///
@@ -81,6 +85,9 @@ final class WalResourceRegistry {
             ))
         }
         byIdentifier[key] = definition
+        if ["bitmapfont", "truetypefont"].contains(definition.kind.lowercased()) {
+            fontsByIdentifier[key] = definition
+        }
         // Later wins among equals, but a real `<color>` outranks a generated bitmap however late the
         // bitmap arrives. Ebonite_2_1 declares `wasabi.list.background` as **both**: a `<color>` at
         // 70,70,70 ("lists/trees item background") and a `$solid` at 237,237,237 ("Tree background
@@ -146,6 +153,13 @@ final class WalResourceRegistry {
     func resolvedColorDefinition(identifier: String) -> WalResourceDefinition? {
         resolved(identifier: identifier, in: colorsByIdentifier)
             ?? resolvedDefinition(identifier: identifier)
+    }
+
+    /// The declaration that answers a **font** request for this id (a `text`'s `font=`), which is not
+    /// always the one `resolvedDefinition` answers. Falls back to the general table, so a name that
+    /// is not a declared font (an installed family such as "Arial") resolves as it did.
+    func resolvedFontDefinition(identifier: String) -> WalResourceDefinition? {
+        resolved(identifier: identifier, in: fontsByIdentifier) ?? resolvedDefinition(identifier: identifier)
     }
 
     private func resolved(identifier: String,

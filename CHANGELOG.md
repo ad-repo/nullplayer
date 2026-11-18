@@ -64,6 +64,9 @@
   rounded corners ((M)XP).
 - **A skin's built-in Library offers Library Background**: Cava, Art or both from its
   right-click menu or Visuals > Library Window, as the library window does (#780).
+- **SOS_Brigade's Library, Playlist Editor, Visualizations and Play History open at the skin's
+  400 px width** instead of 2600, and **Tattoo_Amp's title glyph draws in the skin's own font** at
+  the size its markup asks for.
 
 ### Visualizations
 

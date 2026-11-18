@@ -20,13 +20,13 @@ cPro_FutureUncertain.wal	83894b68a5e3600758c1b4a80210781b07f31d0462862e3e63be91d
 Alfa_Romeo_History.wal	83aab88ba8b8847b970e222c7de7a35075334dbf9fc5d799ed5e19f7b429d45a	live	2026-11-17	-	scan clean: main 16 clicked/6 nochange (benign), library skin-frame closed, 15 windows, visual clean
 skin_by_GOKS.wal	83b5ed0bf8cf8069d5f1e6d2f322d9dc51ae08af6232496ff190415b71776487	live	2026-11-17	-	scan clean: main 10 clicked/1 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 The_Unauthorized_Matrix_Skin.wal	844fda9fd765a715f63b0468e24465c737572846503cbb486da28d155d49ed67	live	2026-11-17	-	scan clean: main 27 clicked/5 nochange (benign), library skin-frame closed, 13 windows, visual clean
-Sony_Media_Tower.wal	857f309a8cff1ff84c7fc40536cdd6043c4f51e32812dc0cfe7297c267608190	filed	2026-11-17	B469(open)	filed: B469: smoke incomplete: butt.power's script quits the app (goodbye.m -> closewinamp)
+Sony_Media_Tower.wal	857f309a8cff1ff84c7fc40536cdd6043c4f51e32812dc0cfe7297c267608190	live	2026-11-17	B469	B469 fixed: smoke refuses a script-driven quit, runs to done
 Walk_Hard_Winamp5_Skin.wal	85f31e8104c41d5631c993118550510de1714261e04e039592bb6b2831b052ef	live	2026-11-17	-	scan clean: main 14 clicked/1 nochange (benign), library skin-frame closed, 14 windows, visual clean
 REVIVAL1.0F.wal	86318d31d207f21ce3c87312959928d4516a51e4444dfff1ad9f3474b978da5a	live	2026-11-17	-	scan clean: main 14 clicked/2 nochange (benign), library skin-frame closed, 13 windows, visual clean
 iNTELLI_design.wal	8719258f8830a42a21a9ebff279d33b2f4c746d14df74fc33b552bf509fc10c8	live	2026-11-17	-	scan clean: main 11 clicked/0 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 DreddfulAmp.wal	876db3b895dc4c1120b85b6867f8b5a2f8615814a49d38f80031ebbd5b4420ec	live	2026-11-17	-	scan clean: main 10 clicked/2 nochange (benign), library skin-frame closed, 15 windows, visual clean
 Vista.wal	8790459d66a346f0615c483de3cfec0c94080f39f62ad6f844dd34a58dd288a2	live	2026-11-17	-	scan clean: main 10 clicked/0 nochange (benign), library skin-frame closed, 15 windows, no ref, visual clean
-Epsilux.wal	87aa5b0654a73478f6d9a88b1842ead03daf6e0fdb41bc8b3fe6febd7f0456ab	filed	2026-11-17	B467(open)	filed: B467: library skin-frame close no-close-control (exit button in script-animated panel)
+Epsilux.wal	87aa5b0654a73478f6d9a88b1842ead03daf6e0fdb41bc8b3fe6febd7f0456ab	live	2026-11-17	B467	B467 fixed: smoke hovers the covered exit, library close closed
 StreetFighterModern.wal	88c47a8a5b3194c0fc3e29a85c3f96d7d33195d9b3c258b16efccbbe1d98cd5a	live	2026-11-17	-	scan clean: main 14 clicked/1 nochange (benign), library skin-frame closed, 13 windows, no ref, visual clean
 Loonatics_Unleashed.wal	88f3ea726a493482a10bf934eb617023dca1b414f4eb926803e38dab25600e9b	live	2026-11-17	-	scan clean: main 20 clicked/10 nochange (benign), library skin-frame closed, 15 windows, visual clean
 MusicPadClassic.wal	893e3a0eacac1dd09b5a8f1100122dd173f11ed4ebce6224aad86f23d63f08b8	live	2026-11-17	-	scan clean: main 11 clicked/3 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
@@ -38,9 +38,9 @@ Mini_Me_IV.wal	8b6d900ab78bb231ad0b01be59aad18367335af2f6598dcaee03d8cc5792c0e0	
 cPro__Classix.wal	8b8a6b8570c9f90531004e7d90aadb52e45cd3e00196efce5a6d092983a8e2dd	live	2026-11-17	-	scan clean: main 25 clicked/14 nochange (benign), library embedded, 11 windows, visual clean
 Heart_of_Steel.wal	8bafdaf344be973a4572d5a352557e1da76f7ac4cbd67a14e1b5cad35feb8083	live	2026-11-17	-	scan clean: main 14 clicked/3 nochange (benign), library skin-frame closed, 14 windows, visual clean
 cPro__Ashen_Tundra.wal	8bf3069722b3a236fa0481dfce9c0bfa74777c3f73e17ff491624c1a84ead648	live	2026-11-17	-	scan clean: main 25 clicked/14 nochange (benign), library embedded, 11 windows, visual clean
-Andromeda_Winamp5_Skin.wal	8c0c6be23185910decb8354d51bc15415a70dcae9a1e0e059bd5825450d46e76	filed	2026-11-17	B463(open)	filed: B463: 11 skin-frame windows have no frame window (30-42% see-through border), About + Playlist_Editor 100% transparent
-EGG.wal	8c6c1a423abe9d36f1db4f81b262cda51124aba4359fad4a03ed82f72766b79a	filed	2026-11-17	B465(open)	filed: B465: Flow, Sonos Rooms open without the frame its Art wears
-Anime_Shogo.wal	8cb7f571b2ad8353250789486dd188b68ed41eb3b80af00a4f6fdf995bdd9016	filed	2026-11-17	B465(open)	filed: B465: Cava, Waveform open without the frame its Art wears
+Andromeda_Winamp5_Skin.wal	8c0c6be23185910decb8354d51bc15415a70dcae9a1e0e059bd5825450d46e76	live	2026-11-17	B463	B463 closed, not reproducing: all 14 windows framed on rerun
+EGG.wal	8c6c1a423abe9d36f1db4f81b262cda51124aba4359fad4a03ed82f72766b79a	filed	2026-11-17	B465(open)	filed: B465 open: Flow, Sonos Rooms and others open bare in one of three runs, framed in the others
+Anime_Shogo.wal	8cb7f571b2ad8353250789486dd188b68ed41eb3b80af00a4f6fdf995bdd9016	live	2026-11-17	B465(open)	B465 open: intermittent bare windows not reproduced; all 16 framed on rerun
 Rumbling_Amp.wal	8e721864391c5d45eaa4a3b437b2d0df135b29a66c1819e7e28d23273974e7ad	live	2026-11-17	-	scan clean: main 11 clicked/2 nochange (benign), library skin-frame closed, 19 windows, visual clean
 Macosx-2.wal	8eb3f0babe2eb138b1b2753e21a106c87ef59a7a1506bae21983329a61deb886	live	2026-11-17	-	scan clean: main 11 clicked/1 nochange (benign), library plain-chrome (no library frame declared), 14 windows, visual clean
 44_Magnum.wal	9033319cd9b2985249e877b127b774a5c2aa577878dfc2bb700d8add388a9240	live	2026-11-17	-	scan clean: main 27 clicked/2 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
@@ -61,12 +61,12 @@ Max_Payne_2_Official_Skin.wal	95ac4e4ba8d85e9808de79ccebfdde74e14b895ea29edbdc85
 Gateway_Valentino_Rossi_-_46.wal	95d4fc6eaa42f38f963bcdda4544f30663c803b6c0f758e28d62d85c025fa508	live	2026-11-17	-	scan clean: main 11 clicked/1 nochange (benign), library skin-frame closed, 14 windows, visual clean
 FlipClock.wal	95f5db702a072d1b330b58f2e2c90b79074b905399a762765bda9804948bc42a	live	2026-11-17	-	scan clean: main 11 clicked/1 nochange (benign), library skin-frame closed, 14 windows, visual clean
 Terminus3000.wal	960db21e39435e149d47ae93b7614b0f0a8a2442dc7f4345dcbca0b67fcd8572	live	2026-11-17	-	scan clean: main 28 clicked/5 nochange (benign), library skin-frame closed, 13 windows, visual clean
-Trance_Critic_v2_0.wal	9610a8adb93db0fc1e0afc25c24eff1dfcc6f8239e84f3e1cfb192bdac4064dc	filed	2026-11-17	B464(open)	filed: B464: an opaque blue frame band covers the content of every framed window (Flow, Cava, Spectrum, Audio Analyzer, Waveform mostly hidden)
+Trance_Critic_v2_0.wal	9610a8adb93db0fc1e0afc25c24eff1dfcc6f8239e84f3e1cfb192bdac4064dc	filed	2026-11-17	B464(open)	filed: B464 open: frame border measured from opaque plate art (78/56 px), content shows in an 11 px band
 WMP11.wal	96f2a4c0fa734ae92f5fe430305863e393c5c9ec7d60cce65b5f9708484eb172	live	2026-11-17	-	scan clean: main 10 clicked/0 nochange (benign), library skin-frame closed, 15 windows, visual clean
 LichtenStein.wal	978e879325204fc26a84c8c6e7e8efd00ba556832f4c2291e3276195a02fe75e	live	2026-11-17	-	scan clean: main 12 clicked/2 nochange (benign), library skin-frame closed, 14 windows, visual clean
 MD_-_Ice_Bear_Lain_the_Third.wal	9850a6a0fee67cd5925222a8b39a4df81b6445807bc7dab5cedee3d13e97fbfb	live	2026-11-17	-	scan clean: main 9 clicked/2 nochange (benign), library skin-frame closed, 16 windows, visual clean
 MerryChristmas.wal	9854a2211b0ad1f13967887246d71f59882396f30b422a6f2b4fe5c15bf28755	live	2026-11-17	-	scan clean: main 15 clicked/4 nochange (benign), library skin-frame closed, 13 windows, visual clean
-Center_Fresh.wal	98d13eb88533b998e4df8350e5f827d79d29301e279fc8d0ba9de8cd8b273940	filed	2026-11-17	B465(open)	filed: B465: Art/Audio_Analyzer/Cava/EQ_Studio/Flow/Sonos/Spectrum drawn with no skin frame, while Visualizations/Media Library carry the Center fresh frame
+Center_Fresh.wal	98d13eb88533b998e4df8350e5f827d79d29301e279fc8d0ba9de8cd8b273940	live	2026-11-17	B465(open)	B465 open: intermittent bare windows not reproduced; all 13 framed on rerun
 The_Flames_of_Hell_-_Rurouni_Kenshin.wal	99fdac66b9bd5d40a49145f5a803aed7a54427fdc0025035b607d2daa4577dce	live	2026-11-17	-	scan clean: main 23 clicked/2 nochange (benign), library skin-frame closed, 13 windows, visual clean
 Morlock.wal	9b45815a2c83ed253845cb93431fa1ab8e2850cbf9f6bd47e4f94052fba86a1d	live	2026-11-17	-	scan clean: main 18 clicked/5 nochange (benign), library skin-frame closed, 15 windows, visual clean
 Pebble.wal	9b6100893a9a52acae04492cf906f2984ab143e49ab9661ef6a138bbe742f7bf	live	2026-11-17	-	scan clean: main 14 clicked/2 nochange (benign), library skin-frame closed, 12 windows, no ref, visual clean
@@ -86,7 +86,7 @@ cPro__NV_7382.wal	9f85cc502f5ac096de6a97af6db5b6929495e3d814100e0e2683efad38b24e
 modern_warfare_2.wal	9f88cf631ffb4fc1816b49be2b953ca9730ce0e78627ab134e04ca0e2b0834ef	live	2026-11-17	-	scan clean: main 11 clicked/0 nochange (benign), library skin-frame closed, 17 windows, no ref, visual clean
 Baroque_1.0.wal	a17eaa42ba4b98e853adc644f0e11ad2f3ca11ac4441b5ea6635275af0783ef3	live	2026-11-17	-	scan clean: main 18 clicked/5 nochange (benign), library skin-frame closed, 13 windows, no ref, visual clean
 cPro_Orca.wal	a20f2c4bc8512eb3281e5b72717ec7376b349289f92b99c3b20c75dc5c82b821	live	2026-11-17	-	scan clean: main 25 clicked/14 nochange (benign), library embedded, 12 windows, visual clean
-Tattoo_Amp.wal	a25c40cd07c5fbf14a91780905a77c3a396ac474b93baeae0c8062859e1e7d26	filed	2026-11-17	B470(open)	filed: B470: tattoo window 100% transparent (450pt title glyph not drawn)
+Tattoo_Amp.wal	a25c40cd07c5fbf14a91780905a77c3a396ac474b93baeae0c8062859e1e7d26	live	2026-11-17	B470	B470 fixed: title glyph draws in the skin font at 450
 Dna_RepairVM_by_ROBODRON.wal	a2cf63970d5bdb03e36135b117a6bd1ec9eaad75cc4f8efb4780cfcde0288981	live	2026-11-17	-	scan clean: main 11 clicked/2 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 Assmosis.wal	a2f28e8a3d7f6c469b8def41155f9a0d5b103bdf502d0c509652a090bf5fdf60	live	2026-11-17	-	scan clean: main 12 clicked/4 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 Resin.wal	a353c11f1d2d06017488faf7a1ec728fe63feca9589021e275f6ee2b01e16ac9	live	2026-11-17	-	scan clean: main 15 clicked/4 nochange (benign), library skin-frame closed, 15 windows, no ref, visual clean
@@ -96,7 +96,7 @@ Echerry.wal	a4479a23d6d31f36cd53fbcea73dd43f78a8acc548483bd65052cddd743cc792	liv
 Angel_skin.wal	a4e50ac790d58f1a6b6bea3c09b0a669873e59c01ccb2cf41099e7e6c138bb0e	live	2026-11-17	-	scan clean: main 11 clicked/2 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 SERO_OVERDOSE_Official_Skin.wal	a522f42c2c208b46c0414b730f7e7a3d168eda5f77c5a9bbd761aa27620c93dd	live	2026-11-17	-	scan clean: main 21 clicked/8 nochange (benign), library skin-frame closed, 13 windows, visual clean
 cPro__ACDC__Black_Ice.wal	a5fecaab4f4fa4819d32f9715f32d5954fd7df4ac784b516bb6da92fcad6f420	live	2026-11-17	-	scan clean: main 25 clicked/14 nochange (benign), library embedded, 11 windows, visual clean
-LayerONE-2.wal	a6017fe5a083ea1fa919cc9af357e242ff134a505ae1c7a2386b062e4d51cdfe	filed	2026-11-17	B466(open)	filed: B466: Color_Themes window draws nothing (100% transparent)
+LayerONE-2.wal	a6017fe5a083ea1fa919cc9af357e242ff134a505ae1c7a2386b062e4d51cdfe	live	2026-11-17	B466	B466 closed by design (layout alpha=0, as B447); title bars now draw in the skin font
 Looney_Tunes_Back__in_Action.wal	a692e9ba0b5b0736234c701f92fb4140e5b54bddea9a2c972006b63cc0c69543	live	2026-11-17	-	scan clean: main 16 clicked/2 nochange (benign), library skin-frame closed, 14 windows, visual clean
 House_of_Evil_E.P._Evil_Player.wal	a6ca2a221861f6f4fadba05d6f051a133fcaef28015bd9c36495b9480bcb00c1	live	2026-11-17	-	scan clean: main 13 clicked/1 nochange (benign), library skin-frame closed, 16 windows, no ref, visual clean
 sx.wal	a6fae264eaae43c592079df40de8b2eeb4886dbdde25761e3ac5d43d81efe298	live	2026-11-17	-	scan clean: main 10 clicked/3 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
@@ -162,14 +162,14 @@ cPro__FryAmp.wal	b99afc1bb912d78861936dc7eac65a953314ccd82bdb1d80ce08c55e827227e
 SimpleSkin_1.wal	b9aa06f96107480541ad025c560f4afa818d5a98c4ea3136f7972553e7b42bcb	live	2026-11-17	-	scan clean: main 18 clicked/6 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 Aqua_x1.wal	bc06bab630e056a431b51b605f240af2d61547d4a88a3c12cdd05ba4d94b21b0	live	2026-11-17	-	scan clean: main 11 clicked/2 nochange (benign), library skin-frame closed, 14 windows, no ref, visual clean
 Orbis.wal	bc15894b74ebf9bebd6a51a308a399a0059f761f801d4c5dc5931def783f8dae	live	2026-11-17	-	scan clean: main 7 clicked/2 nochange (benign), library skin-frame closed, 15 windows, no ref, visual clean
-Watchmen_-_Modern.wal	bc5105a4d34be297b0bdf1af9836b7c373b6b3c90b5e998ef911fa4e96aa2d2c	filed	2026-11-17	B469(open)	filed: B469: smoke incomplete: close2's script quits the app
+Watchmen_-_Modern.wal	bc5105a4d34be297b0bdf1af9836b7c373b6b3c90b5e998ef911fa4e96aa2d2c	live	2026-11-17	B469	B469 fixed: smoke refuses a script-driven quit, runs to done
 TShirts_Fc_Vaslui_1.wal	bc8c5c924b3892508b2231af25c85cfd3595d5106b800ff6e02d55799e98e76e	live	2026-11-17	-	scan clean: main 14 clicked/4 nochange (benign), library skin-frame closed, 14 windows, visual clean
 Ayum_Hamasaki.wal	bcdfaea3cc4114405855111b4e4c90a86a93d6890fc8782222e0e8530bf0d8f6	live	2026-11-17	-	scan clean: main 11 clicked/0 nochange (benign), library skin-frame closed, 17 windows, visual clean
 ProStak_II.wal	bdc578151511da03180d8dc06a699db7bf765ffa341d702e59c7d872fb4cccb0	live	2026-11-17	-	scan clean: main 29 clicked/10 nochange (benign), library skin-frame closed, 17 windows, visual clean
 S3.wal	be377067f8991ce9e31125876e2355db49d12d777963710f9634ee8060d293de	live	2026-11-17	-	scan clean: main 12 clicked/3 nochange (benign), library skin-frame closed, 13 windows, no ref, visual clean
 Gisel_Idol_.wal	be78ee33026bdaa4bde8f03ff88ce74e84d86ecb2d148bb0ad3e88dbe0ccfc7d	live	2026-11-17	-	scan clean: main 10 clicked/1 nochange (benign), library skin-frame closed, 15 windows, no ref, visual clean
 Official_Merv_4_Skin.wal	bf10319cf28c634b25365a49f302bd2f1b1f2742a07af925d072693391d90a90	live	2026-11-17	-	scan clean: main 15 clicked/6 nochange (benign), library skin-frame closed, 16 windows, visual clean
-SOS_Brigade_Winamp5_skin.wal	bf4d86a9dc30210d8bf5852964667335494827a6d3a0c5f95320310b7e1afa09	filed	2026-11-17	B468(open)	filed: B468: Library/Playlist/Visualizations/Play History open 2600 px wide (layouts declare minimum_w=400, no default_w)
+SOS_Brigade_Winamp5_skin.wal	bf4d86a9dc30210d8bf5852964667335494827a6d3a0c5f95320310b7e1afa09	live	2026-11-17	B468	B468 fixed: frame decoration no longer sizes the window, 400 wide
 NewAmp.wal	bf9fafe4f058e11a9028addabe8c31ab619a5f5ede53e4e0d6514205a97cd9db	live	2026-11-17	-	scan clean: main 27 clicked/11 nochange (benign), library skin-frame closed, 13 windows, no ref, visual clean
 Electronica_Industriala.wal	bfe3835590d0471ea21f263aaa480890654545f0f0b1a2dff8ae3fa3a4942e3b	live	2026-11-17	-	scan clean: main 31 clicked/1 nochange (benign), library skin-frame closed, 17 windows, visual clean
 donaumarkt_MP3_Festival.wal	c029f58a1daacbf107ecbd4a2977b4c1f6beb893cf00d58fa2ac1f77af0f597f	live	2026-11-17	-	scan clean: main 13 clicked/2 nochange (benign), library skin-frame closed, 14 windows, visual clean
