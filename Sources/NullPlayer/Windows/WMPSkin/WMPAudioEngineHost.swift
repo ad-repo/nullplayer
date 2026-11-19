@@ -483,6 +483,7 @@ final class WMPAudioEngineHost: WMPHost {
         stopScanning()
         scanDirection = direction
         scanTrackID = engine.currentTrack?.id
+        // No step on the press itself: a scan is a rate, not a jump, so it starts one tick later.
         scanTimer = Timer.scheduledTimer(withTimeInterval: Self.scanTick, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.scanStep() }
         }

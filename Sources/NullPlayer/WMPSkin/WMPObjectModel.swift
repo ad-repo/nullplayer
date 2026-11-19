@@ -1417,11 +1417,14 @@ final class WMPObjectModel {
         }
     }
 
+    /// `<AUTOMENU>` has no element kind of its own; its `show()` is one of WMP's menus.
+    private static func isAutoMenu(_ tag: String) -> Bool { tag.lowercased() == "automenu" }
+
     private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
         switch (element.kind, name) {
         case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"),
              (.popup, "deleteall"), (.popup, "show"): return name
-        case let (.unknown(tag), "show") where tag.lowercased() == "automenu": return name
+        case let (.unknown(tag), "show") where Self.isAutoMenu(tag): return name
         // A `<LISTBOX>` is filled the same way, under the SDK's own names (W136): `WoW`'s
         // `fillListBox()` opens with `plListBox1.deleteAll()`.
         case (.listBox, "appenditem"), (.listBox, "deleteall"), (.listBox, "getitem"),
@@ -2071,7 +2074,7 @@ final class WMPObjectModel {
         case (.popup, "show"):
             hostCommand("showPopup", .number(Double(element.stableID))); return .value(.null)
         // `<AUTOMENU id="menu"/>` + `menu.show('Play')`: one of WMP's own menus, so ours.
-        case (.unknown, "show"):
+        case let (.unknown(tag), "show") where Self.isAutoMenu(tag):
             hostCommand("showAppMenu", arguments.first.flatMap(\.string).map(WMPJSONValue.string))
             return .value(.null)
         case (.effects, "next"): hostCommand("stepEffect", .number(1)); return .value(.null)

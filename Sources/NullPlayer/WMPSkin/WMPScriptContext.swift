@@ -1104,22 +1104,28 @@ final class WMPScriptContext: @unchecked Sendable {
         // means *this* element's `left` — and without the scope that reads as a ReferenceError and
         // the element gets no width at all.
         let scope = owner.map { "with (__wmpWrap('element:\($0)')) " } ?? ""
-        let wrapped = "(function(){ \(scope){ return (\(trimmed)); } })()"
-        var value = context.evaluateScript(wrapped)
         // **A statement is a value too**: WMP takes the completion value, as `eval` does, so the
         // WMP 8 Redux's `left="jscript:if(app.taskbarVisible){0}else{-g_kTaskBarWidth}"` is a
-        // number there and a SyntaxError inside `return (…)` here (W320). Retried only after a
-        // SyntaxError, so no expression that evaluates today takes this path.
-        if lastException?.contains("SyntaxError") == true,
+        // number there and a SyntaxError inside `return (…)` here (W320). Chosen by a parse-only
+        // check, never by retrying, so a runtime error cannot run the expression twice.
+        var wrapped = "(function(){ \(scope){ return (\(trimmed)); } })()"
+        if !parses(wrapped),
            let literal = String(data: (try? JSONSerialization.data(withJSONObject: trimmed,
                                                                    options: .fragmentsAllowed)) ?? Data(),
                                 encoding: .utf8) {
-            lastException = nil
-            value = context.evaluateScript("(function(){ \(scope){ return eval(\(literal)); } })()")
+            wrapped = "(function(){ \(scope){ return eval(\(literal)); } })()"
         }
+        let value = context.evaluateScript(wrapped)
         if let error = lastException { return (nil, error) }
         guard let value, !value.isUndefined, !value.isNull else { return (nil, "undefined") }
         return (Self.jsonValue(value), nil)
+    }
+
+    /// Whether `script` is valid syntax, without running it.
+    private func parses(_ script: String) -> Bool {
+        let source = JSStringCreateWithCFString(script as CFString)
+        defer { JSStringRelease(source) }
+        return JSCheckScriptSyntax(context.jsGlobalContextRef, source, nil, 1, nil)
     }
 
     /// **A handler resolves an unqualified name against the element it is authored on (W216).**

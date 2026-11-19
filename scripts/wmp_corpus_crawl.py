@@ -18,7 +18,7 @@ Duplicates are skipped by content (>=90% shared path+crc32 entries), against eve
 and everything already in <outdir>, exactly as the `.wal` crawler does; a name-only match is kept and
 flagged in `manifest.tsv`. Downloads are cached in `<outdir>/.cache`.
 """
-import html, json, os, re, sys, urllib.parse
+import html, json, os, pathlib, re, sys, urllib.parse
 
 sys.dont_write_bytecode = True  # no scripts/__pycache__
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
@@ -54,7 +54,7 @@ def theme_name(files):
 def load(path):
     """An archive's bytes with WMPArchiveHeaderRepair applied: two corpus skins and several
     downloads have `01 00 01 00` local headers."""
-    return repaired(path) or open(path, "rb").read()
+    return repaired(path) or pathlib.Path(path).read_bytes()
 
 
 def captures(url, match="exact", wmz_only=False):

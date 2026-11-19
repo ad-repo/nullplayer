@@ -597,6 +597,33 @@ final class WMPScriptRuntimeTests: XCTestCase {
         await session.teardown()
     }
 
+    /// The statement form is chosen by parsing, not by retrying: an expression that throws a
+    /// SyntaxError while it *runs* runs once. And only an `<AUTOMENU>`'s `show()` is WMP's menu.
+    func testARuntimeSyntaxErrorRunsOnceAndOnlyAutoMenuShowsTheAppMenu() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js">
+            <SUBVIEW id="frame" left="jscript:Bump()" top="jscript:Mark()" width="50" height="50"/>
+            <TEXT id="label" left="0" top="0" value="x"/>
+            <WIDGET id="other"/>
+        </VIEW></THEME>
+        """, js: "var calls = 0, marks = 0; function Bump() { calls++; JSON.parse('{'); return 5; }"
+            + " function Mark() { marks++; return 7; }")
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        _ = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 200, height: 200), snapshot: WMPHostSnapshot(),
+            event: .init(name: "load", targetID: "main", handlers: []))
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 200, height: 200), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: nil, handlers: ["label.fontSize = 10 + calls - marks; other.show();"]))
+        let label = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "label" }?.stableID)
+        // `Mark()` sits beside it and is evaluated as often; a retry would put `Bump()` ahead.
+        let frame = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "frame" }?.stableID)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: frame, property: "top")], 7)
+        XCTAssertEqual(output.overrides.properties[.init(stableID: label, property: "fontsize")]?.number, 10)
+        XCTAssertFalse(output.hostCommands.contains { $0.action == "showAppMenu" })
+        await session.teardown()
+    }
+
     /// A view's timer ticks the view's `onTimer` alone — `skin_gradiente`'s subview `onTimer` is its
     /// elapsed/remaining toggle — and a plain button element clicks its group (`Azenis`).
     func testTimerIsTheViewsAndAButtonElementClicksItsGroup() async throws {

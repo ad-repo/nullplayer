@@ -1247,19 +1247,6 @@ enum WMPHarness {
         "horizontalAlignment", "verticalAlignment"
     ]
 
-    /// Every control the pointer cannot reach anywhere in its own frame, with and without
-    /// artwork coverage.
-    ///
-    /// A hit target is *unreachable* when no pixel of its frame hit-tests back to it: something in
-    /// front answers everywhere, so the control is drawn, hovers nothing and clicks nothing. The
-    /// point of reporting it twice is that the two rules disagree, and the disagreement is the
-    /// measurement: `covered=` is what `WMPHitTester` does now (a control is its artwork), `rect=`
-    /// re-tests the same scene with every coverage mask dropped, which is what it did before.
-    /// `reached=rect-only` is a control this rule *lost* and that column has to stay empty.
-    ///
-    /// Sampling is the target's own frame on a bounded grid plus, for a mapping child, the first
-    /// pixel the mapping image gives that colour — a `<BUTTONELEMENT>` owns an arbitrary region of
-    /// its group's rect and a grid alone can miss a thin one.
     /// Every enabled control in the scene — a hit, or each enabled child of a mapped group — with
     /// the points that sample it: a grid over its frame plus, for a mapping child, the first pixel
     /// its colour owns. Shared by `WMP_RENDER_OCCLUDED` and `WMP_RENDER_TARGETS`.
@@ -1296,6 +1283,19 @@ enum WMPHarness {
         }
     }
 
+    /// Every control the pointer cannot reach anywhere in its own frame, with and without
+    /// artwork coverage.
+    ///
+    /// A hit target is *unreachable* when no pixel of its frame hit-tests back to it: something in
+    /// front answers everywhere, so the control is drawn, hovers nothing and clicks nothing. The
+    /// point of reporting it twice is that the two rules disagree, and the disagreement is the
+    /// measurement: `covered=` is what `WMPHitTester` does now (a control is its artwork), `rect=`
+    /// re-tests the same scene with every coverage mask dropped, which is what it did before.
+    /// `reached=rect-only` is a control this rule *lost* and that column has to stay empty.
+    ///
+    /// Sampling is the target's own frame on a bounded grid plus, for a mapping child, the first
+    /// pixel the mapping image gives that colour — a `<BUTTONELEMENT>` owns an arbitrary region of
+    /// its group's rect and a grid alone can miss a thin one.
     static func occludedLines(scene: WMPScene, skin: WMPLoadedSkin) -> [String] {
         let covered = WMPHitTester(hits: scene.hits)
         // The rule this engine used before: flat `zIndex` across the view, and no coverage.
