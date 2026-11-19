@@ -239,7 +239,8 @@ struct ClassicProTabStrip {
     /// own narrow branch lays them. Run after every script event that moved something: the script's
     /// next `alignByResize` writes the long names back, and its `alignFull` — the row fits again —
     /// widens the tabs without touching their text, so a short label in a tab wider than itself
-    /// gets its long name back here.
+    /// gets its long name back here. The host lays the short row out itself because the only script
+    /// path that does, `alignByResize`, writes the long names straight back.
     func fitLabels() {
         guard !family.shortNames.isEmpty,
               let stripWidth = runtime.resolvedFrame(of: buttons, in: .parent)?.width else { return }
