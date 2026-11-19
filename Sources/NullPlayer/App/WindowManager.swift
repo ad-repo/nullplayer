@@ -2528,28 +2528,7 @@ class WindowManager {
     /// were docked below it (directly or transitively). Only windows within
     /// `dockThreshold` of the closing window's bottom edge are moved.
     private func slideUpWindowsBelow(closingFrame: NSRect) {
-        let subWindows = managedWindowRecords.compactMap {
-            $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
-        }
-
-        // BFS: find windows directly docked below closingFrame, then those below them
-        var toMove: [NSWindow] = []
-        var frontier: [NSRect] = [closingFrame]
-
-        while !frontier.isEmpty {
-            let referenceFrame = frontier.removeFirst()
-            for win in subWindows {
-                guard win.isVisible, !toMove.contains(win) else { continue }
-                // win's top (maxY) should be near referenceFrame's bottom (minY)
-                let vertGap = abs(win.frame.maxY - referenceFrame.minY)
-                let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
-                if vertGap <= dockThreshold && horizOverlap {
-                    toMove.append(win)
-                    frontier.append(win.frame)
-                }
-            }
-        }
-
+        let toMove = Self.windowsDocked(below: closingFrame, among: centerStackSubWindows, threshold: dockThreshold)
         guard !toMove.isEmpty else { return }
 
         isSnappingWindow = true
@@ -5553,19 +5532,31 @@ class WindowManager {
     /// Find visible center-stack windows that are docked below the main window
     /// (directly or transitively), using the current dock threshold.
     private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {
-        let subWindows = managedWindowRecords.compactMap {
+        Self.windowsDocked(below: mainFrame, among: centerStackSubWindows, threshold: dockThreshold)
+    }
+
+    /// The centre stack's windows other than the player.
+    private var centerStackSubWindows: [NSWindow] {
+        managedWindowRecords.compactMap {
             $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
         }
+    }
+
+    /// The visible windows among `windows` docked below `frame`, directly or through one another, in
+    /// the order a breadth-first walk reaches them: a window is docked below a frame when its top edge
+    /// is within `threshold` of that frame's bottom edge and the two overlap horizontally.
+    static func windowsDocked(below frame: NSRect, among windows: [NSWindow], threshold: CGFloat) -> [NSWindow] {
         var docked: [NSWindow] = []
-        var frontier: [NSRect] = [mainFrame]
+        var frontier: [NSRect] = [frame]
 
         while !frontier.isEmpty {
             let referenceFrame = frontier.removeFirst()
-            for win in subWindows {
+            for win in windows {
                 guard win.isVisible, !docked.contains(win) else { continue }
+                // win's top (maxY) should be near referenceFrame's bottom (minY)
                 let vertGap = abs(win.frame.maxY - referenceFrame.minY)
                 let horizOverlap = win.frame.minX < referenceFrame.maxX && win.frame.maxX > referenceFrame.minX
-                if vertGap <= dockThreshold && horizOverlap {
+                if vertGap <= threshold && horizOverlap {
                     docked.append(win)
                     frontier.append(win.frame)
                 }
