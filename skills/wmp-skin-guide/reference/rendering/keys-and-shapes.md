@@ -252,3 +252,15 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   `featheringOutline: false`, because its pieces meet the client hole. Integer backing scales only (a Mac has 1x and 2x). `WMP_OUTLINE_FEATHER=0` is
   the A/B switch; `WMPOutlineFeatherTests` and `WMPOutlineGoldenImageTests` pin it, the second with
   committed hard and feathered goldens and a comparison sheet per synthetic fixture.
+
+- **One colour is not a shape (W321).** `isShapeMask` needs at least two colours: keyed out, a
+  single-colour bitmap cuts everything; unkeyed, it cuts nothing. `CleanRatings`' view background
+  `fullbg.gif` is solid `#FF0000`, its own `clippingColor`, over a full-canvas subview that holds
+  every piece of art. Read as a mask, it clipped the whole window away. Across all 646 views the
+  rule changes CleanRatings (0 → 11,700 px drawn) and one recolour in `Scooby-Doo_2`.
+- **The full-mode frame's title-bar fill is not drawn (W320).** The WMP 8 Redux draws a grey
+  `*_border` twin beside every corner and edge of its blue frame, which squares it off into a
+  rectangle under a Windows title bar. Nothing in the skin hides them. `WMPAppFrame.titleBarFill`
+  hides a `passThrough` node whose `image` names `_border` and whose own `transparencyColor` cuts
+  pixels, but only in a view that declares `<APP>`. The blue `appfillleft_border.bmp` strip has no
+  key pixel and stays. A script that shows one still wins.

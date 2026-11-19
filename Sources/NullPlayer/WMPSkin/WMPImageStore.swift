@@ -164,6 +164,9 @@ final class WMPImageStore: @unchecked Sendable {
     private var animationEntries: [String: WMPImageAnimation??] = [:]
     /// Artwork belongs to the WMP session, not to the archive. The transparent defaults preserve
     /// WMP's intrinsic built-in-image sizes while a remote source is still loading.
+    /// Bumped by every `setAlbumArtwork`; part of a built-in's upscale key, so an upscale of
+    /// retired artwork is never found again and ages out of the LRU.
+    private var artworkGeneration = 0
     private var builtInImages: [WMPBuiltInImage: WMPDecodedImage] = Dictionary(
         uniqueKeysWithValues: WMPBuiltInImage.allCases.map { image in
             (image, WMPImageStore.transparentImage(size: image.pixelSize))
@@ -271,6 +274,9 @@ final class WMPImageStore: @unchecked Sendable {
             builtInImages[resource] = image.map { Self.scaledImage($0, size: resource.pixelSize) }
                 ?? Self.transparentImage(size: resource.pixelSize)
         }
+        // Retires every retina upscale of the old artwork (see `upscaledImage`); left in reach, a
+        // 2x display kept drawing it (PixOS's 75 px art stayed transparent on a Retina screen).
+        artworkGeneration &+= 1
     }
 
     private static func transparentImage(size: Int) -> WMPDecodedImage {
@@ -547,6 +553,12 @@ final class WMPImageStore: @unchecked Sendable {
     func upscaledImage(for path: String, colorKeys: [WMPColor] = [], implicitKey: WMPColor? = nil,
                        frame: Int = 0, sourceRect: WMPRect?, scale: Int,
                        hueShift: Double = 0) throws -> WMPDecodedImage {
+        // A built-in's upscale is keyed by the artwork it was made from. Read before the base, so
+        // an upscale racing `setAlbumArtwork` lands under the retired generation, never the new one.
+        let builtIn = WMPBuiltInImage.named(path)
+        lock.lock()
+        let generation = artworkGeneration
+        lock.unlock()
         let base = try image(for: path, colorKeys: colorKeys, implicitKey: implicitKey,
                              frame: frame, hueShift: hueShift)
         let cropped = Self.crop(sourceRect, from: base.image)
@@ -556,8 +568,7 @@ final class WMPImageStore: @unchecked Sendable {
                                                  height: CGFloat(cropped.height)),
                                    decodedBytes: cropped.width * cropped.height * 4)
         }
-        let canonical = provider.canonicalPath(for: path) ?? path
-        var cacheKey = canonical
+        var cacheKey = builtIn.map { "\($0.rawValue)@\(generation)" } ?? provider.canonicalPath(for: path) ?? path
         cacheKey += colorKeys.map { "|key=\($0)" }.joined()
         if let implicitKey { cacheKey += "|implicit=\(implicitKey)" }
         if frame > 0 { cacheKey += "|frame=\(frame)" }
@@ -1228,6 +1239,10 @@ final class WMPImageStore: @unchecked Sendable {
                 | UInt32(pixels[index + 2]) << 8 | UInt32(pixels[index + 3])
             counts[value, default: 0] += 1
         }
+        // **One colour is not a shape**: keyed it cuts everything, unkeyed nothing. `CleanRatings`'
+        // view background is solid `#FF0000`, its `clippingColor`, over a subview that holds the
+        // art, and reading it as a mask clipped the whole window away (W321).
+        guard counts.count >= 2 else { return false }
         let top = counts.values.sorted(by: >).prefix(2).reduce(0, +)
         return Double(top) >= 0.99 * Double(width * height)
     }

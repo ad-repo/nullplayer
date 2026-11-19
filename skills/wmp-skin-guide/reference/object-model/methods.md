@@ -32,8 +32,9 @@ to be found by a live reporter (W100) because `WMP_CALL_TRACE` could not see it,
 
 Two consequences bind any change to this set:
 
-* **Widening it implements nothing.** `elementMethod(_:_:)` stays the kind-aware authority on what
-  actually runs, and `implementedElementMethods` on what the census counts as answered.
+* **Widening it implements nothing.** `WMPObjectModel.elementMethodsByKind` (with the ambient,
+  playlist and `<AUTOMENU>` sets beside it) is the one table of what actually runs; `elementMethod`,
+  `implementedElementMethods` and the compatibility table's `view`/`popup` rows are all read from it.
   `WMPJScriptCompatibility.members["element"]` is derived from the latter, not from the vocabulary —
   which is why `setFocus` is in the vocabulary and correctly absent from the compatibility table.
 * **A name is only ever added, never removed.** The vocabulary gates *reads* as well as calls:
@@ -161,8 +162,10 @@ the engine decides whether the skin committed it: a transaction that posts `seek
 seek, and one that does not hands it back to `WMPMainWindowController`, which commits the value the
 pointer left. See `SKILL.md`.
 
-`WMPObjectModel.implementedElementMethods` is the flat set of those names, and
-`WMPJScriptCompatibility.members["element"]` is derived from it rather than restating it. That
+`WMPObjectModel.implementedElementMethods` is the flat set of those names, derived from
+`elementMethodsByKind`, and `WMPJScriptCompatibility.members["element"]` is derived from it rather
+than restating it. A new method goes in that table and nowhere else: when the switch and the flat set
+were separate lists, `show` and `deleteSelected` ran while the census still ranked them as demand. That
 matters as much as the implementation: the corpus census classifies a member against that table, so
 one the runtime answers and the table does not know is measured as demand for something that already
 works. `moveTo` and `resizeTo` were counted that way from Phase 3 until W38 closed, which is part of
@@ -331,5 +334,50 @@ host opens the picker and plays the result while the skin's own `player.URL = ne
 nothing. It is not cosmetic: **WMP mode has no other route to a track**, because the auxiliary
 NullPlayer windows stay hidden until they have WMP-owned chrome, and before this the only way to
 start playback was to leave WMP mode and come back.
+
+**`player.launchURL(url)` opens the user's browser through `SkinExternalLink`** — the one entry
+`.wal`'s `System.navigateUrl` uses too (2026-11-19). The object model only emits a `launchURL`
+host command; the controller runs the address through `SkinExternalLink.resolve` (HTTP/HTTPS with
+a real host) and asks on first use with a sheet naming the URL. "Always Allow" is
+`WMPPreferenceStore.allowsDefaultBrowser`: its own user-defaults key,
+`wmp.allowDefaultBrowser.<archive SHA-256>`, **never an entry in the skin's preference
+dictionary**, which the skin's own `theme.savePreference` writes, so a skin cannot grant itself
+consent. Keyed by content, so a replaced archive under the same file name is asked again. About
+130 archives call it (NASCAR's Info and logo, myPod's "Go visit iPod.com", US Army's stars); most
+of their targets are long-dead promo sites. Do not click these in a test.
+
+**The click-sweep methods (W322–W324, 2026-11-19).** Each one only emits a host command; the
+controller does the AppKit part.
+- `<POPUP>.show()` posts `showPopup`; the controller takes the popup's items from the same
+  transaction's `listItems` (the view is only given them after the commands run, and reading the
+  runtime later could see another window's transaction) and `WMPMainView.showPopupMenu` pops them up
+  at the pointer. A pick comes
+  back as a list selection, through `selectedItem_onchange`, just like a drawn popup's, so nothing
+  waits on `show()`'s return value. `<POPUP>.deleteAll()` is `removeAllItems`. The users are
+  `Half-Life 2`, `izdataarayuz`, `PixOS` and `wmpTunes` (the EQ preset buttons) and the WMP 9
+  Redux's `eqSelectPopup2`.
+- `<AUTOMENU id="menu"/>` + `menu.show('Play')` asks for one of WMP's own menus, so it shows
+  NullPlayer's: the playback menu for `Play`, the main context menu otherwise (`showAppMenu`).
+  `CleanRatings`' `quick` button is the user.
+- `playlist.deleteSelected()` on any playlist kind posts `deleteSelectedRows`. The selection lives
+  in the AppKit pane, so the pane removes it from the queue; library writes stay unrecognised
+  (W66/W136). `Smart Display Blue`/`Silver` are the users.
+- `view.maximize()` posts `maximizeWindow`, which fills the screen's visible frame up to the
+  window's `maxSize`. The WMP 9 Redux comes back with `View1.width = 678`, so only the way in
+  needs the host.
+
+**`player.controls.fastForward()`/`fastReverse()` are a mode, and any other transport ends them**
+(`WMPAudioEngineHost`, 2026-11-19). The scan runs at WMP's 5x and reports `playState` 4/5
+(`WMPHostSnapshot.State.scanForward`/`scanReverse`, status "Fast forwarding"/"Rewinding"), so a skin
+hears it start and end as `playstatechange`. It ends:
+- on play, pause, stop, next, previous or a seek;
+- at the start of the track for reverse, which resumes play from 0:00;
+- a few seconds before the end for forward, which lets the track play out;
+- on a track change, or when playback stops.
+
+`TheGirlNextDoor` calls it from plain buttons and shows Play to resume. The old fixed 5 s jump
+every 0.2 s never ended: rewind held the track at 0:00 for good, and fast-forward skipped through
+every following track. The press-and-hold `beginScan`/`endScan` buttons (`cyberchannel`) take the
+same path.
 
 ---

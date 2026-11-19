@@ -119,6 +119,20 @@
 - **A script calling `play()` on an animation already playing leaves it running**: pumaSKIN's
   puma emblem moves with the music.
 
+### Windows Media Player skins
+
+- **46 more skins checked**, found by crawling archived skin galleries: Advanced Sound Settings,
+  Azenis Mini, Chameleon, ChromeDome, El Diablo, Eddie T. Head, Evil Headspace, Faith Hill, gnome
+  (2001 release), Gradiente Music Controller, Half-Life 2, Han-d-1, iRiver, iTunes9series, izdata,
+  JayAss, Lord of the Rings: The Battle for Middle Earth, MediaCenter 2005, mk2 Frosty, MyPod,
+  NASCAR PC, Orange Army, palm, PinStriped, PixOS, Play-Ahhh, Ratings skin, Shape, Smart Display
+  (Blue and Silver), SPAWN, Steel and Glass, Superman, Surviver, The Girl Next Door, The Movies,
+  TheThing, Tiny iTunes, Titania, To End All Wars, Trinity, Windows Media Player 8 and 9 Redux,
+  wmpTunes, wt00 and Zippo.
+- **A skin missing one of its script files still loads.** Orange Army and Titania were refused
+  whole because their archives leave out a `.js` that the skin names. They now load without the
+  functions that file would have defined.
+
 ### Visualizations
 
 - **Goom has a sixteenth effect, Ooh/Ugh**: a heavy-metal hellscape in red, black and white only.
@@ -137,6 +151,31 @@
   instead of only as often as the audio arrived (#772).
 - **The resize cursor no longer follows the mouse away from a window** after hovering its edge, in
   Classic, `.wal`, Windows Media Player, Audion and Sonique skins (#779).
+- **Info and website buttons in Windows Media Player skins open their link**, after asking first,
+  the way `.wal` skins already do — NASCAR's Info button, myPod's "Go visit iPod.com" and about 130
+  more.
+- **The WMP 8 Redux skin draws its whole player** instead of just a visualizer, without the grey
+  pieces around its frame, and both Redux skins draw their text at the right size.
+- **`CleanRatingsSkin` is visible** instead of an empty window.
+- **More Windows Media Player skin buttons work:** EQ preset and quick-access menu buttons
+  (`Half-Life 2`, `izdataarayuz`, `PixOS`, `wmpTunes`), the remove button on the `Smart Display`
+  skins, the WMP 9 Redux maximize button, and the window buttons on `Azenis`' shade bar.
+- **The WMP 9 Redux shows its pause button and visualizer** when it is chosen while a track plays.
+- **Album art shows in Windows Media Player skins on Retina displays** (PixOS and others), including
+  when a track starts while the skin is still loading.
+- **`izdataarayuz`'s spectrum stays inside its round screen.**
+- **Windows opened from `MCE2005_MP` no longer show a slice of its media center sidebar** in their
+  border, and neither do those from a few other skins with a side panel.
+- **`myPod` shows the track name.**
+- **`skin_gradiente`'s time readout stays on elapsed or remaining** instead of switching every half
+  second.
+- **The Goom visualizer no longer crashes** when its pane shrinks to a few pixels.
+- **Fast forward and rewind work in Windows Media Player skins**: they scan at a steady 5x, stop at
+  the ends of the track or when you press another control, and the skin shows that it is scanning.
+  Before, rewind could hold a track at 0:00 for good (`TheGirlNextDoor`).
+- **`TheThing`'s buttons light up in the right place** when hovered or pressed.
+- **The `trinity` skin opens** instead of quitting the app, and draws its body instead of a black
+  panel.
 
 ## 0.35.1
 

@@ -66,6 +66,12 @@ Three rules, each of which was a live defect first:
    arrives. The skin never receives a URL, token, `Track`, or any other host object. No other
    `WMPImage_*` spelling is accepted: in particular `WMPImage_AdBanner` remains unresolved because
    NullPlayer has no equivalent surface.
+   **New artwork must reach every cache that holds the old.** `setAlbumArtwork` drops the cached
+   Retina upscales keyed under the built-in's name: at 2x the renderer draws the art through
+   `upscaledImage`, which had cached the transparent placeholder, so `PixOS`'s 75 px art stayed
+   blank on a Retina screen while every 1x probe drew it. And `apply` forgets `artworkTrackID`
+   whenever it installs a new store. A track that starts before the skin finishes loading loads
+   its art into no store, and the same-track guard then skipped the reseed (2026-11-19).
 
 8. **`player.fullScreen` is the Player's own member, and `playState` tells the truth while a media
    opens (2026-09-20).** Two halves of one live defect, reported as *"when i start the video the
@@ -135,3 +141,22 @@ tags, never binding paths, so this needs the script-text scan in `harness.md`):
 `pause` 151 uses / 125 skins, `play` 36/30, `stop` 21/17, `previous` and `next` 11/10 each,
 `currentposition` 6/6, `fastforward` and `fastreverse` 3/3 each, **`seek` 2/2 — and those two are
 `Revert` and `Revert (1)`, the same markup, so one skin.**
+
+## `app`: WMP's full-mode frame (W320)
+
+Only the two Redux archives, copies of WMP 8's and 9's own full mode, declare `<APP>`.
+`WMPObjectModel.readApp` answers `taskbarVisible` true, `titleBarVisible` false, `playlistVisible`
+and `settingsVisible` false and `currentTask` `"NowPlaying"`, and treats `app.adjustLeft()` as
+inert. Writes are stored and read back with nothing behind them. There is no task bar host, so
+these answer what WMP's full mode opens with. Before `app` was bound, the WMP 8 Redux's
+`left="jscript:if(app.taskbarVisible)…"` on `svEntireApp` left nothing drawn but the visualizer.
+`settings.showAlbumArt` answers false, which keeps the effects surface showing. The grey
+`*_border` pieces this frame draws under a Windows title bar are hidden by `WMPAppFrame`
+(`rendering/keys-and-shapes.md`).
+
+**An attribute written as a statement is a value too.** WMP takes the completion value, as `eval`
+does, so `if(app.taskbarVisible){0}else{-g_kTaskBarWidth}` is a number there and a SyntaxError
+inside our `return (…)`. `WMPScriptContext.returnStatement` sends the expression through `eval`
+only when a parse-only syntax check rejects `return (…)` — never by retrying, so a runtime error
+cannot run it twice — and caches that choice per source, so no expression that already evaluated
+takes the new path.

@@ -201,6 +201,9 @@ struct WMPJScriptEvent: Hashable, Codable, Sendable {
     struct Handler: Hashable, Codable, Sendable {
         let source: String
         var arguments: [String: WMPJSONValue] = [:]
+        /// The element whose scope the handler runs in, when that is not the event's source — a
+        /// `<BUTTONGROUP>`'s handler raised by a click on its plain element.
+        var ownerStableID: Int?
     }
 
     let name: String
@@ -285,7 +288,7 @@ enum WMPJScriptCompatibility {
     static let members: [String: Set<String>] = [
         "player": ["controls", "settings", "currentMedia", "currentPlaylist", "network",
                    "playState", "openState", "status", "isOnline", "enabled", "versionInfo",
-                   "fullScreen"],
+                   "fullScreen", "launchURL"],
         "controls": ["play", "pause", "stop", "previous", "next", "fastForward", "fastReverse",
                      "currentPosition", "currentPositionString", "currentItem", "isAvailable",
                      "playItem"],
@@ -323,12 +326,13 @@ enum WMPJScriptCompatibility {
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
-        "view": ["left", "top", "width", "height", "close", "minimize", "size", "visible",
-                 "backgroundImage"],
+        "view": WMPObjectModel.elementMethodsByKind[.view, default: []]
+            .union(["left", "top", "width", "height", "visible", "backgroundImage"]),
         // Derived from the object model's own table rather than restated, so the static tally and
         // the runtime cannot disagree about what `mediacenter` answers. Every one of them is inert.
         "mediacenter": Set(WMPObjectModel.mediaCenterDefaults.keys).union(["getNamedString"]),
-        "popup": ["appendItem", "removeAllItems", "getItem", "itemCount"],
+        "app": Set(WMPObjectModel.appDefaults.keys).union(["adjustLeft"]),
+        "popup": WMPObjectModel.elementMethodsByKind[.popup, default: []].union(["itemCount"]),
         // Properties *and* methods: a call the runtime answers must not be counted as demand for
         // something unimplemented. Both halves are derived from the object model, never restated.
         "element": Set(WMPObjectModel.standardElementProperties)
@@ -337,8 +341,8 @@ enum WMPJScriptCompatibility {
             // 100 archives — hidden while their `metadata.*` paths were misrouted (W315).
             .union(["textWidth"])
             // The `<EFFECTS>` rect's own four, which only that kind answers (W101). The set is
-            // flat, so they are listed here rather than derived: a kind-aware table would have to
-            // restate `elementMethod`, which is the authority.
+            // flat, so they are listed here rather than derived from `elementMethodsByKind`, which
+            // holds methods only.
             .union(["currentEffectType", "currentEffectTitle", "currentPreset", "currentPresetTitle"])
     ]
 
@@ -476,6 +480,15 @@ final class WMPPreferenceStore: @unchecked Sendable {
     func reset() {
         if memory != nil { memory = [:] } else { defaults.removeObject(forKey: key) }
     }
+
+    /// The user's "Always Allow" for this skin's `player.launchURL` — the host's answer, not a skin
+    /// value, so it sits beside them rather than among them. Keyed by the archive's content, so a
+    /// replacement archive under the same name is asked again. A volatile copy never holds one.
+    var allowsDefaultBrowser: Bool {
+        get { memory == nil && defaults.bool(forKey: consentKey) }
+        set { if memory == nil { defaults.set(newValue, forKey: consentKey) } }
+    }
+    private var consentKey: String { "wmp.allowDefaultBrowser.\(namespace)" }
 }
 
 // MARK: - The session
@@ -493,7 +506,7 @@ final class WMPPreferenceStore: @unchecked Sendable {
 /// capability is reachable only through `WMPObjectModel`, and `WMPPhase0Limits` still bounds
 /// timers, preferences and execution time. See Amendment 2 in `docs/wmp-skin/phase-0-decision-record.md`.
 actor WMPScriptRuntime {
-    private let preferences: WMPPreferenceStore
+    let preferences: WMPPreferenceStore
     private let executionSeconds: TimeInterval
     private var context: WMPScriptContext?
     private var contextSkin: ObjectIdentifier?

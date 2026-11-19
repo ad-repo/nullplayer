@@ -30,6 +30,7 @@ import XCTest
 //   WMP_RENDER_SCRIPTS=1           per program: bytes, declared handlers, whether it evaluated
 //   WMP_RENDER_EXPR=1              every JScript: geometry expression, its value, its order, deps
 //   WMP_CALL_TRACE=1               every host object-model access, and whether it was recognised
+//   WMP_RENDER_TARGETS=1           one clickable point per reachable control, for WMP_RENDER_CLICK
 //   WMP_RENDER_CLICK=<view>@x,y[;x,y…]   drive clicks in order and report what each one moved,
 //                                        including a viewSize= line when the handler resized the
 //                                        window (a .wmz compact mode, W113)
@@ -58,6 +59,7 @@ struct WMPProbe {
     var wantsUnresolved: Bool { env["WMP_RENDER_UNRESOLVED"] != nil }
     var wantsLimits: Bool { env["WMP_RENDER_LIMITS"] != nil }
     var wantsOccluded: Bool { env["WMP_RENDER_OCCLUDED"] != nil }
+    var wantsTargets: Bool { env["WMP_RENDER_TARGETS"] != nil }
     var wantsScripts: Bool { env["WMP_RENDER_SCRIPTS"] != nil }
     var wantsExpressions: Bool { env["WMP_RENDER_EXPR"] != nil }
     var wantsCallTrace: Bool { env["WMP_CALL_TRACE"] != nil }
@@ -946,6 +948,9 @@ enum WMPHarness {
             for line in unresolvedLines(scene: scene, skin: skin) { HarnessOutput.emit(line) }
         }
         if probe.wantsLimits { HarnessOutput.emit(Self.limitsLine(scene: scene, viewID: viewID)) }
+        if probe.wantsTargets {
+            for line in Self.targetLines(scene: scene) { HarnessOutput.emit(line) }
+        }
         if probe.wantsOccluded {
             for line in occludedLines(scene: scene, skin: skin) { HarnessOutput.emit(line) }
         }
@@ -1242,6 +1247,45 @@ enum WMPHarness {
         "horizontalAlignment", "verticalAlignment"
     ]
 
+    /// Every enabled control in the scene — a hit, or each enabled child of a mapped group — with
+    /// the points that sample it: a grid over its frame plus, for a mapping child, the first pixel
+    /// its colour owns. Shared by `WMP_RENDER_OCCLUDED` and `WMP_RENDER_TARGETS`.
+    static func clickableChildren(of scene: WMPScene)
+        -> [(hit: WMPHitMetadata, child: (id: Int, label: String, points: [WMPPoint]))] {
+        scene.hits.filter(\.enabled).flatMap { hit in
+            let children: [(id: Int, label: String, seed: WMPPoint?)] = hit.mappingTargets.isEmpty
+                ? [(hit.stableID, hit.nodeID ?? "-", nil)]
+                : hit.mappingTargets.filter(\.enabled).map { child in
+                    (child.stableID, child.nodeID ?? "-",
+                     hit.mappingImage?.firstPixel(for: child.stableID).map { point in
+                        WMPPoint(x: hit.frame.x + point.x * hit.frame.width
+                                    / CGFloat(max(1, hit.mappingImage?.width ?? 1)) + 0.5,
+                                 y: hit.frame.y + point.y * hit.frame.height
+                                    / CGFloat(max(1, hit.mappingImage?.height ?? 1)) + 0.5)
+                     })
+                }
+            return children.map { child in
+                (hit, (child.id, child.label, samplePoints(in: hit.frame) + (child.seed.map { [$0] } ?? [])))
+            }
+        }
+    }
+
+    /// `WMP_RENDER_TARGETS` — one point per reachable control, the first sample that hit-tests back
+    /// to it. Feed the points to `WMP_RENDER_CLICK` to press every control in a view; a control no
+    /// sample reaches is `WMP_RENDER_OCCLUDED`'s subject and is left out here.
+    static func targetLines(scene: WMPScene) -> [String] {
+        let tester = WMPHitTester(hits: scene.hits)
+        return clickableChildren(of: scene).compactMap { hit, child in
+            // Floored before the test, so the point printed is the point that was tested.
+            guard let point = child.points
+                .map({ WMPPoint(x: $0.x.rounded(.down), y: $0.y.rounded(.down)) })
+                .first(where: { tester.hitTest($0)?.stableID == child.id })
+            else { return nil }
+            return "TARGET \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
+                + "point=\(Int(point.x)),\(Int(point.y))"
+        }
+    }
+
     /// Every control the pointer cannot reach anywhere in its own frame, with and without
     /// artwork coverage.
     ///
@@ -1267,35 +1311,21 @@ enum WMPHarness {
         for (offset, hit) in ordered.enumerated() { restamped.append(hit.restamped(paintOrder: offset)) }
         let rect = WMPHitTester(hits: restamped)
         var lines: [String] = []
-        for hit in scene.hits where hit.enabled {
-            let children: [(id: Int, label: String, seed: WMPPoint?)] = hit.mappingTargets.isEmpty
-                ? [(hit.stableID, hit.nodeID ?? "-", nil)]
-                : hit.mappingTargets.filter(\.enabled).map { child in
-                    (child.stableID, child.nodeID ?? "-",
-                     hit.mappingImage?.firstPixel(for: child.stableID).map { point in
-                        WMPPoint(x: hit.frame.x + point.x * hit.frame.width
-                                    / CGFloat(max(1, hit.mappingImage?.width ?? 1)) + 0.5,
-                                 y: hit.frame.y + point.y * hit.frame.height
-                                    / CGFloat(max(1, hit.mappingImage?.height ?? 1)) + 0.5)
-                     })
-                }
-            for child in children {
-                var points = samplePoints(in: hit.frame)
-                if let seed = child.seed { points.append(seed) }
-                let byCovered = points.contains { covered.hitTest($0)?.stableID == child.id }
-                let byRect = points.contains { rect.hitTest($0)?.stableID == child.id }
-                guard !(byCovered && byRect) else { continue }
-                let reached = byCovered ? "covered-only" : (byRect ? "rect-only" : "neither")
-                // Name what answers instead. A control lost to this rule is only a defect if the
-                // thing in front of it is something the user can see there.
-                let blockers = Set(points.compactMap { point -> String? in
-                    guard let front = covered.hitTest(point), front.stableID != child.id else { return nil }
-                    return "\(front.nodeID ?? "-")#\(front.stableID):\(front.kind)"
-                })
-                lines.append("OCCLUDED \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
-                    + "frame=\(hit.frame) z=\(hit.zIndex) reached=\(reached) "
-                    + "by=[\(blockers.sorted().joined(separator: " "))]")
-            }
+        for (hit, child) in clickableChildren(of: scene) {
+            let points = child.points
+            let byCovered = points.contains { covered.hitTest($0)?.stableID == child.id }
+            let byRect = points.contains { rect.hitTest($0)?.stableID == child.id }
+            guard !(byCovered && byRect) else { continue }
+            let reached = byCovered ? "covered-only" : (byRect ? "rect-only" : "neither")
+            // Name what answers instead. A control lost to this rule is only a defect if the
+            // thing in front of it is something the user can see there.
+            let blockers = Set(points.compactMap { point -> String? in
+                guard let front = covered.hitTest(point), front.stableID != child.id else { return nil }
+                return "\(front.nodeID ?? "-")#\(front.stableID):\(front.kind)"
+            })
+            lines.append("OCCLUDED \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
+                + "frame=\(hit.frame) z=\(hit.zIndex) reached=\(reached) "
+                + "by=[\(blockers.sorted().joined(separator: " "))]")
         }
         let lost = lines.filter { $0.contains("reached=rect-only") }.count
         let recovered = lines.filter { $0.contains("reached=covered-only") }.count
@@ -1492,7 +1522,9 @@ enum WMPHarness {
     private static func eventFor(name: String, skin: WMPLoadedSkin, viewID: String) -> WMPJScriptEvent? {
         let handlers = WMPMainWindowController.handlers(in: skin, event: name, targetID: nil,
                                                         viewID: viewID)
-        guard !handlers.isEmpty else { return nil }
+        // The view opening is an event with or without a handler, as in the app: it is also what
+        // runs the view's `jscript:` property assignments.
+        guard !handlers.isEmpty || name == "onLoad" else { return nil }
         return WMPJScriptEvent(name: name, targetID: viewID, handlers: handlers)
     }
 
@@ -1603,12 +1635,10 @@ enum WMPHarness {
                 }
                 continue
             }
-            let node = nodesByID[target.stableID]
-            let handlers: [String] = (node?.attributes ?? []).compactMap { attribute in
-                guard case let .handler(event, source) = attribute.value,
-                      event.caseInsensitiveCompare("onClick") == .orderedSame else { return nil }
-                return source
-            }
+            // The app's own selector, so a click the app raises elsewhere (a plain button element
+            // clicking its group) is measured here too.
+            let handlers = WMPMainWindowController.eventHandlers(in: skin, event: "click",
+                targetID: target.nodeID, targetStableID: target.stableID, viewID: viewID)
             HarnessOutput.emit("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
                 + "action=\(target.action.map(String.init(describing:)) ?? "-") "
                 + "sticky=\(target.sticky) handlers=\(handlers.count)")
@@ -1621,7 +1651,8 @@ enum WMPHarness {
             }
             let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                 snapshot: probe.hostSnapshot,
-                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID, handlers: handlers),
+                event: WMPJScriptEvent(name: "onClick", targetID: target.nodeID,
+                                       targetStableID: target.stableID, handlers: handlers),
                 geometry: scene.scriptGeometry)
             // A handler that writes a latch by name owns it from here, as in the app.
             for (address, value) in output.overrides.properties
@@ -1723,7 +1754,8 @@ enum WMPHarness {
                 guard let session = pass.session, !handlers.isEmpty else { continue }
                 let output = await session.transact(skin: skin, viewID: viewID, size: scene.canvasSize,
                     snapshot: probe.hostSnapshot,
-                    event: WMPJScriptEvent(name: event, targetID: edge.nodeID, handlers: handlers),
+                    event: WMPJScriptEvent(name: event, targetID: edge.nodeID,
+                                           targetStableID: edge.stableID, handlers: handlers),
                     geometry: scene.scriptGeometry)
                 for line in changeLines(from: previous, to: output.overrides, nodes: nodesByID) {
                     HarnessOutput.emit("HOVER \(where_) \(event) \(line)")
@@ -2058,7 +2090,8 @@ enum WMPHarness {
                 let output = await session.transact(skin: skin, viewID: viewID,
                     size: scene.canvasSize, snapshot: probe.hostSnapshot,
                     event: handlers.isEmpty ? nil
-                        : WMPJScriptEvent(name: "onChange", targetID: target.nodeID, handlers: handlers),
+                        : WMPJScriptEvent(name: "onChange", targetID: target.nodeID,
+                                          targetStableID: target.stableID, handlers: handlers),
                     geometry: scene.scriptGeometry)
                 for diagnostic in output.diagnostics {
                     HarnessOutput.emit("DRAG \(where_) [\(diagnostic.code)] \(diagnostic.message)")
@@ -2093,7 +2126,7 @@ enum WMPHarness {
             if !handlers.isEmpty {
                 let output = await session.transact(skin: skin, viewID: viewID,
                     size: scene.canvasSize, snapshot: probe.hostSnapshot,
-                    event: WMPJScriptEvent(name: "onDragEnd", targetID: target.nodeID,
+                    event: WMPJScriptEvent(name: "onDragEnd", targetID: target.nodeID, targetStableID: target.stableID,
                                            handlers: handlers),
                     geometry: scene.scriptGeometry)
                 HarnessOutput.emit("DRAG \(where_) dragend handlers=\(handlers.count) "

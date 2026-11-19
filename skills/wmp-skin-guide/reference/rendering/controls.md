@@ -219,3 +219,10 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
 - **An `<EDITBOX>`'s `value` is a string.** Nine of the corpus's ten are `plSearchEdit`, a playlist
   search field whose `onKeyUp` reads it straight back, so it needs its own text path
   (`setWidgetText`) rather than the numeric `setWidgetValue`.
+
+- **A `<BUTTONGROUP>`'s lit sheet larger than its mapping image is cropped to the group, never
+  squeezed in.** `TheThing`'s `hover_RED.png` is 402x298 over a 382x278 `mask.png`. Scaled to the
+  frame, every lit icon drew up to 15 px off its control: a stray arc on hover, a dark blob on press.
+  47 state sheets in 20 archives differ in size from their mask. A smaller one keeps the frame,
+  because the mapping mask is drawn into that frame. The headless probe reaches this only through
+  `WMP_RENDER_HOVER`.

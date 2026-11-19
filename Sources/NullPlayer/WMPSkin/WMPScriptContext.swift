@@ -48,7 +48,13 @@ struct WMPScriptViewPlan: Sendable {
     /// before the skin's own handlers. A colour is a property write, not a geometry expression, so
     /// it takes the same path a script's `el.backgroundColor = …` does (W165). Only `Asimov_Radio`
     /// (18) and `digitaldj` (4) author one; unread, they drew in the default text colour.
-    let colorAssignments: [String]
+    ///
+    /// `fontSize="jscript:g_kMEDIUM_FONTSIZE-1"` is the same kind of write and takes the same path:
+    /// the two Redux archives size about 450 texts that way, and with no evaluation every one drew
+    /// at the 12pt default — the CD page's "Copy Music"/"Stop Copy" ran out past the window.
+    /// Each runs in its own element's scope, as an expression does: `fontSize="jscript:height"`
+    /// means that element's `height`, and script globals still resolve behind it.
+    let propertyAssignments: [(stableID: Int, source: String)]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -57,7 +63,7 @@ struct WMPScriptViewPlan: Sendable {
         })?.node else {
             elements = []; expressions = []; expressionAddresses = [:]; idToStableID = [:]
             attributeChangeHandlers = [:]; completionHandlers = [:]; valueChangeHandlers = [:]
-            colorAssignments = []
+            propertyAssignments = []
             return
         }
         var included = Set<Int>()
@@ -71,7 +77,7 @@ struct WMPScriptViewPlan: Sendable {
         var changeHandlers: [Int: [String: WMPAmbientChangeHandler]] = [:]
         var completions: [Int: [String: String]] = [:]
         var valueChanges: [Int: String] = [:]
-        var colorAssignments: [String] = []
+        var propertyAssignments: [(stableID: Int, source: String)] = []
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             // First declaration wins, the rule `WMPObjectModel.resetElements` applies to the element
@@ -92,8 +98,11 @@ struct WMPScriptViewPlan: Sendable {
                     let key = "\(id).\(name)"
                     expressions.append(.init(key: key, source: source))
                     addresses[key.lowercased()] = .init(stableID: node.stableID, property: name)
-                case let .jScript(source) where name.hasSuffix("color"):
-                    colorAssignments.append("\(id).\(attribute.name) = (\(source));")
+                case let .jScript(source) where name.hasSuffix("color") || name == "fontsize":
+                    // Trailing `;` trimmed: the Redux writes `fontSize="jscript:g_kSMALL_FONTSIZE;"`,
+                    // a SyntaxError inside the parentheses.
+                    let expression = source.trimmingCharacters(in: CharacterSet(charactersIn: "; \t\r\n"))
+                    propertyAssignments.append((node.stableID, "\(id).\(attribute.name) = (\(expression));"))
                 case let .binding(kind, source)
                     where kind == .property && WMPScriptExpression.geometryProperties.contains(name):
                     let key = "\(id).\(name)"
@@ -130,7 +139,7 @@ struct WMPScriptViewPlan: Sendable {
         attributeChangeHandlers = changeHandlers
         completionHandlers = completions
         valueChangeHandlers = valueChanges
-        self.colorAssignments = colorAssignments
+        self.propertyAssignments = propertyAssignments
     }
 
     /// One ambient `<attribute>_onchange` handler: the **authored** spelling of the attribute
@@ -738,10 +747,11 @@ final class WMPScriptContext: @unchecked Sendable {
             }
             // The app raises `load`, the render harness `onLoad`; both are this view opening.
             if ["load", "onload"].contains(event.name.lowercased()) {
-                for assignment in plan.colorAssignments {
-                    if let error = invokeHandler(assignment, label: "load[color]", owner: nil) {
+                for assignment in plan.propertyAssignments {
+                    if let error = invokeHandler(assignment.source, label: "load[property]",
+                                                 owner: model.element(stableID: assignment.stableID)) {
                         result.diagnostics.append(.init(code: "handler-error",
-                                                        message: "load[color]: \(error)"))
+                                                        message: "load[property]: \(error)"))
                     }
                 }
             }
@@ -761,8 +771,8 @@ final class WMPScriptContext: @unchecked Sendable {
                 // Fail closed per handler, never per session. A skin puts its whole startup in one
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.
-                if let error = invokeHandler(source, label: "\(event.name)[\(index)]",
-                                             owner: eventOwner) {
+                let owner = handler.ownerStableID.flatMap(model.element(stableID:)) ?? eventOwner
+                if let error = invokeHandler(source, label: "\(event.name)[\(index)]", owner: owner) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(event.name)[\(index)]: \(error)"))
                 }
@@ -1097,12 +1107,33 @@ final class WMPScriptContext: @unchecked Sendable {
         // means *this* element's `left` — and without the scope that reads as a ReferenceError and
         // the element gets no width at all.
         let scope = owner.map { "with (__wmpWrap('element:\($0)')) " } ?? ""
-        let wrapped = "(function(){ \(scope){ return (\(trimmed)); } })()"
-        let value = context.evaluateScript(wrapped)
+        // **A statement is a value too**: WMP takes the completion value, as `eval` does, so the
+        // WMP 8 Redux's `left="jscript:if(app.taskbarVisible){0}else{-g_kTaskBarWidth}"` is a
+        // number there and a SyntaxError inside `return (…)` here (W320). Chosen by a parse-only
+        // check, never by retrying, so a runtime error cannot run the expression twice, and decided
+        // once per source: layout evaluates every expression twice per pass.
+        let value = context.evaluateScript("(function(){ \(scope){ \(returnStatement(for: trimmed)) } })()")
         if let error = lastException { return (nil, error) }
         guard let value, !value.isUndefined, !value.isNull else { return (nil, "undefined") }
         return (Self.jsonValue(value), nil)
     }
+
+    /// `return (expression);`, or `return eval("…");` for a source that is a statement — see
+    /// `evaluateExpression`. The scope a caller wraps it in never changes the syntax.
+    private func returnStatement(for expression: String) -> String {
+        if let cached = returnStatements[expression] { return cached }
+        var statement = "return (\(expression));"
+        let source = JSStringCreateWithCFString("(function(){ \(statement) })" as CFString)
+        defer { JSStringRelease(source) }
+        if !JSCheckScriptSyntax(context.jsGlobalContextRef, source, nil, 1, nil),
+           let data = try? JSONSerialization.data(withJSONObject: expression, options: .fragmentsAllowed),
+           let literal = String(data: data, encoding: .utf8) {
+            statement = "return eval(\(literal));"
+        }
+        returnStatements[expression] = statement
+        return statement
+    }
+    private var returnStatements: [String: String] = [:]
 
     /// **A handler resolves an unqualified name against the element it is authored on (W216).**
     ///
@@ -1313,6 +1344,7 @@ final class WMPScriptContext: @unchecked Sendable {
         bind(global: "theme", to: "theme")
         bind(global: "network", to: "player.network")
         bind(global: "mediacenter", to: "mediacenter")
+        bind(global: "app", to: "app")
         // WMP's `event` is a global object, not a handler argument: `Compact`'s drawer handlers
         // read `event.screenWidth` from a plain function call, and its view root reads it from a
         // `jscript:` attribute where no event exists at all.

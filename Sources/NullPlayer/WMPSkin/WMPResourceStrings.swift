@@ -44,6 +44,7 @@ import Foundation
 /// | `1848` | case 1, the pane of ten gain sliders with "Turn equalizer off" and "Next preset" |
 /// | `1849` | case 2, the pane of brightness/contrast/hue/saturation with "Reset video settings" |
 /// | `1846`/`1851` | `UpdateEQOnOff`/`UpdateSRSOnOff` write them on the enabled and disabled branch of a label the markup authors as `value="On"` |
+/// | `1889`/`1892` | WMP's small and medium UI font sizes, read only by the two Redux archives as `parseInt(theme.loadString(…))`. Blank was `NaN`, so every `fontSize="jscript:g_kMEDIUM_FONTSIZE-1"` fell back to 12 and the CD page's "Copy Music"/"Stop Copy" ran out past the window. **Inferred, not stated:** the same markup's literal sizes are 8, 9 and 10, and at 8 (medium−1) "Copy Music" fits the 77 px between its icon and the next. Large (`#1895`) and extra-large (`#1898`) have no anchor and stay blank |
 /// | `1998`/`1999` | `circle07.wms` sets them as `<theme author=… copyright=…>`, directly under a comment reading `©2000 Microsoft Corporation. All rights reserved.` |
 /// | `2063` | the only argument `OnDisconnectTransport()` ever hands `ShowStatus()` |
 /// | `2098` | `CheckForHDCD()` — set on the branch where `IS_HDCD` is true and cleared to `""` on the other, so it labels the HDCD indicator and nothing else |
@@ -125,6 +126,10 @@ enum WMPResourceStrings {
         1848: "Graphic Equalizer",
         1849: "Video Settings",
         1851: "Off",
+
+        // ── Font sizes, as `parseInt` reads them (see the table above) ────────
+        1889: "8",
+        1892: "9",
 
         // ── Theme metadata ───────────────────────────────────────────────────
         1998: "Microsoft Corporation",

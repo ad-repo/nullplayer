@@ -893,6 +893,7 @@ final class WMPObjectModel {
         case "theme": return readTheme(name)
         case "event": return readEvent(name)
         case "mediacenter": return readMediaCenter(name)
+        case "app": return readApp(name)
         default: return .unrecognised("unknown host object")
         }
     }
@@ -905,7 +906,7 @@ final class WMPObjectModel {
         case "currentplaylist": return .object("player.currentplaylist")
         case "network": return .object("player.network")
         case "playlistcollection": return .object("player.playlistcollection")
-        case "newplaylist": return .function
+        case "newplaylist", "launchurl": return .function
         case "mediacollection": return .object("player.mediacollection")
         case "cdromcollection": return .object("player.cdromcollection")
         // **There is no DVD, and saying so is the answer rather than refusing the question.**
@@ -1195,7 +1196,7 @@ final class WMPObjectModel {
     }
 
     /// The member surface, with the value each one answers before a skin has written it. The corpus
-    /// asks for exactly these nine names and never uses `mediacenter` as a bare identifier, so this
+    /// asks for exactly these ten names and never uses `mediacenter` as a bare identifier, so this
     /// table is the whole object; a tenth name stays `unrecognised` and ranks itself.
     static let mediaCenterDefaults: [String: WMPJSONValue] = [
         "videozoom": .number(100),
@@ -1205,7 +1206,32 @@ final class WMPObjectModel {
         "effectpreset": .number(0),
         "showtitles": .bool(false),
         "showeffects": .bool(true),
+        // Read only by the two Redux archives, whose `onLoad` died on it (W320): the effects
+        // surface is what is drawn, never album art in its place.
+        "showalbumart": .bool(false),
         "contrastmode": .string("")
+    ]
+
+    /// WMP's full-mode frame: the task bar, the title bar and which task page is showing. Only the
+    /// two Redux archives — copies of WMP 8's and 9's own full mode — declare `<APP>`, and the
+    /// WMP 8 one places its whole frame with `left="jscript:if(app.taskbarVisible)…"`, so an
+    /// undefined `app` left nothing drawn but the visualizer (W320). There is no task bar host
+    /// here: these answer what WMP's full mode opens with, the view's `titlebar="false"` decides
+    /// `titleBarVisible`, NullPlayer only ever shows Now Playing, and writes are stored and read
+    /// back with nothing behind them.
+    private func readApp(_ name: String) -> WMPMemberValue {
+        if name == "adjustleft" { return .function }
+        guard let fallback = Self.appDefaults[name] else { return .unrecognised("app member") }
+        inert()
+        return .value(appState[name] ?? fallback)
+    }
+
+    static let appDefaults: [String: WMPJSONValue] = [
+        "taskbarvisible": .bool(true),
+        "titlebarvisible": .bool(false),
+        "playlistvisible": .bool(false),
+        "settingsvisible": .bool(false),
+        "currenttask": .string("NowPlaying")
     ]
 
     /// The members a skin may write. `contrastMode` is the host's accessibility setting and is
@@ -1386,40 +1412,53 @@ final class WMPObjectModel {
 
     private func readViewHost(_ name: String) -> WMPMemberValue? {
         switch name {
-        case "close", "minimize", "returntomediacenter", "size": return .function
+        case "close", "minimize", "maximize", "returntomediacenter", "size": return .function
         default: return nil
         }
     }
 
-    private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
-        switch (element.kind, name) {
-        case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"): return name
+    /// **The one table of element methods this engine answers**, per kind. `elementMethod`, the
+    /// flat `implementedElementMethods` the census classifies against, and the compatibility
+    /// table's `view`/`popup` rows are all read from it, so a method cannot run while still being
+    /// counted as demand.
+    static let elementMethodsByKind: [WMPElementKind: Set<String>] = [
+        // `show()` pops the menu up at the pointer (W322).
+        .popup: ["appenditem", "removeallitems", "getitem", "deleteall", "show"],
         // A `<LISTBOX>` is filled the same way, under the SDK's own names (W136): `WoW`'s
         // `fillListBox()` opens with `plListBox1.deleteAll()`.
-        case (.listBox, "appenditem"), (.listBox, "deleteall"), (.listBox, "getitem"),
-             (.listBox, "insertitem"), (.listBox, "deleteitem"): return name
+        .listBox: ["appenditem", "deleteall", "getitem", "insertitem", "deleteitem"],
         // 82 archives call `visEffects.next()` and 74 `visEffects.previous()` — the corpus's own
         // way of cycling the surface, and the reason the selector never needed a menu (W101).
-        case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
-        case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
-        case (.view, "close"), (.view, "minimize"), (.view, "returntomediacenter"),
-             (.view, "size"): return name
-        default:
-            return Self.isPlaylist(element.kind)
-                && ["setcolumnresizemode", "setcolumnwidth"].contains(name) ? name : nil
-        }
+        .effects: ["next", "previous", "nextpreset"],
+        .view: ["close", "minimize", "maximize", "returntomediacenter", "size"]
+    ]
+    /// Every kind answers these.
+    static let ambientElementMethods: Set<String> = ["moveto", "resizeto", "alphablendto"]
+    /// Every playlist kind (see `isPlaylist`) answers these.
+    static let playlistElementMethods: Set<String> = ["setcolumnresizemode", "setcolumnwidth", "deleteselected"]
+    /// `<AUTOMENU>` has no element kind of its own; its `show()` is one of WMP's menus.
+    static let autoMenuElementMethods: Set<String> = ["show"]
+
+    private static func isAutoMenu(_ kind: WMPElementKind) -> Bool {
+        if case let .unknown(tag) = kind { return tag.lowercased() == "automenu" }
+        return false
     }
 
-    /// The element methods this engine answers, on whatever kind defines them — `elementMethod` is
-    /// the kind-aware authority and this is the flat name set the corpus census classifies against.
-    /// Without it a call the runtime handles is still counted as unimplemented demand: that is how
-    /// `alphaBlendTo` came to be measured as the largest row on the backlog while `moveTo`, which
-    /// has been implemented since Phase 3, was counted beside it (W38).
-    static let implementedElementMethods: Set<String> = [
-        "moveto", "resizeto", "alphablendto", "close", "minimize", "returntomediacenter", "size",
-        "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
-        "next", "previous", "nextpreset", "deleteall", "insertitem", "deleteitem"
-    ]
+    private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
+        let kind = element.kind
+        let methods = Self.isPlaylist(kind) ? Self.playlistElementMethods
+            : Self.isAutoMenu(kind) ? Self.autoMenuElementMethods
+            : Self.elementMethodsByKind[kind] ?? []
+        return Self.ambientElementMethods.contains(name) || methods.contains(name) ? name : nil
+    }
+
+    /// The element methods this engine answers, on whatever kind defines them — the flat name set
+    /// the corpus census classifies against. Without it a call the runtime handles is still counted
+    /// as unimplemented demand: that is how `alphaBlendTo` came to be measured as the largest row on
+    /// the backlog while `moveTo`, which has been implemented since Phase 3, was counted beside it
+    /// (W38).
+    static let implementedElementMethods: Set<String> = elementMethodsByKind.values
+        .reduce(ambientElementMethods.union(playlistElementMethods).union(autoMenuElementMethods)) { $0.union($1) }
 
     /// Names WMP defines as element *methods*. One of these that this engine does not implement
     /// stays unrecognised rather than falling into the open property surface — otherwise
@@ -1487,6 +1526,8 @@ final class WMPObjectModel {
     /// Written by the skin, read back by the skin, and behind none of it is a host. See
     /// `readMediaCenter`.
     private var mediaCenterState: [String: WMPJSONValue] = [:]
+    /// The same for `app` — see `readApp`.
+    private var appState: [String: WMPJSONValue] = [:]
 
     private func write(path: String, member: String, value: WMPJSONValue) -> WMPMemberValue {
         let name = member.lowercased()
@@ -1655,6 +1696,12 @@ final class WMPObjectModel {
                     ? "mediacenter member" : "mediacenter member is read-only")
             }
             mediaCenterState[name] = value
+            inert()
+            return .value(value)
+        }
+        if path == "app" {
+            guard Self.appDefaults[name] != nil else { return .unrecognised("app member") }
+            appState[name] = value
             inert()
             return .value(value)
         }
@@ -1827,6 +1874,10 @@ final class WMPObjectModel {
                                             arguments.count > 1 ? arguments[1].string ?? "" : ""))
         case ("player.cdromcollection", "item"), ("player.cdromcollection", "getbydrivespecifier"):
             return .value(.null)
+        // The browser, behind `SkinExternalLink`'s policy and first-use confirmation.
+        case ("player", "launchurl"):
+            hostCommand("launchURL", .string(arguments.first?.string ?? ""))
+            return .value(.null)
         case ("player", "newplaylist"):
             nextScratchSerial += 1
             scratchPlaylists.append((nextScratchSerial, []))
@@ -1967,6 +2018,10 @@ final class WMPObjectModel {
             hostCommand("openFileDialog", nil)
             inert()
             return .value(.string(""))
+        case ("app", "adjustleft"):
+            // Widens the window by the task bar's width as it toggles; there is no task bar host.
+            inert()
+            return .value(.null)
         case ("mediacenter", "getnamedstring"):
             // The same `wmploc.dll` string table `theme.loadString` names, reached by a second
             // route: the corpus asks for `BuyMusicButton`, `BuyMusicURL` and `PLCID`, which are the
@@ -1999,7 +2054,7 @@ final class WMPObjectModel {
             guard element.items.count < 1_024 else { return .value(.null) }
             element.items.append(arguments.first?.string ?? "")
             return .value(.number(Double(element.items.count - 1)))
-        case (.popup, "removeallitems"), (.listBox, "deleteall"):
+        case (.popup, "removeallitems"), (.popup, "deleteall"), (.listBox, "deleteall"):
             element.items.removeAll()
             return .value(.null)
         case (.listBox, "insertitem"):
@@ -2018,11 +2073,26 @@ final class WMPObjectModel {
             let column = Int(arguments.first?.number ?? 0)
             element.columnResizeModes[column] = arguments.count > 1 ? (arguments[1].string ?? "") : ""
             return .value(.null)
+        // The selection lives in the AppKit pane, not here, so the pane removes it (`Smart Display`'s
+        // remove button).
+        case (_, "deleteselected") where Self.isPlaylist(element.kind):
+            hostCommand("deleteSelectedRows", .number(Double(element.stableID))); return .value(.null)
+        // **A button that pops a menu up at the pointer (W322).** The pick comes back the way a
+        // drawn popup's does, through `selectedItem_onchange`, so nothing waits on `show()`.
+        case (.popup, "show"):
+            hostCommand("showPopup", .number(Double(element.stableID))); return .value(.null)
+        // `<AUTOMENU id="menu"/>` + `menu.show('Play')`: one of WMP's own menus, so ours.
+        case (let kind, "show") where Self.isAutoMenu(kind):
+            hostCommand("showAppMenu", arguments.first.flatMap(\.string).map(WMPJSONValue.string))
+            return .value(.null)
         case (.effects, "next"): hostCommand("stepEffect", .number(1)); return .value(.null)
         case (.effects, "previous"): hostCommand("stepEffect", .number(-1)); return .value(.null)
         case (.effects, "nextpreset"): hostCommand("stepEffectPreset", .number(1)); return .value(.null)
         case (.view, "close"): hostCommand("closeView", nil); return .value(.null)
         case (.view, "minimize"): hostCommand("minimizeWindow", nil); return .value(.null)
+        // The WMP 9 Redux's full-screen button: `View1.maximize()`, then `View1.width = 678` to
+        // come back, so only the way in needs the host.
+        case (.view, "maximize"): hostCommand("maximizeWindow", nil); return .value(.null)
         // **The only resize a `.wmz` window has (W193).** A skin window is borderless and carries
         // no OS frame, so `onMouseDown="view.size('bottomright')"` — 235 calls in 88 of the 185
         // installed archives — *is* its resize grip, and WMP tracks the pointer from the press
@@ -2368,6 +2438,8 @@ enum WMPScriptConstants {
         case .paused: return 2
         case .playing: return 3
         case .transitioning: return 9
+        case .scanForward: return 4
+        case .scanReverse: return 5
         }
     }
 }

@@ -52,8 +52,8 @@ artifact link after closing it"*.
   `transparencycolor` and reusing it here.
 - **Hit testing.** Every click reached the right `buttonElement` (`WMP_CLICK_TRACE=1`); the toggles
   failed inside the handler.
-- **The stars.** `player.launchURL` is unimplemented across the engine (132 archives call it); the
-  reporter chose to leave it that way. The stars doing nothing is expected.
+- **The stars.** `player.launchURL` was unimplemented until 2026-11-19 and the reporter first chose
+  to leave it; it now asks to open the link (`object-model/methods.md`). Do not click them in a test.
 - **Stars and Stripes / US Air Force's first Vis click doing nothing.** Their own flag logic, with
   no handler error — not an engine defect.
 

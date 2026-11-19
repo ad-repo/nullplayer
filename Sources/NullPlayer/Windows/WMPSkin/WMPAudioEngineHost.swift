@@ -46,6 +46,12 @@ final class WMPAudioEngineHost: WMPHost {
     private let engine: AudioEngine
     private var scanTimer: Timer?
     private var scanDirection: WMPScanDirection?
+    /// The track or film a scan started on (`artworkTrack`): a scan never carries over into the
+    /// next one.
+    private var scanTrackID: UUID?
+    private var scanState: WMPHostSnapshot.State? {
+        scanDirection.map { $0 == .forward ? .scanForward : .scanReverse }
+    }
     private var preMuteVolume: Float = 0.2
     /// **Mute is not a volume of zero to a skin (W265).** It is implemented here by zeroing the
     /// output, but WMP keeps `settings.volume` where it was while muted, and skins rely on that:
@@ -164,7 +170,7 @@ final class WMPAudioEngineHost: WMPHost {
         let state: WMPHostSnapshot.State
         switch engine.state {
         case .stopped: state = .stopped
-        case .playing: state = .playing
+        case .playing: state = scanState ?? .playing
         case .paused: state = .paused
         }
         let track = engine.currentTrack
@@ -236,7 +242,7 @@ final class WMPAudioEngineHost: WMPHost {
 
         // Running, but the decoder has not answered with a size yet — see `WMPHostSnapshot.State`.
         result.state = video.isPlaying
-            ? (video.hasVideoOutput && video.presentationSize.width > 0 ? .playing : .transitioning)
+            ? (video.hasVideoOutput && video.presentationSize.width > 0 ? scanState ?? .playing : .transitioning)
             : .paused
         result.currentTime = Self.finite(video.currentTime)
         result.duration = Self.finite(video.duration)
@@ -261,6 +267,13 @@ final class WMPAudioEngineHost: WMPHost {
     }
 
     func perform(_ action: WMPTransportAction, value: WMPHostValue?) {
+        // **`controls.fastForward()` is a mode, and any other transport ends it**, as in WMP.
+        // `TheGirlNextDoor`'s FF button calls it and shows Play to resume; with only the
+        // hold-to-scan release ending a scan, Play left it skipping to the end of the track.
+        switch action {
+        case .play, .pause, .stop, .previous, .next, .seek: stopScanning()
+        default: break
+        }
         if Self.castingVideo {
             let cast = Self.videoCast
             switch action {
@@ -447,6 +460,7 @@ final class WMPAudioEngineHost: WMPHost {
         scanTimer?.invalidate()
         scanTimer = nil
         scanDirection = nil
+        scanTrackID = nil
     }
 
     /// A cast starts at the receiver's own full volume, so the remembered level is only valid
@@ -469,20 +483,45 @@ final class WMPAudioEngineHost: WMPHost {
     private func startScanning(_ direction: WMPScanDirection) {
         stopScanning()
         scanDirection = direction
-        scanStep()
-        scanTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        scanTrackID = artworkTrack?.id
+        // No step on the press itself: a scan is a rate, not a jump, so it starts one tick later.
+        scanTimer = Timer.scheduledTimer(withTimeInterval: Self.scanTick, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.scanStep() }
         }
     }
 
+    /// One tick of the scan, at WMP's 5x: playback itself moves on by one tick, so forward seeks
+    /// the other four and reverse seeks back six. A scan ends at either end of the track, on a
+    /// track change and when playback stops; reverse resumes play from the start, as WMP does, and
+    /// forward plays the last moments out. It was a fixed 5 s jump that never ended:
+    /// `TheGirlNextDoor`'s rewind held the track at 0:00 for good, and fast-forward skipped
+    /// through every track after it.
     private func scanStep() {
         guard let scanDirection else { return }
-        if let video = Self.localVideoController {
-            scanDirection == .forward ? video.skipForward(5) : video.skipBackward(5)
-            return
+        let tick = Self.scanTick, forward = tick * (Self.scanRate - 1), back = tick * (Self.scanRate + 1)
+        let video = Self.localVideoController
+        guard video?.isPlaying ?? (engine.state == .playing), artworkTrack?.id == scanTrackID else {
+            stopScanning(); return
         }
-        engine.seekBy(seconds: scanDirection == .forward ? 5 : -5)
+        let time = Self.finite(video?.currentTime ?? engine.lastReportedTime)
+        // An unknown length (0) has no end to stop at.
+        let duration = Self.finite(video?.duration ?? engine.duration)
+        switch scanDirection {
+        case .forward:
+            guard duration == 0 || duration - time > forward + tick else { stopScanning(); return }
+            if let video { video.skipForward(forward) } else { engine.seekBy(seconds: forward) }
+        case .reverse:
+            guard time > back else {
+                stopScanning()
+                if let video { video.seek(to: 0) } else { engine.seek(to: 0) }
+                return
+            }
+            if let video { video.skipBackward(back) } else { engine.seekBy(seconds: -back) }
+        }
     }
+
+    private static let scanTick: TimeInterval = 0.2
+    private static let scanRate: TimeInterval = 5
 
     private static func finite(_ value: Double) -> Double { value.isFinite ? max(0, value) : 0 }
 }

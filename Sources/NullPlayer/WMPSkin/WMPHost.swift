@@ -137,10 +137,12 @@ struct WMPHostSnapshot: Hashable, Codable {
     /// and the `playstatechange` edge to `playing` is what then reveals the picture — the same
     /// sequence WMP itself produces. Everywhere else in this engine it behaves as playing.
     enum State: String, Hashable, Codable {
-        case stopped, playing, paused, transitioning
+        /// `scanForward`/`scanReverse` are `controls.fastForward()`/`fastReverse()` running: WMP's
+        /// `playState` 4 and 5, so a skin hears the scan start and end as `playstatechange`.
+        case stopped, playing, paused, transitioning, scanForward, scanReverse
 
         /// Whether the transport is running, which is every question but `player.playState`'s.
-        var isRunning: Bool { self == .playing || self == .transitioning }
+        var isRunning: Bool { self != .stopped && self != .paused }
     }
     var state: State = .stopped
     var currentTime: TimeInterval = 0
@@ -193,6 +195,8 @@ struct WMPHostSnapshot: Hashable, Codable {
         case .playing: return "Playing"
         // WMP's own wording while a media is opening.
         case .transitioning: return "Opening media"
+        case .scanForward: return "Fast forwarding"
+        case .scanReverse: return "Rewinding"
         case .paused: return "Paused"
         // WMP says `Ready` before anything is open and `Stopped` once something is and is not
         // running, which is the same split `isEnabled(.play)` already makes.

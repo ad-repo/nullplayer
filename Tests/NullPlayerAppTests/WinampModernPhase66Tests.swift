@@ -63,7 +63,7 @@ final class WinampModernPhase66Tests: XCTestCase {
     /// The shape every skin in the corpus actually writes: no scheme, and the query still carrying
     /// the literal spaces the skin joined its terms with.
     func testASchemelessAddressIsRepairedRatherThanRefused() {
-        guard case .allow(let url) = WinampModernWebNavigationPolicy.resolve(
+        guard case .allow(let url) = SkinExternalLink.resolve(
             address: "www.google.com/search?q=Radiohead Creep lyrics") else {
             return XCTFail("a bare host is a web address")
         }
@@ -73,7 +73,7 @@ final class WinampModernPhase66Tests: XCTestCase {
     /// The escapes a skin has already written must survive the repair. Encoding them again searches
     /// for the escape: Björk would arrive as `Bj%25C3%25B6rk`.
     func testExistingPercentEscapesAreNotEncodedTwice() {
-        guard case .allow(let url) = WinampModernWebNavigationPolicy.resolve(
+        guard case .allow(let url) = SkinExternalLink.resolve(
             address: "https://www.google.com/search?q=Bj%C3%B6rk Human Behaviour") else {
             return XCTFail("expected an allowed address")
         }
@@ -85,7 +85,7 @@ final class WinampModernPhase66Tests: XCTestCase {
     func testOnlyHTTPAndHTTPSAreAccepted() {
         for address in ["javascript:alert(1)", "file:///etc/passwd", "data:text/html,<b>x",
                         "ftp://example.com/x", "about:config", "  "] {
-            guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: address) else {
+            guard case .blocked = SkinExternalLink.resolve(address: address) else {
                 return XCTFail("\(address) must not be navigable")
             }
         }
@@ -94,7 +94,7 @@ final class WinampModernPhase66Tests: XCTestCase {
     /// Winamp-2006's `navigateUrl` of a Windows program path was offered as `https://Plugins%5C…`.
     func testAWindowsPathIsNotPromotedToAWebAddress() {
         for address in [#"Plugins\MSPP\rating\getCurrentRating.exe"#, "getCurrentRating", #"C:\Program Files\x.exe"#] {
-            guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: address) else {
+            guard case .blocked = SkinExternalLink.resolve(address: address) else {
                 return XCTFail("\(address) is not a web address")
             }
         }
@@ -102,14 +102,14 @@ final class WinampModernPhase66Tests: XCTestCase {
 
     func testLocalhostAndIPLiteralsAreWebAddresses() {
         for address in ["http://localhost:8080/", "http://192.168.1.5/radio", "http://[::1]:3000/"] {
-            guard case .allow = WinampModernWebNavigationPolicy.resolve(address: address) else {
+            guard case .allow = SkinExternalLink.resolve(address: address) else {
                 return XCTFail("\(address) is a web address")
             }
         }
     }
 
     func testAnAddressWithNoHostIsRefused() {
-        guard case .blocked = WinampModernWebNavigationPolicy.resolve(address: "https:///search") else {
+        guard case .blocked = SkinExternalLink.resolve(address: "https:///search") else {
             return XCTFail("a hostless URL is malformed")
         }
     }

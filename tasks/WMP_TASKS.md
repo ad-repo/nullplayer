@@ -23,8 +23,7 @@ defect*).
 
 ## Script runtime
 
-| ID | Item | Reach | Notes |
-|---|---|---|---|
+No open rows. W322–W324, from the click sweep over the 46 crawled skins, closed 2026-11-19.
 
 Do not add a name to `handlerNames`/`supportedEvents` without its dispatch site — `object-model/classification.md`
 § *Recognising an event is not dispatching it*. Candidate gaps already disproved (incl. the author-typo
