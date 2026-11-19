@@ -2161,6 +2161,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // A script moved something. Every container diffs its own scene and notifies what moved; a
         // container nothing happened in dispatches nothing.
         scripts.geometryDidSettle = { [weak self] in
+            self?.classicProTabs?.fitLabels()
             self?.viewsByContainer.values.forEach { $0.dispatchResizeIfChanged() }
         }
         // Only a scene knows where an object landed, and an object belongs to exactly one container —
