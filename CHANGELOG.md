@@ -176,6 +176,8 @@
 - **`TheThing`'s buttons light up in the right place** when hovered or pressed.
 - **The `trinity` skin opens** instead of quitting the app, and draws its body instead of a black
   panel.
+- **ClassicPro skins draw the Now Playing tab's song rating whole** (cPro Bento and the rest); its
+  stars had their top halves cut off.
 
 ## 0.35.1
 
