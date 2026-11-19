@@ -220,3 +220,12 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   with numeric dimensions **19 are square, 83 wider than tall and 5 taller**, so a centred `min(w,h)`
   square covered a median 75% of the authored rect and as little as 17% (`Alpine7618_v09`, 150×26),
   and the inscribed circle took ~21% more again.
+
+- **A `<VIEW>`'s own `zIndex` is the layer its background sits on, for a child that states one**
+  (`WMPSceneBuilder.sitsBehindArtwork`). `trinity` writes `<View zIndex="2">` over its drawers and
+  their black shadow slabs at 1, -1 … -7, which slide out from under `MAIN.png`. Measured from 0,
+  its `eqShad` at 1 painted a slab over the whole body. A child that states no `zIndex` stays above:
+  `TheGirlNextDoor`'s view is `zIndex="3"` and none of its transport or window buttons states one,
+  and measuring them from 3 hid every one. Six views author a non-zero `zIndex` (225 archives,
+  2026-11-19). The render diff over all six moves `trinity`, plus `OrangeArmy` in keyed-out pixels
+  only.

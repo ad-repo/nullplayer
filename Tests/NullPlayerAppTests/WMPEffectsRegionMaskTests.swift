@@ -128,8 +128,8 @@ final class WMPEffectsRegionMaskTests: XCTestCase {
         let mask = try XCTUnwrap(widget.regionMask, "key + transparent + paint is a shape mask")
         XCTAssertEqual(mask.resourcePath.lowercased(), "lens.png")
         XCTAssertEqual(mask.keyedOut, [WMPColor(red: 255, green: 0, blue: 255)])
-        XCTAssertEqual(mask.frame, WMPRect(x: 20, y: 30, width: 100, height: 80),
-                       "the mask covers the container's frame, which is what aligns it")
+        XCTAssertEqual(mask.frame, WMPRect(x: 20, y: 30, width: 4, height: 4),
+                       "the mask sits at the container's origin, at the bitmap's own size")
     }
 
     /// **Cerulean's shape, and the reason this guard exists.** `face.bmp` is 56% key, 44% opaque

@@ -172,4 +172,22 @@ had until Phase 43. Verifying W53 in the running app printed *nothing* until a c
 reach measures exactly like one that does not exist** — which is this file's own rule about
 recognising an event, one step further out.
 
+## Who an event reaches: timers and button groups
+
+- **A view's timer ticks the view's own `onTimer` and nothing else's** (`WMPMainWindowController.handlers`).
+  `skin_gradiente` also writes `onTimer="SetTimeShowState()" timerInterval="100"` on a subview; that
+  function is the elapsed/remaining toggle its time button calls on click. Riding the view's
+  500 ms tick, it flipped the readout twice a second. At its authored 100 ms the skin would have
+  strobed in WMP, so WMP runs no subview timer. It is the only corpus archive (225 checked,
+  2026-11-19) that authors `onTimer` anywhere but a `<view>`.
+- **A plain `<BUTTONELEMENT>` with no click handler of its own clicks its `<BUTTONGROUP>`.**
+  `Azenis` puts each window button's `onClick` on the group, and the element the pointer hits has
+  none. An element with a built-in action keeps just that action, or Azenis's Next would skip two
+  tracks. The sweep's click (`WMPRenderDumpTests`) uses the same selector, so it measures this too.
+  In the corpus this reaches Azenis's six buttons only.
+- **A skin loaded mid-track also receives `playstatechange`**, beside the `currentmedia_onchange`
+  the load already raised, unless the player is stopped. The WMP 9 Redux shows its pause button
+  and visualizer pane only from `playStateIcons(NewState)`. None of the corpus's authored
+  `playstatechange` handlers starts, stops or pauses playback, so raising it once is safe.
+
 ---

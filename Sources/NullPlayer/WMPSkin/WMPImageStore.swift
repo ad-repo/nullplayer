@@ -271,6 +271,11 @@ final class WMPImageStore: @unchecked Sendable {
             builtInImages[resource] = image.map { Self.scaledImage($0, size: resource.pixelSize) }
                 ?? Self.transparentImage(size: resource.pixelSize)
         }
+        // The retina upscale of the old artwork is cached under the built-in's name; left there,
+        // a 2x display keeps drawing it (PixOS's 75 px art stayed transparent on a Retina screen).
+        for key in entries.keys where WMPBuiltInImage.allCases.contains(where: { key.hasPrefix($0.rawValue + "|") }) {
+            currentBytes -= entries.removeValue(forKey: key)?.image.decodedBytes ?? 0
+        }
     }
 
     private static func transparentImage(size: Int) -> WMPDecodedImage {
@@ -1228,6 +1233,10 @@ final class WMPImageStore: @unchecked Sendable {
                 | UInt32(pixels[index + 2]) << 8 | UInt32(pixels[index + 3])
             counts[value, default: 0] += 1
         }
+        // **One colour is not a shape**: keyed it cuts everything, unkeyed nothing. `CleanRatings`'
+        // view background is solid `#FF0000`, its `clippingColor`, over a subview that holds the
+        // art, and reading it as a mask clipped the whole window away (W321).
+        guard counts.count >= 2 else { return false }
         let top = counts.values.sorted(by: >).prefix(2).reduce(0, +)
         return Double(top) >= 0.99 * Double(width * height)
     }

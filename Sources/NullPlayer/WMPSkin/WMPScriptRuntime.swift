@@ -285,7 +285,7 @@ enum WMPJScriptCompatibility {
     static let members: [String: Set<String>] = [
         "player": ["controls", "settings", "currentMedia", "currentPlaylist", "network",
                    "playState", "openState", "status", "isOnline", "enabled", "versionInfo",
-                   "fullScreen"],
+                   "fullScreen", "launchURL"],
         "controls": ["play", "pause", "stop", "previous", "next", "fastForward", "fastReverse",
                      "currentPosition", "currentPositionString", "currentItem", "isAvailable",
                      "playItem"],
@@ -323,11 +323,12 @@ enum WMPJScriptCompatibility {
         // `backgroundImage` is on this list because the view root resolves it the way every other
         // node does — a script override before the authored attribute (W75). Every skin with a
         // store-thumbnail `previewView` writes it, and the tally must not call it unknown.
-        "view": ["left", "top", "width", "height", "close", "minimize", "size", "visible",
+        "view": ["left", "top", "width", "height", "close", "minimize", "maximize", "size", "visible",
                  "backgroundImage"],
         // Derived from the object model's own table rather than restated, so the static tally and
         // the runtime cannot disagree about what `mediacenter` answers. Every one of them is inert.
         "mediacenter": Set(WMPObjectModel.mediaCenterDefaults.keys).union(["getNamedString"]),
+        "app": Set(WMPObjectModel.appDefaults.keys).union(["adjustLeft"]),
         "popup": ["appendItem", "removeAllItems", "getItem", "itemCount"],
         // Properties *and* methods: a call the runtime answers must not be counted as demand for
         // something unimplemented. Both halves are derived from the object model, never restated.
@@ -1366,6 +1367,10 @@ actor WMPScriptRuntime {
     func adoptCurrentLibraryPlaylist(_ reference: String) {
         context?.adoptCurrentLibraryPlaylist(reference)
     }
+
+    /// The items a `<POPUP>` holds right now, for `show()`: the menu is shown before the
+    /// transaction that filled it reaches the view.
+    func popupItems(stableID: Int) -> [String] { context?.listItems()[stableID] ?? [] }
 
     func setWidgetSelection(stableID: Int, index: Int, viewID: String) {
         context?.setElementSelection(stableID: stableID, index: index, viewID: viewID)

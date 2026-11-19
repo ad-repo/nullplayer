@@ -638,6 +638,25 @@ final class WMPClippingShapeTests: XCTestCase {
         }
     }
 
+    /// **A view's own `zIndex` is the layer of its background, for a child that states one.**
+    /// `trinity`'s `<View zIndex="2">` keeps its `zIndex="1"` shadow slab under `MAIN.png`; a child
+    /// stating no `zIndex` stays above (`TheGirlNextDoor`'s buttons under its `zIndex="3"` view).
+    func testAChildStatingAZIndexBelowItsViewsDrawsBehindTheViewArtwork() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="8" height="8" zIndex="2" backgroundImage="back.png"
+                     transparencyColor="white">
+            <SUBVIEW id="shade" left="0" top="0" width="8" height="8" zIndex="1" backgroundColor="#000000"/>
+            <SUBVIEW id="free" left="0" top="0" width="4" height="4" backgroundColor="#0000FF"/>
+        </VIEW></THEME>
+        """, images: ["back.png": try flat([10, 120, 200, 255])])
+        let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
+        let back = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "main" })
+        let shade = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "shade" })
+        let free = try XCTUnwrap(scene.commands.firstIndex { $0.nodeID == "free" })
+        XCTAssertLessThan(shade, back, "a stated zIndex under the view's sits behind its artwork")
+        XCTAssertGreaterThan(free, back, "an unstated zIndex stays above")
+    }
+
     /// `cornerColor` is nil for a bitmap whose corner is already transparent: a file that authored
     /// its own alpha has said what is see-through and there is no matte colour to infer.
     func testCornerColourIsNilForAnAlreadyTransparentCorner() throws {

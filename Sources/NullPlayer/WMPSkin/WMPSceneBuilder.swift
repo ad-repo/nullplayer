@@ -362,6 +362,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
             node.children.forEach(indexGeometryBindings)
         }
         indexGeometryBindings(view)
+        let titleBarFill = WMPAppFrame.titleBarFill(in: view) { node in
+            let keys = colors(node, names: ["transparencyColor"])
+            guard !keys.isEmpty, let path = try? resource(node, names: ["image"])?.1 else { return false }
+            return (try? imageStore.holdsKey(keys, for: path, colorKeys: [], implicitKey: nil)) == true
+        }
 
         /// **A node a script has shown is drawn even inside a hidden container (W263).** Markup inherits —
         /// a default-visible child of a `visible="false"` subview stays hidden, and 2,630 corpus
@@ -1035,6 +1040,8 @@ struct WMPSceneBuilder: @unchecked Sendable {
                                                                                property: "visible")]
             if let override = visibleOverride {
                 if !override.truth { hidden = true }
+            } else if titleBarFill.contains(node.stableID) {
+                hidden = true
             } else if let mirrored = mirroredVisibility(of: node) {
                 // **A `wmpprop:` path can name another element in the same skin, not only a host
                 // property.** 150 of the corpus's `visible="wmpprop:…"` attributes do: `WoW` hangs
@@ -1451,10 +1458,26 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 // Only a container that shapes by region, never one that occludes by paint — the
                 // two read the key oppositely, and `shapesChildrenByRegion` carries the corpus
                 // measurement that separates them. Cerulean is the case this guard protects.
+                // **An `<EFFECTS>` sized past its `SUBVIEW`'s edge is shaped by it too.**
+                // `izdataarayuz` sets a 185-wide surface 155 into a 300-wide `SUBVIEW` whose opaque
+                // `ekran.gif` keys everything but a round screen in `#FF0000`: the author leaned on
+                // the container to cut it, and without that the spectrum spilled over the body.
+                // The corpus match set is it and `Surviver` (1px over a `SUBVIEW` keying the
+                // screen's curved right edge). Starting inside is load-bearing: `pharaoh` parks its
+                // `visSphinx` 37px above its container, and reading that key cut 1,608 of its 1,695
+                // visible pixels.
+                let container = parentNodeFrame.cgRect
                 if !keys.isEmpty,
-                   try imageStore.shapesChildrenByRegion(for: maskPath, keyedOut: keys) {
+                   try imageStore.shapesChildrenByRegion(for: maskPath, keyedOut: keys)
+                    || (parentNode.kind == .subview && container.contains(frame.cgRect.origin)
+                        && !container.contains(frame.cgRect)) {
+                    // At the bitmap's own size, which a container's backgroundImage is drawn at:
+                    // `izdataarayuz`'s `ekran.gif` is 134 tall in a 165-tall `SUBVIEW`, and
+                    // stretching it to the frame drew the round screen as an oval.
+                    let bitmap = try imageStore.regionMask(for: maskPath, keyedOut: keys)
                     regionMask = WMPWidgetRegionMask(resourcePath: maskPath, keyedOut: keys,
-                                                     frame: parentNodeFrame)
+                        frame: WMPRect(x: parentNodeFrame.x, y: parentNodeFrame.y,
+                                       width: CGFloat(bitmap.width), height: CGFloat(bitmap.height)))
                 }
             }
 
@@ -1582,7 +1605,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // keyed out of it, over `<effects zIndex="-1">` and `<button id="bEye" zIndex="-2">` —
             // and 32 `<EFFECTS>` across 30 skins use the same mechanism. Siblings are already
             // sorted by zIndex, so the eye still lands under the visualizer.
-            let orderedChildren = node.children.sorted(by: paintOrder)
+            // **A `<VIEW>`'s own `zIndex` is the layer its background sits on, for a child that
+            // states one.** `trinity` writes `<View zIndex="2">` over drawers and their black
+            // shadow slabs at 1, -1 … -7, which slide out from under `MAIN.png`; measured from 0,
+            // its `eqShad` at 1 painted the slab over the whole body. A child that states no
+            // `zIndex` stays above: `TheGirlNextDoor`'s view is `zIndex="3"` and every one of its
+            // transport and window buttons states none. Six views in the corpus author a non-zero
+            // view `zIndex`; this moves `trinity` alone (`OrangeArmy` only in pixels it keys out).
+            let artworkLayer = node.kind == .view ? zIndex(of: node) : 0
+            func sitsBehindArtwork(_ child: WMPNode) -> Bool {
+                zIndex(of: child) < 0
+                    || (child.statedAttribute(named: "zIndex") != nil && zIndex(of: child) < artworkLayer)
+            }
+            let sortedChildren = node.children.sorted(by: paintOrder)
+            let orderedChildren = sortedChildren.filter(sitsBehindArtwork)
+                + sortedChildren.filter { !sitsBehindArtwork($0) }
             // **A clipping shape shapes the element's contents, not only the element.** The mask
             // covers this node's frame and every descendant's paint is cut to it; see
             // `WMPSceneClipMask` for the two archives that state the rule and the one that guards
@@ -1608,7 +1645,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                 && colors(node, names: ["transparencyColor", "clippingColor"]).isEmpty
                 && node.statedAttribute(named: "clippingImage") == nil
                 && backgroundImage.map { (try? imageStore.carriesOwnTransparency(for: $0.1)) != true } ?? true
-            let behindOwnArtwork = artworkHasNoHole ? [] : orderedChildren.prefix { zIndex(of: $0) < 0 }
+            let behindOwnArtwork = artworkHasNoHole ? [] : orderedChildren.prefix(while: sitsBehindArtwork)
             // **A plain colour is the ground under every child, however negative its `zIndex`.**
             // Behind-own-artwork is for artwork with a hole in it (`Cerulean`'s `face.bmp`); a
             // `backgroundColor` with no image beside it has no hole, so a child drawn behind it is
@@ -1849,6 +1886,18 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // A group whose own artwork *is* the sheet swaps it wholesale, the way a
                     // `<BUTTON>` does. One with no artwork of its own and nothing lit draws
                     // nothing, which is its normal state.
+                    //
+                    // **A lit sheet larger than the group is cropped to it, never squeezed in.**
+                    // `TheThing`'s `hover_RED.png` is 402x298 over a 382x278 mask, so scaling it to
+                    // the frame drew every lit icon up to 15px off its control: a stray arc on
+                    // hover and a dark blob on press. 47 sheets in 20 archives differ from their
+                    // mask; a smaller one keeps the frame, since the mask is drawn into it.
+                    func sheetSource(_ path: String) throws -> WMPRect? {
+                        let size = try imageStore.image(for: path).size
+                        guard size.width > frame.width || size.height > frame.height else { return nil }
+                        return WMPRect(x: 0, y: 0, width: min(frame.width, size.width),
+                                       height: min(frame.height, size.height))
+                    }
                     if visualState != .normal,
                        let (_, statePath) = try resource(node, names: foregroundNames) {
                         emit(imageCommand(node: node, path: statePath, frame: frame,
@@ -1856,6 +1905,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             mappingMask: WMPSceneMappingMask(mapping: mapping,
                                 nodeIDs: activeIDs.isEmpty ? everyChild : activeIDs,
                                 resourcePath: mappingPath),
+                            sourceOverride: try sheetSource(statePath),
                             clippingPath: clippingPath, hueShift: hueShift))
                     }
                     // A latched child the pointer is on takes `hoverDownImage` over the down
@@ -1867,6 +1917,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                             clip: inheritedClip, z: z, background: false, alpha: alpha,
                             mappingMask: WMPSceneMappingMask(mapping: mapping, nodeIDs: [hovered],
                                                              resourcePath: mappingPath),
+                            sourceOverride: try sheetSource(hoverDownPath),
                             clippingPath: clippingPath, hueShift: hueShift))
                     }
                 } else if let (_, path) = try resource(node, names: foregroundNames) {

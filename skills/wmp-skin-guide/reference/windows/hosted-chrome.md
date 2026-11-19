@@ -326,3 +326,14 @@ classifying each direct `<SUBVIEW backgroundImage=…>` child by its `horizontal
 `WMPHostedFrameTemplate.derive` is run over the installed corpus through `WMPSkinLoader`. Quote
 whichever you re-derive, with the method — the engine's own answer is the authoritative one, and the
 one-skin gap is the scan's, not the engine's.
+
+**A donor whose side panel is a list gives that panel back (2026-11-19).** `MCE2005_MP`'s player
+view has a media-center sidebar list in its slot, and hosted windows showed a slice of it in their
+border. `derive` records the lists outside the client subtree (`sideListNodeIDs`, by their parent
+subview, since a list has no frame of its own in the scene). `ringRender`'s `panelSides` counts a
+list as a panel side when the slot pieces cover more than half of it and no single furniture rack
+does. That guard keeps `Alienware Invader`'s 99 pt rail; a 2 px caption subview is why it is
+"more than half". `composeRing` then moves the content edge to the opposite border width and
+`bridgingBars` copies the next column across the gap, so the junction notches do not show. The
+grown second render keeps the first pass's verdict. It changes `MCE2005_MP`, `Windows Media Player
+Skins`, `Star Wars`, `STALKER` and `WoW` at every size, and `LostPlanet` at 357x238 only.

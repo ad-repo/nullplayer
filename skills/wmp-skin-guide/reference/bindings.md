@@ -8,13 +8,17 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
 - `WMPScriptRuntime` is the only production route for skin JScript: one persistent `JSContext` per
   skin session, one transaction at a time, expressions then handlers. `reference/object-model.md`
   is the contract for what it exposes; do not add a member without reading its rules.
-- **A `jscript:` colour is an assignment `load` runs before the view's own handlers.** Only
-  geometry `jscript:` attributes are expressions (`WMPScriptExpression.geometryProperties`); a
-  `*Color="jscript:…"` is collected into `WMPScriptViewPlan.colorAssignments` and written as
+- **A `jscript:` colour or font size is an assignment `load` runs before the view's own handlers.**
+  Only geometry `jscript:` attributes are expressions (`WMPScriptExpression.geometryProperties`); a
+  `*Color="jscript:…"` or `fontSize="jscript:…"` is collected into
+  `WMPScriptViewPlan.propertyAssignments` (trailing `;` trimmed) and written as
   `<id>.<attr> = (<source>)`, so it lands through the same property-write path as a handler's
   (W165). The app raises the event as `load` and the render harness as `onLoad`; both are matched.
   22 uses in 2 archives — `Asimov_Radio` (`NormalTextColor`, `#00FF00` in `MBay.js`) and
   `digitaldj` — and Asimov's readouts drew in the default colour until 2026-09-26.
+  Font sizes: ~450 texts in the two Redux archives (`g_kMEDIUM_FONTSIZE±1`, read from
+  `WMPResourceStrings` `#1889`/`#1892`) and `Classic`'s `clip_label.fontsize` references, which
+  `referencedNumber` already answered with the same value.
 - A skin's programs evaluate once per session, **after** the view's elements are installed as
   globals and the host objects are bound, because skins run top-level code that touches both.
 - Fail closed per handler, never per session: an unrecognised member aborts that one handler and is
@@ -162,3 +166,7 @@ Three rules come out of W218, and the first is the one worth carrying to unrelat
   one point per process, is what distinguishes "correct" from "correct after one wasted click".
 - **Frame 0 is a state a user is always in.** A skin gets exactly one first frame and the first
   click lands on it, so a rule that only holds from the second transaction holds for nobody.
+
+- **`<TRACKNAMETEXT>` binds `value` to `player.currentMedia.name` when it authors none**
+  (`WMPPropertyRegistry.trackNamePaths`), just as `<CURRENTPOSITIONTEXT>` is handed the elapsed
+  time. `myPod`'s display drew empty; `modernblue`'s own `value` still wins.

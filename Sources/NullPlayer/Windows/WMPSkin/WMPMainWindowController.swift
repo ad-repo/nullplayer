@@ -832,7 +832,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     applyHostCommands(deferredWindowCommands.filter {
                         $0.value?.string?.caseInsensitiveCompare(resolved.viewID) != .orderedSame
                     }, from: presentation)
-                    let switchedView = applyHostCommands(output.hostCommands, from: presentation)
+                    // **The player never closes itself from its own `onLoad`.** `trinity`'s `Init()`
+                    // calls `EndVideo()` — `view.close()` — whenever no video is playing, which in
+                    // WMP it never reaches: its first line misspells `UpdateMetadata`, and JScript
+                    // stops there. W42 resolves that call so the rest of `Init` runs, and the close
+                    // quit the app on every load. No skin means to shut itself on open.
+                    let switchedView = applyHostCommands(presentation.isPlayer
+                        ? output.hostCommands.filter { !($0.action == "closeView" && $0.value?.string == nil) }
+                        : output.hostCommands, from: presentation)
                     if !switchedView {
                         applyTimerDelta(presentation, registered: output.timerRequests,
                                         cleared: output.clearedTimerTokens)
@@ -1064,6 +1071,10 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                        runtime: WMPScriptRuntime, overrides: WMPSceneOverrides,
                        into presentation: WMPViewPresentation) {
         loadedSkin = skin
+        // A new store starts with transparent album art. The track's art may already have loaded
+        // into the previous store (or into none, mid-load), so forget it and let the seed below
+        // load it again — otherwise its same-track guard skips it and PixOS's art stays empty.
+        if imageStore !== store { artworkTrackID = nil }
         imageStore = store
         materializer.rekey(presentation, to: scene.viewID)
         presentation.activeLimits = scene.resizeLimits
@@ -1342,7 +1353,13 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         if let audioHost = host as? WMPAudioEngineHost {
             updateArtwork(for: audioHost.artworkTrack)
         }
-        dispatchHostEvents(presentation, ["currentmedia_onchange"])
+        // The same seeding hides the play state from a skin loaded mid-track: the WMP 9 Redux shows
+        // its pause button and its visualizer pane only from `playStateIcons(NewState)`, so after a
+        // skin switch it sat on a play button over a black pane. None of the corpus's 17 authored
+        // `playstatechange` handlers starts, stops or pauses playback, so raising it once is safe;
+        // a stopped player is the state every skin is authored in, so it raises nothing.
+        dispatchHostEvents(presentation, host.snapshot.state == .stopped
+            ? ["currentmedia_onchange"] : ["currentmedia_onchange", "playstatechange"])
         startAnimation(presentation, for: scene)
         arbitrateVideoSurface()
         if presentation.isPlayer {
@@ -1938,7 +1955,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             switch command.action {
             case "setCurrentView":
                 return WMPJScriptHostCommand(action: "openView", value: command.value)
-            case "closeView" where command.value?.string == nil, "minimizeWindow", "sizeWindow":
+            case "closeView" where command.value?.string == nil, "minimizeWindow", "maximizeWindow",
+                 "sizeWindow":
                 return nil
             default:
                 return command
@@ -3254,9 +3272,16 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             include(view)
             scope = included
         }
-        return skin.graph.allNodes.filter { node in
+        let found = skin.graph.allNodes.filter { node in
             scope?.contains(node.stableID) != false
         }.filter { node in
+            // **The view timer ticks the view's own `onTimer`, nobody else's.** `skin_gradiente`
+            // also writes `onTimer="SetTimeShowState()" timerInterval="100"` on a subview — the
+            // elapsed/remaining toggle its time button calls on click — and riding the view's
+            // 500 ms tick it flipped the readout every half second. In WMP a timer is a view's
+            // alone: at the authored 100 ms the skin would have strobed, and it is the only
+            // corpus archive that authors `onTimer` anywhere but a `<view>`.
+            if wanted == "timer", node.kind != .view { return false }
             // An exact node beats an authored id: the id may be absent, and absent must mean
             // "this one node", never "all of them".
             if let targetStableID { return node.stableID == targetStableID }
@@ -3273,6 +3298,19 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 return stripped == wantedStripped ? source : nil
             }
         }
+        // **A plain `<buttonelement>` with no `onClick` of its own clicks its group.** `AzenisMini`
+        // authors Full Mode, Minimize, Close, Playlist and Open File as
+        // `<buttongroup onClick="…"><buttonelement mappingColor=…/></buttongroup>`, and the element
+        // is what the pointer hits, so with nothing raised there its shade bar could not be left.
+        // Only a plain element: a pre-wired `nextelement` under a group that also says
+        // `player.controls.next()` (Azenis again) would otherwise skip two tracks. Those six are
+        // the only elements in the corpus this reaches.
+        guard found.isEmpty, wanted.hasSuffix("click"), let targetStableID,
+              let node = skin.graph.allNodes.first(where: { $0.stableID == targetStableID }),
+              node.kind == .buttonElement, let group = node.parent, group.kind == .buttonGroup
+        else { return found }
+        return handlers(in: skin, event: event, targetID: nil, targetStableID: group.stableID,
+                        viewID: viewID)
     }
 
     /// Apply one transaction's host commands. Transport, EQ, effect, video and file-dialog commands
@@ -3352,6 +3390,34 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     switchedView = true
                 }
             case "minimizeWindow": presentation.window.miniaturize(nil)
+            case "showPopup":
+                if let id = command.value?.number, let scriptRuntime {
+                    Task { [weak presentation] in
+                        let items = await scriptRuntime.popupItems(stableID: Int(id))
+                        presentation?.mainView?.showPopupMenu(stableID: Int(id), items: items)
+                    }
+                }
+            case "showAppMenu": presentation.mainView?.showAppMenu(named: command.value?.string)
+            case "deleteSelectedRows":
+                if let id = command.value?.number {
+                    presentation.mainView?.removeSelectedPlaylistRows(stableID: Int(id))
+                }
+            case "launchURL":
+                guard let skin = loadedSkin,
+                      case .allow(let url) = SkinExternalLink.resolve(address: command.value?.string ?? "")
+                else { break }
+                let key = "wmp.allowDefaultBrowser.\(skin.archive.sourceURL.lastPathComponent)"
+                SkinExternalLink.open(url, skinName: skin.archive.sourceURL.deletingPathExtension().lastPathComponent,
+                                      consent: .init(isGranted: { UserDefaults.standard.bool(forKey: key) },
+                                                     grant: { UserDefaults.standard.set(true, forKey: key) }),
+                                      over: presentation.window)
+            case "maximizeWindow":
+                let window = presentation.window
+                guard let visible = window.screen?.visibleFrame else { break }
+                let size = NSSize(width: min(visible.width, window.maxSize.width),
+                                  height: min(visible.height, window.maxSize.height))
+                window.setFrame(NSRect(origin: NSPoint(x: visible.minX, y: visible.maxY - size.height),
+                                       size: size), display: true)
             // **The skin's own resize grip (W193).** A `.wmz` window is borderless and the macOS
             // frame the user would otherwise drag is not the resize the skin authored, so the
             // press that called `view.size(corner)` is handed straight to the same edge drag the

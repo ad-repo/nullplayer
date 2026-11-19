@@ -342,3 +342,9 @@ title only and dropped the source with it, so every classifier read a film as a 
 has no URL to state and honestly states none.
 
 ---
+
+**W42 can reach code WMP never ran, and once that was a self-close.** `trinity`'s `Init()` begins
+with the misspelled `UpdateMetaData()`. In WMP it stops there; here it runs on to `EndVideo()`,
+whose `view.close()` closed the player, and with it the app, on every load. The player's own load
+transaction now drops a bare `closeView` (`WMPMainWindowController`, at the load site), because no
+skin means to shut itself on open. W42 stays: the reporter wants skins to run all their code.

@@ -523,16 +523,98 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let output = await session.transact(skin: skin, viewID: "main",
             size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
             event: .init(name: "onClick", targetID: "pane",
-                         handlers: ["player.launchURL('http://example.com'); pane.left = 9;",
+                         handlers: ["player.notAMember('http://example.com'); pane.left = 9;",
                                     "pane.top = 4;"]))
         let pane = try XCTUnwrap(skin.graph.nodes(id: "pane").first)
         XCTAssertNil(output.overrides.geometry[.init(stableID: pane.stableID, property: "left")],
                      "the aborted handler still committed a later statement")
         XCTAssertEqual(output.overrides.geometry[.init(stableID: pane.stableID, property: "top")], 4,
                        "the second handler did not run")
-        XCTAssertTrue(output.calls.contains { $0.path == "player.launchurl" && !$0.recognised })
+        XCTAssertTrue(output.calls.contains { $0.path == "player.notamember" && !$0.recognised })
         XCTAssertTrue(output.diagnostics.contains { $0.code == "handler-error" })
         await session.teardown()
+    }
+
+    /// `player.launchURL` hands its address to the host, which owns the policy and the confirmation.
+    func testLaunchURLIsAHostCommand() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60"/></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: nil,
+                         handlers: ["player.launchURL('http://example.com/a');"]))
+        XCTAssertTrue(output.hostCommands.contains {
+            $0.action == "launchURL" && $0.value?.string == "http://example.com/a"
+        })
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" })
+        await session.teardown()
+    }
+
+    /// The click-sweep gaps (W322–W324): each call reaches the host instead of aborting its handler.
+    func testPopupShowDeleteSelectedAndMaximizeAreHostCommands() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60">
+            <POPUP id="mnu"/><AUTOMENU id="menu"/>
+            <PLAYLIST id="pl" left="0" top="0" width="50" height="50"/>
+        </VIEW></THEME>
+        """)
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 100, height: 60), snapshot: WMPHostSnapshot(),
+            event: .init(name: "onClick", targetID: nil, handlers: [
+                "mnu.deleteAll(); mnu.appendItem('A'); mnu.show(); menu.show('Play');"
+                    + " pl.deleteSelected(); view.maximize();"]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" }, "\(output.diagnostics)")
+        let actions = output.hostCommands.map(\.action)
+        for action in ["showPopup", "showAppMenu", "deleteSelectedRows", "maximizeWindow"] {
+            XCTAssertTrue(actions.contains(action), "\(action) missing from \(actions)")
+        }
+        XCTAssertEqual(output.hostCommands.first { $0.action == "showAppMenu" }?.value?.string, "Play")
+        await session.teardown()
+    }
+
+    /// The WMP 8 Redux places its whole frame with an `if` *statement* reading `app` (W320), and
+    /// sizes its texts with `fontSize="jscript:…;"`.
+    func testAnIfStatementAttributeAndAFontSizeExpressionEvaluate() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="200" height="200" scriptFile="s.js" onLoad="Init();">
+            <SUBVIEW id="frame" left="jscript:if(app.taskbarVisible){30}else{0}" top="0"
+                     width="50" height="50"/>
+            <TEXT id="label" left="0" top="0" value="x" fontSize="jscript:SMALL-1;"/>
+        </VIEW></THEME>
+        """, js: "var SMALL = 9; function Init() {}")
+        let (session, cleanup) = try runtime(); defer { cleanup() }
+        let output = await session.transact(skin: skin, viewID: "main",
+            size: .init(width: 200, height: 200), snapshot: WMPHostSnapshot(),
+            event: .init(name: "load", targetID: "main", handlers: ["Init();"]))
+        XCTAssertFalse(output.diagnostics.contains { $0.code == "handler-error" }, "\(output.diagnostics)")
+        let frame = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "frame" }?.stableID)
+        let label = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "label" }?.stableID)
+        XCTAssertEqual(output.overrides.geometry[.init(stableID: frame, property: "left")], 30)
+        XCTAssertEqual(output.overrides.properties[.init(stableID: label, property: "fontsize")]?.number, 8)
+        await session.teardown()
+    }
+
+    /// A view's timer ticks the view's `onTimer` alone — `skin_gradiente`'s subview `onTimer` is its
+    /// elapsed/remaining toggle — and a plain button element clicks its group (`Azenis`).
+    func testTimerIsTheViewsAndAButtonElementClicksItsGroup() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="100" height="60" onTimer="tick();" timerInterval="500">
+            <SUBVIEW id="drawer" left="0" top="0" width="50" height="50" onTimer="toggle();"
+                     timerInterval="100"/>
+            <BUTTONGROUP left="0" top="0" onClick="grouped();">
+                <BUTTONELEMENT id="shape" mappingColor="#FF0000"/>
+            </BUTTONGROUP>
+        </VIEW></THEME>
+        """)
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "timer", targetID: nil,
+                                                        viewID: "main"), ["tick();"])
+        let shape = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "shape" })
+        XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "click", targetID: "shape",
+                                                        targetStableID: shape.stableID, viewID: "main"),
+                       ["grouped();"])
     }
 
     /// A member with no host behind it is counted apart from one that answers for real. Without

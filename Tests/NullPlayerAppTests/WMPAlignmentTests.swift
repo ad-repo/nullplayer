@@ -567,8 +567,11 @@ final class WMPAlignmentTests: XCTestCase {
                 </SUBVIEW>
             </SUBVIEW>
         </VIEW></THEME>
-        """, resources: ["body.png": try sheet(100, 50), "drawer.png": try sheet(30, 40),
-                         "eye.png": try sheet(10, 10), "lid.png": try sheet(10, 10)])
+        """, resources: [
+            // Its top row is keyed out: a single-colour body is no shape at all (W321).
+            "body.png": try WMPSkinTestSupport.encodedImage(width: 100, height: 50,
+                rgba: (0..<5000).flatMap { $0 < 100 ? [255, 0, 0, 255] : [0, 0, 0, 255] as [UInt8] }),
+            "drawer.png": try sheet(30, 40), "eye.png": try sheet(10, 10), "lid.png": try sheet(10, 10)])
         let scene = try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main")
         let drawer = try XCTUnwrap(scene.commands.first { $0.nodeID == "drawer" })
         XCTAssertEqual(drawer.clipRect, WMPRect(x: 0, y: 0, width: 100, height: 100))

@@ -74,7 +74,8 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     /// other half of the same statement and live in `sliderMetrics`, where a slider's other WMP
     /// defaults already are.
     private static func implicit(for node: WMPNode, authored: [Binding]) -> [Binding] {
-        guard let paths = implicitPaths[node.kind] ?? positionSliderPaths(for: node) else { return [] }
+        guard let paths = implicitPaths[node.kind] ?? trackNamePaths(for: node)
+                ?? positionSliderPaths(for: node) else { return [] }
         return paths.compactMap { property, path in
             // An authored attribute always wins — one corpus `<BALANCESLIDER>` does author its
             // own `value`, and a skin that states something has not asked for WMP's default.
@@ -83,6 +84,14 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
             return Binding(address: .init(stableID: node.stableID, property: property),
                            kind: .property, path: path)
         }
+    }
+
+    /// **`<TRACKNAMETEXT>` is a `TEXT` whose value WMP supplies** — the track's name, as
+    /// `<CURRENTPOSITIONTEXT>` supplies the elapsed time. `myPod` authors none and its display drew
+    /// empty; `modernblue` authors its own `value`, which wins as every authored attribute does.
+    private static func trackNamePaths(for node: WMPNode) -> [(String, String)]? {
+        node.authoredTagName.caseInsensitiveCompare("tracknametext") == .orderedSame
+            ? [("value", "player.currentMedia.name")] : nil
     }
 
     /// **A slider whose maximum is the media's duration is a position control, and WMP does not
@@ -188,7 +197,7 @@ struct WMPObservablePropertyRegistry: @unchecked Sendable {
     /// first segment only.
     private static let hostRoots: Set<String> = [
         "player", "eq", "theme", "vidset", "mediacenter", "viseffects", "network", "settings",
-        "controls", "wmpprop"
+        "controls", "wmpprop", "app"
     ]
 
     /// What an unanswerable binding commits, or `nil` to commit nothing and leave the markup's own

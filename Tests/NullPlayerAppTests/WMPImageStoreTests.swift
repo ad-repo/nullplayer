@@ -98,6 +98,17 @@ final class WMPImageStoreTests: XCTestCase {
         XCTAssertNil(WMPBuiltInImage.named("WMPImage_AdBanner"))
     }
 
+    /// A Retina draw caches the art's upscale; new art must not keep drawing the old one (PixOS).
+    func testNewAlbumArtworkReplacesItsCachedUpscale() throws {
+        let data = try WMPSkinTestSupport.encodedImage(width: 2, height: 2, rgba: pixels)
+        let store = WMPImageStore(provider: WMPMemoryResourceProvider(["source.png": data]))
+        let empty = try store.upscaledImage(for: "WMPImage_AlbumArtSmall", sourceRect: nil, scale: 2)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(empty.image, x: 75, yFromTop: 75)[3], 0)
+        store.setAlbumArtwork(try store.image(for: "source.png").image)
+        let art = try store.upscaledImage(for: "WMPImage_AlbumArtSmall", sourceRect: nil, scale: 2)
+        XCTAssertEqual(WMPSkinTestSupport.rgba(art.image, x: 36, yFromTop: 36)[3], 255)
+    }
+
     private func assertComponent(_ lhs: UInt8, equals rhs: UInt8, accuracy: UInt8,
                                  file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertLessThanOrEqual(abs(Int(lhs) - Int(rhs)), Int(accuracy), file: file, line: line)

@@ -2194,11 +2194,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
 
     // MARK: - Web navigation (B40)
 
-    /// One question at a time. The address is skin-authored and a script may call `navigateUrl` from
-    /// a timer, so without this a skin could stack alerts over the player faster than they can be
-    /// dismissed. A request that arrives while the sheet is up is dropped, not queued.
-    private var isAskingAboutDefaultBrowser = false
-
     /// Where a skin's global navigation actually goes, once its address has passed the policy.
     ///
     /// The skin decides the *destination* — Big Bento's Web Content page offers "Use Default Browser
@@ -2218,7 +2213,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             if !navigateInternalBrowser(to: url) { openInDefaultBrowser(url) }
             return
         }
-        switch WinampModernWebNavigationPolicy.resolve(address: address) {
+        switch SkinExternalLink.resolve(address: address) {
         case .blocked(let reason):
             #if DEBUG
             NSLog("WinampModern: refused skin navigation to '%@' — %@", address, reason)
@@ -2255,39 +2250,13 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                                            address: url.absoluteString)
     }
 
-    /// The external route, and the only place a `.wal` skin can reach `NSWorkspace`.
-    ///
-    /// Gated by a **first-use confirmation**: the URL is chosen by untrusted markup, so the first
-    /// time a skin asks, the user sees the address and decides. "Always Allow" is remembered in that
-    /// skin's own namespaced configuration and speaks for no other skin. Presented as a sheet, never
-    /// `runModal()` — a modal loop a skin can enter at will is a hang the user cannot escape (the
-    /// same rule `showTrackInfo` follows), so with no window the request is simply inert.
+    /// The external route. Consent is kept in the skin's own namespaced configuration.
     private func openInDefaultBrowser(_ url: URL) {
         guard let configuration = loadedSkin?.configuration else { return }
-        if WinampModernWebNavigationPolicy.allowsDefaultBrowser(in: configuration) {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        guard let window, !isAskingAboutDefaultBrowser else { return }
-        isAskingAboutDefaultBrowser = true
-        let alert = NSAlert()
-        alert.messageText = "Open this link in your default browser?"
-        alert.informativeText = "The skin “\(configuration.namespace)” wants to open:\n\(url.absoluteString)"
-        alert.addButton(withTitle: "Open")
-        alert.addButton(withTitle: "Always Allow")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self] response in
-            self?.isAskingAboutDefaultBrowser = false
-            switch response {
-            case .alertFirstButtonReturn:
-                NSWorkspace.shared.open(url)
-            case .alertSecondButtonReturn:
-                WinampModernWebNavigationPolicy.setAllowsDefaultBrowser(true, in: configuration)
-                NSWorkspace.shared.open(url)
-            default:
-                break
-            }
-        }
+        SkinExternalLink.open(url, skinName: configuration.namespace, consent: .init(
+            isGranted: { WinampModernWebNavigationPolicy.allowsDefaultBrowser(in: configuration) },
+            grant: { WinampModernWebNavigationPolicy.setAllowsDefaultBrowser(true, in: configuration) }),
+            over: window)
     }
 
     @discardableResult

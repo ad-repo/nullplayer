@@ -1630,12 +1630,10 @@ enum WMPHarness {
                 }
                 continue
             }
-            let node = nodesByID[target.stableID]
-            let handlers: [String] = (node?.attributes ?? []).compactMap { attribute in
-                guard case let .handler(event, source) = attribute.value,
-                      event.caseInsensitiveCompare("onClick") == .orderedSame else { return nil }
-                return source
-            }
+            // The app's own selector, so a click the app raises elsewhere (a plain button element
+            // clicking its group) is measured here too.
+            let handlers = WMPMainWindowController.handlers(in: skin, event: "click",
+                targetID: target.nodeID, targetStableID: target.stableID, viewID: viewID)
             HarnessOutput.emit("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
                 + "action=\(target.action.map(String.init(describing:)) ?? "-") "
                 + "sticky=\(target.sticky) handlers=\(handlers.count)")

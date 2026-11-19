@@ -441,6 +441,39 @@ final class WMPMainView: NSView, NSViewToolTipOwner {
         }
     }
 
+    /// `<POPUP>.show()` (W322): the skin's items at the pointer; a pick is a list selection.
+    func showPopupMenu(stableID: Int, items: [String]) {
+        guard !items.isEmpty else { return }
+        let menu = NSMenu()
+        for (index, title) in items.enumerated() {
+            let item = NSMenuItem(title: title, action: #selector(popupItemChosen(_:)), keyEquivalent: "")
+            item.target = self; item.tag = index; item.representedObject = stableID
+            menu.addItem(item)
+        }
+        popUpAtPointer(menu)
+    }
+
+    @objc private func popupItemChosen(_ sender: NSMenuItem) {
+        guard let stableID = sender.representedObject as? Int else { return }
+        onListSelected?(stableID, nil, sender.tag)
+    }
+
+    /// `<AUTOMENU>.show(name)`: WMP's own menu of that name, so NullPlayer's.
+    func showAppMenu(named name: String?) {
+        popUpAtPointer(name?.lowercased() == "play" ? ContextMenuBuilder.buildMenuBarPlaybackMenu()
+                       : ContextMenuBuilder.buildMenu(includeOutputDevices: false, includeRepeatShuffle: false))
+    }
+
+    private func popUpAtPointer(_ menu: NSMenu) {
+        guard let window else { return }
+        menu.popUp(positioning: nil, at: convert(window.mouseLocationOutsideOfEventStream, from: nil), in: self)
+    }
+
+    /// `playlist.deleteSelected()`: the selection is the pane's, so the pane removes it.
+    func removeSelectedPlaylistRows(stableID: Int) {
+        (widgetViews[stableID] as? WMPPlaylistSurfaceView)?.removeSelected(nil)
+    }
+
     /// Only the `<LISTBOX>` selections a transaction wrote, ahead of its scene (W300).
     func updateListSelections(_ selections: [Int: Int]) {
         for (stableID, index) in selections {
