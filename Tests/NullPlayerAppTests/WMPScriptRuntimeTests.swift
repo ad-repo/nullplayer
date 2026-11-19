@@ -306,6 +306,18 @@ final class WMPScriptRuntimeTests: XCTestCase {
         }
     }
 
+    /// Every method `elementMethod` runs is counted as answered, because both read one table —
+    /// `show` and `deleteSelected` once ran while the census still ranked them as demand.
+    func testEveryDispatchedElementMethodIsCountedAsImplemented() {
+        for method in ["show", "deleteselected", "maximize", "deleteall"] {
+            XCTAssertTrue(WMPObjectModel.implementedElementMethods.contains(method), method)
+        }
+        for method in ["deleteAll", "show", "itemCount"] {
+            XCTAssertTrue(WMPJScriptCompatibility.supports(object: "popup", member: method), method)
+        }
+        XCTAssertTrue(WMPJScriptCompatibility.supports(object: "view", member: "maximize"))
+    }
+
     /// W128. The vocabulary is the SDK's element-method list, and an SDK method this engine does
     /// **not** implement has to resolve unrecognised so the census can rank it. A name missing from
     /// the set falls into the open property surface instead, answers `""`, and dies as a bare
@@ -318,7 +330,7 @@ final class WMPScriptRuntimeTests: XCTestCase {
         // `deleteAll` and `insertItem` were this list's `<LISTBOX>` examples until W136 filled a
         // skin's playlist chooser; `findItem` and `replaceItem` are the list-box methods still
         // unanswered, and the ones W136 implemented are pinned the other way round below.
-        for method in ["finditem", "replaceitem", "copy", "abortcopy", "deleteselected",
+        for method in ["finditem", "replaceitem", "copy", "abortcopy", "moveselectedup",
                        "restore", "sortcolumn", "getline", "getbutton"] {
             XCTAssertTrue(WMPObjectModel.elementMethodVocabulary.contains(method),
                           "\(method) is an SDK element method and must be counted, not swallowed")
@@ -641,7 +653,12 @@ final class WMPScriptRuntimeTests: XCTestCase {
         let shape = try XCTUnwrap(skin.graph.allNodes.first { $0.xmlID == "shape" })
         XCTAssertEqual(WMPMainWindowController.handlers(in: skin, event: "click", targetID: "shape",
                                                         targetStableID: shape.stableID, viewID: "main"),
-                       ["grouped();"])
+                       [], "the element authors nothing of its own")
+        // The group's handler, run in the group's scope (CodeRabbit on PR 787).
+        let group = try XCTUnwrap(shape.parent)
+        XCTAssertEqual(WMPMainWindowController.eventHandlers(in: skin, event: "click", targetID: "shape",
+                                                             targetStableID: shape.stableID, viewID: "main"),
+                       [.init(source: "grouped();", ownerStableID: group.stableID)])
     }
 
     /// A member with no host behind it is counted apart from one that answers for real. Without

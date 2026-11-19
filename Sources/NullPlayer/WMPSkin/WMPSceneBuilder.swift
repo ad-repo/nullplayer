@@ -583,6 +583,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
             }
             return Int(literal(node, "zIndex") ?? 0)
         }
+        /// Whether the markup or a script gave `node` a `zIndex` at all.
+        func statesZIndex(_ node: WMPNode) -> Bool {
+            node.statedAttribute(named: "zIndex") != nil
+                || overrides.properties[WMPScenePropertyAddress(stableID: node.stableID, property: "zindex")] != nil
+        }
 
         /// **At a `zIndex` tie a `<SUBVIEW>` paints above its non-subview siblings**, whichever
         /// comes first in the markup. `Plus! HueShifter` authors its equaliser drawer as the band
@@ -1471,13 +1476,21 @@ struct WMPSceneBuilder: @unchecked Sendable {
                    try imageStore.shapesChildrenByRegion(for: maskPath, keyedOut: keys)
                     || (parentNode.kind == .subview && container.contains(frame.cgRect.origin)
                         && !container.contains(frame.cgRect)) {
-                    // At the bitmap's own size, which a container's backgroundImage is drawn at:
-                    // `izdataarayuz`'s `ekran.gif` is 134 tall in a 165-tall `SUBVIEW`, and
-                    // stretching it to the frame drew the round screen as an oval.
+                    // Where the container's backgroundImage is drawn: at the bitmap's own size on
+                    // an axis it does not stretch or tile along. `izdataarayuz`'s `ekran.gif` is
+                    // 134 tall in a 165-tall `SUBVIEW`, and stretching it to the frame drew the
+                    // round screen as an oval.
                     let bitmap = try imageStore.regionMask(for: maskPath, keyedOut: keys)
+                    // The view root's background always fills it.
+                    let tiled = backgroundTiles(parentNode) || parentNode === view
+                    let across = tiled || WMPAxisAlignment(
+                        horizontal: literalString(parentNode, "horizontalAlignment")) == .stretch
+                    let down = tiled || WMPAxisAlignment(
+                        vertical: literalString(parentNode, "verticalAlignment")) == .stretch
                     regionMask = WMPWidgetRegionMask(resourcePath: maskPath, keyedOut: keys,
                         frame: WMPRect(x: parentNodeFrame.x, y: parentNodeFrame.y,
-                                       width: CGFloat(bitmap.width), height: CGFloat(bitmap.height)))
+                                       width: across ? parentNodeFrame.width : CGFloat(bitmap.width),
+                                       height: down ? parentNodeFrame.height : CGFloat(bitmap.height)))
                 }
             }
 
@@ -1614,8 +1627,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // view `zIndex`; this moves `trinity` alone (`OrangeArmy` only in pixels it keys out).
             let artworkLayer = node.kind == .view ? zIndex(of: node) : 0
             func sitsBehindArtwork(_ child: WMPNode) -> Bool {
-                zIndex(of: child) < 0
-                    || (child.statedAttribute(named: "zIndex") != nil && zIndex(of: child) < artworkLayer)
+                zIndex(of: child) < 0 || (statesZIndex(child) && zIndex(of: child) < artworkLayer)
             }
             let sortedChildren = node.children.sorted(by: paintOrder)
             let orderedChildren = sortedChildren.filter(sitsBehindArtwork)
@@ -1891,8 +1903,11 @@ struct WMPSceneBuilder: @unchecked Sendable {
                     // `TheThing`'s `hover_RED.png` is 402x298 over a 382x278 mask, so scaling it to
                     // the frame drew every lit icon up to 15px off its control: a stray arc on
                     // hover and a dark blob on press. 47 sheets in 20 archives differ from their
-                    // mask; a smaller one keeps the frame, since the mask is drawn into it.
+                    // mask; a smaller one keeps the frame, since the mask is drawn into it. A
+                    // stated crop is the author's own answer and wins.
                     func sheetSource(_ path: String) throws -> WMPRect? {
+                        guard !["cropLeft", "cropTop", "cropWidth", "cropHeight"]
+                            .contains(where: { literal(node, $0) != nil }) else { return nil }
                         let size = try imageStore.image(for: path).size
                         guard size.width > frame.width || size.height > frame.height else { return nil }
                         return WMPRect(x: 0, y: 0, width: min(frame.width, size.width),

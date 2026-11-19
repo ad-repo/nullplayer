@@ -46,7 +46,8 @@ final class WMPAudioEngineHost: WMPHost {
     private let engine: AudioEngine
     private var scanTimer: Timer?
     private var scanDirection: WMPScanDirection?
-    /// The track a scan started on: a scan never carries over into the next one.
+    /// The track or film a scan started on (`artworkTrack`): a scan never carries over into the
+    /// next one.
     private var scanTrackID: UUID?
     private var scanState: WMPHostSnapshot.State? {
         scanDirection.map { $0 == .forward ? .scanForward : .scanReverse }
@@ -482,7 +483,7 @@ final class WMPAudioEngineHost: WMPHost {
     private func startScanning(_ direction: WMPScanDirection) {
         stopScanning()
         scanDirection = direction
-        scanTrackID = engine.currentTrack?.id
+        scanTrackID = artworkTrack?.id
         // No step on the press itself: a scan is a rate, not a jump, so it starts one tick later.
         scanTimer = Timer.scheduledTimer(withTimeInterval: Self.scanTick, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.scanStep() }
@@ -498,22 +499,24 @@ final class WMPAudioEngineHost: WMPHost {
     private func scanStep() {
         guard let scanDirection else { return }
         let tick = Self.scanTick, forward = tick * (Self.scanRate - 1), back = tick * (Self.scanRate + 1)
-        if let video = Self.localVideoController {
-            guard video.isPlaying else { stopScanning(); return }
-            scanDirection == .forward ? video.skipForward(forward) : video.skipBackward(back)
-            return
-        }
-        guard engine.state == .playing, engine.currentTrack?.id == scanTrackID else {
+        let video = Self.localVideoController
+        guard video?.isPlaying ?? (engine.state == .playing), artworkTrack?.id == scanTrackID else {
             stopScanning(); return
         }
-        let time = engine.lastReportedTime
+        let time = Self.finite(video?.currentTime ?? engine.lastReportedTime)
+        // An unknown length (0) has no end to stop at.
+        let duration = Self.finite(video?.duration ?? engine.duration)
         switch scanDirection {
         case .forward:
-            guard engine.duration - time > forward + tick else { stopScanning(); return }
-            engine.seekBy(seconds: forward)
+            guard duration == 0 || duration - time > forward + tick else { stopScanning(); return }
+            if let video { video.skipForward(forward) } else { engine.seekBy(seconds: forward) }
         case .reverse:
-            guard time > back else { stopScanning(); engine.seek(to: 0); return }
-            engine.seekBy(seconds: -back)
+            guard time > back else {
+                stopScanning()
+                if let video { video.seek(to: 0) } else { engine.seek(to: 0) }
+                return
+            }
+            if let video { video.skipBackward(back) } else { engine.seekBy(seconds: -back) }
         }
     }
 

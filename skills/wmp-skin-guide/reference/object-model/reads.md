@@ -156,5 +156,7 @@ these answer what WMP's full mode opens with. Before `app` was bound, the WMP 8 
 
 **An attribute written as a statement is a value too.** WMP takes the completion value, as `eval`
 does, so `if(app.taskbarVisible){0}else{-g_kTaskBarWidth}` is a number there and a SyntaxError
-inside our `return (…)`. `WMPScriptContext` retries the expression through `eval` only after a
-SyntaxError, so no expression that already evaluated takes the new path.
+inside our `return (…)`. `WMPScriptContext.returnStatement` sends the expression through `eval`
+only when a parse-only syntax check rejects `return (…)` — never by retrying, so a runtime error
+cannot run it twice — and caches that choice per source, so no expression that already evaluated
+takes the new path.

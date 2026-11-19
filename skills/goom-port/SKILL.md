@@ -147,7 +147,8 @@ NULL)`, so Goom draws no text (no fps counter, no title). The returned buffer is
 - **Minimum size**: `renderFrame` skips any frame whose core would be under 16 px a side
   (`minRenderSide`). Upstream bounds-checks with unsigned `x < screen.width - 2`, so a core under
   2 px wraps that to ~4 billion and `pointFilter` writes far outside its buffer — a crash seen when
-  a `.wmz` effects pane collapsed to a few points mid-layout (2026-11-18).
+  a `.wmz` effects pane collapsed to a few points mid-layout (2026-11-18). A skipped frame sets
+  `drewLastFrame` false, so `VisualizationGLView` neither swaps nor casts the undrawn buffer.
 
 ## Audio
 

@@ -887,10 +887,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                                  backingScale: backingScale,
                                                  repairing: repairing, spans: spans,
                                                  pinnedFurniture: pinnedFurniture) {
-                // The panel verdict is the first pass's, as furniture is: the grown canvas
-                // stretches the pieces it is read from.
-                built = (second.image, second.client, second.corner, second.extent,
-                         second.furniture, built.panels)
+                // The panel verdict is the first pass's: the grown canvas stretches the pieces it
+                // is read from.
+                built = RingRender(image: second.image, client: second.client, corner: second.corner,
+                                   extent: second.extent, furniture: second.furniture,
+                                   panels: built.panels)
             }
         }
         guard var cropped = built.image.cropping(to: CGRect(
@@ -922,17 +923,14 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         // Both ends of the bridged span sit one border inside the junction they replace, clear of
         // the corners: from just past the widened content's new corner to just past the old hole's.
         let leftBorder = content.minX, rightBorder = size.width - content.maxX
-        if built.panels.left, rightBorder < leftBorder {
-            let border = rightBorder
+        let panelOnLeft = built.panels.left && rightBorder < leftBorder
+        if panelOnLeft || (built.panels.right && leftBorder < rightBorder) {
+            // The opposite side's border, which is the narrower one.
+            let border = min(leftBorder, rightBorder)
             content = CGRect(x: border, y: content.minY, width: size.width - 2 * border,
                              height: content.height)
-            let span = (from: border + border, to: hole.minX + border)
-            cropped = Self.bridgingBars(cropped, from: span.from, to: span.to, content: content, size: size)
-        } else if built.panels.right, leftBorder < rightBorder {
-            let border = leftBorder
-            content = CGRect(x: border, y: content.minY, width: size.width - 2 * border,
-                             height: content.height)
-            let span = (from: hole.maxX - border, to: size.width - border - border)
+            let span = panelOnLeft ? (from: 2 * border, to: hole.minX + border)
+                                   : (from: hole.maxX - border, to: size.width - 2 * border)
             cropped = Self.bridgingBars(cropped, from: span.from, to: span.to, content: content, size: size)
         }
         // **Erase the interior fill so the frame can be painted whole (W209).** See
@@ -1228,14 +1226,23 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
         return (made, opening)
     }
 
-    /// One ring render on a canvas of `canvas` points, plus the three things read off it: the client
-    /// hole, the top-right corner's width, and **the extent the ring's pixels actually cover**.
+    /// One ring render and what is read off it: the client hole, the top-right corner's width,
+    /// **the extent the ring's pixels actually cover**, the furniture and the panel verdict.
+    private struct RingRender {
+        let image: CGImage
+        let client: CGRect
+        let corner: CGFloat?
+        let extent: CGRect
+        let furniture: Set<Int>
+        let panels: PanelSides
+    }
+
+    /// One ring render on a canvas of `canvas` points — see `RingRender`.
     private func ringRender(builder: WMPSceneBuilder, renderer: WMPRenderer, canvas: CGSize,
                             backingScale: CGFloat, repairing: Bool,
                             spans: (down: Bool, across: Bool) = (true, true),
                             pinnedFurniture: Set<Int>? = nil) async throws
-        -> (image: CGImage, client: CGRect, corner: CGFloat?, extent: CGRect, furniture: Set<Int>,
-            panels: PanelSides)? {
+        -> RingRender? {
         // **Below the donor's own floor, build at the floor (W209 prototype).** A skin that declares
         // `minWidth=560 minHeight=260` has never been asked what 357x238 looks like, and it shows:
         // `Back to the Future Trilogy` is clean at every size from 420x260 up and grows a ~13x20pt
@@ -1372,11 +1379,12 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                                     backingScale: backingScale)
             let canvasRect = CGRect(x: 0, y: 0,
                                     width: scene.canvasSize.width, height: scene.canvasSize.height)
-            return (drawn,
-                    CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
-                    topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
-                    Self.opaqueExtent(drawn, scale: backingScale) ?? canvasRect,
-                    furniture, panelSides(in: scene, hole: hole, furniture: furniture))
+            return RingRender(
+                image: drawn,
+                client: CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
+                corner: topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
+                extent: Self.opaqueExtent(drawn, scale: backingScale) ?? canvasRect,
+                furniture: furniture, panels: panelSides(in: scene, hole: hole, furniture: furniture))
         }
         let admitted = repairing ? ringNodeIDs : ringNodeIDs.subtracting(extraNodeIDs)
         let ring = scene.commands.filter { admitted.contains($0.stableID) && !overlapping.contains($0.stableID) }
@@ -1411,10 +1419,11 @@ struct WMPHostedFrameTemplate: Equatable, Sendable {
                                                      renderer: renderer, backingScale: backingScale) {
             image = plated
         }
-        return (image,
-                CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
-                topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
-                extent, [], PanelSides())
+        return RingRender(
+            image: image,
+            client: CGRect(x: client.x, y: client.y, width: client.width, height: client.height),
+            corner: topRightNodeID.flatMap { scene.geometries[$0]?.absoluteFrame }.map(\.width),
+            extent: extent, furniture: [], panels: PanelSides())
     }
 
     /// `commands` alone, on `scene`'s canvas: one set of the donor's pieces, drawn to be measured,

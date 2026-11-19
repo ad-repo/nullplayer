@@ -180,10 +180,12 @@ recognising an event, one step further out.
   500 ms tick, it flipped the readout twice a second. At its authored 100 ms the skin would have
   strobed in WMP, so WMP runs no subview timer. It is the only corpus archive (225 checked,
   2026-11-19) that authors `onTimer` anywhere but a `<view>`.
-- **A plain `<BUTTONELEMENT>` with no click handler of its own clicks its `<BUTTONGROUP>`.**
-  `Azenis` puts each window button's `onClick` on the group, and the element the pointer hits has
-  none. An element with a built-in action keeps just that action, or Azenis's Next would skip two
-  tracks. The sweep's click (`WMPRenderDumpTests`) uses the same selector, so it measures this too.
+- **A plain `<BUTTONELEMENT>` with no click handler of its own clicks its `<BUTTONGROUP>`**
+  (`WMPMainWindowController.eventHandlers`). `Azenis` puts each window button's `onClick` on the
+  group, and the element the pointer hits has none. The group's handler runs in the group's scope
+  (`WMPJScriptEvent.Handler.ownerStableID`) while the element stays the event's source. An element
+  with a built-in action keeps just that action, or Azenis's Next would skip two tracks. The sweep's
+  click (`WMPRenderDumpTests`) calls the same function, so it measures this too.
   In the corpus this reaches Azenis's six buttons only.
 - **A skin loaded mid-track also receives `playstatechange`**, beside the `currentmedia_onchange`
   the load already raised, unless the player is stopped. The WMP 9 Redux shows its pause button

@@ -32,16 +32,23 @@ WAYBACK = threading.Lock()
 
 
 class CurlError(OSError):
-    def __init__(self, code):
-        super().__init__(f"curl exit {code}")
-        self.code = code
+    def __init__(self, code, status=None):
+        super().__init__(f"curl exit {code}" + (f" (HTTP {status})" if status else ""))
+        self.code, self.status = code, status
+
+    @property
+    def transient(self):
+        # exit 22 is an HTTP error status: only a server-side or rate-limit one is worth retrying
+        return self.code != 22 or self.status in (429, 500, 502, 503, 504)
 
 
 def curl(url, cookie=None):
     # curl, not urllib: wincustomize 403s Python's TLS handshake whatever the headers say
-    cmd = ["curl", "-sfL", "--max-time", "120", "-A", UA] + (["-b", cookie] if cookie else []) + [url]
+    cmd = ["curl", "-sSfL", "--max-time", "120", "-A", UA] + (["-b", cookie] if cookie else []) + [url]
     r = subprocess.run(cmd, capture_output=True)
-    if r.returncode: raise CurlError(r.returncode)
+    if r.returncode:
+        m = re.search(rb"error: (\d{3})", r.stderr)
+        raise CurlError(r.returncode, int(m.group(1)) if m else None)
     return r.stdout
 
 
@@ -55,7 +62,7 @@ def get(url, cookie=None):
             time.sleep(wait)
             try: return curl(url, cookie)
             except CurlError as e:
-                if e.code == 22: raise  # an HTTP error status: retrying will not help
+                if not e.transient: raise  # a 404 stays a 404
                 err = e
         raise err
 
@@ -229,8 +236,10 @@ def crawl(out, corpus, found, ext=".wal", is_def=wal_def, name_of=skin_name, loa
             dest = os.path.join(out, stem + ext)
             k = 2
             while os.path.exists(dest): dest = os.path.join(out, f"{stem}-{k}{ext}"); k += 1
-            # a downloaded skin archive that already is one skin is kept byte-for-byte; everything else is repacked
-            keep = fname.lower().endswith(ext) and len(skins) == 1
+            # a downloaded skin archive that already is one skin, found in the archive itself rather
+            # than in one nested inside it, is kept byte-for-byte; everything else is repacked
+            # (depth 3 is the recursion floor, so that call reads the outer archive alone)
+            keep = fname.lower().endswith(ext) and len(skins) == 1 and bool(skins_in(data, 3, is_def, ()))
             with open(dest, "wb") as f: f.write(data if keep else pack(files))
             clash = names.get(norm(name), []) if norm(name) else []
             manifest.write("\t".join([os.path.basename(dest), name, url, "name-matches:" + ",".join(clash) if clash else ""]) + "\n")

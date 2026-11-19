@@ -832,14 +832,9 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     applyHostCommands(deferredWindowCommands.filter {
                         $0.value?.string?.caseInsensitiveCompare(resolved.viewID) != .orderedSame
                     }, from: presentation)
-                    // **The player never closes itself from its own `onLoad`.** `trinity`'s `Init()`
-                    // calls `EndVideo()` — `view.close()` — whenever no video is playing, which in
-                    // WMP it never reaches: its first line misspells `UpdateMetadata`, and JScript
-                    // stops there. W42 resolves that call so the rest of `Init` runs, and the close
-                    // quit the app on every load. No skin means to shut itself on open.
                     let switchedView = applyHostCommands(presentation.isPlayer
-                        ? output.hostCommands.filter { !($0.action == "closeView" && $0.value?.string == nil) }
-                        : output.hostCommands, from: presentation)
+                        ? Self.playerLoadCommands(output.hostCommands) : output.hostCommands,
+                        listItems: output.listItems, from: presentation)
                     if !switchedView {
                         applyTimerDelta(presentation, registered: output.timerRequests,
                                         cleared: output.clearedTimerTokens)
@@ -1671,6 +1666,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 presentation.mainView?.refreshHostState(self.host.snapshot)
                 if let scriptOutput {
                     let switchedView = self.applyHostCommands(scriptOutput.hostCommands,
+                                                              listItems: scriptOutput.listItems,
                                                               from: presentation)
                     if !switchedView {
                         self.applyTimerDelta(presentation, registered: scriptOutput.timerRequests,
@@ -1899,7 +1895,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 // script's `setViewTimerInterval` overrides — so the commands run after it, in
                 // that order. A command that switches again owns the timers of the view it moved
                 // to, exactly as on initial load.
-                let switchedAgain = applyHostCommands(output.hostCommands, from: presentation)
+                let switchedAgain = applyHostCommands(output.hostCommands, listItems: output.listItems,
+                                                      from: presentation)
                 recordScriptDiagnostics(output.diagnostics)
                 guard !switchedAgain else { return }
                 applyTimerDelta(presentation, registered: output.timerRequests,
@@ -2660,14 +2657,14 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                                      targetID: String?, targetStableID: Int? = nil,
                                      onlyWhenAuthored: Bool = false, keyCode: Int? = nil) {
         guard let skin = loadedSkin else { return }
-        let handlers = Self.handlers(in: skin, event: name, targetID: targetID,
-                                     targetStableID: targetStableID, viewID: presentation.viewID)
+        let handlers = Self.eventHandlers(in: skin, event: name, targetID: targetID,
+                                          targetStableID: targetStableID, viewID: presentation.viewID)
         #if DEBUG
         if ProcessInfo.processInfo.environment["WMP_CLICK_TRACE"] == "1", name != "timer" {
             NSLog("[wmp/dispatch] %@ targetID=%@ stable=%@ view=%@ handlers=%d %@",
                   name, targetID ?? "-", targetStableID.map(String.init) ?? "-",
                   presentation.viewID, handlers.count,
-                  handlers.map { String($0.prefix(70)) }.joined(separator: " | "))
+                  handlers.map { String($0.source.prefix(70)) }.joined(separator: " | "))
         }
         #endif
         // **A hover edge is only worth a transaction when the skin asked for one.** Every other
@@ -2878,7 +2875,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     refreshHostState()
                 }
             }
-            let switchedView = applyHostCommands(output.hostCommands, from: presentation)
+            let switchedView = applyHostCommands(output.hostCommands, listItems: output.listItems,
+                                                 from: presentation)
             // **The window is resized with the picture that fits it, not ahead of it.** The size
             // is recorded here — `rebuildSize` below needs it to build the scene the skin asked
             // for — but the frame itself is set in the same main-actor turn as `present`, further
@@ -3272,7 +3270,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             include(view)
             scope = included
         }
-        let found = skin.graph.allNodes.filter { node in
+        return skin.graph.allNodes.filter { node in
             scope?.contains(node.stableID) != false
         }.filter { node in
             // **The view timer ticks the view's own `onTimer`, nobody else's.** `skin_gradiente`
@@ -3298,19 +3296,38 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 return stripped == wantedStripped ? source : nil
             }
         }
-        // **A plain `<buttonelement>` with no `onClick` of its own clicks its group.** `AzenisMini`
-        // authors Full Mode, Minimize, Close, Playlist and Open File as
-        // `<buttongroup onClick="…"><buttonelement mappingColor=…/></buttongroup>`, and the element
-        // is what the pointer hits, so with nothing raised there its shade bar could not be left.
-        // Only a plain element: a pre-wired `nextelement` under a group that also says
-        // `player.controls.next()` (Azenis again) would otherwise skip two tracks. Those six are
-        // the only elements in the corpus this reaches.
-        guard found.isEmpty, wanted.hasSuffix("click"), let targetStableID,
+    }
+
+    /// **A plain `<buttonelement>` with no `onClick` of its own clicks its group.** `AzenisMini`
+    /// authors Full Mode, Minimize, Close, Playlist and Open File as
+    /// `<buttongroup onClick="…"><buttonelement mappingColor=…/></buttongroup>`, and the element
+    /// is what the pointer hits, so with nothing raised there its shade bar could not be left.
+    /// Only a plain element: a pre-wired `nextelement` under a group that also says
+    /// `player.controls.next()` (Azenis again) would otherwise skip two tracks. Those six are
+    /// the only elements in the corpus this reaches. The group's handlers run in the group's scope;
+    /// the element stays the event's source.
+    ///
+    /// What an input event on `targetStableID` runs: its own handlers, or its group's. The app's
+    /// dispatch and the render harness's click both come through here.
+    static func eventHandlers(in skin: WMPLoadedSkin, event: String, targetID: String?,
+                              targetStableID: Int?, viewID: String?) -> [WMPJScriptEvent.Handler] {
+        let own = handlers(in: skin, event: event, targetID: targetID, targetStableID: targetStableID,
+                           viewID: viewID)
+        guard own.isEmpty, event.lowercased().hasSuffix("click"), let targetStableID,
               let node = skin.graph.allNodes.first(where: { $0.stableID == targetStableID }),
               node.kind == .buttonElement, let group = node.parent, group.kind == .buttonGroup
-        else { return found }
+        else { return own.map { .init(source: $0) } }
         return handlers(in: skin, event: event, targetID: nil, targetStableID: group.stableID,
-                        viewID: viewID)
+                        viewID: viewID).map { .init(source: $0, ownerStableID: group.stableID) }
+    }
+
+    /// **The player never closes itself from its own `onLoad`.** `trinity`'s `Init()` calls
+    /// `EndVideo()` — `view.close()` — whenever no video is playing, which in WMP it never reaches:
+    /// its first line misspells `UpdateMetadata`, and JScript stops there. W42 resolves that call so
+    /// the rest of `Init` runs, and the close quit the app on every load. No skin means to shut
+    /// itself on open.
+    private static func playerLoadCommands(_ commands: [WMPJScriptHostCommand]) -> [WMPJScriptHostCommand] {
+        commands.filter { !($0.action == "closeView" && $0.value?.string == nil) }
     }
 
     /// Apply one transaction's host commands. Transport, EQ, effect, video and file-dialog commands
@@ -3322,6 +3339,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// longer abandons the opener's scene, because the opener is still on screen.
     @discardableResult
     private func applyHostCommands(_ commands: [WMPJScriptHostCommand],
+                                   listItems: [Int: [String]] = [:],
                                    from presentation: WMPViewPresentation) -> Bool {
         var switchedView = false
         for command in commands.prefix(WMPJScriptProtocol.maximumHostCommands) {
@@ -3390,12 +3408,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     switchedView = true
                 }
             case "minimizeWindow": presentation.window.miniaturize(nil)
+            // The items come from the transaction that called `show()`, not from the view, which
+            // is only given them after the commands run.
             case "showPopup":
-                if let id = command.value?.number, let scriptRuntime {
-                    Task { [weak presentation] in
-                        let items = await scriptRuntime.popupItems(stableID: Int(id))
-                        presentation?.mainView?.showPopupMenu(stableID: Int(id), items: items)
-                    }
+                if let id = number.map(Int.init) {
+                    presentation.mainView?.showPopupMenu(stableID: id, items: listItems[id] ?? [])
                 }
             case "showAppMenu": presentation.mainView?.showAppMenu(named: command.value?.string)
             case "deleteSelectedRows":
@@ -3403,13 +3420,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                     presentation.mainView?.removeSelectedPlaylistRows(stableID: Int(id))
                 }
             case "launchURL":
-                guard let skin = loadedSkin,
+                guard let skin = loadedSkin, let preferences = scriptRuntime?.preferences,
                       case .allow(let url) = SkinExternalLink.resolve(address: command.value?.string ?? "")
                 else { break }
-                let key = "wmp.allowDefaultBrowser.\(skin.archive.sourceURL.lastPathComponent)"
                 SkinExternalLink.open(url, skinName: skin.archive.sourceURL.deletingPathExtension().lastPathComponent,
-                                      consent: .init(isGranted: { UserDefaults.standard.bool(forKey: key) },
-                                                     grant: { UserDefaults.standard.set(true, forKey: key) }),
+                                      consent: .init(isGranted: { preferences.allowsDefaultBrowser },
+                                                     grant: { preferences.allowsDefaultBrowser = true }),
                                       over: presentation.window)
             case "maximizeWindow":
                 let window = presentation.window
@@ -3534,7 +3550,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
                 geometry: activeScene.scriptGeometry, animatesTweens: true)
             // Commands before drawing, and for the reason in `dispatchScriptTransaction`: the
             // build and the render are what a later tick cancels, and the commands are not theirs.
-            let switchedView = self.applyHostCommands(output.hostCommands, from: presentation)
+            let switchedView = self.applyHostCommands(output.hostCommands, listItems: output.listItems,
+                                                      from: presentation)
             // **A timer handler is where the next timer is registered.** The WMP idiom is a chain:
             // the callback does its step and calls `setTimeout` again for the next one. This path
             // used to drop what the tick asked for, so a chain fired exactly once and stopped —
@@ -3642,7 +3659,8 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
             snapshot: host.snapshot, geometry: activeScene.scriptGeometry) else { return false }
         // A completion handler is a handler like any other: it can post commands, register timers
         // and switch the view, and a switch owns everything after it.
-        let switchedView = applyHostCommands(output.hostCommands, from: presentation)
+        let switchedView = applyHostCommands(output.hostCommands, listItems: output.listItems,
+                                             from: presentation)
         recordScriptDiagnostics(output.diagnostics)
         guard !switchedView, presentation.viewID == viewID else { return false }
         if let assigned = output.viewSize { presentation.scriptViewSize = assigned }
@@ -3950,7 +3968,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         guard dispatcherViewID == viewID else { return }
         applyHostCommands(output.hostCommands.filter {
             $0.value?.string?.caseInsensitiveCompare(playerViewID) != .orderedSame
-        }, from: player)
+        }, listItems: output.listItems, from: player)
         recordScriptDiagnostics(output.diagnostics)
     }
 
@@ -3999,7 +4017,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         // The player is the window a dispatcher's commands run against: it is the one the user is
         // looking at, which is what `theme.currentViewID` answers from here, and its `openView`
         // calls are the whole point of the idiom.
-        _ = applyHostCommands(output.hostCommands, from: player)
+        _ = applyHostCommands(output.hostCommands, listItems: output.listItems, from: player)
         recordScriptDiagnostics(output.diagnostics)
     }
 

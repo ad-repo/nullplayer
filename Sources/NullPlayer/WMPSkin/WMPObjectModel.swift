@@ -1417,40 +1417,48 @@ final class WMPObjectModel {
         }
     }
 
-    /// `<AUTOMENU>` has no element kind of its own; its `show()` is one of WMP's menus.
-    private static func isAutoMenu(_ tag: String) -> Bool { tag.lowercased() == "automenu" }
-
-    private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
-        switch (element.kind, name) {
-        case (.popup, "appenditem"), (.popup, "removeallitems"), (.popup, "getitem"),
-             (.popup, "deleteall"), (.popup, "show"): return name
-        case let (.unknown(tag), "show") where Self.isAutoMenu(tag): return name
+    /// **The one table of element methods this engine answers**, per kind. `elementMethod`, the
+    /// flat `implementedElementMethods` the census classifies against, and the compatibility
+    /// table's `view`/`popup` rows are all read from it, so a method cannot run while still being
+    /// counted as demand.
+    static let elementMethodsByKind: [WMPElementKind: Set<String>] = [
+        // `show()` pops the menu up at the pointer (W322).
+        .popup: ["appenditem", "removeallitems", "getitem", "deleteall", "show"],
         // A `<LISTBOX>` is filled the same way, under the SDK's own names (W136): `WoW`'s
         // `fillListBox()` opens with `plListBox1.deleteAll()`.
-        case (.listBox, "appenditem"), (.listBox, "deleteall"), (.listBox, "getitem"),
-             (.listBox, "insertitem"), (.listBox, "deleteitem"): return name
+        .listBox: ["appenditem", "deleteall", "getitem", "insertitem", "deleteitem"],
         // 82 archives call `visEffects.next()` and 74 `visEffects.previous()` — the corpus's own
         // way of cycling the surface, and the reason the selector never needed a menu (W101).
-        case (.effects, "next"), (.effects, "previous"), (.effects, "nextpreset"): return name
-        case (_, "moveto"), (_, "resizeto"), (_, "alphablendto"): return name
-        case (.view, "close"), (.view, "minimize"), (.view, "maximize"),
-             (.view, "returntomediacenter"), (.view, "size"): return name
-        default:
-            return Self.isPlaylist(element.kind)
-                && ["setcolumnresizemode", "setcolumnwidth", "deleteselected"].contains(name) ? name : nil
-        }
+        .effects: ["next", "previous", "nextpreset"],
+        .view: ["close", "minimize", "maximize", "returntomediacenter", "size"]
+    ]
+    /// Every kind answers these.
+    static let ambientElementMethods: Set<String> = ["moveto", "resizeto", "alphablendto"]
+    /// Every playlist kind (see `isPlaylist`) answers these.
+    static let playlistElementMethods: Set<String> = ["setcolumnresizemode", "setcolumnwidth", "deleteselected"]
+    /// `<AUTOMENU>` has no element kind of its own; its `show()` is one of WMP's menus.
+    static let autoMenuElementMethods: Set<String> = ["show"]
+
+    private static func isAutoMenu(_ kind: WMPElementKind) -> Bool {
+        if case let .unknown(tag) = kind { return tag.lowercased() == "automenu" }
+        return false
     }
 
-    /// The element methods this engine answers, on whatever kind defines them — `elementMethod` is
-    /// the kind-aware authority and this is the flat name set the corpus census classifies against.
-    /// Without it a call the runtime handles is still counted as unimplemented demand: that is how
-    /// `alphaBlendTo` came to be measured as the largest row on the backlog while `moveTo`, which
-    /// has been implemented since Phase 3, was counted beside it (W38).
-    static let implementedElementMethods: Set<String> = [
-        "moveto", "resizeto", "alphablendto", "close", "minimize", "maximize", "returntomediacenter",
-        "size", "appenditem", "removeallitems", "getitem", "setcolumnresizemode", "setcolumnwidth",
-        "next", "previous", "nextpreset", "deleteall", "insertitem", "deleteitem"
-    ]
+    private func elementMethod(_ element: WMPScriptElement, _ name: String) -> String? {
+        let kind = element.kind
+        let methods = Self.isPlaylist(kind) ? Self.playlistElementMethods
+            : Self.isAutoMenu(kind) ? Self.autoMenuElementMethods
+            : Self.elementMethodsByKind[kind] ?? []
+        return Self.ambientElementMethods.contains(name) || methods.contains(name) ? name : nil
+    }
+
+    /// The element methods this engine answers, on whatever kind defines them — the flat name set
+    /// the corpus census classifies against. Without it a call the runtime handles is still counted
+    /// as unimplemented demand: that is how `alphaBlendTo` came to be measured as the largest row on
+    /// the backlog while `moveTo`, which has been implemented since Phase 3, was counted beside it
+    /// (W38).
+    static let implementedElementMethods: Set<String> = elementMethodsByKind.values
+        .reduce(ambientElementMethods.union(playlistElementMethods).union(autoMenuElementMethods)) { $0.union($1) }
 
     /// Names WMP defines as element *methods*. One of these that this engine does not implement
     /// stays unrecognised rather than falling into the open property surface — otherwise
@@ -2074,7 +2082,7 @@ final class WMPObjectModel {
         case (.popup, "show"):
             hostCommand("showPopup", .number(Double(element.stableID))); return .value(.null)
         // `<AUTOMENU id="menu"/>` + `menu.show('Play')`: one of WMP's own menus, so ours.
-        case let (.unknown(tag), "show") where Self.isAutoMenu(tag):
+        case (let kind, "show") where Self.isAutoMenu(kind):
             hostCommand("showAppMenu", arguments.first.flatMap(\.string).map(WMPJSONValue.string))
             return .value(.null)
         case (.effects, "next"): hostCommand("stepEffect", .number(1)); return .value(.null)

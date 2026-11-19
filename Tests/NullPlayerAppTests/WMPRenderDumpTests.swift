@@ -1276,10 +1276,13 @@ enum WMPHarness {
     static func targetLines(scene: WMPScene) -> [String] {
         let tester = WMPHitTester(hits: scene.hits)
         return clickableChildren(of: scene).compactMap { hit, child in
-            guard let point = child.points.first(where: { tester.hitTest($0)?.stableID == child.id })
+            // Floored before the test, so the point printed is the point that was tested.
+            guard let point = child.points
+                .map({ WMPPoint(x: $0.x.rounded(.down), y: $0.y.rounded(.down)) })
+                .first(where: { tester.hitTest($0)?.stableID == child.id })
             else { return nil }
             return "TARGET \(scene.viewID)/\(child.id) \(hit.kind) id=\(child.label) "
-                + "point=\(Int(point.x.rounded(.down))),\(Int(point.y.rounded(.down)))"
+                + "point=\(Int(point.x)),\(Int(point.y))"
         }
     }
 
@@ -1519,7 +1522,9 @@ enum WMPHarness {
     private static func eventFor(name: String, skin: WMPLoadedSkin, viewID: String) -> WMPJScriptEvent? {
         let handlers = WMPMainWindowController.handlers(in: skin, event: name, targetID: nil,
                                                         viewID: viewID)
-        guard !handlers.isEmpty else { return nil }
+        // The view opening is an event with or without a handler, as in the app: it is also what
+        // runs the view's `jscript:` property assignments.
+        guard !handlers.isEmpty || name == "onLoad" else { return nil }
         return WMPJScriptEvent(name: name, targetID: viewID, handlers: handlers)
     }
 
@@ -1632,7 +1637,7 @@ enum WMPHarness {
             }
             // The app's own selector, so a click the app raises elsewhere (a plain button element
             // clicking its group) is measured here too.
-            let handlers = WMPMainWindowController.handlers(in: skin, event: "click",
+            let handlers = WMPMainWindowController.eventHandlers(in: skin, event: "click",
                 targetID: target.nodeID, targetStableID: target.stableID, viewID: viewID)
             HarnessOutput.emit("CLICK \(where_) hit=\(target.nodeID ?? "-")#\(target.stableID) kind=\(target.kind) "
                 + "action=\(target.action.map(String.init(describing:)) ?? "-") "

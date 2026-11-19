@@ -18,7 +18,7 @@ Duplicates are skipped by content (>=90% shared path+crc32 entries), against eve
 and everything already in <outdir>, exactly as the `.wal` crawler does; a name-only match is kept and
 flagged in `manifest.tsv`. Downloads are cached in `<outdir>/.cache`.
 """
-import html, json, os, pathlib, re, sys, urllib.parse
+import html, json, os, pathlib, re, struct, sys, urllib.parse
 
 sys.dont_write_bytecode = True  # no scripts/__pycache__
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # -I drops the script dir
@@ -54,7 +54,9 @@ def theme_name(files):
 def load(path):
     """An archive's bytes with WMPArchiveHeaderRepair applied: two corpus skins and several
     downloads have `01 00 01 00` local headers."""
-    return repaired(path) or pathlib.Path(path).read_bytes()
+    try: fixed = repaired(path)
+    except struct.error: fixed = None  # a truncated directory: left for the ZIP reader to reject
+    return fixed or pathlib.Path(path).read_bytes()
 
 
 def captures(url, match="exact", wmz_only=False):
@@ -117,6 +119,11 @@ def selftest():
     assert [r for r, _ in skins] == ["Foo/"] and theme_name(skins[0][1]) == "Foo Skin", skins
     again = skins_in(pack(skins[0][1]), is_def=wms_def)
     assert again[0][0] == "" and is_dup(fingerprint(again[0][1]), [(fingerprint(skins[0][1]), "a")]) == "a"
+    # a truncated end-of-central-directory record is rejected, not raised
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f: f.write(b"PK\x05\x06")
+    assert load(f.name) == b"PK\x05\x06" and skins_in(load(f.name), is_def=wms_def) == []
+    os.unlink(f.name)
     print("selftest ok")
 
 

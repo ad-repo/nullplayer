@@ -52,7 +52,9 @@ struct WMPScriptViewPlan: Sendable {
     /// `fontSize="jscript:g_kMEDIUM_FONTSIZE-1"` is the same kind of write and takes the same path:
     /// the two Redux archives size about 450 texts that way, and with no evaluation every one drew
     /// at the 12pt default — the CD page's "Copy Music"/"Stop Copy" ran out past the window.
-    let propertyAssignments: [String]
+    /// Each runs in its own element's scope, as an expression does: `fontSize="jscript:height"`
+    /// means that element's `height`, and script globals still resolve behind it.
+    let propertyAssignments: [(stableID: Int, source: String)]
 
     init(skin: WMPLoadedSkin, viewID: String) {
         self.viewID = viewID
@@ -75,7 +77,7 @@ struct WMPScriptViewPlan: Sendable {
         var changeHandlers: [Int: [String: WMPAmbientChangeHandler]] = [:]
         var completions: [Int: [String: String]] = [:]
         var valueChanges: [Int: String] = [:]
-        var propertyAssignments: [String] = []
+        var propertyAssignments: [(stableID: Int, source: String)] = []
         for node in skin.graph.allNodes where included.contains(node.stableID) {
             let id = node === view ? "view" : (node.xmlID ?? "node\(node.stableID)")
             // First declaration wins, the rule `WMPObjectModel.resetElements` applies to the element
@@ -100,7 +102,7 @@ struct WMPScriptViewPlan: Sendable {
                     // Trailing `;` trimmed: the Redux writes `fontSize="jscript:g_kSMALL_FONTSIZE;"`,
                     // a SyntaxError inside the parentheses.
                     let expression = source.trimmingCharacters(in: CharacterSet(charactersIn: "; \t\r\n"))
-                    propertyAssignments.append("\(id).\(attribute.name) = (\(expression));")
+                    propertyAssignments.append((node.stableID, "\(id).\(attribute.name) = (\(expression));"))
                 case let .binding(kind, source)
                     where kind == .property && WMPScriptExpression.geometryProperties.contains(name):
                     let key = "\(id).\(name)"
@@ -746,7 +748,8 @@ final class WMPScriptContext: @unchecked Sendable {
             // The app raises `load`, the render harness `onLoad`; both are this view opening.
             if ["load", "onload"].contains(event.name.lowercased()) {
                 for assignment in plan.propertyAssignments {
-                    if let error = invokeHandler(assignment, label: "load[property]", owner: nil) {
+                    if let error = invokeHandler(assignment.source, label: "load[property]",
+                                                 owner: model.element(stableID: assignment.stableID)) {
                         result.diagnostics.append(.init(code: "handler-error",
                                                         message: "load[property]: \(error)"))
                     }
@@ -768,8 +771,8 @@ final class WMPScriptContext: @unchecked Sendable {
                 // Fail closed per handler, never per session. A skin puts its whole startup in one
                 // handler, so one missing member costs many unrelated features — and the demand
                 // tally is what makes that visible. A session-wide kill switch made it invisible.
-                if let error = invokeHandler(source, label: "\(event.name)[\(index)]",
-                                             owner: eventOwner) {
+                let owner = handler.ownerStableID.flatMap(model.element(stableID:)) ?? eventOwner
+                if let error = invokeHandler(source, label: "\(event.name)[\(index)]", owner: owner) {
                     result.diagnostics.append(.init(code: "handler-error",
                                                     message: "\(event.name)[\(index)]: \(error)"))
                 }
@@ -1107,26 +1110,30 @@ final class WMPScriptContext: @unchecked Sendable {
         // **A statement is a value too**: WMP takes the completion value, as `eval` does, so the
         // WMP 8 Redux's `left="jscript:if(app.taskbarVisible){0}else{-g_kTaskBarWidth}"` is a
         // number there and a SyntaxError inside `return (…)` here (W320). Chosen by a parse-only
-        // check, never by retrying, so a runtime error cannot run the expression twice.
-        var wrapped = "(function(){ \(scope){ return (\(trimmed)); } })()"
-        if !parses(wrapped),
-           let literal = String(data: (try? JSONSerialization.data(withJSONObject: trimmed,
-                                                                   options: .fragmentsAllowed)) ?? Data(),
-                                encoding: .utf8) {
-            wrapped = "(function(){ \(scope){ return eval(\(literal)); } })()"
-        }
-        let value = context.evaluateScript(wrapped)
+        // check, never by retrying, so a runtime error cannot run the expression twice, and decided
+        // once per source: layout evaluates every expression twice per pass.
+        let value = context.evaluateScript("(function(){ \(scope){ \(returnStatement(for: trimmed)) } })()")
         if let error = lastException { return (nil, error) }
         guard let value, !value.isUndefined, !value.isNull else { return (nil, "undefined") }
         return (Self.jsonValue(value), nil)
     }
 
-    /// Whether `script` is valid syntax, without running it.
-    private func parses(_ script: String) -> Bool {
-        let source = JSStringCreateWithCFString(script as CFString)
+    /// `return (expression);`, or `return eval("…");` for a source that is a statement — see
+    /// `evaluateExpression`. The scope a caller wraps it in never changes the syntax.
+    private func returnStatement(for expression: String) -> String {
+        if let cached = returnStatements[expression] { return cached }
+        var statement = "return (\(expression));"
+        let source = JSStringCreateWithCFString("(function(){ \(statement) })" as CFString)
         defer { JSStringRelease(source) }
-        return JSCheckScriptSyntax(context.jsGlobalContextRef, source, nil, 1, nil)
+        if !JSCheckScriptSyntax(context.jsGlobalContextRef, source, nil, 1, nil),
+           let data = try? JSONSerialization.data(withJSONObject: expression, options: .fragmentsAllowed),
+           let literal = String(data: data, encoding: .utf8) {
+            statement = "return eval(\(literal));"
+        }
+        returnStatements[expression] = statement
+        return statement
     }
+    private var returnStatements: [String: String] = [:]
 
     /// **A handler resolves an unqualified name against the element it is authored on (W216).**
     ///

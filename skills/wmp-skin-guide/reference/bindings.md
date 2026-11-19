@@ -13,7 +13,8 @@ Moved verbatim from `SKILL.md` on 2026-09-24. The object model these contracts d
   `*Color="jscript:…"` or `fontSize="jscript:…"` is collected into
   `WMPScriptViewPlan.propertyAssignments` (trailing `;` trimmed) and written as
   `<id>.<attr> = (<source>)`, so it lands through the same property-write path as a handler's
-  (W165). The app raises the event as `load` and the render harness as `onLoad`; both are matched.
+  (W165). Each runs in its own element's scope, as an expression does, so a bare name means that
+  element's property, and script globals still resolve behind it. The app raises the event as `load` and the render harness as `onLoad`; both are matched.
   22 uses in 2 archives — `Asimov_Radio` (`NormalTextColor`, `#00FF00` in `MBay.js`) and
   `digitaldj` — and Asimov's readouts drew in the default colour until 2026-09-26.
   Font sizes: ~450 texts in the two Redux archives (`g_kMEDIUM_FONTSIZE±1`, read from
