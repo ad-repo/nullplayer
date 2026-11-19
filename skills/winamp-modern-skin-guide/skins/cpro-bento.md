@@ -63,6 +63,17 @@ synthesized and nothing left to the classic fallback.
   script → `CproTabs` → `CentroSUI.onAction("show_tab")`. It re-lays itself out on resize and drops to
   short labels (`LIB`/`PLE`/…) when the sheet is narrower than 50px per tab, which is its own
   behaviour, not a defect. Phase 24; see the trap below about §15.6.
+- **Between 50px a tab and the long row's width, the host puts the short labels back** (B300).
+  Engine one's `alignByResize` shows the long names above 50px a tab and squeezes every tab by one
+  ratio when they need more, so a 500px window with the side playlist closed cut every label
+  mid-letter (`Media Librar`) — what Winamp's own text clip would do too. After each script event
+  that moved something (`geometryDidSettle`), `ClassicProTabStrip.fitLabels()` swaps the row to
+  the script's own `nameShort`s once a long label is squeezed past its ink (the tab's padding is
+  spent first), and lays them out as the script's narrow branch does. The script's `alignFull`
+  re-widens tabs without rewriting their text, so a short label in a tab wider than itself gets
+  its long name back there. Engine two disabled short names in its own script and is left alone.
+  Dragging a tab while the short names are forced uses the script's stored long widths until the
+  drop re-aligns.
 - **The Browser tab seeds its real web view from `home=`.** ClassicPro's v1 `CentroSUI.xml` declares
   `<Winamp:Browser id="cpro.browser" home="http://www.skinconsortium.com/">`, not `url=`. Both markup
   spellings are accepted. The historical site currently accepts a connection but returns an empty

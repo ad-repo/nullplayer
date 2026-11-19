@@ -63,6 +63,33 @@ final class WinampModernB350Tests: XCTestCase {
                                                           default: 0), 0, "nothing in engine one's spelling")
     }
 
+    // MARK: - Labels
+
+    /// Engine one squeezes long names into a strip too narrow for them (B300): the row goes back to
+    /// the short names, and once the script's `alignFull` widens the tabs again the long ones return.
+    func testASqueezedRowFallsBackToShortNamesAndWideningRestoresTheLongOnes() throws {
+        let scene = try makeScene()
+        scene.scripts.hooks.resolvedGeometryRequested = { _ in
+            (CGRect(x: 0, y: 0, width: 400, height: 25), CGRect(x: 0, y: 0, width: 400, height: 25))
+        }
+        let groupID = ["Media Library": "tab.ml", "Playlist": "tab.pl", "Video": "tab.video",
+                       "Visualization": "tab.vis", "Browser": "tab.browser", "Now Playing": "tab.np"]
+        func labels() -> [String?] {
+            scene.strip.tabs.map { scene.group(groupID[$0.label]!).children.first { $0.xmlID == "cpro.tab.text" }?
+                .attributes["text"] }
+        }
+
+        scene.strip.fitLabels()
+        XCTAssertEqual(labels(), ["LIB", "PLE", "VID", "VIS", "BRO", "NP"])
+        let xs = scene.strip.tabs.map { Int(scene.group(groupID[$0.label]!).attributes["x"] ?? "") ?? -1 }
+        XCTAssertEqual(xs, xs.sorted(), "laid out left to right")
+        XCTAssertEqual(xs.first, 0)
+
+        for id in groupID.values { _ = scene.group(id).setAttribute("w", value: "200") }
+        scene.strip.fitLabels()
+        XCTAssertEqual(labels(), ["Media Library", "Playlist", "Video", "Visualization", "Browser", "Now Playing"])
+    }
+
     // MARK: - Closing
 
     /// The engine removes a tab only as it is switched away from, so an inactive tab is selected and
@@ -236,7 +263,7 @@ final class WinampModernB350Tests: XCTestCase {
     /// `drawerBucket` puts the player drawer's own `widget.loader` ahead of the strip's.
     private func makeScene(engine: String = "_v1", drawerBucket: Bool = false) throws -> Scene {
         func tab(_ id: String, _ label: String, x: Int, active: Bool = false) -> String {
-            #"<group id="\#(id)" x="\#(x)" y="0" w="50" h="25"><button id="cpro.tab.button" tooltip="\#(label)" activated="\#(active ? 1 : 0)"/></group>"#
+            #"<group id="\#(id)" x="\#(x)" y="0" w="50" h="25"><button id="cpro.tab.button" tooltip="\#(label)" activated="\#(active ? 1 : 0)"/><text id="cpro.tab.text" x="6" y="7" w="-15" relatw="1" h="14" bold="1" fontsize="14" text="\#(label)"/></group>"#
         }
         // Only the path is read; the script never runs.
         let script = "engine/xui/CentroSUI/\(engine)/CproTabs/CproTabs.maki"

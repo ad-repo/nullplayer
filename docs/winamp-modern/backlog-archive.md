@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B300 — cPro__Mecha's tab bar cuts its long labels — closed 2026-11-19
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B300 | **cPro__Mecha's tab bar cuts its long labels: `Media Librar`, `Visualizatio`, `BrowserPro` run past their tabs.** Found in intake #4 Phase 7 (2026-10-27, live): clicking `PLE` widens the playlist and the tab row switches to full names, which no longer fit their tabs; the narrow row (`LIB PLE VID …`) fits. Find out whether the skin's script picks long vs short labels by tab width (then our text width or the tab width is wrong) or always clips (then ours is too wide a font). **Looked at in the 2026-10-27 fix pass, left open:** the skin's files carry no tab text at all (no `Media Library`, `Visualization` or `LIB` string in any xml or script) and no rule that picks long vs short; ClassicPro's SUI tab sizes itself from `label.getAutoWidth()` of a component name the host supplies, so the right fallback cannot be settled from the skin. Needs the stock tab's behaviour for an overflowing row from observation. Done when the wide row's labels fit or fall back to the short names, sheet `cPro__Mecha_1_1_1_1.png` third panel | cPro__Mecha_1_1_1_1 (silver); other cPro skins likely | S | 1 |
+
+**Closed 2026-11-19.** Engine one's own `CproTabs.m` (`alignByResize`) shows the long names whenever the strip is wider than 50px a tab and squeezes every tab by one ratio when they need more, so between those widths (a 500px window with the side playlist closed, on cPro_Aperture as on Mecha) every label was cut mid-letter — what Winamp's text clip does with the same script. Not our font (the skin's `font.ttf` is not shipped; our fallback draws narrower than real Winamp's in cPro_WinampVista's reference) and not our window size (engine one declares `default_w="500"`). The host now swaps the row to the script's own short names once a long label is squeezed past its ink, and puts the long ones back when `alignFull` re-widens the tabs: `ClassicProTabStrip.fitLabels()`, from `geometryDidSettle`. Verified live on cPro_Aperture at 503–673px; engine two disabled short names in its script and is untouched. `skins/cpro-bento.md` carries the rule.
+
 ## B470 — Tattoo_Amp's `tattoo` window opens fully transparent: its 450 pt title glyph never draws — closed 2026-11-17
 
 | Id | Item | Reach | Effort | Tier |
