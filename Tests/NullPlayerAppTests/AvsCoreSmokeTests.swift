@@ -33,15 +33,8 @@ final class AvsCoreSmokeTests: XCTestCase {
     }
 
     /// The engine finds them through the built bundle, not the source tree.
-    func testEngineListsBundledPresets() {
-        // Compare resolved folders: under /tmp the folder reads /tmp/... while the enumerator
-        // returns /private/tmp/.... Only each entry's folder is resolved, so a custom-folder
-        // symlink to a bundled preset still counts as the custom folder's. Counted as a set, so a
-        // custom folder that is the bundled one does not list each preset twice.
-        let folder = (AvsPresets.bundledFolder?.resolvingSymlinksInPath().path ?? "/nonexistent") + "/"
-        XCTAssertEqual(Set(AvsPresets.all().map {
-            $0.deletingLastPathComponent().resolvingSymlinksInPath().path + "/" + $0.lastPathComponent
-        }).filter { $0.hasPrefix(folder) }.count, 35)
+    func testEngineListsBundledPresets() throws {
+        XCTAssertEqual(AvsPresets.presets(in: try XCTUnwrap(AvsPresets.bundledFolder)).count, 35)
     }
 
     func testEveryPresetLoadsAndLegacyRoundTripIsIdempotent() throws {

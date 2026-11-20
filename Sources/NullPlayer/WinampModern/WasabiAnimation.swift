@@ -24,7 +24,7 @@ enum WasabiAnimation {
             playing = attributes["autoplay"] == "1" || attributes["autoreplay"] == "1"
         }
         guard playing else { return (selected, false) }
-        let period = max(0.008, (Double(attributes["speed"] ?? "100") ?? 100) / 1_000)
+        let period = period(of: object)
         let elapsed = max(0, clock - (Double(attributes["animstart"] ?? "") ?? 0))
         let steps = Int(elapsed / period)
 
@@ -49,6 +49,11 @@ enum WasabiAnimation {
         // The range holds `distance + 1` frames (both ends), so a replay wraps after that many steps.
         let step = replays ? steps % (distance + 1) : steps
         return (start + (target > start ? step : -step), true)
+    }
+
+    /// Seconds per frame: the script's `setSpeed` / the XML's `speed`, in milliseconds.
+    static func period(of object: WasabiObject) -> TimeInterval {
+        max(0.008, (Double(object.attributes["speed"] ?? "100") ?? 100) / 1_000)
     }
 
     /// Whether the layer has a clock to read its play head from: a script's `play()` set one, or the

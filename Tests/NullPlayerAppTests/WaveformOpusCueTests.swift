@@ -13,10 +13,8 @@ final class WaveformOpusCueTests: XCTestCase {
         let service = WaveformCacheService(cacheDirectoryURL: directory)
         let snapshot = await service.loadSnapshot(for: Track(url: opusURL))
         XCTAssertEqual(snapshot.state, .ready)
-        // Compare resolved paths: a checkout under a symlinked directory (`/tmp` → `/private/tmp`)
-        // reaches the cache resolved.
-        XCTAssertEqual(snapshot.sourcePath.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path },
-                       opusURL.resolvingSymlinksInPath().path)
+        // The service stores the resolved path: a checkout under `/tmp` reaches it as `/private/tmp`.
+        XCTAssertEqual(snapshot.sourcePath, opusURL.resolvingSymlinksInPath().path)
         XCTAssertEqual(snapshot.duration, 0.537, accuracy: 1 / 48_000)
         XCTAssertGreaterThan(snapshot.samples.max() ?? 0, 0)
     }

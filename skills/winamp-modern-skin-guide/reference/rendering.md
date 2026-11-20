@@ -1116,7 +1116,10 @@ Because nothing steps that clock, the events are polled: a layer a script `play(
 `onFrame` or `onStop` binding gets a 60 Hz runtime timer (`startFrameEvents`, in
 `WinampModernScriptRuntimeTimer.swift`). It raises `onFrame(frame)` once per frame the head reaches
 and `onStop()` when a range play ends or `stop()` is called. MMD3's knobs move the EQ from `onFrame`
-alone, so without it the knob turned and the EQ never changed (B194).
+alone, so without it the knob turned and the EQ never changed (B194). A tick reads the head once
+per frame period since the previous tick, so a late tick that finds the head several frames on
+still raises each frame in order. The catch-up is capped at one pass of the sheet: a range ends
+within it, and a loop does not replay every lap it missed during a stall.
 
 A `play()` with no `endframe` loops, unless the layer says `autoreplay="0"`: then it plays once,
 from its current frame to the last, and stops there, so its `onStop` arrives (B256). Moon Groove's

@@ -245,7 +245,8 @@ final class WinampModernDemandTailTests: XCTestCase {
     }
 
     /// B194: a script-played AnimatedLayer raises `onFrame` for each frame its play head reaches and
-    /// `onStop` at the end of the range. mmd3's knobs, which declare `autoreplay="0"`, set the EQ from
+    /// `onStop` at the end of the range, even when a late timer tick finds it several frames on.
+    /// mmd3's knobs, which declare `autoreplay="0"`, set the EQ from
     /// `onFrame` alone.
     func testAPlayedAnimationRaisesFrameAndStopEvents() throws {
         let loaded = try makeWinampModernSkin(xml: """
@@ -261,23 +262,17 @@ final class WinampModernDemandTailTests: XCTestCase {
         var events: [String] = []
         runtime.dispatchObserver = { event, _, _ in events.append(event) }
 
-        // The play head is a function of the clock. At a frame per 1000 s it never moves by itself;
-        // the test moves it a frame at a time by moving the start back, so a late timer tick on a
-        // busy machine cannot skip a frame.
-        let period = 1_000.0
         _ = try call(runtime, program, knob, "setStartFrame", [.integer(0)])
         _ = try call(runtime, program, knob, "setEndFrame", [.integer(2)])
-        _ = try call(runtime, program, knob, "setSpeed", [.integer(Int32(period * 1_000))])
+        _ = try call(runtime, program, knob, "setSpeed", [.integer(10)])
         _ = try call(runtime, program, knob, "play")
-        func step(to frame: Int, until expected: [String]) {
-            _ = knob.setAttribute("animstart", value: String(WasabiAnimation.now() - (Double(frame) + 0.5) * period))
-            let deadline = Date().addingTimeInterval(5)
-            while events != expected, Date() < deadline {
-                RunLoop.main.run(until: Date().addingTimeInterval(0.01))
-            }
+        // The first timer tick arrives after both frames have passed, as on a busy machine; each
+        // still raises its own `onFrame`.
+        Thread.sleep(forTimeInterval: 0.05)
+        let deadline = Date().addingTimeInterval(2)
+        while !events.contains("onstop"), Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
         }
-        step(to: 1, until: ["onframe"])
-        step(to: 2, until: ["onframe", "onframe", "onstop"])
         XCTAssertEqual(events, ["onframe", "onframe", "onstop"])
     }
 

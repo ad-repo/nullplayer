@@ -31,12 +31,14 @@ enum AvsPresets {
     /// Every preset, bundled first, each group sorted by name; the user folder is searched
     /// recursively, as Winamp's AVS folder was.
     static func all() -> [URL] {
-        let folders = [bundledFolder, customFolder.url].compactMap { $0 }
-        return folders.flatMap { folder -> [URL] in
-            let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)?
-                .compactMap { $0 as? URL } ?? []
-            return files.filter { $0.pathExtension.lowercased() == "avs" }
-                .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
-        }
+        [bundledFolder, customFolder.url].compactMap { $0 }.flatMap(presets(in:))
+    }
+
+    /// One folder's presets, searched recursively and sorted by name.
+    static func presets(in folder: URL) -> [URL] {
+        let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL } ?? []
+        return files.filter { $0.pathExtension.lowercased() == "avs" }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 }
