@@ -183,13 +183,13 @@ final class AudionFaceHostileInputTests: XCTestCase {
 
     // MARK: - Zip
 
-    private func zip(_ entries: [WMPTestArchiveEntry], limits: AudionFaceZipLimits = .production) throws -> [URL] {
+    private func zip(_ entries: [WMPTestArchiveEntry], limits: SkinZipLimits = .audionFaces) throws -> [URL] {
         let url = try WMPSkinTestSupport.makeArchive(entries, filename: "faces.zip")
         return try AudionFaceZipImport.unpack(url, into: try WMPSkinTestSupport.temporaryDirectory(), limits: limits)
     }
 
     /// As `AudionFaceFixture.failure`: an error that is not a finding is rethrown, never read as success.
-    private func zipFailure(_ entries: [WMPTestArchiveEntry], limits: AudionFaceZipLimits = .production) throws -> AudionFaceDiagnosticCode? {
+    private func zipFailure(_ entries: [WMPTestArchiveEntry], limits: SkinZipLimits = .audionFaces) throws -> AudionFaceDiagnosticCode? {
         do { _ = try zip(entries, limits: limits); return nil } catch let finding as AudionFaceFinding { return finding.code }
     }
 
@@ -211,13 +211,13 @@ final class AudionFaceHostileInputTests: XCTestCase {
 
     func testAUD0010ZipBounds() throws {
         let entries = try faceEntries("Face/")
-        var few = AudionFaceZipLimits.production
+        var few = SkinZipLimits.audionFaces
         few.entries = 1
         XCTAssertEqual(try zipFailure(entries, limits: few), .zipOverLimit)
-        var small = AudionFaceZipLimits.production
+        var small = SkinZipLimits.audionFaces
         small.entryBytes = 10
         XCTAssertEqual(try zipFailure(entries, limits: small), .zipOverLimit)
-        var tight = AudionFaceZipLimits.production
+        var tight = SkinZipLimits.audionFaces
         tight.totalBytes = UInt64(entries[1].data.count)
         XCTAssertEqual(try zipFailure(entries, limits: tight), .zipOverLimit)
     }

@@ -34,13 +34,9 @@ enum AudionFacePolicy {
 /// 235,586,373 bytes expanded, the largest entry 613,876 bytes, the worst ratio 52:1 and no entry
 /// over 1 MiB at all. The bounds admit that whole archive as one import with about 1.6× and 2.2×
 /// headroom. An entry past `entryBytes` could never belong to a loadable face (`faceBytes`).
-/// Settable only so a test can reach a bound without building a huge archive.
-struct AudionFaceZipLimits {
-    var entries = 131_072
-    var totalBytes: UInt64 = 512 * 1_024 * 1_024
-    var entryBytes = UInt64(AudionFacePolicy.faceBytes)
-    var ratio: UInt64 = 200
-    var ratioFloorBytes: UInt64 = 1 * 1_024 * 1_024
-
-    static let production = AudionFaceZipLimits()
+/// A value, so a test can reach a bound without building a huge archive.
+extension SkinZipLimits {
+    static let audionFaces = SkinZipLimits(entries: 131_072, totalBytes: 512 * 1_024 * 1_024,
+                                           entryBytes: UInt64(AudionFacePolicy.faceBytes),
+                                           ratio: 200, ratioFloorBytes: 1 * 1_024 * 1_024)
 }
