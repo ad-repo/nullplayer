@@ -282,6 +282,8 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
   visible row, so `WMPPlaylistSurfaceView` holds it until `setFrameSize` (`WMPPlaylistScrollTests`).
 - WMP exposes ten EQ gains. `WMPAudioEngineHost` uses `EQBandRemapper` at the boundary when the live
   engine is in its 21-band layout; every write remains clamped to ±12 dB.
+- The two built-in album-art images come from `TrackArtworkLoader` (`Utilities/`; WMP is its one
+  user so far — `CLIArtwork` keeps its own near-copy).
 - `EFFECTS`/`WMPEFFECTS` hosts the visualization surface. Its single ref-counted spectrum consumer
   must be registered only while an effects surface exists in the active view and removed on
   switch/teardown.

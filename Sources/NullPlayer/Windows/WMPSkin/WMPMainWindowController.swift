@@ -2312,7 +2312,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         renderAlbumArtwork()
         guard let track else { return }
         artworkLoadTask = Task { [weak self] in
-            let image = await WMPArtworkLoader.loadArtwork(for: track)
+            let image = await TrackArtworkLoader.loadArtwork(for: track)
             guard !Task.isCancelled, let self, self.artworkTrackID == track.id else { return }
             self.imageStore?.setAlbumArtwork(image)
             self.renderAlbumArtwork()
