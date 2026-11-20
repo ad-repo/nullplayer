@@ -71,31 +71,12 @@ enum TrackVerb: CaseIterable {
     @MainActor
     static func addMenuItems(to menu: NSMenu, resolve: @escaping @MainActor () async throws -> [Track]) {
         for verb in allCases {
-            let item = NSMenuItem(title: verb.title, action: #selector(MenuTarget.performVerb(_:)), keyEquivalent: "")
-            item.target = MenuTarget.shared
-            item.representedObject = MenuRequest(verb: verb, resolve: resolve)
-            menu.addItem(item)
+            menu.addItem(ClosureMenuItem(title: verb.title) { verb.run(resolve) })
         }
     }
 
     @MainActor
     static func addMenuItems(to menu: NSMenu, for playable: LibraryPlayable) {
         addMenuItems(to: menu) { try await playable.tracks() }
-    }
-
-    private struct MenuRequest {
-        let verb: TrackVerb
-        let resolve: @MainActor () async throws -> [Track]
-    }
-
-    /// `NSMenuItem.target` is weak, so the items share one long-lived target.
-    @MainActor
-    private final class MenuTarget: NSObject {
-        static let shared = MenuTarget()
-
-        @objc func performVerb(_ sender: NSMenuItem) {
-            guard let request = sender.representedObject as? MenuRequest else { return }
-            request.verb.run(request.resolve)
-        }
     }
 }
