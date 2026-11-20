@@ -201,3 +201,12 @@ Moved verbatim from `reference/rendering.md` § *Drawing the skin's own controls
   `MainActor.assumeIsolated` in that observer is a `dispatch_assert_queue` failure and the process
   traps the moment a surface exists and a track plays. The WMP effect surface retains the latest
   spectrum snapshot and schedules its AppKit redraw on the main actor.
+
+- **An `<EFFECTS>` that starts inside its `SUBVIEW` and runs past its edge is shaped by that
+  subview's key** (`WMPSceneBuilder`, beside `shapesChildrenByRegion`). `izdataarayuz` sets a
+  185-wide surface 155 into a 300-wide subview whose `ekran.gif` keys out everything but a round
+  screen; without the container's cut, the spectrum spilled over the body. The mask sits at the
+  container's origin **at the bitmap's own size**, which is the size a `backgroundImage` is drawn
+  at: `ekran.gif` is 134 tall in a 165-tall subview, and stretching it drew the screen as an oval.
+  The corpus match set is izdata and `Surviver` (1 px over). Starting inside matters: `pharaoh`
+  parks `visSphinx` 37 px above its container, and reading that key cut 1,608 of its 1,695 pixels.

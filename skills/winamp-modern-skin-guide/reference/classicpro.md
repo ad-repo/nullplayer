@@ -16,6 +16,12 @@ execution:
   folder; validates structure (requires the `one` family) and SHA-256 hashes the content
 - `ClassicProEngineStore` keeps one private copy and exposes a read-only mounted provider
 
+**Never move the engine.** The store is `WinampModernSkins/ClassicProEngine/` (in NullPlayer's
+Application Support folder), inside the skin install folder, so clearing that folder of skins —
+into `old/`, a shoot list, anywhere — must leave `ClassicProEngine/` where it is. Without it every cPro
+skin fails to load, live and headless (`resourceMissing … /Plugins/classicPro/engine/load.xml`), and
+the failure reads as a skin defect. Intake #14 lost it this way on 2026-11-17.
+
 The engine's entire native (`ClassicPro.w5s`) surface is three filesystem-shell methods, none on the
 render path. They are adapted under a strict policy: `exploreFile` reveals an existing file in Finder,
 `openFile` opens an existing file with the default app (no URLs, no `~`, no executables), and

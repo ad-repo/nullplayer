@@ -29,9 +29,7 @@ extension WasabiSceneRenderer {
         let (left, right) = WasabiTextMetrics.padding(of: object)
         let frame = CGRect(x: rawFrame.minX + left, y: rawFrame.minY,
                            width: max(0, rawFrame.width - left - right), height: rawFrame.height)
-        if let fontID = object.attributes["font"],
-           let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: fontID),
-           definition.kind == "bitmapfont" {
+        if let definition = resources.metrics.bitmapFont(of: object) {
             drawBitmapText(text, definition: definition, object: object, frame: frame, context: context)
             return
         }
@@ -347,8 +345,15 @@ extension WasabiSceneRenderer {
         // A paragraph keeps its edge: centring a nine-line block would cut its first line. That
         // holds for a centred paragraph too — GDI's `DT_VCENTER` only acts on a single line — so one
         // taller than its box starts at the top (H2O Liquid's CPU-usage table lost its first row).
+        //
+        // …but only for a face the skin ships. A **system** face keeps the edge it is given, as GDI's
+        // `DT_TOP` does: ClassicPro's Now Playing rating is Arial `*****` at `fontsize="40"` in a
+        // `h="20" valign="top"` box at `y="-5"` of a 14px group — the stars fit that group only
+        // top-aligned, and centred the group's clip took their upper halves. Anunaki's clock is
+        // its own `lcd.ttf`. A face built from a skin's file has no URL; an installed one does.
         let alignedVertically = WasabiTextMetrics.verticalAlignment(of: object)
-        let placedBy = !wraps && cell > frame.height ? .center : alignedVertically
+        let shippedFace = CTFontCopyAttribute(font, kCTFontURLAttribute) == nil
+        let placedBy = !wraps && cell > frame.height && shippedFace ? .center : alignedVertically
         let offset = placedBy.offset(cell: cell, in: frame.height)
         return (placedBy == .center && !wraps ? offset : max(0, offset)) + baselineDrop
     }
@@ -719,7 +724,7 @@ extension WasabiSceneRenderer {
     /// returns the resolved resource so the caller can take the right path, never a bare id.
     private var surfaceFont: WalResourceDefinition? {
         for identifier in ["pledit.font", "wasabi.list.font", "studio.list.font"] {
-            if let definition = loadedSkin.runtime.resources.resolvedDefinition(identifier: identifier),
+            if let definition = loadedSkin.runtime.resources.resolvedFontDefinition(identifier: identifier),
                definition.kind == "bitmapfont" || definition.kind == "truetypefont" {
                 return definition
             }

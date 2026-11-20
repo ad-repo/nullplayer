@@ -109,4 +109,28 @@ final class WMPHoverDownImageTests: XCTestCase {
         XCTAssertEqual(hoverDown.first?.mappingMask?.nodeIDs, [shuffle],
                        "cut to the child under the pointer")
     }
+
+    /// A lit sheet larger than its mapping image is cropped to the group, not squeezed into it:
+    /// `TheThing`'s 402x298 hover sheet over a 382x278 mask drew every lit icon off its control.
+    func testAnOversizedLitSheetIsCroppedToTheGroup() async throws {
+        let map = try WMPSkinTestSupport.encodedImage(width: 2, height: 1,
+            rgba: [255, 0, 0, 255, 0, 0, 255, 255])
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="20" height="20">
+            <BUTTONGROUP id="group" mappingImage="map.png" hoverImage="hover.png">
+                <BUTTONELEMENT id="eq" mappingColor="#FF0000" onClick="a();"/>
+            </BUTTONGROUP>
+        </VIEW></THEME>
+        """, resources: ["map.png": map, "hover.png": try sheet(4, 3)])
+        let builder = WMPSceneBuilder(loadedSkin: skin, imageStore: WMPImageStore(provider: skin.archive))
+        let resting = try await builder.build(viewID: "main")
+        let group = try XCTUnwrap(resting.hits.first { $0.stableID == (try? stableID(skin, "group")) })
+        let eq = try XCTUnwrap(group.mappingTargets.first { $0.stableID == (try? stableID(skin, "eq")) })
+        var state = WMPInteractionState()
+        _ = state.move(over: eq)
+        let scene = try await builder.build(viewID: "main", interactionState: state)
+        let hover = try XCTUnwrap(drawnImages(scene).first {
+            ($0.resourcePath as NSString).lastPathComponent == "hover.png" })
+        XCTAssertEqual(hover.sourceRect, WMPRect(x: 0, y: 0, width: 2, height: 1))
+    }
 }

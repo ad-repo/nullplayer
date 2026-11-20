@@ -103,6 +103,14 @@ extension WinampModernScriptRuntime {
             return .null
         }
         table.add("play", 0) { runtime, call in
+            // A layer still playing keeps its clock: pumaSKIN's `customvis.maki` calls
+            // `setEndFrame(level)` and `play()` every 50 ms on a 50 ms-a-frame puma, and restarted each
+            // time it never left frame 0. `WINAMP_MODERN_PLAY_RESTARTS=1` is the A/B switch.
+            if !WinampModernScriptRuntime.playRestartsPlayingLayer,
+               WasabiAnimation.state(of: call.object,
+                                     frameCount: runtime.animationFrameCount(of: call.object)).isPlaying {
+                return .null
+            }
             // Stamp the clock so the frame is a pure function of elapsed time (`WasabiAnimation`),
             // which keeps the renderer and `isPlaying()` on exactly the same model.
             _ = call.object.setAttribute("animstart", value: String(WasabiAnimation.now()))

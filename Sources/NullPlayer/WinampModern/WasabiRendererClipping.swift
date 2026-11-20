@@ -259,9 +259,7 @@ extension WasabiSceneRenderer {
     /// same frame: iCandy-2's Component layouts place theirs that way, and the strip between the
     /// title bar and the component showed the desktop (B276).
     private func needsFrameBaseTexture(_ object: WasabiObject) -> Bool {
-        let isFrame = WasabiStandardFrames.isStandardFrame(object)
-            || (object.tag.is(.group) && WasabiStandardFrames.isStandardFrameIdentifier(object.xmlID ?? ""))
-        guard isFrame,
+        guard WasabiStandardFrames.isFrame(object),
               let layout = object.parent, layout.tag.is(.layout) else { return false }
         return layout.attributes["background"] == nil && layout.attributes["desktopalpha"] != "1"
     }

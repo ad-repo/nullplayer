@@ -393,7 +393,7 @@ extension WasabiSceneRenderer {
             func authored(_ object: WasabiObject, _ axis: String, _ relative: String) -> Bool {
                 object.attributes[axis] != nil && object.attributes[relative] != "1"
             }
-            for node in nodes where node.object !== layout {
+            for node in nodes where node.object !== layout && !Self.isFrameChromeArt(node.object) {
                 if !authored(node.object, "w", "relatw") {
                     growth.width = max(growth.width, node.frame.maxX - node.parentFrame.maxX)
                 }
@@ -438,6 +438,17 @@ extension WasabiSceneRenderer {
         return size
     }
 
+    /// A bare `<layer>` (no `w` or `h`) that is a direct child of a standard frame: the frame's own decoration, which
+    /// Winamp clips to the window and never sizes it to. SOS_Brigade's frame ends in
+    /// `<layer image="line" x="0" y="-50" relaty="1"/>`, a 2600 px rule with no `w`, and the fit
+    /// chased it: its Library, Playlist, Visualizations and Play History opened 2600 wide (B468).
+    /// The frame's content group is not a direct child, so a header inside it still sizes the window.
+    private static func isFrameChromeArt(_ object: WasabiObject) -> Bool {
+        guard object.tag.is(.layer), object.attributes["w"] == nil, object.attributes["h"] == nil,
+              let parent = object.parent else { return false }
+        return WasabiStandardFrames.isFrame(parent)
+    }
+
     /// How far the probes below grow the canvas. Any growth separates the two kinds of node: one that
     /// stretches or anchors to the canvas moves its far edge by its share of the growth, and one sized
     /// by its own artwork or box moves it by none. 64 is only "big enough to see": a percentage-placed
@@ -467,7 +478,10 @@ extension WasabiSceneRenderer {
     private func intrinsicContentExtent(at canvas: CGSize) -> CGSize {
         let growth = CGSize(width: Self.canvasProbeGrowth, height: Self.canvasProbeGrowth)
         var extent = CGSize.zero
-        for (node, grown) in canvasProbe(at: canvas, grownBy: growth) where node.object !== layout {
+        // Frame decoration is excluded here as in the fit loop, so the missing-background seed does not
+        // start from it either (B468).
+        for (node, grown) in canvasProbe(at: canvas, grownBy: growth)
+            where node.object !== layout && !Self.isFrameChromeArt(node.object) {
             if abs(grown.maxX - node.frame.maxX) < Self.canvasProbeTolerance {
                 extent.width = max(extent.width, node.frame.maxX)
             }

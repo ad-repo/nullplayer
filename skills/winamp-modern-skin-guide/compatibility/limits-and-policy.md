@@ -46,11 +46,12 @@ the user last copied elsewhere.
 **Navigation is the one narrow exception, and it is typed rather than free** (B40). Every address a
 skin authors — from `<browser>.navigateUrl`, from `System.navigateUrl` /
 `System.navigateUrlBrowser`, or from a `browser_search` / `browser_navigate` action — passes through
-`WinampModernWebNavigationPolicy`: HTTP/HTTPS with a real host only, no other scheme, no file or
-application URL. An internal address reaches only that skin's own ephemeral, policy-gated WebKit
+`SkinExternalLink.resolve` (`App/Skinning/`, shared with `.wmz`'s `player.launchURL`): HTTP/HTTPS
+with a real host only, no other scheme, no file or application URL. An internal address reaches only that skin's own ephemeral, policy-gated WebKit
 surface. The **external** route (`System.navigateUrl`, the user's default browser) additionally
 requires the user's consent: a sheet naming the URL on first use, remembered per skin if they choose
-"Always Allow", one outstanding question at a time, and never a modal loop. See
+"Always Allow", one outstanding question at a time, and never a modal loop — the sheet is
+`SkinExternalLink.open`, and the consent stays in the skin's namespaced configuration. See
 [reference/components/browser.md](../reference/components/browser.md) — *The four routes a skin reaches the web by*.
 
 ## Limits

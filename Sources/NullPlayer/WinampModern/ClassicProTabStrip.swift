@@ -58,11 +58,23 @@ struct ClassicProTabStrip {
         let publicPrefix: String
         /// `internalNames`, in tab-number order.
         let internalNames: [String]
+        /// `internalNamesShort`, in tab-number order; empty for engine two, which always shows the
+        /// long names.
+        let shortNames: [String]
     }
     private static let one = Family(publicPrefix: "Cpro",
-                                    internalNames: ["Media Library", "Playlist", "Video", "Visualization", "Browser", "Plugin"])
+                                    internalNames: ["Media Library", "Playlist", "Video", "Visualization", "Browser", "Plugin"],
+                                    shortNames: ["LIB", "PLE", "VID", "VIS", "BRO", "PLU"])
     private static let two = Family(publicPrefix: "cpro2",
-                                    internalNames: ["Media Library", "Playlist", "Video", "Visualization", "Web Reader", "Plugin"])
+                                    internalNames: ["Media Library", "Playlist", "Video", "Visualization", "Web Reader", "Plugin"],
+                                    shortNames: [])
+    /// Engine one's `alignByResize`: a tab is its label's `getAutoWidth()` plus this, and never
+    /// squeezed below the floor.
+    private static let tabPadding: Int32 = 14
+    private static let tabFloor = 20.0
+    /// The room a squeezed long label keeps past its last glyph before the row falls back to the
+    /// short names.
+    private static let inkClearance: CGFloat = 2
 
     /// Where the host keeps the closed tabs' flag keys, one per line.
     private static let closedSection = "@nullplayer.tabs"
@@ -220,6 +232,71 @@ struct ClassicProTabStrip {
         WinampModernContainerTopology.menuLabel(name) == "Web Browser" || tab(named: name) != nil
     }
 
+    /// Engine one's `alignByResize` shows the long names whenever the strip is wider than 50px a tab,
+    /// then squeezes every tab by one ratio when the names need more room than that, so in between
+    /// (a 500px window with the side playlist closed) each label is cut mid-letter: `Media Librar`.
+    /// When a long label is squeezed, the row goes back to the short names, laid out as the script's
+    /// own narrow branch lays them. Run after every script event that moved something: the script's
+    /// next `alignByResize` writes the long names back, and its `alignFull` — the row fits again —
+    /// widens the tabs without touching their text, so a short label in a tab wider than itself
+    /// gets its long name back here. The host lays the short row out itself because the only script
+    /// path that does, `alignByResize`, writes the long names straight back.
+    func fitLabels() {
+        guard !family.shortNames.isEmpty,
+              let stripWidth = runtime.resolvedFrame(of: buttons, in: .parent)?.width else { return }
+        let row = buttons.children
+            .compactMap { group -> (group: WasabiObject, text: WasabiObject, long: String, short: String)? in
+                guard let tab = tab(of: group), tab.isInStrip,
+                      let text = runtime.descendant(of: group, xmlID: "cpro.tab.text"),
+                      let short = shortName(of: tab) else { return nil }
+                return (group, text, tab.label, short)
+            }
+            .sorted { (Int($0.group.attributes["x"] ?? "") ?? 0) < (Int($1.group.attributes["x"] ?? "") ?? 0) }
+        func width(of group: WasabiObject) -> Int32 { Int32(group.attributes["w"] ?? "") ?? 0 }
+        func label(_ text: WasabiObject, _ value: String) -> Double {
+            if text.attributes["text"] != value {
+                _ = text.setAttribute("text", value: value)
+                runtime.notifyObjectDidMutate(text)
+            }
+            return Double(runtime.autoWidth(of: text) + Self.tabPadding)
+        }
+        for entry in row where entry.text.attributes["text"] == entry.short
+            && width(of: entry.group) > runtime.autoWidth(of: entry.text) + Self.tabPadding {
+            _ = label(entry.text, entry.long)
+        }
+        // Squeezed past its ink, not past its padding: a tab is 18px wider than its string (the 14
+        // plus the measurement's `boxMargin`), and the script's ratio eats that slack first.
+        let squeezed = row.contains { entry in
+            let ink = CGFloat(runtime.autoWidth(of: entry.text)) - WasabiTextMetrics.boxMargin
+            let inset = CGFloat(Double(entry.text.attributes["x"] ?? "") ?? 0)
+            return entry.text.attributes["text"] != entry.short
+                && CGFloat(width(of: entry.group)) < inset + ink + Self.inkClearance
+        }
+        guard squeezed else { return }
+        let natural = row.map { label($0.text, $0.short) }
+        let floors = Double(row.count) * Self.tabFloor
+        let ratio = min(1, max(0, (Double(stripWidth) - floors) / (natural.reduce(0, +) - floors)))
+        var x = 0
+        for (entry, width) in zip(row, natural) {
+            let w = Int((width - Self.tabFloor) * ratio + Self.tabFloor)
+            runtime.writeGeometry([("x", String(x)), ("w", String(w))], on: entry.group)
+            x += w
+        }
+    }
+
+    /// The script's `nameShort`: the engine's own abbreviation, or a widget's short name (its
+    /// bucket entry's `name="Long;Short"`, else the long one) cut to three letters and uppercased.
+    private func shortName(of tab: Tab) -> String? {
+        switch tab.identity {
+        case .engine(let number):
+            return family.shortNames.indices.contains(Int(number)) ? family.shortNames[Int(number)] : nil
+        case .widget:
+            let names = widgetEntry(named: tab.label)?.attributes["name"]?.components(separatedBy: ";") ?? [tab.label]
+            let source = names.count > 1 && !names[1].isEmpty ? names[1] : names[0]
+            return String(source.prefix(3)).uppercased()
+        }
+    }
+
     // MARK: -
 
     private func tab(of group: WasabiObject) -> Tab? {
@@ -243,9 +320,11 @@ struct ClassicProTabStrip {
     /// A widget's id, from the component bucket the engine builds its widget tabs from
     /// (`name="Long;Short"`, `userdata="ids;statusbar"`).
     private func widgetID(named label: String) -> String? {
-        widgetLoader?.children.first {
-            $0.attributes["name"]?.components(separatedBy: ";").first == label
-        }?.attributes["userdata"]?.components(separatedBy: ";").first
+        widgetEntry(named: label)?.attributes["userdata"]?.components(separatedBy: ";").first
+    }
+
+    private func widgetEntry(named label: String) -> WasabiObject? {
+        widgetLoader?.children.first { $0.attributes["name"]?.components(separatedBy: ";").first == label }
     }
 
     private func setAutoClose(_ on: Bool, for tab: Tab) {

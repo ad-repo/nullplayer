@@ -51,6 +51,16 @@ final class WinampModernDebugClickSweep {
     /// The sweep keeps itself alive until `done`.
     private static var running: WinampModernDebugClickSweep?
 
+    /// The player's own close, asked by a script (Sony_Media_Tower's `goodbye.m`, Watchmen_-_Modern's
+    /// `close2`) rather than by a control the sweep skips by action (B469): refused while the sweep
+    /// runs, and noted on the row of the press it followed. Returns false when no sweep is running.
+    static func refuseQuit() -> Bool {
+        guard let sweep = running else { return false }
+        sweep.quitRefused = true
+        return true
+    }
+    private var quitRefused = false
+
     /// The window being swept: the main player, then the Library's.
     private weak var view: WinampModernMainView?
     private weak var main: WinampModernMainView?
@@ -213,6 +223,8 @@ final class WinampModernDebugClickSweep {
                 pressUnblocked { view.debugClick(atSkinPoint: point) }
                 notes.append("pressed-back")
             }
+            // Read after the press-back, which can ask the app to quit too.
+            if self.quitRefused { notes.append("quit-refused"); self.quitRefused = false }
             let windows = Set(before.windows.keys).symmetricDifference(after.windows.keys).map { id in
                 after.windows[id].map { "+\($0)" } ?? "-\(before.windows[id] ?? "?")"
             }.sorted().joined(separator: ",")
@@ -307,14 +319,29 @@ final class WinampModernDebugClickSweep {
     }
 
     /// Press the Library's own close control and say whether its window went.
-    private func closeLibrary() {
+    ///
+    /// A CLOSE the skin's own script keeps covered until the pointer is over it (Epsilux's
+    /// `was.rpanel` slides a cover off its `exit` button on hover, B467) is hovered first, as a user
+    /// would, and pressed a second later. The hover ends after that press even if the sweep is gone.
+    private func closeLibrary(hovered: Bool = false) {
         let manager = WindowManager.shared
+        let closes = targets.filter { $0.action == "CLOSE" }
         // The first CLOSE that is on screen: Just_Buttons pairs a hidden `Close.inactive` with `Close`.
         let close = view.flatMap { view in
-            targets.lazy.filter({ $0.action == "CLOSE" })
-                .compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first
+            closes.lazy.compactMap({ target in Self.point(on: target.object, in: view).map { (target, $0) } }).first
+        }
+        if close == nil, !hovered, let view, let covered = closes.first,
+           let box = view.renderer.sceneNodes().first(where: { $0.object === covered.object })
+            .map({ $0.frame.intersection($0.clip) }), !box.isEmpty {
+            view.debugPointer = CGPoint(x: box.midX, y: box.midY)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self, weak view] in
+                self?.closeLibrary(hovered: true)
+                view?.debugPointer = nil
+            }
+            return
         }
         var row = ["window": "library", "idx": "close", "action": "CLOSE"]
+        if hovered { row["note"] = "hovered" }
         if let view, let (target, point) = close {
             row.merge(["object": target.label, "action": target.action,
                        "point": "\(Int(point.x)),\(Int(point.y))"]) { $1 }

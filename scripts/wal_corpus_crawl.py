@@ -18,7 +18,7 @@ name match with different content is kept and flagged in `manifest.tsv` for a hu
 Downloads are cached in `<outdir>/.cache`, so a re-run only fetches what is new. RAR/7z payloads
 are logged and skipped (no stdlib reader).
 """
-import concurrent.futures, glob, hashlib, html, io, json, os, re, subprocess, sys, urllib.parse, zipfile, zlib
+import concurrent.futures, glob, hashlib, html, io, json, os, pathlib, re, subprocess, sys, threading, time, urllib.parse, zipfile, zlib
 
 # Every tier, bronze and quarantine included: a skin already rated is not a candidate (B167).
 CORPUS = os.path.expanduser("~/Library/Application Support/NullPlayer/WinampModernCorpus")
@@ -28,12 +28,43 @@ MAX_MEMBER = 200 << 20  # a skin member past this is a bomb or not a skin
 SAME = 0.9
 
 
-def get(url, cookie=None):
+WAYBACK = threading.Lock()
+
+
+class CurlError(OSError):
+    def __init__(self, code, status=None):
+        super().__init__(f"curl exit {code}" + (f" (HTTP {status})" if status else ""))
+        self.code, self.status = code, status
+
+    @property
+    def transient(self):
+        # exit 22 is an HTTP error status: only a server-side or rate-limit one is worth retrying
+        return self.code != 22 or self.status in (429, 500, 502, 503, 504)
+
+
+def curl(url, cookie=None):
     # curl, not urllib: wincustomize 403s Python's TLS handshake whatever the headers say
-    cmd = ["curl", "-sfL", "--max-time", "120", "-A", UA] + (["-b", cookie] if cookie else []) + [url]
+    cmd = ["curl", "-sSfL", "--max-time", "120", "-A", UA] + (["-b", cookie] if cookie else []) + [url]
     r = subprocess.run(cmd, capture_output=True)
-    if r.returncode: raise OSError(f"curl exit {r.returncode}")
+    if r.returncode:
+        m = re.search(rb"error: (\d{3})", r.stderr)
+        raise CurlError(r.returncode, int(m.group(1)) if m else None)
     return r.stdout
+
+
+def get(url, cookie=None):
+    if not url.startswith("https://web.archive.org/"): return curl(url, cookie)
+    # Wayback refuses connections (curl 7) from an IP sending parallel requests, and resets (56) or
+    # 504s under load: one request at a time, at least 1 s apart (the first wait is that spacing,
+    # not a retry), retried after longer pauses.
+    with WAYBACK:
+        for wait in (1, 15, 60):
+            time.sleep(wait)
+            try: return curl(url, cookie)
+            except CurlError as e:
+                if not e.transient: raise  # a 404 stays a 404
+                err = e
+        raise err
 
 
 def pmap(fn, items, workers=8):
@@ -112,14 +143,19 @@ def read(z, i):
         return z.read(i)
 
 
-def skins_in(data, depth=0):
-    """Every skin root in a zip as (root_prefix, {relpath: bytes}), recursing into nested zips/wals."""
+def wal_def(base): return base == "skin.xml"
+
+
+def skins_in(data, depth=0, is_def=wal_def, nested=(".zip", ".wal")):
+    """Every skin root in a zip as (root_prefix, {relpath: bytes}), recursing into nested archives.
+    A root is the directory of a member whose lower-cased basename `is_def` accepts; members ending
+    in one of `nested` are opened in turn."""
     try: z = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile: return []
     infos = [i for i in z.infolist() if not i.is_dir() and i.file_size <= MAX_MEMBER
              and not i.filename.startswith("/") and ".." not in i.filename.split("/")]
     names = [i.filename.replace("\\", "/") for i in infos]
-    roots = sorted({n[:-len("skin.xml")] for n in names if n.lower().rsplit("/", 1)[-1] == "skin.xml"}, key=len)
+    roots = sorted({n[:n.rfind("/") + 1] for n in names if is_def(n.lower().rsplit("/", 1)[-1])}, key=len)
     roots = [r for k, r in enumerate(roots) if not any(r.startswith(o) for o in roots[:k])]  # outermost only
     out = []
     for r in roots:
@@ -127,8 +163,8 @@ def skins_in(data, depth=0):
         except Exception: pass  # unsupported compression, truncated member
     if depth < 3:
         for i, n in zip(infos, names):
-            if n.lower().endswith((".zip", ".wal")) and not any(n.startswith(r) for r in roots):
-                try: out += skins_in(read(z, i), depth + 1)
+            if n.lower().endswith(nested) and not any(n.startswith(r) for r in roots):
+                try: out += skins_in(read(z, i), depth + 1, is_def, nested)
                 except Exception: pass
     return out
 
@@ -158,18 +194,19 @@ def is_dup(fp, known):
     return next((label for kfp, label in known if fp and len(fp & kfp) >= SAME * max(len(fp), len(kfp))), None)
 
 
-def crawl(out, corpus, sources):
+def crawl(out, corpus, found, ext=".wal", is_def=wal_def, name_of=skin_name, load=lambda p: pathlib.Path(p).read_bytes()):
+    """Download `found` [(url, filename, cookie)] into `out`, keeping each `ext` skin not already in
+    `corpus` (top level or one tier down) or `out`. `load` reads an archive's bytes, known or downloaded."""
     cache = os.path.join(out, ".cache")
     os.makedirs(cache, exist_ok=True)
     known, names = [], {}
-    root = glob.escape(corpus)
-    for p in glob.glob(os.path.join(root, "*.[wW][aA][lL]")) + glob.glob(os.path.join(root, "*", "*.[wW][aA][lL]")) + glob.glob(os.path.join(glob.escape(out), "*.wal")):
-        for _, files in skins_in(open(p, "rb").read()):
+    # case-insensitive "*.<ext>": ".wal" -> "*.[wW][aA][lL]", so "SKIN.WAL" is found too
+    root, pat = glob.escape(corpus), "*." + "".join(f"[{c}{c.upper()}]" for c in ext[1:])
+    for p in glob.glob(os.path.join(root, pat)) + glob.glob(os.path.join(root, "*", pat)) + glob.glob(os.path.join(glob.escape(out), pat)):
+        for _, files in skins_in(load(p), is_def=is_def, nested=(".zip", ext)):
             known.append((fingerprint(files), os.path.basename(p)))
-            names.setdefault(norm(skin_name(files)), []).append(os.path.basename(p))
+            names.setdefault(norm(name_of(files)), []).append(os.path.basename(p))
     print(f"known: {len(known)} skins in corpus + {out}", file=sys.stderr)
-
-    found = [x for s in sources for x in {"heritage": heritage, "archive": archive, "wincustomize": wincustomize}[s]()]
     print(f"candidates: {len(found)} downloads", file=sys.stderr)
 
     def fetch(item):
@@ -186,21 +223,23 @@ def crawl(out, corpus, sources):
     added = dups = 0
     for (url, fname, _), path in pmap(fetch, found):
         if not path: continue
-        data = open(path, "rb").read()
+        data = load(path)
         if data[:2] != b"PK":
             print(f"  not a zip ({data[:4]!r}): {url}", file=sys.stderr); continue
-        skins = skins_in(data)
+        skins = skins_in(data, is_def=is_def, nested=(".zip", ext))
         for root, files in skins:
             fp = fingerprint(files)
             if is_dup(fp, known): dups += 1; continue
-            name = skin_name(files)
+            name = name_of(files)
             stem = os.path.splitext(fname)[0] if len(skins) == 1 else (root.rstrip("/").rsplit("/", 1)[-1] or os.path.splitext(fname)[0])
             stem = re.sub(r'[/:\\]', "_", stem)
-            dest = os.path.join(out, stem + ".wal")
+            dest = os.path.join(out, stem + ext)
             k = 2
-            while os.path.exists(dest): dest = os.path.join(out, f"{stem}-{k}.wal"); k += 1
-            # a downloaded .wal that already is one skin is kept byte-for-byte; everything else is repacked
-            keep = fname.lower().endswith(".wal") and len(skins) == 1
+            while os.path.exists(dest): dest = os.path.join(out, f"{stem}-{k}{ext}"); k += 1
+            # a downloaded skin archive that already is one skin, found in the archive itself rather
+            # than in one nested inside it, is kept byte-for-byte; everything else is repacked
+            # (depth 3 is the recursion floor, so that call reads the outer archive alone)
+            keep = fname.lower().endswith(ext) and len(skins) == 1 and bool(skins_in(data, 3, is_def, ()))
             with open(dest, "wb") as f: f.write(data if keep else pack(files))
             clash = names.get(norm(name), []) if norm(name) else []
             manifest.write("\t".join([os.path.basename(dest), name, url, "name-matches:" + ",".join(clash) if clash else ""]) + "\n")
@@ -237,4 +276,4 @@ if __name__ == "__main__":
     if not a or a[0].startswith("-"): sys.exit(__doc__)
     corpus = a[a.index("--corpus") + 1] if "--corpus" in a else CORPUS
     sources = [a[a.index("--source") + 1]] if "--source" in a else ["heritage", "archive", "wincustomize"]
-    crawl(os.path.abspath(a[0]), corpus, sources)
+    crawl(os.path.abspath(a[0]), corpus, [x for s in sources for x in {"heritage": heritage, "archive": archive, "wincustomize": wincustomize}[s]()])

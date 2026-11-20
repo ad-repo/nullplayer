@@ -34,7 +34,7 @@ Split out of this file by topic on 2026-09-25, sections moved verbatim. A refere
 | [`harness/live-loop.md`](harness/live-loop.md) | *Driving the app*: capturing hosted windows, auditing a control corpus-wide, a live pass as a frame, numbering transactions, measuring reach |
 | [`harness/sweep-limits.md`](harness/sweep-limits.md) | Per-frame cost, tweens, GIF entry, a stopped player, named skins, `OCCLUDED` residue, absences, repros, flat dumps, `gaps=`, the sweep as arbiter, nondeterminism, attributing a report, baseline worktrees |
 | [`harness/line-grammar.md`](harness/line-grammar.md) | *The line grammar*, *Input and tooltips the markup authors* |
-| [`harness/scripts.md`](harness/scripts.md) | *The committed scripts* (census, markup census, `wms_grep`, control audit, `png_diff`, baseline worktree, exclusions, slider-drag, implicit key, handler scope, render sweep) and *Traps the scripts enforce* |
+| [`harness/scripts.md`](harness/scripts.md) | *The committed scripts* (census, markup census, `wms_grep`, control audit, `png_diff`, baseline worktree, exclusions, slider-drag, implicit key, handler scope, render sweep, corpus crawl) and *Traps the scripts enforce* |
 | [`harness/instrument.md`](harness/instrument.md) | Driving the GUI yourself, why an instrument gap outranks a skin defect, *Numbers that are void, and why*, *Proving the instrument* |
 
 ## Flag index

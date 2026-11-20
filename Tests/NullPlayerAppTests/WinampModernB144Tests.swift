@@ -151,10 +151,29 @@ final class WinampModernB144Tests: XCTestCase {
                           "the line pinned to the top rides higher than the centred one")
     }
 
-    /// A line **taller** than its box is centred whatever edge `valign` names. Anunaki's digital
-    /// clock is the measured case: its 60px digits in a 40px `valign="top"` box lost their bottoms
-    /// pinned to the top edge, and only line up with the 25px `AM` beside them once centred.
-    func testAnOversizedLineIsCentredWhateverItsVerticalAlignment() throws {
+    /// A line **taller** than its box, in a face the **skin ships**, is centred whatever edge
+    /// `valign` names. Anunaki's digital clock is the measured case: its `lcd.ttf` 60px digits in a
+    /// 40px `valign="top"` box lost their bottoms pinned to the top edge, and only line up with the
+    /// 25px `AM` beside them once centred.
+    func testAnOversizedLineInAShippedFaceIsCentredWhateverItsVerticalAlignment() throws {
+        let face = try Data(contentsOf: URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf"))
+        let declared = #"<truetypefont id="shipped" file="shipped.ttf"/>"#
+        let centred = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
+              <text id="label" x="0" y="20" w="200" h="20" fontsize="30" color="255,255,255"
+                    font="shipped" text="0:09"/>
+        """, elements: declared, files: ["shipped.ttf": face])
+        let topped = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
+              <text id="label" x="0" y="20" w="200" h="20" fontsize="30" color="255,255,255"
+                    font="shipped" valign="top" text="0:09"/>
+        """, elements: declared, files: ["shipped.ttf": face])
+
+        XCTAssertEqual(try XCTUnwrap(topped.inkRows()), try XCTUnwrap(centred.inkRows()))
+    }
+
+    /// …but a **system** face keeps the edge it is given, as GDI's `DT_TOP` does. ClassicPro's Now
+    /// Playing rating is Arial `*****` at `fontsize="40"` in an `h="20" valign="top"` box, and the
+    /// stars fit their 14px group only top-aligned; centred, the group's clip took their tops.
+    func testAnOversizedLineInASystemFaceKeepsItsTopAlignment() throws {
         let centred = try makeScene(canvas: CGSize(width: 200, height: 60), markup: """
               <text id="label" x="0" y="20" w="200" h="20" fontsize="30" color="255,255,255"
                     text="0:09"/>
@@ -164,7 +183,9 @@ final class WinampModernB144Tests: XCTestCase {
                     valign="top" text="0:09"/>
         """)
 
-        XCTAssertEqual(try XCTUnwrap(topped.inkRows()), try XCTUnwrap(centred.inkRows()))
+        XCTAssertGreaterThan(try XCTUnwrap(topped.inkRows()).lowerBound,
+                             try XCTUnwrap(centred.inkRows()).lowerBound,
+                             "pinned to the top edge, the oversized line sits lower than centred")
     }
 
     // MARK: - Fixture
@@ -250,9 +271,11 @@ final class WinampModernB144Tests: XCTestCase {
                     ownerID: nil, parameter: nil)
     }
 
-    private func makeScene(canvas: CGSize, markup: String) throws -> Scene {
+    private func makeScene(canvas: CGSize, markup: String, elements: String = "",
+                           files: [String: Data] = [:]) throws -> Scene {
         let xml = """
         <WasabiXML>
+          <elements>\(elements)</elements>
           <container id="Main">
             <layout id="normal" w="\(Int(canvas.width))" h="\(Int(canvas.height))">
         \(markup)
@@ -260,26 +283,27 @@ final class WinampModernB144Tests: XCTestCase {
           </container>
         </WasabiXML>
         """
-        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml))
+        let loaded = try WinampModernSkinLoader(engineStore: nil).load(from: try makeArchive(xml: xml, files: files))
         addTeardownBlock { loaded.teardown() }
         let renderer = try WasabiSceneRenderer(loadedSkin: loaded, host: Host(), clock: { 0 })
         addTeardownBlock { renderer.teardown() }
         return Scene(renderer: renderer)
     }
 
-    private func makeArchive(xml: String) throws -> URL {
+    private func makeArchive(xml: String, files: [String: Data] = [:]) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WinampModernB144Tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("B144-\(UUID().uuidString).wal")
         let archive = try Archive(url: url, accessMode: .create)
-        let payload = Data(xml.utf8)
-        try archive.addEntry(with: "skin.xml", type: .file, uncompressedSize: Int64(payload.count),
-                             compressionMethod: .none) { position, size in
-            let start = Int(position)
-            guard start < payload.count else { return Data() }
-            return payload.subdata(in: start..<min(payload.count, start + size))
+        for (path, payload) in files.merging(["skin.xml": Data(xml.utf8)], uniquingKeysWith: { $1 }) {
+            try archive.addEntry(with: path, type: .file, uncompressedSize: Int64(payload.count),
+                                 compressionMethod: .none) { position, size in
+                let start = Int(position)
+                guard start < payload.count else { return Data() }
+                return payload.subdata(in: start..<min(payload.count, start + size))
+            }
         }
         return url
     }

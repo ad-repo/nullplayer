@@ -229,6 +229,15 @@ render is the ground truth for this kind of thing):
   between them, which declares no `valign` at all. Nine declarations corpus-wide, eight of them
   Bento's; the arithmetic is what identifies them, not the spelling.
 
+#### A font id and a colour id may be one name; the cap is 512 px (B470)
+
+Fonts, like colours and bitmaps, live in their own table in Wasabi. Tattoo_Amp declares `font.title`
+as a `<truetypefont>` (`main/college.ttf`) and, in a file included after it, as a `<color>`; the flat
+table kept the colour, so its title drew in the fallback sans. `WalResourceRegistry.resolvedFontDefinition`
+(a third index beside `colorsByIdentifier`) answers every `font=` lookup, falling back to the general
+table for an installed family name. The same title is `fontsize="450"` in a 700x651 window: the pixel
+height is clamped to 512 (it was 256, which drew the glyph at 57% of its size).
+
 #### `alpha=` dims a `<text>`, and `bold="1"` does not invent a weight (B285)
 
 Text alpha applies to the glyphs whatever the font source is. Love is War Miku (system Arial) and
@@ -250,6 +259,14 @@ Two numbers decide where a string sits in its box, and both were wrong in the sa
   the font happened to report, and the gap is worst on a face with a tall ascender and short digits.
 - **Centring is not clamped at zero.** A line taller than its box became `valign="top"`, which drops it
   as low as the box allows.
+- **A line taller than its box is centred whatever `valign` names — in a face the skin ships only**
+  (`verticalInset`, 2026-11-19). Anunaki's `lcd.ttf` clock (`fontsize="60"` in a 40px `valign="top"`
+  box) matches its preview and its `AM` only centred. A **system** face keeps the named edge, GDI's
+  `DT_TOP`: ClassicPro's Now Playing rating (`widgets/Data/NowPlaying/NowPlaying.xml`) is default-font
+  `*****` at `fontsize="40"` in `h="20" valign="top"` at `y="-5"` of a 14px group, and the stars fit
+  that group only top-aligned; centred, the clip took their tops. The two skins are the whole
+  evidence, and the split is by font source (a face built from a skin file has no
+  `kCTFontURLAttribute`). Gold+silver+bronze render sweep: nothing else moved.
 
 Century Gothic reports 23.5 for a 24px cell and puts 19.3 of it above the baseline against digits only
 14 tall, so cPro2 Styler's elapsed clock sat a pixel low in its 22px box — and ClassicPro's

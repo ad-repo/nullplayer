@@ -81,10 +81,11 @@ struct WasabiGeometrySpec: Equatable {
         y = number("y") ?? 0
         width = number("w")
         height = number("h")
-        relativeX = flag("relatx")
-        relativeY = flag("relaty")
-        relativeWidth = flag("relatw")
-        relativeHeight = flag("relath")
+        func relative(_ key: String) -> Bool { Self.relativeFlag(attributes[key.lowercased()]) }
+        relativeX = relative("relatx")
+        relativeY = relative("relaty")
+        relativeWidth = relative("relatw")
+        relativeHeight = relative("relath")
         func isPercent(_ key: String) -> Bool { Self.percentFlag(attributes[key.lowercased()]) }
         percentX = isPercent("relatx")
         percentY = isPercent("relaty")
@@ -157,6 +158,24 @@ struct WasabiGeometrySpec: Equatable {
         }
         return Double(raw[..<end])
     }
+
+    /// A `relat*` value that makes the geometry relative: 1 (additive) or 2 (percent, which still
+    /// reads as "relative at all"; see `percentX`). Any other number is absolute.
+    ///
+    /// Steamed up's preamp dial is `x="20" relatx="10"`: read as relative it sat 810px right in a
+    /// 790px group and left the magenta placeholder the background paints under it bare. Absolute,
+    /// it covers that placeholder exactly. `WINAMP_MODERN_RELAT_ANY_NONZERO=1` is the A/B switch
+    /// back to "any non-zero is relative".
+    static func relativeFlag(_ value: String?) -> Bool {
+        guard !readsAnyNonZeroAsRelative else { return flag(value) }
+        guard let raw = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        if raw == "true" || raw == "yes" { return true }
+        let number = leadingInteger(raw)
+        return number == 1 || number == 2
+    }
+
+    private static let readsAnyNonZeroAsRelative =
+        ProcessInfo.processInfo.environment["WINAMP_MODERN_RELAT_ANY_NONZERO"] == "1"
 
     /// `atoi == 2`, or a literal `%` — the percentage mode. Every other non-zero value stays
     /// additive, including the `5` two of The_Nokia_5220's bars carry: nothing measured suggests a

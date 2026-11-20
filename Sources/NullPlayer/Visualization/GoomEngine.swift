@@ -10,6 +10,7 @@ import CGoomCore
 final class GoomEngine: NSObject, VisualizationEngine {
     /// Upstream's desktop canvas: half the drawable, at most this wide (`GoomWidget.cpp`).
     private static let maxRenderWidth = 1024
+    private static let minRenderSide = 16
     /// Goom advances one cycle per update and its motion is tuned to upstream's 30 per second.
     private static let updateInterval = 1.0 / 30.0
 
@@ -72,10 +73,18 @@ final class GoomEngine: NSObject, VisualizationEngine {
         }
     }
 
+    private(set) var drewLastFrame = true
+
     func renderFrame() {
         guard isAvailable else { return }
         let width = min(max(viewport.width / 2, 1), Self.maxRenderWidth)
         let height = max(width * viewport.height / viewport.width, 1)
+        // Upstream bounds-checks with unsigned `x < screen.width - 2`: a core narrower than 2 wraps
+        // that to ~4 billion, and `pointFilter` wrote ~16 GB before its buffer (a crash with a `.wmz`
+        // effects pane collapsed to a few points mid-layout). Too small to show anything anyway.
+        // Said so, so the host neither swaps nor casts the undrawn buffer.
+        drewLastFrame = width >= Self.minRenderSide && height >= Self.minRenderSide
+        guard drewLastFrame else { return }
 
         let now = CACurrentMediaTime()
         if coreSize != (width, height) || now - lastUpdate >= Self.updateInterval {

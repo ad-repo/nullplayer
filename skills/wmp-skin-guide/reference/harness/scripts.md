@@ -267,6 +267,32 @@ check that the baseline really is the rev asked for. The manual version of it wa
 2026-09-11 for W128's before/after census — the W76 note in the archive records a pixel comparison
 that could not run for exactly this reason.
 
+### `python3 -I scripts/wmp_corpus_crawl.py <outdir> [--corpus <dir>] [--source wayback|archive]`
+
+*Are there skins in the wild the corpus lacks?* Downloads candidates into `<outdir>` and never
+touches `WMPSkins/`; moving one in is a decision. It reuses `wal_corpus_crawl.py`'s unpacking and
+dedupe (see `winamp-modern-skin-guide/reference/harness.md`), with a skin root being any directory
+holding a `.wms`. Dedupe is **by content** against every corpus archive and `<outdir>`: ≥90% shared
+(path, crc32) entries counts as the same skin. A `<THEME title|id>` match with different content
+is kept and flagged `name-matches:` in `manifest.tsv`. Downloads go through `wmp_corpus.repaired`,
+because several of them have the same `01 00 01 00` local headers as `Need_for_Speed_Underground`.
+
+- **wayback**: Wayback captures of the hosts that served `.wmz`, chiefly Microsoft's gallery
+  (`autoupdate.windowsmedia.com/mediaguide/gallery/wmzfiles/`). wmplugins.com's
+  `Download.aspx?Url=` and theskinsfactory.com's `data.php?outclick=` links are unwrapped. Each
+  name in `WAYBACK_HOSTS` gets one domain query (the name plus its subdomains) filtered to
+  `.wmz`. On big sites (microsoft.com, wincustomize.com, customize.org, skinz.org, neowin.net) that
+  filtered query times out or comes back "Temporarily Offline", so those are narrowed to the host
+  that served the files. Wayback mostly kept preview images, not the files: WinCustomize's three
+  `/winmedia/` hosts hold 376 captures, and 40 of them are `.wmz` (2026-11-18). Scanning a big
+  site page by page without the filter works, but costs ~26 s per page (skinz.org has 101 pages,
+  customize.org 914).
+- **archive**: archive.org items whose title or subject names WMP skins or `wmz`.
+
+Wayback blocks an IP that sends parallel requests (curl exit 7), so `get` sends Wayback requests one
+at a time with retries. A first run takes a while; `<outdir>/.cache` makes re-runs fetch only what
+is new. `selftest` runs the offline check.
+
 ---
 
 ## Traps the scripts enforce, inherited rather than re-earned

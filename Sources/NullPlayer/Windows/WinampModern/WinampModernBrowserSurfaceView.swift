@@ -309,7 +309,7 @@ final class WinampModernBrowserSurfaceView: NSView, WinampModernBrowserSurface,
         // WebKit at all. Repaired through the one shared policy (scheme added, spaces encoded,
         // `%XX` the skin already wrote left alone) rather than a second, private normalization.
         if looksLikeWebAddress(address) {
-            switch WinampModernWebNavigationPolicy.resolve(address: address) {
+            switch SkinExternalLink.resolve(address: address) {
             case .allow(let url): return .url(url)
             case .blocked(let reason): return .blocked(reason)
             }

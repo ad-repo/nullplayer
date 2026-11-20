@@ -24,61 +24,10 @@ enum WinampModernWebNavigationTarget: Equatable {
     case internalBrowserSearch
 }
 
-/// The policy every skin-authored address passes through before anything opens it (B40).
-///
-/// A `.wal` skin is untrusted input, so this is deliberately narrower than the address bar the user
-/// types into: HTTP and HTTPS only, a real host required, and no other scheme accepted — a skin must
-/// not be able to reach `file:`, `javascript:` or an application scheme through a request the host
-/// itself performs. It is pure and lives beside the engine rather than in the window layer so both
-/// routes and their tests share exactly one decision.
+/// The `.wal` half of web navigation: searches, the search engine a skin prefers, and where its
+/// "Always Allow" lives. The address policy and the consent sheet every skin shares are
+/// `SkinExternalLink`'s (B40).
 enum WinampModernWebNavigationPolicy {
-    enum Resolution: Equatable {
-        case allow(URL)
-        case blocked(String)
-    }
-
-    /// The characters left alone while the address is repaired. Skins concatenate their query out of
-    /// `urlEncode()`d terms and **literal spaces** (`"…/search?q=" + artist + " " + title + " lyrics"`),
-    /// so the string that arrives is usually not a legal URL — but it already carries `%XX` escapes,
-    /// which is why `%` has to survive the pass. Encoding it again turns Bento's `%20` into `%2520`
-    /// and searches for the escape rather than for the song. `[` `]` stay for an IPv6 literal host.
-    private static let preserved = CharacterSet.urlQueryAllowed.union(CharacterSet(charactersIn: "%#[]"))
-
-    static func resolve(address: String) -> Resolution {
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return .blocked("The skin asked to open an empty address.") }
-        let repaired = trimmed.addingPercentEncoding(withAllowedCharacters: preserved) ?? trimmed
-        var candidate = repaired
-        let lower = repaired.lowercased()
-        if !lower.hasPrefix("http://"), !lower.hasPrefix("https://") {
-            // A scheme we do not serve is refused rather than rewritten; only a bare host — which is
-            // how most skins spell it (`www.google.com/search?q=…`) — is promoted to HTTPS.
-            guard !repaired.contains("://"), !lower.hasPrefix("javascript:"), !lower.hasPrefix("data:"),
-                  !lower.hasPrefix("about:"), !lower.hasPrefix("file:") else {
-                return .blocked("The skin requested an unsupported URL scheme.")
-            }
-            candidate = "https://" + repaired
-        }
-        guard let url = URL(string: candidate),
-              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-              let host = url.host, isHostname(host) else {
-            return .blocked("The skin requested a malformed web address.")
-        }
-        return .allow(url)
-    }
-
-    /// A dotted DNS name or IPv4 address, `localhost`, or an IPv6 literal. Winamp-2006 hands
-    /// `navigateUrl` a Windows program path (`Plugins\MSPP\rating\getCurrentRating.exe`), which the
-    /// bare-host promotion above turned into `https://Plugins%5CMSPP…` and offered to open; no web host
-    /// has a backslash, and a bare word that is not `localhost` has no dot.
-    private static let hostname = try! NSRegularExpression(
-        pattern: #"^(localhost|[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+|\[?[0-9A-Fa-f:.]*:[0-9A-Fa-f:.]*\]?)$"#,
-        options: [.caseInsensitive])
-
-    private static func isHostname(_ host: String) -> Bool {
-        hostname.firstMatch(in: host, range: NSRange(host.startIndex..., in: host)) != nil
-    }
-
     // MARK: - A search, rather than an address
 
     enum SearchEngine: String, Equatable {
