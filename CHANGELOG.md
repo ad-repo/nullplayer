@@ -181,6 +181,9 @@
 - **ClassicPro skins' tab labels are no longer cut off** (`Media Librar`, `Visualizatior`) in a
   window too narrow for the full names: the row switches to `LIB PLE VID…` instead, and the full
   names come back once they fit.
+- **Streams play on the device picked in Output** (#788): Plex, Jellyfin, Emby, Subsonic and radio
+  tracks played on the macOS default output whatever the Output menu said, and moved whenever the
+  macOS default changed.
 
 ## 0.35.1
 

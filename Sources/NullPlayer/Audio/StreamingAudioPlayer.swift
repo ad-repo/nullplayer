@@ -29,6 +29,16 @@ class StreamingAudioPlayer {
     
     /// The underlying AudioStreaming player
     private let player: AudioPlayer
+
+    /// The Core Audio device this stream plays on, set by `AudioEngine` (the macOS default when
+    /// the Output menu says System Default). nil leaves AudioStreaming on the macOS default.
+    var outputDeviceID: AudioDeviceID? {
+        didSet { routeOutput() }
+    }
+
+    private func routeOutput() {
+        if let outputDeviceID { StreamOutputRouting.route(player, to: outputDeviceID) }
+    }
     
     /// Active EQ layout for this player's internal AVAudioUnitEQ. The node itself is a
     /// fixed 21-band node; this describes which layout's bands are currently active.
@@ -353,6 +363,7 @@ class StreamingAudioPlayer {
         _hasQueuedTrack = false     // Clear any previous queue state
         bpmDetector.reset()         // Reset BPM for new track
         pausedSeekTime = nil
+        routeOutput()
         player.play(url: url)
         playStartedAt = Date()
         armConnectWatchdog(for: url)
@@ -963,6 +974,7 @@ extension StreamingAudioPlayer: AudioPlayerDelegate {
     
     func audioPlayerStateChanged(player: AudioPlayer, with newState: AudioPlayerState, previous: AudioPlayerState) {
         NSLog("StreamingAudioPlayer: State changed from %@ to %@", String(describing: previous), String(describing: newState))
+        if newState == .playing { routeOutput() }
         delegate?.streamingPlayerDidChangeState(newState)
     }
     

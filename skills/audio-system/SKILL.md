@@ -140,6 +140,20 @@ Wrapper around [AudioStreaming](https://github.com/dimitris-c/AudioStreaming) li
 
 **Why separate EQ?** AVAudioNode instances can only be attached to one AVAudioEngine. Since AudioStreaming uses its own internal engine, we maintain a separate EQ node that stays synchronized with the main engine's EQ.
 
+#### Output device
+
+AudioStreaming renders offline and plays through its own `kAudioUnitSubType_DefaultOutput` unit
+(the internal `AudioPlayer.player`), which `AudioEngine.setOutputDevice` never reaches and which
+follows the macOS default. `StreamOutputRouting` reaches that unit by reflection and sets
+`kAudioOutputUnitProperty_CurrentDevice`. `AudioEngine.routeStreamingPlayers()` pushes the selected
+device — or the current macOS default under System Default — to both stream players whenever
+`currentOutputDeviceID` changes, a stream player is created, or `AudioOutputManager` posts
+`routingDidChangeNotification` (device list or macOS default changed). `StreamingAudioPlayer`
+re-applies it before every `play(url:)` and on `.playing`, because the unit is instantiated
+asynchronously after `AudioPlayer.init`. `StreamOutputRoutingTests` fails if an AudioStreaming
+upgrade moves the unit; the app then logs `AudioPlayer.player not found` and streams fall back to
+the macOS default.
+
 #### A seek while paused is held until resume
 
 AudioStreaming acts on a seek only inside its `processSource()`, which returns early while paused and
