@@ -167,9 +167,13 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   builder widened the window by 7 on every tab switch. `authoredDimension` now reads only the
   markup, so a container a handler resizes carries its literal `stretch`/`right`/`bottom` children
   with it. A child the script wrote itself is unaffected: `scriptDelta` anchors it separately.
-  Corpus render sweep: no view moved by this rule at its loaded state; `Compact` playing (its
-  `svBanner` handler writes `svScreen.height`) now fits `video1` to the pane. Pinned by
-  `WMPAlignmentTests.testAContainerAHandlerResizesCarriesItsAlignedChildren`.
+  Measured in isolation — a sweep with only this rule reverted is identical to one with it — so
+  no corpus view moves at its loaded (stopped) state. It acts only after a handler resizes a
+  container: WMP 9 Redux's tab switches, and `Compact` once a track plays (its `svBanner` handler
+  writes `svScreen.height`; `video1` now fits the pane). Pinned by
+  `WMPAlignmentTests.testAContainerAHandlerResizesCarriesItsAlignedChildren`, and its counter-case
+  — a child the script wrote itself stays where it was written —
+  `testAChildTheScriptWroteStaysWhereItWasWrittenInsideAResizedContainer`.
 
 - **An authored `JScript:` geometry expression re-applies only when its own value changes (W144).**
   It is re-evaluated every transaction — that is what makes `top="jscript:view.height-123"` follow a

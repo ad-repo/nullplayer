@@ -178,6 +178,12 @@
 - **`TheThing`'s buttons light up in the right place** when hovered or pressed.
 - **The `trinity` skin opens** instead of quitting the app, and draws its body instead of a black
   panel.
+- **The WMP 9 Redux no longer grows wider forever** after its Library task button is clicked, or
+  7 points wider each time you go back to Now Playing.
+- **Video windows in about a dozen Windows Media Player skins open at their own size** (the US
+  military skins, `The Unit`, `WWN`, `Official_Xbox`, `trinity`, `The_Sentinel`) instead of with
+  broken pieces of their top and bottom bars sticking out past the right edge.
+- **The `Compact` skin no longer crashes a debug build** when a track starts playing.
 - **ClassicPro skins draw the Now Playing tab's song rating whole** (cPro Bento and the rest); its
   stars had their top halves cut off.
 - **ClassicPro skins' tab labels are no longer cut off** (`Media Librar`, `Visualizatior`) in a
@@ -186,12 +192,6 @@
 - **Streams play on the device picked in Output** (#788): Plex, Jellyfin, Emby, Subsonic and radio
   tracks played on the macOS default output whatever the Output menu said, and moved whenever the
   macOS default changed.
-- **The WMP 9 Redux no longer grows wider forever** after its Library task button is clicked, or
-  7 points wider each time you go back to Now Playing.
-- **Video windows in about a dozen Windows Media Player skins open at their own size** (the US
-  military skins, `The Unit`, `WWN`, `Official_Xbox`, `trinity`, `The_Sentinel`) instead of with
-  broken pieces of their top and bottom bars sticking out past the right edge.
-- **The `Compact` skin no longer crashes a debug build** when a track starts playing.
 
 ## 0.35.1
 

@@ -409,6 +409,31 @@ final class WMPAlignmentTests: XCTestCase {
                        + "keeps its authored margin to the pane's bottom")
     }
 
+    /// The other half: a child the script **also** wrote is anchored by its own write, not by the
+    /// markup baseline, so resizing its container in the same handler does not move it again.
+    func testAChildTheScriptWroteStaysWhereItWasWrittenInsideAResizedContainer() async throws {
+        let skin = try await load(wms: """
+        <THEME><VIEW id="main" width="320" height="240">
+            <SUBVIEW id="pane" width="320" height="240" backgroundColor="#000000">
+                <SUBVIEW id="strip" top="220" width="320" height="20"
+                         verticalAlignment="bottom" backgroundColor="#00FF00"/>
+            </SUBVIEW>
+        </VIEW></THEME>
+        """)
+        let pane = try stableID(skin, "pane"), strip = try stableID(skin, "strip")
+        let canvas = WMPSize(width: 320, height: 240)
+        var overrides = WMPSceneOverrides.empty
+        overrides.geometry[.init(stableID: pane, property: "height")] = 300
+        overrides.scriptAssignedGeometry[.init(stableID: pane, property: "height")] = canvas
+        overrides.geometry[.init(stableID: strip, property: "top")] = 100
+        overrides.scriptAssignedGeometry[.init(stableID: strip, property: "top")] = canvas
+        overrides.scriptAssignedParentExtent[.init(stableID: strip, property: "top")] = 300
+        let scene = try await WMPSceneBuilder(loadedSkin: skin)
+            .build(viewID: "main", overrides: overrides)
+        XCTAssertEqual(try frame(skin, scene, "strip").y, 100,
+                       "the script put the strip at 100 in a 300 pane; nothing has grown since")
+    }
+
     /// **A script-assigned extent on a *nested* node must not have the resize added to it (W227).**
     ///
     /// The re-anchoring the test above exercises is the growth of the element's **parent** since the

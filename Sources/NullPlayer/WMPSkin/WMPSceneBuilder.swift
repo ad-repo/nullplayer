@@ -49,10 +49,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // Redux's `LibraryTab()` pins `svScreen.width=102`, so the box stays put, the next
             // transaction finds the same shortfall at the new size, and the window widened on
             // every transaction without end. `WMPVideoSurface.barFits` drops the bar instead.
-            func box(_ scene: WMPScene) -> CGFloat {
-                scene.widgets.last(where: { $0.kind == .video })?.frame.width ?? 0
-            }
-            return box(rebuilt) > box(scene) ? rebuilt : scene
+            return Self.videoBoxWidth(in: rebuilt) > Self.videoBoxWidth(in: scene) ? rebuilt : scene
         }
     }
 
@@ -74,14 +71,16 @@ struct WMPSceneBuilder: @unchecked Sendable {
     /// at both ends (`WMPWindowSizeLimits.forScene`), and growing one would be a window whose scene
     /// it is not (W213).
     static func videoBarShortfall(in scene: WMPScene) -> WMPSize? {
-        guard scene.isResizable,
-              let video = scene.widgets.last(where: { $0.kind == .video }),
-              video.frame.width > 0, video.frame.width + 0.5 < videoControlBarWidth else {
-            return nil
-        }
-        let widened = scene.canvasSize.width + (videoControlBarWidth - video.frame.width)
+        let box = videoBoxWidth(in: scene)
+        guard scene.isResizable, box > 0, box + 0.5 < videoControlBarWidth else { return nil }
+        let widened = scene.canvasSize.width + (videoControlBarWidth - box)
         guard widened > scene.canvasSize.width else { return nil }
         return WMPSize(width: widened, height: scene.canvasSize.height)
+    }
+
+    /// The width of the scene's video box, or 0 when it has none.
+    static func videoBoxWidth(in scene: WMPScene) -> CGFloat {
+        scene.widgets.last(where: { $0.kind == .video })?.frame.width ?? 0
     }
 
     private func buildOffMain(viewID: String, requestedSize: WMPSize?,
