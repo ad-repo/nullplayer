@@ -112,7 +112,9 @@ Only values that differ from the default are written, so every key needs its def
 `misc.txt`; `SoniqueSkinDefaults` holds them, and `SoniqueSkinSettings` resolves every key Sonique
 reads at load. Some defaults are names (`NAV_PREV_y = PREV_y`, `LogoColor = SystemColor_2`), so they
 follow the skin's value of that name. How a value reads (leading integer, `NAME ± n`, empty) is the
-decision record's § *INI rules*.
+decision record's § *INI rules*. The file itself is read by `INIFile` (`Utilities/`; Sonique is its
+one reader so far), as `GetPrivateProfileString` reads it: the first section of a name only, comments
+(`;`, `//`) skipped, values trimmed (`value(_:_:)`).
 
 - **`version` gates nothing a still capture shows** in 1.96: `NAV_*` lit positions,
   `/jpeg/nav_volumeknob` and `DRAWER_POS` are honoured with no version at all (decision record

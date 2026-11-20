@@ -45,7 +45,7 @@ enum SoniqueSkinLoader {
         guard iniData.count <= SoniqueSkinPolicy.iniBytes else {
             throw SoniqueSkinFinding(.iniTooLarge, "skin.ini is \(iniData.count) bytes, more than \(SoniqueSkinPolicy.iniBytes).")
         }
-        let ini = SoniqueSkinINI(String(data: iniData, encoding: .isoLatin1) ?? "")
+        let ini = INIFile(String(data: iniData, encoding: .isoLatin1) ?? "")
         let settings = SoniqueSkinSettings(ini)
         findings += settings.findings
 

@@ -100,7 +100,7 @@ final class SoniqueSkinLoaderTests: XCTestCase {
     }
 
     func testTheFirstSectionOfANameIsTheOnlyOneRead() {
-        let ini = SoniqueSkinINI("[skin]\nversion=105\n[Sonique Colors]\nSystemColor_1=0x1\n[SKIN]\nversion=100\nauthor=late\n")
+        let ini = INIFile("[skin]\nversion=105\n[Sonique Colors]\nSystemColor_1=0x1\n[SKIN]\nversion=100\nauthor=late\n")
         XCTAssertEqual(ini.value("skin", "version"), "105")
         XCTAssertNil(ini.value("skin", "author"))
         XCTAssertEqual(ini.value("sonique colors", "systemcolor_1"), "0x1")

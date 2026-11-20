@@ -3,7 +3,7 @@ import XCTest
 
 final class SoniqueSkinSettingsTests: XCTestCase {
     private func settings(_ text: String) -> SoniqueSkinSettings {
-        SoniqueSkinSettings(SoniqueSkinINI(text))
+        SoniqueSkinSettings(INIFile(text))
     }
 
     func testAnOmittedKeyIsTheDefault() {
