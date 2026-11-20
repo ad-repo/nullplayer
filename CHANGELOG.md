@@ -178,6 +178,15 @@
 - **`TheThing`'s buttons light up in the right place** when hovered or pressed.
 - **The `trinity` skin opens** instead of quitting the app, and draws its body instead of a black
   panel.
+- **The WMP 9 Redux no longer grows wider forever** (#795) after its Library task button is clicked, or
+  7 points wider each time you go back to Now Playing.
+- **Video windows in about a dozen Windows Media Player skins open at their own size** (the US
+  military skins, `The Unit`, `WWN`, `Official_Xbox`, `trinity`, `The_Sentinel`) instead of with
+  broken pieces of their top and bottom bars sticking out past the right edge.
+- **The `Compact` skin no longer crashes a debug build** when a track starts playing.
+- **The WMP 9 Redux's playlist picker stays on the playing track** (#795). A playlist with the same track
+  name twice put the picker one row off for every repeat, and choosing from it played the wrong
+  track.
 - **ClassicPro skins draw the Now Playing tab's song rating whole** (cPro Bento and the rest); its
   stars had their top halves cut off.
 - **ClassicPro skins' tab labels are no longer cut off** (`Media Librar`, `Visualizatior`) in a

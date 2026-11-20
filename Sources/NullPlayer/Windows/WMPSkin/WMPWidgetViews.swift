@@ -407,11 +407,16 @@ final class WMPDropdownPlaylistSurfaceView: NSPopUpButton {
     var onAction: ((WMPTransportAction, WMPHostValue?) -> Void)?
 
     func update(_ snapshot: WMPHostSnapshot) {
-        removeAllItems()
         let fields = PlaylistRowFields.current
-        addItems(withTitles: snapshot.playlistItems.map {
-            fields.text(title: $0.title, artist: $0.artist, album: $0.album, isVideo: $0.isVideo)
-        })
+        // A menu built here, not `addItems(withTitles:)`, which drops repeated titles and shifts
+        // every later row off the queue's index by one per repeat.
+        let rows = NSMenu()
+        for item in snapshot.playlistItems {
+            rows.addItem(withTitle: fields.text(title: item.title, artist: item.artist,
+                                                album: item.album, isVideo: item.isVideo),
+                         action: nil, keyEquivalent: "")
+        }
+        menu = rows
         if snapshot.playlistItems.indices.contains(snapshot.playlistIndex) { selectItem(at: snapshot.playlistIndex) }
         target = self; action = #selector(selected(_:))
     }

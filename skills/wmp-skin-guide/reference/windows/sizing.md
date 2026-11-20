@@ -79,6 +79,16 @@ Three parts, and the third is the one that is easy to miss:
   `videoControlBarWidth` (395, measured from the bar itself). The box follows, because every corpus
   box is authored `view.width` minus a constant shell. A *fixed* view is never widened: it is
   pinned to its canvas at both ends and growing one is W213.
+- **The widened view is kept only if its box actually grew.** "Every corpus box is `view.width`
+  minus a constant" is the common case, not a rule: WMP 9 Redux's `LibraryTab()` pins
+  `svScreen.width=102`, and a box that stays put found the same shortfall on the next transaction
+  at the new size — the window widened ~70pt a second without end (reported 2026-11-20 as "the
+  player expands its horizontal size forever"). A literal `<VIDEO>` with no alignment is the same
+  case: 14 corpus video views (the US military family, `The Unit`, `WWN`, `Official_Xbox`,
+  `trinity`, `The_Sentinel`) had been widened with their box unchanged, leaving their top and
+  bottom bars as stubs past the artwork; they now render at their authored size and
+  `WMPVideoSurface.barFits` drops the bar. Pinned by
+  `WMPVideoControlBarFitTests.testAViewIsWidenedOnlyWhenItsVideoBoxFollows`.
 - **And a view that is both fixed and narrow falls between those two, so the surface has to decide
   as well (W254).** It can never be widened, and the window it hosts can never be narrowed, so the
   bar's minimum simply wins: `Revert`'s `vwPlayer` is `resizable="false"` with a 92pt box and the

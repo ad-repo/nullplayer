@@ -70,7 +70,9 @@ alternatives in the phase handoff.
 Never put WMP input work on the main thread. Archive validation/inflation, decoding, XML/graph/report
 construction, image work, expressions, and script evaluation run on a WMP-owned background
 executor — the script context has its own serial queue, so a skin that loops forever wedges that
-queue and nothing else. Never use `DispatchQueue.main.sync`. Hand only completed immutable snapshots and typed host
+queue and nothing else. `WMPSceneBuilder.build` runs on its own 16 MB-stack thread (`WMPDeepStack`), not the cooperative
+pool: its recursive `walk` is ~110 KB a level in a debug build and overflowed the pool's 544 KB on
+`Compact` once a track played. Never use `DispatchQueue.main.sync`. Hand only completed immutable snapshots and typed host
 commands to `MainActor`, where the work is limited to AppKit presentation.
 
 WMP owns a dedicated app-authored unskinned player. On a fresh public-release profile with no
@@ -270,6 +272,9 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
 
 - `WMPScene.widgets` is immutable semantic metadata for accessibility and native surfaces. AppKit
   overlays are created only after a completed scene arrives and are replaced with the scene.
+- A `<PLAYLIST playlistItemsVisible="false">` picker (`WMPDropdownPlaylistSurfaceView`) adds its
+  rows through `NSMenu`, never `addItems(withTitles:)`, which drops repeated titles and shifts the
+  picker one row off the queue per repeat (`WMPDropdownPlaylistTests`).
 - Playlist snapshots are capped at 4,096 rows. Selection, scrolling, play, removal, and movement use
   typed host actions; scripts receive plain copied item values, never `Track` objects.
 - The `<PLAYLIST>` surface scrolls to the playing row on a track change only (centred under
