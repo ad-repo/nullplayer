@@ -184,6 +184,9 @@
   military skins, `The Unit`, `WWN`, `Official_Xbox`, `trinity`, `The_Sentinel`) instead of with
   broken pieces of their top and bottom bars sticking out past the right edge.
 - **The `Compact` skin no longer crashes a debug build** when a track starts playing.
+- **The WMP 9 Redux's playlist picker stays on the playing track.** A playlist with the same track
+  name twice put the picker one row off for every repeat, and choosing from it played the wrong
+  track.
 - **ClassicPro skins draw the Now Playing tab's song rating whole** (cPro Bento and the rest); its
   stars had their top halves cut off.
 - **ClassicPro skins' tab labels are no longer cut off** (`Media Librar`, `Visualizatior`) in a

@@ -272,6 +272,9 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
 
 - `WMPScene.widgets` is immutable semantic metadata for accessibility and native surfaces. AppKit
   overlays are created only after a completed scene arrives and are replaced with the scene.
+- A `<PLAYLIST playlistItemsVisible="false">` picker (`WMPDropdownPlaylistSurfaceView`) adds its
+  rows through `NSMenu`, never `addItems(withTitles:)`, which drops repeated titles and shifts the
+  picker one row off the queue per repeat (`WMPDropdownPlaylistTests`).
 - Playlist snapshots are capped at 4,096 rows. Selection, scrolling, play, removal, and movement use
   typed host actions; scripts receive plain copied item values, never `Track` objects.
 - The `<PLAYLIST>` surface scrolls to the playing row on a track change only (centred under
