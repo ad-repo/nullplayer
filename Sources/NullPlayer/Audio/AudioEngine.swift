@@ -901,7 +901,24 @@ class AudioEngine {
     private var analysisTap: AVAudioNodeTapBlock?
     
     /// Current output device ID (nil = system default)
-    private(set) var currentOutputDeviceID: AudioDeviceID?
+    private(set) var currentOutputDeviceID: AudioDeviceID? {
+        didSet { routeStreamingPlayers() }
+    }
+
+    @objc private func handleOutputRoutingChanged() {
+        routeStreamingPlayers()
+    }
+
+    /// Streams have their own output unit, which `setOutputDevice` never reaches; point both at
+    /// the selected device, or at the macOS default when System Default is selected or the
+    /// selected device has been unplugged.
+    private func routeStreamingPlayers() {
+        let outputs = AudioOutputManager.shared
+        let selected = currentOutputDeviceID.flatMap { id in outputs.outputDevices.contains { $0.id == id } ? id : nil }
+        let deviceID = selected ?? outputs.getDefaultOutputDeviceID()
+        streamingPlayer?.outputDeviceID = deviceID
+        crossfadeStreamingPlayer?.outputDeviceID = deviceID
+    }
 
     /// Audio route/configuration changes can arrive in bursts while macOS is switching
     /// devices, Zoom routes, AirPlay/Sonos, or Wi-Fi-backed outputs.
@@ -1008,6 +1025,13 @@ class AudioEngine {
             self,
             selector: #selector(handleSpectrumSettingsChanged),
             name: NSNotification.Name("SpectrumSettingsChanged"),
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleOutputRoutingChanged),
+            name: AudioOutputManager.routingDidChangeNotification,
             object: nil
         )
 
@@ -5132,6 +5156,7 @@ class AudioEngine {
             )
             streamingPlayer?.rate = tuningController.rate
             streamingPlayer?.delegate = self
+            routeStreamingPlayers()
             streamingPlayer?.spectrumNeeded = spectrumNeeded
             streamingPlayer?.waveformNeeded = waveformNeeded
             streamingPlayer?.stereoNeeded = stereoNeeded
@@ -5779,6 +5804,7 @@ class AudioEngine {
         )
         crossfadeStreamingPlayer?.rate = tuningController.rate
         crossfadeStreamingPlayer?.balance = balance
+        routeStreamingPlayers()
         // Mirror the active analyzer-demand flags so the incoming track drives the meters (Cava's
         // full-rate stereo tap, plus the decimated stereo tap) during the crossfade, not just after.
         crossfadeStreamingPlayer?.stereoNeeded = stereoNeeded

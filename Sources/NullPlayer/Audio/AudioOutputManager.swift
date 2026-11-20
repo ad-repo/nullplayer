@@ -40,6 +40,9 @@ class AudioOutputManager {
     // MARK: - Notifications
     
     static let devicesDidChangeNotification = Notification.Name("AudioOutputDevicesDidChange")
+
+    /// Posted on every device-list or macOS default-output change, whether or not the list changed.
+    static let routingDidChangeNotification = Notification.Name("AudioOutputRoutingDidChange")
     
     // MARK: - Properties
     
@@ -537,46 +540,53 @@ class AudioOutputManager {
     
     private var listenerBlock: AudioObjectPropertyListenerBlock?
     
+    /// The device list, and the macOS default output: a stream's output unit has to be pointed
+    /// again when either changes (see `StreamingAudioPlayer.outputDeviceID`).
+    private static let listenedSelectors = [kAudioHardwarePropertyDevices,
+                                            kAudioHardwarePropertyDefaultOutputDevice]
+
     private func setupDeviceChangeListener() {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        listenerBlock = { [weak self] (_, _) in
+        let block: AudioObjectPropertyListenerBlock = { [weak self] (_, _) in
             DispatchQueue.main.async {
                 self?.handleDevicesChanged()
             }
         }
-        
-        let status = AudioObjectAddPropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            DispatchQueue.main,
-            listenerBlock!
-        )
-        
-        if status != noErr {
-            print("Failed to add device change listener: \(status)")
+        listenerBlock = block
+
+        for selector in Self.listenedSelectors {
+            var propertyAddress = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            let status = AudioObjectAddPropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &propertyAddress,
+                DispatchQueue.main,
+                block
+            )
+            if status != noErr {
+                print("Failed to add device change listener: \(status)")
+            }
         }
     }
     
     private func removeDeviceChangeListener() {
         guard let block = listenerBlock else { return }
         
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        
-        AudioObjectRemovePropertyListenerBlock(
-            AudioObjectID(kAudioObjectSystemObject),
-            &propertyAddress,
-            DispatchQueue.main,
-            block
-        )
+        for selector in Self.listenedSelectors {
+            var propertyAddress = AudioObjectPropertyAddress(
+                mSelector: selector,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            AudioObjectRemovePropertyListenerBlock(
+                AudioObjectID(kAudioObjectSystemObject),
+                &propertyAddress,
+                DispatchQueue.main,
+                block
+            )
+        }
     }
     
     private func handleDevicesChanged() {
@@ -595,5 +605,6 @@ class AudioOutputManager {
         if previousDevices != outputDevices {
             NotificationCenter.default.post(name: Self.devicesDidChangeNotification, object: self)
         }
+        NotificationCenter.default.post(name: Self.routingDidChangeNotification, object: self)
     }
 }
