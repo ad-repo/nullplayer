@@ -2,25 +2,18 @@ import AppKit
 
 // MARK: - Sonique skins actions
 
+/// The Skins menu's Sonique entries; all but Mode and Get More are `SingleCanvasMainWindow`'s.
+@MainActor
 extension MenuActions {
     private var soniqueController: SoniqueSkinMainWindowController? {
         WindowManager.shared.mainWindowController as? SoniqueSkinMainWindowController
     }
 
-    @objc func setSoniqueMode() {
-        guard AppCapabilities.supports(.soniqueSkinMode), WindowManager.shared.uiMode != .sonique else { return }
-        WindowManager.shared.reloadUI(to: .sonique)
-    }
+    @objc func setSoniqueMode() { SoniqueSkinMainWindowController.switchToFamily() }
 
-    /// In place inside the family; otherwise the selection is saved and entering the family loads it.
     @objc func selectSoniqueSkin(_ sender: NSMenuItem) {
-        guard AppCapabilities.supports(.soniqueSkinMode), let name = sender.representedObject as? String else { return }
-        if let controller = soniqueController {
-            controller.selectSkin(named: name)
-        } else {
-            SoniqueSkinImporter().selection.select(name)
-            WindowManager.shared.reloadUI(to: .sonique)
-        }
+        guard let name = sender.representedObject as? String else { return }
+        SoniqueSkinMainWindowController.chooseSkin(named: name)
     }
 
     @objc func setSoniqueWindowMode(_ sender: NSMenuItem) {
@@ -28,14 +21,7 @@ extension MenuActions {
         soniqueController?.mode = mode
     }
 
-    @objc func loadSoniqueSkinFromFile() {
-        guard AppCapabilities.supports(.soniqueSkinMode) else { return }
-        if let controller = soniqueController {
-            controller.importSkinFromPanel()
-        } else {
-            WindowManager.shared.reloadUI(to: .sonique) { [weak self] in self?.soniqueController?.importSkinFromPanel() }
-        }
-    }
+    @objc func loadSoniqueSkinFromFile() { SoniqueSkinMainWindowController.loadSkinFromFile() }
 
     /// The Internet Archive's Sonique Media Player collection, after saying how to get the big archive
     /// on it: the page's torrent file, which pulls the whole thing far more reliably than the browser.
@@ -52,24 +38,7 @@ extension MenuActions {
         NSWorkspace.shared.open(url)
     }
 
-    @objc func openSoniqueSkinsFolder() {
-        let importer = SoniqueSkinImporter()
-        do {
-            try importer.folder.ensureExists()
-            NSWorkspace.shared.open(importer.folder.url)
-        } catch {
-            NSAlert(error: error).runModal()
-        }
-    }
+    @objc func openSoniqueSkinsFolder() { SoniqueSkinMainWindowController.openSkinsFolder() }
 
-    func removeSoniqueSkin(named name: String) {
-        Task { @MainActor in
-            do {
-                try await SoniqueSkinImporter().removeSkin(named: name)
-                self.soniqueController?.resetToUnskinned()
-            } catch {
-                NSAlert(error: error).runModal()
-            }
-        }
-    }
+    func removeSoniqueSkin(named name: String) { SoniqueSkinMainWindowController.removeInstalledSkin(named: name) }
 }

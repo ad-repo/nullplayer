@@ -50,7 +50,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         radioObserver = NotificationCenter.default.addObserver(
             forName: RadioManager.connectionStateDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshHostState() } }
-        unskinnedView.onLoadFace = { [weak self] in self?.importFaceFromPanel() }
+        unskinnedView.onLoadFace = { [weak self] in self?.importFromPanel() }
         // No placeholder while the selected face loads: it would flash at its own size first.
         // `reloadSelectedSkin` presents it when there is no face to show.
         reloadSelectedSkin()
@@ -71,7 +71,7 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         installed ? selectSkin(named: url.lastPathComponent) : importFace(from: url)
     }
 
-    func importFaceFromPanel() {
+    func importFromPanel() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = true

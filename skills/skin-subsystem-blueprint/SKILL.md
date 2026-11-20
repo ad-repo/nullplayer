@@ -104,9 +104,13 @@ go through it (Sonique S13, 2026-10-18). Beside it, **`SkinSelection(key:)`** is
 (WMP, Audion and Sonique; WMP keeps its view id itself, `.wal` its bundled fallback). A
 single-canvas window (`SingleCanvasMainWindow`, Audion and Sonique) supplies its selection, URL lookup,
 loader, `loadedSkinURL` and `present(_:error:)`, and gets `reloadSelectedSkin`, `selectSkin(named:)` and
-`resetToUnskinned` over one `SkinLoadTask` (`App/Skinning/`, Sonique S18). Sonique, whose skin is one file, conforms to **`SkinFileCatalogue`** (`App/Skinning/`): it names its
-folder, selection, family and extension, and gets the listing by name, the selection lookup, removal
-and the install commit; it keeps its own loader check. Audion unpacks its `.zip`s through **`SkinZipExtraction`** (`App/Skinning/`) with its
+`resetToUnskinned` over one `SkinLoadTask` (`App/Skinning/`, Sonique S18); its Skins-menu actions
+(switch, choose, load from file, open folder, remove) are one protocol extension
+(`SingleCanvasMainWindow+SkinsMenu`), given its `mode`, `feature`, `importer()` and `importFromPanel()`,
+which the family's `@objc` entry points call. Sonique, whose skin is one file, conforms to
+**`SkinFileCatalogue`** (`App/Skinning/`): it names its folder, selection, family and extension, and
+gets the listing by name, the selection lookup, removal and the install commit; it keeps its own
+loader check. Audion unpacks its `.zip`s through **`SkinZipExtraction`** (`App/Skinning/`) with its
 own `SkinZipLimits` and its own choice of entries, mapping the shared rejections to its findings;
 `WMPArchive` and `WalArchive` still keep their own bound and ratio checks.
 
