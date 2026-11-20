@@ -148,9 +148,11 @@ follows the macOS default. `StreamOutputRouting` reaches that unit by reflection
 `kAudioOutputUnitProperty_CurrentDevice`. `AudioEngine.routeStreamingPlayers()` pushes the selected
 device — or the current macOS default under System Default — to both stream players whenever
 `currentOutputDeviceID` changes, a stream player is created, or `AudioOutputManager` posts
-`routingDidChangeNotification` (device list or macOS default changed). `StreamingAudioPlayer`
-re-applies it before every `play(url:)` and on `.playing`, because the unit is instantiated
-asynchronously after `AudioPlayer.init`. `StreamOutputRoutingTests` fails if an AudioStreaming
+`routingDidChangeNotification` (device list or macOS default changed). A selected device that is
+no longer in `outputDevices` (unplugged) routes streams to the macOS default instead.
+`StreamingAudioPlayer` re-applies it before every `play(url:)` and on `.playing`; AudioStreaming
+creates the unit through a completion handler that currently runs synchronously inside
+`AudioPlayer.init`, and the `.playing` pass covers it turning asynchronous. `StreamOutputRoutingTests` fails if an AudioStreaming
 upgrade moves the unit; the app then logs `AudioPlayer.player not found` and streams fall back to
 the macOS default.
 

@@ -910,9 +910,12 @@ class AudioEngine {
     }
 
     /// Streams have their own output unit, which `setOutputDevice` never reaches; point both at
-    /// the selected device, or at the macOS default when System Default is selected.
+    /// the selected device, or at the macOS default when System Default is selected or the
+    /// selected device has been unplugged.
     private func routeStreamingPlayers() {
-        let deviceID = currentOutputDeviceID ?? AudioOutputManager.shared.getDefaultOutputDeviceID()
+        let outputs = AudioOutputManager.shared
+        let selected = currentOutputDeviceID.flatMap { id in outputs.outputDevices.contains { $0.id == id } ? id : nil }
+        let deviceID = selected ?? outputs.getDefaultOutputDeviceID()
         streamingPlayer?.outputDeviceID = deviceID
         crossfadeStreamingPlayer?.outputDeviceID = deviceID
     }

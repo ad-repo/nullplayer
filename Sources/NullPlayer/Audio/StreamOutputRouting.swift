@@ -25,9 +25,11 @@ enum StreamOutputRouting {
         NSLog("StreamOutputRouting: Output device %u -> %u (status %d)", current, deviceID, status)
     }
 
-    /// The player's hardware output unit, or nil before AudioStreaming has instantiated it (it
-    /// does so asynchronously, leaving a bare placeholder until then; `StreamingAudioPlayer`
-    /// routes again when playback starts).
+    /// The player's hardware output unit, or nil while `player` is still AudioStreaming's bare
+    /// placeholder. `AudioPlayer.init` instantiates the unit through a completion handler that has
+    /// been measured to run synchronously, on the caller's thread, so the unit is there by the time
+    /// `init` returns; the placeholder check (and `StreamingAudioPlayer` routing again on `.playing`)
+    /// covers a release where that completion becomes asynchronous.
     static func outputUnit(of player: AudioPlayer) -> AVAudioUnit? {
         guard let unit = Mirror(reflecting: player).children
             .first(where: { $0.label == "player" })?.value as? AVAudioUnit else {

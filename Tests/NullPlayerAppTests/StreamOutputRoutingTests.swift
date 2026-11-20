@@ -4,7 +4,7 @@ import CoreAudio
 import XCTest
 @testable import NullPlayer
 
-/// Streams play through AudioStreaming's own output unit, reached by reflection (issue 788). These
+/// Streams play through AudioStreaming's own output unit, reached by reflection (#788). These
 /// fail when an AudioStreaming upgrade moves that unit, which would silently send every stream back
 /// to the macOS default output whatever the Output menu says.
 final class StreamOutputRoutingTests: XCTestCase {
