@@ -281,7 +281,11 @@ is wrong and must be revised or dropped; it is never a licence to fix that famil
   shuffle), and its first snapshot arrives at **0x0**, before its frame: a scroll then reads as one
   visible row, so `WMPPlaylistSurfaceView` holds it until `setFrameSize` (`WMPPlaylistScrollTests`).
 - WMP exposes ten EQ gains. `WMPAudioEngineHost` uses `EQBandRemapper` at the boundary when the live
-  engine is in its 21-band layout; every write remains clamped to ±12 dB.
+  engine is in its 21-band layout; every write remains clamped to ±12 dB. A script writing
+  `eq.currentPreset` sends one `setEQBand:` host command per band (`WMPObjectModel.applyPreset`), each
+  remapped and clamped like any band write (`AudioEngine.setClassicEQ`); a preset chosen from the
+  popup (`.setEQPreset`) goes through `EQPreset.apply(to:)`, which writes its bands the same way
+  (`Audio/AudioEngine+EQPreset.swift`).
 - The two built-in album-art images come from `TrackArtworkLoader` (`Utilities/`; WMP is its one
   user so far — `CLIArtwork` keeps its own near-copy).
 - `EFFECTS`/`WMPEFFECTS` hosts the visualization surface. Its single ref-counted spectrum consumer
