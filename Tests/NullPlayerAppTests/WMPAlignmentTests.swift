@@ -383,11 +383,12 @@ final class WMPAlignmentTests: XCTestCase {
         XCTAssertNil(scene.geometries[try stableID(skin, "film")])
     }
 
-    /// **A script-assigned extent is still the baseline, and that is W225's rule.** The runtime
-    /// writes a geometry override for both a handler's assignment and its own re-evaluation of an
-    /// authored expression; only the first is the author stating a size deliberately, and only the
-    /// first may be measured from. `scriptAssignedGeometry` is what separates them.
-    func testAScriptAssignedExtentIsStillTheBaselineForItsChildren() async throws {
+    /// **A container a handler resizes carries its aligned children with it.** Their margins were
+    /// authored against the markup's size, so the markup is the baseline. WMP 9 Redux's
+    /// `PlayingTab()` writes `svScreen.width = view.width-290`, and with the script's size as the
+    /// baseline its `stretch` `video1` stayed at the authored 388 — 7 short of the video bar, so
+    /// the window widened by 7 on every tab switch.
+    func testAContainerAHandlerResizesCarriesItsAlignedChildren() async throws {
         let skin = try await load(wms: """
         <THEME><VIEW id="main" width="320" height="240">
             <SUBVIEW id="pane" width="320" height="240" backgroundColor="#000000">
@@ -403,9 +404,9 @@ final class WMPAlignmentTests: XCTestCase {
             WMPSize(width: 320, height: 240)
         let scene = try await WMPSceneBuilder(loadedSkin: skin)
             .build(viewID: "main", overrides: overrides)
-        XCTAssertEqual(try frame(skin, scene, "strip").y, 220,
-                       "the handler sized the pane to 300 and its children measure from that, so "
-                       + "the strip keeps the margin the script left it at")
+        XCTAssertEqual(try frame(skin, scene, "strip").y, 280,
+                       "the handler grew the pane from 240 to 300, so the bottom-aligned strip "
+                       + "keeps its authored margin to the pane's bottom")
     }
 
     /// **A script-assigned extent on a *nested* node must not have the resize added to it (W227).**

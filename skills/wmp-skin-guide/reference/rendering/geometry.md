@@ -156,8 +156,20 @@ Moved verbatim from `reference/rendering.md` § *Static scene and image contract
   at the current canvas, which is the number `parseDimension` already had. Corpus-wide the render
   sweep is byte-identical (706 invariant lines, 553 PNGs, the one differing being `Scooby-Doo_2`'s
   random picture again). Reported as "when you stretch the window the visualization does not follow
-  the stretch"; `WMPAlignmentTests` pins all four halves, including the two counter-cases — a hidden
-  node nobody binds to is still not measured, and a script-assigned extent is still a baseline.
+  the stretch"; `WMPAlignmentTests` pins the hidden-node halves, including the counter-case that a
+  hidden node nobody binds to is still not measured.
+
+- **The markup is the alignment baseline, and a script-assigned size is not one either
+  (2026-11-20).** The "a handler-sized container is a baseline" half above had no skin behind it,
+  and W225 was that same zero delta through the alignment freeze. WMP 9 Redux's `PlayingTab()`
+  writes `svScreen.width = view.width-290`; its `stretch` `video1`, authored at 388 to fill
+  `svScreen`'s authored 388, stayed at 388 inside a 395 pane — 7 short of the video bar, so the
+  builder widened the window by 7 on every tab switch. `authoredDimension` now reads only the
+  markup, so a container a handler resizes carries its literal `stretch`/`right`/`bottom` children
+  with it. A child the script wrote itself is unaffected: `scriptDelta` anchors it separately.
+  Corpus render sweep: no view moved by this rule at its loaded state; `Compact` playing (its
+  `svBanner` handler writes `svScreen.height`) now fits `video1` to the pane. Pinned by
+  `WMPAlignmentTests.testAContainerAHandlerResizesCarriesItsAlignedChildren`.
 
 - **An authored `JScript:` geometry expression re-applies only when its own value changes (W144).**
   It is re-evaluated every transaction — that is what makes `top="jscript:view.height-123"` follow a

@@ -37,15 +37,36 @@ struct WMPSceneBuilder: @unchecked Sendable {
                interactionState: WMPInteractionState = WMPInteractionState(),
                dirtyNodeIDs: Set<Int>? = nil,
                overrides: WMPSceneOverrides = .empty) async throws -> WMPScene {
-        try await Task.detached(priority: .userInitiated) {
+        try await Self.onDeepStack {
             let scene = try buildOffMain(viewID: viewID, requestedSize: requestedSize,
                                          interactionState: interactionState,
                                          dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
             guard let widened = Self.videoBarShortfall(in: scene) else { return scene }
-            return try buildOffMain(viewID: viewID, requestedSize: widened,
-                                    interactionState: interactionState,
-                                    dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
-        }.value
+            let rebuilt = try buildOffMain(viewID: viewID, requestedSize: widened,
+                                           interactionState: interactionState,
+                                           dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
+            // **A box that did not follow the view gains nothing from a wider window.** WMP 9
+            // Redux's `LibraryTab()` pins `svScreen.width=102`, so the box stays put, the next
+            // transaction finds the same shortfall at the new size, and the window widened on
+            // every transaction without end. `WMPVideoSurface.barFits` drops the bar instead.
+            func box(_ scene: WMPScene) -> CGFloat {
+                scene.widgets.last(where: { $0.kind == .video })?.frame.width ?? 0
+            }
+            return box(rebuilt) > box(scene) ? rebuilt : scene
+        }
+    }
+
+    /// **`walk` recurses once per nesting level, and a debug frame of it is ~110 KB.** The
+    /// cooperative pool's 544 KB stack overflowed five levels deep — `Compact` as soon as a track
+    /// played, in the app and in the render harness alike. Same QoS as the detached task it replaces.
+    private static func onDeepStack<T: Sendable>(
+        _ work: @escaping @Sendable () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            let thread = Thread { continuation.resume(with: Result(catching: work)) }
+            thread.stackSize = 16 << 20
+            thread.qualityOfService = .userInitiated
+            thread.start()
+        }
     }
 
     /// The canvas this scene needs for its video box to carry the command bar, or nil when it
@@ -750,13 +771,14 @@ struct WMPSceneBuilder: @unchecked Sendable {
         /// was the grown height, the rail's delta was zero, and every height past 308 opened a
         /// bare run down the window's right edge: 168pt at 464, 339pt on a 635pt library window.
         func authoredDimension(_ node: WMPNode, _ name: String) -> CGFloat? {
-            let address = WMPScenePropertyAddress(stableID: node.stableID, property: name.lowercased())
-            // A script-*assigned* extent is a baseline — W225's reason: the handler stated that
-            // size deliberately, and its children's margins are measured from it. An override the
-            // runtime wrote while re-evaluating an authored expression or binding is not: it is
-            // this canvas's answer, echoed back, and reading it here is what made the delta zero.
-            if overrides.scriptAssignedGeometry[address] != nil,
-               let value = overrides.geometry[address], value.isFinite { return value }
+            // **The markup is the baseline, never an override.** A child's margins are the ones
+            // the skin authored against its parent's authored size, so a parent a handler resizes
+            // carries its `stretch` children with it. Reading a script-written size here made the
+            // delta zero: WMP 9 Redux's `PlayingTab()` writes `svScreen.width = view.width-290`
+            // and `video1`, authored to fill `svScreen`, stayed at its authored 388 — 7 short of
+            // the video bar, so the builder widened the window by 7 on every tab switch. W225 and
+            // W226 were the same zero delta through the alignment freeze and a re-evaluated
+            // expression.
             guard let property = WMPInitialLayoutResolver.Property(rawValue: name.lowercased()),
                   case let .value(value) = authoredLayoutResolver.resolve(node, property: property)
             else { return nil }

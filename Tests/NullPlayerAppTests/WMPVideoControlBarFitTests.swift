@@ -82,4 +82,24 @@ final class WMPVideoControlBarFitTests: XCTestCase {
         XCTAssertNotNil(WMPSceneBuilder.videoBarShortfall(in: scene(resizable: true, box: 92)),
                         "a resizable view still grows, so it keeps the overlay")
     }
+
+    /// **A view is widened for the bar only when its box follows the view.** WMP 9 Redux's
+    /// `LibraryTab()` pins `svScreen.width=102`, and widening a view whose box stays put found the
+    /// same shortfall on the next transaction — the window grew without end.
+    func testAViewIsWidenedOnlyWhenItsVideoBoxFollows() async throws {
+        func canvas(_ alignment: String) async throws -> WMPSize {
+            let wms = """
+            <THEME><VIEW id="main" width="300" height="200" resizable="true">
+                <VIDEO id="pic" width="280" height="180" horizontalAlignment="\(alignment)"/>
+            </VIEW></THEME>
+            """
+            let skin = try await WMPSkinLoader().load(from: try WMPSkinTestSupport.makeArchive(
+                [WMPTestArchiveEntry("skin.wms", data: Data(wms.utf8))]))
+            return try await WMPSceneBuilder(loadedSkin: skin).build(viewID: "main").canvasSize
+        }
+        let following = try await canvas("stretch")
+        XCTAssertEqual(following.width, 300 + bar - 280, "a stretch box reaches the bar")
+        let pinned = try await canvas("left")
+        XCTAssertEqual(pinned.width, 300, "a box that stays put is no reason to widen the view")
+    }
 }

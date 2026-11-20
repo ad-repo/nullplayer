@@ -152,10 +152,10 @@ final class WMPDisplayCeilingTests: XCTestCase {
                      + "the authored box instead of growing the window")
 
         let scene = try await build(skin, WMPSize(width: 596, height: 468), output.overrides)
-        XCTAssertEqual(scene.canvasSize, WMPSize(width: 691, height: 468),
+        XCTAssertEqual(scene.canvasSize, WMPSize(width: 596, height: 468),
                        "the refusal must not leave the clamped size in the overrides — 596 is the "
-                       + "authored width, plus the 95 this 300pt video box is short of the command "
-                       + "bar's 395 (WMPSceneBuilder.videoControlBarWidth)")
+                       + "authored width, and this literal 300pt box does not follow the view, so "
+                       + "the video bar is no reason to widen it")
     }
 
     /// The ceiling wins over a floor the view declares for itself. A `minWidth` larger than the
