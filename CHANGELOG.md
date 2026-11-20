@@ -151,6 +151,8 @@
   instead of only as often as the audio arrived (#772).
 - **The resize cursor no longer follows the mouse away from a window** after hovering its edge, in
   Classic, `.wal`, Windows Media Player, Audion and Sonique skins (#779).
+- **A `.wal` skin's script hears every frame of an animation it plays**, even when the app is busy;
+  a fast animation could skip a frame's event before (#791).
 - **Info and website buttons in Windows Media Player skins open their link**, after asking first,
   the way `.wal` skins already do — NASCAR's Info button, myPod's "Go visit iPod.com" and about 130
   more.

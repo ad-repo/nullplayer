@@ -428,17 +428,29 @@ extension WinampModernScriptRuntime {
         guard hasBinding(for: object, event: "onframe") || hasBinding(for: object, event: "onstop") else { return }
         let id = object.stableID
         var last = animationFrame(of: object)
+        var lastClock = WasabiAnimation.now()
         _ = try? timers.schedule(id: TimerNamespace.frameEvents.id(for: id), period: 1.0 / 60.0) { [weak self] in
             guard let self, let object = loadedSkin.runtime.graph.object(withID: id) else { return }
             // A markup-started layer has no clock until it is first drawn; read before that, it is
             // already at its last frame and would end its own intro unseen.
             guard WasabiAnimation.hasClock(object) else { return }
-            let state = WasabiAnimation.state(of: object, frameCount: animationFrameCount(of: object))
-            if state.frame != last {
-                last = state.frame
-                _ = try? dispatch(object: object, event: "onframe", arguments: [.integer(Int32(state.frame))])
+            // A late tick can pass several frames, so the play head is read once per frame period
+            // since the last tick and each frame raises its own `onFrame`. The catch-up is capped at
+            // one pass of the sheet: a range ends within it, and a loop does not replay every lap it
+            // missed during a stall.
+            let count = animationFrameCount(of: object)
+            let now = WasabiAnimation.now()
+            let period = WasabiAnimation.period(of: object)
+            let missed = stride(from: lastClock + period, to: now, by: period).prefix(count)
+            lastClock = now
+            for clock in Array(missed) + [now] {
+                let state = WasabiAnimation.state(of: object, frameCount: count, clock: clock)
+                if state.frame != last {
+                    last = state.frame
+                    _ = try? dispatch(object: object, event: "onframe", arguments: [.integer(Int32(state.frame))])
+                }
+                if !state.isPlaying { return stopFrameEvents(for: object) }
             }
-            if !state.isPlaying { stopFrameEvents(for: object) }
         }
     }
 

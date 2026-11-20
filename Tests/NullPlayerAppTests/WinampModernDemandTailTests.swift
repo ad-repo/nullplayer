@@ -245,7 +245,8 @@ final class WinampModernDemandTailTests: XCTestCase {
     }
 
     /// B194: a script-played AnimatedLayer raises `onFrame` for each frame its play head reaches and
-    /// `onStop` at the end of the range. mmd3's knobs, which declare `autoreplay="0"`, set the EQ from
+    /// `onStop` at the end of the range, even when a late timer tick finds it several frames on.
+    /// mmd3's knobs, which declare `autoreplay="0"`, set the EQ from
     /// `onFrame` alone.
     func testAPlayedAnimationRaisesFrameAndStopEvents() throws {
         let loaded = try makeWinampModernSkin(xml: """
@@ -265,6 +266,9 @@ final class WinampModernDemandTailTests: XCTestCase {
         _ = try call(runtime, program, knob, "setEndFrame", [.integer(2)])
         _ = try call(runtime, program, knob, "setSpeed", [.integer(10)])
         _ = try call(runtime, program, knob, "play")
+        // The first timer tick arrives after both frames have passed, as on a busy machine; each
+        // still raises its own `onFrame`.
+        Thread.sleep(forTimeInterval: 0.05)
         let deadline = Date().addingTimeInterval(2)
         while !events.contains("onstop"), Date() < deadline {
             RunLoop.main.run(until: Date().addingTimeInterval(0.01))
