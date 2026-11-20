@@ -56,7 +56,7 @@ extension MenuActions {
         let importer = SoniqueSkinImporter()
         do {
             try importer.folder.ensureExists()
-            NSWorkspace.shared.open(importer.directoryURL)
+            NSWorkspace.shared.open(importer.folder.url)
         } catch {
             NSAlert(error: error).runModal()
         }
