@@ -70,7 +70,7 @@ alternatives in the phase handoff.
 Never put WMP input work on the main thread. Archive validation/inflation, decoding, XML/graph/report
 construction, image work, expressions, and script evaluation run on a WMP-owned background
 executor — the script context has its own serial queue, so a skin that loops forever wedges that
-queue and nothing else. `WMPSceneBuilder.build` runs on its own 16 MB-stack thread, not the cooperative
+queue and nothing else. `WMPSceneBuilder.build` runs on its own 16 MB-stack thread (`WMPDeepStack`), not the cooperative
 pool: its recursive `walk` is ~110 KB a level in a debug build and overflowed the pool's 544 KB on
 `Compact` once a track played. Never use `DispatchQueue.main.sync`. Hand only completed immutable snapshots and typed host
 commands to `MainActor`, where the work is limited to AppKit presentation.

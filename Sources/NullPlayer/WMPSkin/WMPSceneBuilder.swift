@@ -37,7 +37,7 @@ struct WMPSceneBuilder: @unchecked Sendable {
                interactionState: WMPInteractionState = WMPInteractionState(),
                dirtyNodeIDs: Set<Int>? = nil,
                overrides: WMPSceneOverrides = .empty) async throws -> WMPScene {
-        try await Self.onDeepStack {
+        try await WMPDeepStack.run {
             let scene = try buildOffMain(viewID: viewID, requestedSize: requestedSize,
                                          interactionState: interactionState,
                                          dirtyNodeIDs: dirtyNodeIDs, overrides: overrides)
@@ -50,19 +50,6 @@ struct WMPSceneBuilder: @unchecked Sendable {
             // transaction finds the same shortfall at the new size, and the window widened on
             // every transaction without end. `WMPVideoSurface.barFits` drops the bar instead.
             return Self.videoBoxWidth(in: rebuilt) > Self.videoBoxWidth(in: scene) ? rebuilt : scene
-        }
-    }
-
-    /// **`walk` recurses once per nesting level, and a debug frame of it is ~110 KB.** The
-    /// cooperative pool's 544 KB stack overflowed five levels deep — `Compact` as soon as a track
-    /// played, in the app and in the render harness alike. Same QoS as the detached task it replaces.
-    private static func onDeepStack<T: Sendable>(
-        _ work: @escaping @Sendable () throws -> T) async throws -> T {
-        try await withCheckedThrowingContinuation { continuation in
-            let thread = Thread { continuation.resume(with: Result(catching: work)) }
-            thread.stackSize = 16 << 20
-            thread.qualityOfService = .userInitiated
-            thread.start()
         }
     }
 
