@@ -306,8 +306,8 @@ class ClassicLibraryBrowserView: NSView {
         return cachedWindowWinampModernStyle
     }
 
-    /// Called by the `.wal` holder that hosts this browser.
-    func applyWinampModernStyle(_ style: WinampModernSurfaceStyle) {
+    /// Called by the skin that hosts this browser (`EmbeddedLibraryBrowserSurface.applyStyle`).
+    func applyStyle(_ style: SkinnedSurfaceStyle) {
         guard embeddedWinampModernStyle != style else { return }
         embeddedWinampModernStyle = style
         refreshHistoryHostingColors()
@@ -415,7 +415,7 @@ class ClassicLibraryBrowserView: NSView {
         wantsLayer = true
 
         // A `.wal` colour-theme switch recolours this browser (Phase 16). The embedded case is told
-        // directly through `applyWinampModernStyle`; a fallback window has no such handle.
+        // directly through `applyStyle`; a fallback window has no such handle.
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(hostedSurfaceStyleDidChange),

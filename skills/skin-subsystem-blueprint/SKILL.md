@@ -60,7 +60,7 @@ family may quietly inherit Classic's or Original's behaviour.
 - **Never add a new boolean** of the form `isRunningXUI` used at more than one call site. Add the
   case to `PlayerUIControllerFamily` and switch on it.
 - **A capability whose absence is right for every other family is asked with `as?`, not a switch.**
-  `SkinDrawnEqualizer` (Sonique's drawer is its equaliser), and `WindowManager.frameLender` (a `.wmz`
+  `WindowManager.frameLender` (a `.wmz`
   lends NullPlayer's windows frame artwork; Sonique S22 deleted eight switches for it): a family that
   never hears of it lends nothing and is always settled, which is correct. With one family behind a
   capability, cast to its controller; a protocol whose requirement is that family's own type is
@@ -140,11 +140,26 @@ exist because `.wal` paid for them:
 **And ask what the skin provides before opening a window of your own.** This is the half `.wmz`
 missed on the first pass: 171 of its 180 corpus skins declare a playlist and 164 an equaliser, so an
 unconditional NullPlayer playlist put a second, foreign-looking one over nearly every skin in the
-corpus. `routeWinampModernSurface` and `routeWMPSkinSurface` are the same idea in both families —
-the skin's own surface takes the toggle first, and NullPlayer's window is the fallback for the skins
-that declare none. Answer all three shapes: declared in the view on screen (nothing to open, and the
-menu item should say so), declared in another view (open that view the way the skin's own button
-does), declared nowhere (your window).
+corpus. The playlist, the library, the equaliser and the video window go through one route for
+every family: `SkinSurfaceRouter` (`App/Skinning/SkinSurfaceRouter.swift`), asked by
+`WindowManager.routeSkinSurface`, `skinSurfaceVisibility` and `deferUntilSkinLoads` from each
+`show*`, `toggle*` and `is*Visible`, and by the View menu. The skin's own surface takes the toggle
+first, and NullPlayer's window is the fallback for the skins that declare none. A family joins by
+adding its case to `WindowManager.skinSurfaceRouter`'s switch on the family: `.wal`'s
+`WinampModernSurfaceCoordinator`, `.wmz`'s `WMPSkinSurfaceRouter`, Sonique's controller (its drawer
+is its equaliser). A family whose skin can change under an open fallback calls
+`dismissFallbackSurfacesTheSkinProvides()` on each presentation. Answer all three shapes: declared
+in the view on screen (nothing to open: `toggleClosesSurface` false makes the menu item checked and
+inert), declared in another view (open that view the way the skin's own button does), declared
+nowhere (your window). `.wal`'s video (`toggleVideo()`) and every family's visualization still
+take their own routes.
+
+**A skin that draws the library draws a frame around NullPlayer's browser, never a second browser.**
+Host `EmbeddedLibraryBrowserSurface` (`Windows/ClassicLibraryBrowser/`) in the skin's list area: it
+is the real `ClassicLibraryBrowserView` in its embedded mode, so servers, tabs, search and history
+work as in the classic window. Give it the skin's colours with `applyStyle`, its scale with
+`applyContentScale`, unmount it when the holder goes and tear it down once with the skin. `.wal`'s
+`WinampModernLibrarySurfaceView` subclasses it.
 
 ### The skin's *own* extra windows are a second, separate decision
 
@@ -186,7 +201,9 @@ canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recip
 - **Place once, on first show, and never again** — a window the user moved must never be yanked back
   — with `rescuedOrigin` as the never-`nil` fallback. The failure mode is an *invisible* window, not
   a wrong-looking one, so give the family a placement trace flag on day one
-  (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`).
+  (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`). Persist the origin the user left and which
+  windows were open, per skin, in `SkinWindowStore` (`App/Skinning/`) under your family's own
+  `SkinWindowStore.Keys`; `.wmz` keeps its there (`.wmp`).
 - **Join docking through your own gated branch of `managedWindowRecords`**, as a snap target and
   **not** a centre-stack member: a skin-authored canvas has no column to join.
 - **Per-window state has to actually be per window.** Whatever the controller holds that is really

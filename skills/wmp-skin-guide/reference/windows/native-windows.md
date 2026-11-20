@@ -195,8 +195,9 @@ wants NullPlayer content mapped into it; leave them to the skin.
 **171 of the 180 corpus skins declare a playlist and 164 an equaliser** (164 declare both), so for
 those two surfaces NullPlayer's window is the *fallback*, not the default — opening it
 unconditionally puts a second, differently-styled playlist over nearly every skin in the corpus.
-`WMPSkinSurfaces` reads what the skin declares and `WindowManager.routeWMPSkinSurface` takes the
-toggle first, exactly as `routeWinampModernSurface` does for `.wal`. Three shapes, and routing has to
+`WMPSkinSurfaces` reads what the skin declares and `WindowManager.routeSkinSurface` takes the
+toggle first through `WMPSkinSurfaceRouter`, the same route `.wal`'s coordinator answers; the
+video window takes it too. Three shapes, and routing has to
 answer all three — the corpus splits almost evenly between the first two (87 / 84):
 
 | The skin declares it… | What the toggle does |
