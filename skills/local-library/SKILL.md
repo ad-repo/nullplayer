@@ -254,6 +254,14 @@ see `Playlist.resolveEntry`.
 - `isSupportedAudioFile(_:)`, `isSupportedVideoFile(_:)`, `isSupportedPlaylistFile(_:)`, `hasSupportedDropContent(...)`
 - `discoverMediaURLsAsync(...)` — background discovery, sorted callback on main thread.
 - `discoverMedia(...)` / `discoverMediaStreaming(...)` — synchronous, used inside scan workers.
+
+`Utilities/PlaylistDrop.swift` — what a drop on a playing window stands for, shared by the classic
+and Modern main and playlist windows through one call on the main thread, `gather(_:deliver:) -> Bool`:
+false for a drop with nothing playable; true when it was taken, which does not promise tracks (an empty
+folder delivers none, an empty cue sheet nothing at all). It delivers the tracks it names (cue sheets
+and sibling cues expanded, each sheet once, read on the main thread), then the media found in its
+folders, searched off it. What a window does with the tracks (append and play, replace the queue)
+stays its own.
 - Deduplication by normalized path; one-pass `isRegularFile`, `fileSize`, `contentModificationDate` resource-key reads.
 - `includePlaylists: Bool = false` (on both `discoverMedia` and `discoverMediaStreaming`) — when true, `.m3u`/`.pls`/`.m3u8` files are collected into `LocalFileDiscoveryResult.playlistFiles`. Only the library scan (`importMedia`) passes `true`. Playlists are a **third** classification: the early `guard isAudio || isVideo || isPlaylist` includes them, but they do **not** flow through the audio batch flush (`onAudioBatch`) and are **not** in the `allURLs` computed property (callers treat `allURLs` as importable audio/video — a `.m3u` must never be imported as a track).
 

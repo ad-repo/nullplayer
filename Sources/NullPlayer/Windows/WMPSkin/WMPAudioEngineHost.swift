@@ -398,10 +398,8 @@ final class WMPAudioEngineHost: WMPHost {
         case let .setEQBand(index):
             guard (0..<10).contains(index), let gain = value?.finiteNumber else { return }
             var classic = snapshot.equalizer.gains.map(Float.init)
-            classic[index] = Float(max(-12, min(12, gain)))
-            let target = engine.eqConfiguration
-            let remapped = EQBandRemapper.remap(gains: classic, from: .classic10, to: target)
-            for (band, remappedGain) in remapped.enumerated() { engine.setEQBand(band, gain: remappedGain) }
+            classic[index] = Float(gain)
+            engine.setClassicEQ(bands: classic)
             engageEqualizer()
         case .setPreamp:
             guard let gain = value?.finiteNumber else { return }
@@ -412,12 +410,7 @@ final class WMPAudioEngineHost: WMPHost {
             // the ten band gains and the preamp it stands for — the same thing the object model
             // already does for a script writing `eq.currentPreset`.
             guard EQPreset.allPresets.indices.contains(index) else { return }
-            let preset = EQPreset.allPresets[index]
-            engine.setPreamp(Float(max(-12, min(12, preset.preamp))))
-            let clamped = preset.bands.map { Float(max(-12, min(12, $0))) }
-            let remapped = EQBandRemapper.remap(gains: clamped, from: .classic10,
-                                                to: engine.eqConfiguration)
-            for (band, gain) in remapped.enumerated() { engine.setEQBand(band, gain: gain) }
+            EQPreset.allPresets[index].apply(to: engine)
             engageEqualizer()
         // What the skin's `<EFFECTS>` rect draws. The selection is the WMP session's own — see
         // `SkinEffectSelection` for why cycling it does not write the app's visualization
