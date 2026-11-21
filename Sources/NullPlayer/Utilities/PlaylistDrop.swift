@@ -35,11 +35,12 @@ enum PlaylistDrop {
         return tracks
     }
 
-    /// Takes a drop: false when it holds nothing playable. Otherwise the tracks it names itself
-    /// (`namedTracks`), then the media found in its other items, folders searched off the main thread,
-    /// without the ones it named already. `deliver` runs on the main thread once, with no tracks when
-    /// the search found none; a drop of cue sheets alone is delivered at once, and not at all when they
-    /// name no tracks.
+    /// Takes a drop: false when it holds nothing playable. True means the drop was taken, not that it
+    /// yields tracks: the tracks it names itself (`namedTracks`), then the media found in its other
+    /// items, folders searched off the main thread, without the ones it named already. Call it on the
+    /// main thread, as a drop arrives: `deliver` runs there once, with no tracks when the search found
+    /// none; a drop of cue sheets alone is delivered at once, on the caller's thread, and not at all
+    /// when they name no tracks.
     static func gather(_ urls: [URL], deliver: @escaping ([Track]) -> Void) -> Bool {
         guard accepts(urls) else { return false }
         let named = namedTracks(urls)
