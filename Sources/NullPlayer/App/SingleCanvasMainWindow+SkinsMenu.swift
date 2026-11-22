@@ -67,8 +67,6 @@ extension SoniqueSkinMainWindowController {
     static func importer() -> SoniqueSkinImporter { SoniqueSkinImporter() }
 }
 
-extension SoniqueSkinImporter: SkinFileImporting {}
-
 extension AudionFaceImporter: SkinFileImporting {
     func removeSkin(named name: String) async throws { try await removeFace(named: name) }
 }

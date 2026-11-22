@@ -23,14 +23,13 @@ enum SkinFileCatalogueError: LocalizedError {
 
 /// A family whose skin is one file (Sonique's `.sgf`): its installed-skins folder, by name, and the
 /// selection preference. The family keeps its own loader check and naming of what it imports;
-/// `install` commits one file through `SkinInstallFolder`.
-protocol SkinFileCatalogue {
+/// `install` commits one file through `SkinInstallFolder`. Its `folder`, `selection` and
+/// `removeSkin(named:)` are what the Skins menu asks of it (`SkinFileImporting`).
+protocol SkinFileCatalogue: SkinFileImporting {
     /// The family as its messages name it ("Sonique").
     static var family: String { get }
     /// A skin file's extension, lowercased.
     static var fileExtension: String { get }
-    var folder: SkinInstallFolder { get }
-    var selection: SkinSelection { get }
 }
 
 extension SkinFileCatalogue {
