@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixes
+
+- **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
+  menu was missing, so ⌘C / ⌘V did nothing). ⌘A also selects every row in a Windows Media Player
+  skin's playlist.
+- **Library row icons no longer flicker** (#800) many times a second, at high CPU, when the Mac is short
+  of memory.
+
 ## 0.35.2
 
 ### Winamp Modern (`.wal`) skins

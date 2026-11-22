@@ -123,4 +123,20 @@ final class LibraryRowThumbnailsTests: XCTestCase {
         XCTAssertNil(cache.read("old"))
         XCTAssertNotNil(cache.read("new"))
     }
+
+    // MARK: - Recent thumbnails
+
+    func testRecentThumbnailsEvictTheLeastRecentlyUsedTenth() throws {
+        let art = try XCTUnwrap(image(width: 4, height: 4).cgImage(forProposedRect: nil, context: nil, hints: nil))
+        var cache = RecentThumbnails(limit: 20)
+        for i in 0..<20 { cache.insert(art, key: "k\(i)") }
+        XCTAssertNotNil(cache.use("k0"))   // drawn again, so it outlives k1 and k2
+        cache.insert(art, key: "k20")
+        XCTAssertEqual(cache.count, 19)
+        XCTAssertTrue(cache.contains("k0"))
+        XCTAssertFalse(cache.contains("k1"))
+        XCTAssertFalse(cache.contains("k2"))
+        XCTAssertTrue(cache.contains("k3"))
+        XCTAssertTrue(cache.contains("k20"))
+    }
 }

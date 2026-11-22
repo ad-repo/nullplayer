@@ -127,11 +127,8 @@ final class LibraryRowThumbnails {
         init(_ image: CGImage) { self.image = image }
     }
 
-    private let thumbnails: NSCache<NSString, ImageBox> = {
-        let cache = NSCache<NSString, ImageBox>()
-        cache.countLimit = 3000
-        return cache
-    }()
+    /// Row thumbnails, ~16 KB each.
+    private var thumbnails = RecentThumbnails()
     /// Previews are ~600 KB decoded each, so memory holds the recent ones and disk the rest.
     private let previews: NSCache<NSString, ImageBox> = {
         let cache = NSCache<NSString, ImageBox>()
@@ -153,7 +150,7 @@ final class LibraryRowThumbnails {
 
     /// The row thumbnail, or nil while it is wanted or loading, or when the row has no art.
     func thumbnail(for source: Source) -> CGImage? {
-        thumbnails.object(forKey: source.key as NSString)?.image
+        thumbnails.use(source.key)
     }
 
     /// The preview if memory holds it; `previewImage(for:)` also reads disk.
@@ -164,7 +161,7 @@ final class LibraryRowThumbnails {
     /// True once `source` has loaded: both renditions are stored together, so `previewImage(for:)`
     /// reads the preview back from memory or disk instead of starting a load past the queue.
     func hasLoaded(_ source: Source) -> Bool {
-        thumbnails.object(forKey: source.key as NSString) != nil
+        thumbnails.contains(source.key)
     }
 
     /// Replace the queue with `sources`, highest priority first: one list pass's rows on screen,
@@ -177,7 +174,7 @@ final class LibraryRowThumbnails {
 
     private func needsLoad(_ source: Source) -> Bool {
         let key = source.key
-        return thumbnails.object(forKey: key as NSString) == nil && inFlight[key] == nil
+        return !thumbnails.contains(key) && inFlight[key] == nil
             && !failed.contains(key) && !source.isOrphaned
     }
 
@@ -224,7 +221,7 @@ final class LibraryRowThumbnails {
             let renditions = await self.load(source)
             self.inFlight[key] = nil
             if let renditions {
-                self.thumbnails.setObject(ImageBox(renditions.thumbnail), forKey: key as NSString)
+                self.thumbnails.insert(renditions.thumbnail, key: key)
                 self.cachePreview(renditions.preview, key: key)
                 self.postDidLoad()
             } else if !source.isOrphaned {
