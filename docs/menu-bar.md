@@ -15,6 +15,11 @@ This document describes how NullPlayer's macOS top menu bar is wired to global p
 
 The app menu (`About nullPlayer`, `Quit nullPlayer`) remains separate and unchanged.
 
+A standard static **Edit** menu (Undo, Redo, Cut, Copy, Paste, Select All) follows the app menu.
+Text fields receive ⌘Z/⇧⌘Z/⌘X/⌘C/⌘V/⌘A only through these items; with no text field focused they
+validate as disabled and the keystroke falls through to the window's own `keyDown` (the main
+window's bare-letter transport keys are unaffected).
+
 ## Builder Ownership Rules
 
 Menu-bar content is built via dedicated `ContextMenuBuilder.buildMenuBar*` methods.
