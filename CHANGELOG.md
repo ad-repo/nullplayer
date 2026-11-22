@@ -7,6 +7,8 @@
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
   menu was missing, so ⌘C / ⌘V did nothing). ⌘A also selects every row in a Windows Media Player
   skin's playlist.
+- **Library row icons no longer flicker** (#800) many times a second, at high CPU, when the Mac is short
+  of memory.
 
 ## 0.35.2
 
@@ -203,8 +205,6 @@
 - **Streams play on the device picked in Output** (#788): Plex, Jellyfin, Emby, Subsonic and radio
   tracks played on the macOS default output whatever the Output menu said, and moved whenever the
   macOS default changed.
-- **Library row icons no longer flicker** (#800) many times a second, at high CPU, when the Mac is short
-  of memory.
 
 ## 0.35.1
 

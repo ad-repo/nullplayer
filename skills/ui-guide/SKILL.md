@@ -1277,8 +1277,8 @@ the circle shows the art large, in its own shape, beside the row. Shared code li
 - One load makes both `Renditions`: a 64 px square thumbnail and a preview of at most 400 px in the
   art's own aspect (never upscaled, flattened onto black). Memory holds 2000 thumbnails and 64 MB
   of previews; `RowThumbnailDiskCache` holds both on disk.
-- Thumbnails live in a plain dictionary, least-recently-drawn tenth evicted past 2000 — **not an
-  `NSCache`**. Under system memory pressure `NSCache` emptied between list passes; every pass then
+- Thumbnails live in `RecentThumbnails`, which drops the least recently drawn tenth when full — **not
+  an `NSCache`**. Under system memory pressure `NSCache` emptied between list passes; every pass then
   reloaded the rows on screen, whose arrival redrew the list, which found them evicted again — the
   row icons flickered many times a second at ~130 % CPU. Previews (~600 KB each) stay in `NSCache`:
   nothing redraws when one is evicted.
