@@ -1275,8 +1275,13 @@ the circle shows the art large, in its own shape, beside the row. Shared code li
 
 **`LibraryRowThumbnails`** (the shared cache):
 - One load makes both `Renditions`: a 64 px square thumbnail and a preview of at most 400 px in the
-  art's own aspect (never upscaled, flattened onto black). Memory holds 3000 thumbnails and 64 MB
+  art's own aspect (never upscaled, flattened onto black). Memory holds 2000 thumbnails and 64 MB
   of previews; `RowThumbnailDiskCache` holds both on disk.
+- Thumbnails live in `RecentThumbnails`, which drops the least recently drawn tenth when full — **not
+  an `NSCache`**. Under system memory pressure `NSCache` emptied between list passes; every pass then
+  reloaded the rows on screen, whose arrival redrew the list, which found them evicted again — the
+  row icons flickered many times a second at ~130 % CPU. Previews (~600 KB each) stay in `NSCache`:
+  nothing redraws when one is evicted.
 - Load order: at most 4 at once; rows on screen first, newest request first (a scroll's landing
   rows beat the ones it passed); `preload` queues two screens either side of the visible rows,
   nearest first (`preloadOrder`), behind them. The queue keeps the 300 newest. A key whose load
