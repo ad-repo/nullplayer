@@ -1004,10 +1004,6 @@ class ModernPlaylistView: NSView {
             if let index = selectedIndices.first {
                 engine.playTrack(at: index)
             }
-        case 0: // A + Cmd
-            if event.modifierFlags.contains(.command) {
-                selectAll(nil)
-            }
         case 126: // Up arrow
             guard !tracks.isEmpty else { return }
             navigateSelection(direction: -1, extend: hasShift)

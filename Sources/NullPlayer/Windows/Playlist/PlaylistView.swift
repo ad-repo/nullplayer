@@ -1445,11 +1445,6 @@ class PlaylistView: NSView {
                 engine.playTrack(at: index)
             }
 
-        case 0: // A - select all (with Cmd)
-            if event.modifierFlags.contains(.command) {
-                selectAll(nil)
-            }
-
         case 126: // Up arrow - move selection up
             guard !tracks.isEmpty else { return }
             navigateSelection(direction: -1, extend: hasShift)
