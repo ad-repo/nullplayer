@@ -3623,7 +3623,7 @@ class WindowManager {
         // Same shape as `isPlaylistVisible`: a skin that draws its own video box (a `.wmz` view) is
         // showing the picture whenever that view is on screen, and there is no window of ours to ask
         // about — the output is parked inside the skin's own window as a child (W102/W105).
-        if let router = skinSurfaceRouter, router.drawsSurface(.video) { return router.isShowingSurface(.video) }
+        if let shown = skinSurfaceVisibility(.video) { return shown }
         return videoPlayerWindowController?.isVideoOutputVisible == true
     }
     

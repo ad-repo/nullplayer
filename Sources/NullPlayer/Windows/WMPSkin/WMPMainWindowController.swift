@@ -2093,11 +2093,11 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         _ = finished.wait(timeout: .now() + timeout)
     }
 
-    /// Which auxiliary views are open, so the next launch can put them back. The player's view is
-    /// not one of them — that is `WMPSkinImporter.selectedViewIDKey`.
     /// Where this skin's view origins and open views are kept.
     private var windowStore: SkinWindowStore { SkinWindowStore(defaults: importer.defaults, keys: .wmp) }
 
+    /// Which auxiliary views are open, so the next launch can put them back. The player's view is
+    /// not one of them — that is `WMPSkinImporter.selectedViewIDKey`.
     private func persistOpenViews() {
         guard loadedSkin != nil else { return }
         let open = materializer.openPresentations.filter { !$0.isPlayer }.map(\.viewID)
