@@ -4,7 +4,7 @@ import Foundation
 enum AudioFileValidator {
     
     /// Supported audio extensions
-    static let supportedExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"]
+    static let supportedExtensions: Set<String> = ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "opus", "alac"]
 
     /// Supported video extensions
     static let supportedVideoExtensions: Set<String> = ["mp4", "mkv", "mov", "avi", "m4v", "wmv", "flv", "webm", "ts", "m2ts", "mts", "mpg", "mpeg"]

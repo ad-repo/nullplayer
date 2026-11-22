@@ -195,6 +195,24 @@
 - **Streams play on the device picked in Output** (#788): Plex, Jellyfin, Emby, Subsonic and radio
   tracks played on the macOS default output whatever the Output menu said, and moved whenever the
   macOS default changed.
+- **The Stream Ripper is now a window** (#799; Windows → Stream Ripper, or Output → Streaming → Rip
+  URL…) instead of a one-off dialog. Several rips run at once with progress, time left and Cancel;
+  video encodes take turns; the Windows menu shows how many are running; closing the window never
+  stops a rip, and reopening it picks them back up. **History** keeps every finished rip across
+  launches with Retry. A failed rip always shows an alert; the top-right notification rows are
+  now optional and off by default.
+- **Stream Ripper audio choices** (#799): **Original (Opus)** and **Original (AAC)** save YouTube's own
+  audio without a re-encode, beside FLAC and MP3. MP3 has a bitrate (320/256/192/128 kbps) and is
+  never encoded above the source's bitrate. Video offers Original, HEVC or H.264 at a resolution
+  cap, and an encode never exceeds the source's bitrate either.
+- **Stream Ripper: Edit tags when done and Add to Library** (#799). Tick them for an audio rip to edit
+  its tags in a window that saves them into the file, and to add it to the local library — split
+  into tracks first when the video has chapters.
+- **The Stream Ripper's progress bar no longer jumps to 95 %** (#799) the moment a download starts.
+- **Opus files can be added to the playlist and the library** (#799; `.opus` was refused).
+- **Splitting a cue album keeps its format** (#799): an Opus, MP3 or M4A album splits into Opus, MP3 or
+  M4A tracks without a re-encode, instead of always FLAC. An Opus album's cover is saved as the
+  folder's `cover.jpg`.
 
 ## 0.35.1
 

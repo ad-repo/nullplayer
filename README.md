@@ -47,7 +47,7 @@ No Winamp, Windows Media Player or Sonique skins or Audion faces are distributed
 - [EQ Cast](#quick-start-eq-cast) — casts to Sonos and Chromecast with the track's EQ profile applied, by rendering the track with its profile first
 - Gapless + Sweet Fades (configurable crossfade), volume normalization, play speed (0.25×–4×), and Reference Tuning (432/440 Hz/custom)
 - SRS inspired audio enhancements: WOW stereo widening and TruBass low-frequency enhancement plus a Headphones profile for TruBass
-- Stream Ripper — rip and import stream URLs to FLAC, MP3, or MP4 with metadata, cover art, and `.cue` sheets (requires `yt-dlp` + `ffmpeg`)
+- Stream Ripper — a window that rips stream URLs in the background to original Opus/AAC, FLAC, MP3, or MP4 video, with history, cover art, `.cue` sheets from chapters, tag editing, and one-click add to the library (requires `yt-dlp` + `ffmpeg`)
 - Intelligent radio mix generation for all sources
 - Track Radio for the local library — right-click a track and choose **Start Track Radio** to queue tracks like it, scored from its tags (artist, genre, year, tempo, key, grouping) with no audio analysis
 - Cast to Sonos (multi-room), Chromecast, DLNA, and AirPlay — local files, server streams, and radio

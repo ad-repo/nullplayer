@@ -231,6 +231,7 @@ class AppStateManager {
         var isNetworkMonitorVisible: Bool = false
         var isCavaVisible: Bool = false
         var isSonosVisible: Bool = false
+        var isRipVisible: Bool = false
         var isWaveformVisible: Bool = false
         var isEqualizerStudioVisible: Bool = false
 
@@ -272,6 +273,7 @@ class AppStateManager {
         var networkMonitorWindowFrame: String?
         var cavaWindowFrame: String?
         var sonosWindowFrame: String?
+        var ripWindowFrame: String?
         var waveformWindowFrame: String?
         var equalizerStudioWindowFrame: String?
         var isProjectMFullscreen: Bool = false
@@ -351,8 +353,8 @@ class AppStateManager {
         // MARK: - Custom Decoding for Backward Compatibility
         
         enum CodingKeys: String, CodingKey {
-            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isArtVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isWaveformVisible, isEqualizerStudioVisible
-            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, artWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, waveformWindowFrame, equalizerStudioWindowFrame, isProjectMFullscreen
+            case isPlaylistVisible, isEqualizerVisible, isPlexBrowserVisible, isProjectMVisible, isSpectrumVisible, isAudioAnalysisVisible, isPeppyMeterVisible, isArtVisible, isNetworkMonitorVisible, isCavaVisible, isSonosVisible, isRipVisible, isWaveformVisible, isEqualizerStudioVisible
+            case mainWindowFrame, playlistWindowFrame, equalizerWindowFrame, plexBrowserWindowFrame, projectMWindowFrame, spectrumWindowFrame, audioAnalysisWindowFrame, peppyMeterWindowFrame, artWindowFrame, networkMonitorWindowFrame, cavaWindowFrame, sonosWindowFrame, ripWindowFrame, waveformWindowFrame, equalizerStudioWindowFrame, isProjectMFullscreen
             case volume, balance, shuffleEnabled, repeatEnabled, gaplessPlaybackEnabled, volumeNormalizationEnabled
             case sweetFadeEnabled, sweetFadeDuration
             case eqEnabled, eqAutoEnabled, eqPreamp, eqBands, eqBandsByLayout
@@ -390,6 +392,7 @@ class AppStateManager {
             isNetworkMonitorVisible = try container.decodeIfPresent(Bool.self, forKey: .isNetworkMonitorVisible) ?? false
             isCavaVisible = try container.decodeIfPresent(Bool.self, forKey: .isCavaVisible) ?? false
             isSonosVisible = try container.decodeIfPresent(Bool.self, forKey: .isSonosVisible) ?? false
+            isRipVisible = try container.decodeIfPresent(Bool.self, forKey: .isRipVisible) ?? false
             isWaveformVisible = try container.decodeIfPresent(Bool.self, forKey: .isWaveformVisible) ?? false
             isEqualizerStudioVisible = try container.decodeIfPresent(Bool.self, forKey: .isEqualizerStudioVisible) ?? false
             
@@ -411,6 +414,7 @@ class AppStateManager {
             networkMonitorWindowFrame = try container.decodeIfPresent(String.self, forKey: .networkMonitorWindowFrame)
             cavaWindowFrame = try container.decodeIfPresent(String.self, forKey: .cavaWindowFrame)
             sonosWindowFrame = try container.decodeIfPresent(String.self, forKey: .sonosWindowFrame)
+            ripWindowFrame = try container.decodeIfPresent(String.self, forKey: .ripWindowFrame)
             waveformWindowFrame = try container.decodeIfPresent(String.self, forKey: .waveformWindowFrame)
             equalizerStudioWindowFrame = try container.decodeIfPresent(String.self, forKey: .equalizerStudioWindowFrame)
             isProjectMFullscreen = try container.decodeIfPresent(Bool.self, forKey: .isProjectMFullscreen) ?? false

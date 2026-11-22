@@ -48,95 +48,28 @@ final class StagingLease: @unchecked Sendable {
 /// `yt-dlp` rather than bundling helper binaries. If the tool is missing the
 /// user is told how to install it.
 @MainActor
-final class StreamRipper {
-    static let shared = StreamRipper()
-    private init() {}
+enum StreamRipper {
 
-    /// Audio output formats. Both require a transcode from YouTube's native
-    /// (lossy) source: FLAC losslessly wraps the decoded audio; MP3 re-encodes.
-    enum AudioFormat: String, Sendable {
-        case flac
-        case mp3
-
-        var displayName: String {
-            switch self {
-            case .flac: return "FLAC"
-            case .mp3: return "MP3"
-            }
-        }
-    }
-
-    enum VideoProfile: Sendable, Equatable {
-        case p720
-        case p1080
-        case p1080High
-        case p1440
-        case p4k
-        case full
-
-        var maxHeight: Int? {
-            switch self {
-            case .p720: return 720
-            case .p1080, .p1080High: return 1080
-            case .p1440: return 1440
-            case .p4k: return 2160
-            case .full: return nil
-            }
-        }
-
-        var videoBitrate: String {
-            switch self {
-            case .p720: return "2500k"
-            case .p1080: return "4M"
-            case .p1080High: return "8M"
-            case .p1440: return "16M"
-            case .p4k: return "35M"
-            case .full: return "50M"
-            }
-        }
-
-        var maxVideoBitrate: String {
-            switch self {
-            case .p720: return "3M"
-            case .p1080: return "5M"
-            case .p1080High: return "10M"
-            case .p1440: return "20M"
-            case .p4k: return "45M"
-            case .full: return "65M"
-            }
-        }
-
-        var videoBufferSize: String {
-            switch self {
-            case .p720: return "5M"
-            case .p1080: return "8M"
-            case .p1080High: return "16M"
-            case .p1440: return "32M"
-            case .p4k: return "70M"
-            case .full: return "100M"
-            }
-        }
-
-        var audioBitrate: String {
-            switch self {
-            case .p720: return "128k"
-            case .p1080: return "160k"
-            case .p1080High, .p1440, .p4k: return "192k"
-            case .full: return "256k"
-            }
-        }
-    }
-
-    enum Mode: Sendable {
-        case audio(AudioFormat)
+    enum Mode: Codable, Sendable, Equatable, CustomStringConvertible {
+        /// `kbps` is the requested rate of a lossy encode (`RipAudioFormat.takesBitrate`), else nil.
+        case audio(RipAudioFormat, kbps: Int? = nil)
         /// Video transcodes to a playback-safe MP4 profile after download.
         case video(VideoProfile)
+
+        var description: String {
+            switch self {
+            case .audio(let format, let kbps): "audio \(format.rawValue)" + (kbps.map { " \($0)k" } ?? "")
+            case .video(let profile): profile.description
+            }
+        }
+
+        var isVideo: Bool { if case .video = self { true } else { false } }
 
         /// Requested file extension (logging / diagnostics only — the real
         /// extension is decided by yt-dlp and read back after the rip).
         var fileExtension: String {
             switch self {
-            case .audio(let format): return format.rawValue
+            case .audio(let format, _): return format.rawValue
             case .video: return "mp4"
             }
         }
@@ -181,10 +114,48 @@ final class StreamRipper {
         formatArgs: [String],
         outputTemplate: String
     ) async throws -> URL {
+        try await trackedDownload(of: sourceURL, summary: "youtube audio") { handle in
+            try performDownloadAudio(from: sourceURL, formatSelector: formatSelector, formatArgs: formatArgs,
+                                           outputTemplate: outputTemplate, handle: handle)
+        }
+    }
+
+    /// Runs a YouTube download as a job in `RipJobCenter`, so the Rip window lists it with its
+    /// progress and can cancel it. A cancel is thrown as `CancellationError`.
+    nonisolated private static func trackedDownload(
+        of sourceURL: URL, summary: String, _ body: (RipJobHandle) async throws -> URL
+    ) async throws -> URL {
+        let handle = await RipJobCenter.shared.beginExternal(source: .youtube, url: sourceURL, summary: summary)
+        do {
+            let fileURL = try await body(handle)
+            let size = StreamRipper.fileSize(fileURL.path)
+            await RipJobCenter.shared.finish(handle, outputPath: fileURL.path, sizeBytes: size, error: nil)
+            return fileURL
+        } catch {
+            await RipJobCenter.shared.finish(handle, outputPath: nil, sizeBytes: nil, error: error.localizedDescription)
+            throw handle.isCancelled ? CancellationError() : error
+        }
+    }
+
+    nonisolated private static func performDownloadAudio(
+        from sourceURL: URL,
+        formatSelector: String,
+        formatArgs: [String],
+        outputTemplate: String,
+        handle: RipJobHandle
+    ) throws -> URL {
+        let args = ["-f", formatSelector, "-x"] + formatArgs + ["--no-playlist", "--embed-metadata"]
+        return try performDownload(sourceURL, args: args, outputTemplate: outputTemplate, isVideo: false, handle: handle)
+    }
+
+    /// A YouTube download: yt-dlp into local staging, then a move to the template's folder. A
+    /// cancel keeps nothing; any other failure recovers the staging contents to ~/Downloads.
+    nonisolated private static func performDownload(
+        _ sourceURL: URL, args: [String], outputTemplate: String, isVideo: Bool, handle: RipJobHandle
+    ) throws -> URL {
         guard let ytdlp = Self.resolveTool("yt-dlp") else {
             throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
         }
-
         guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
             throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
         }
@@ -198,65 +169,26 @@ final class StreamRipper {
             }
         }
 
-        let pathFile = NSTemporaryDirectory() + "nullplayer-yt-audio-\(UUID().uuidString).txt"
-        defer { try? FileManager.default.removeItem(atPath: pathFile) }
-        let errorFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nullplayer-yt-audio-error-\(UUID().uuidString)")
-        FileManager.default.createFile(atPath: errorFile.path, contents: nil)
-        guard let errorHandle = try? FileHandle(forWritingTo: errorFile) else {
-            throw DownloadAudioError.processStartFailed("Could not create temporary error output")
-        }
-        defer {
-            try? errorHandle.close()
-            try? FileManager.default.removeItem(at: errorFile)
-        }
-
-        var args = ["-f", formatSelector, "-x"]
-        args += formatArgs
-        args += [
-            "--no-playlist",
-            "--embed-metadata",
-            "--print-to-file", "after_move:filepath", pathFile,
-            "-o", staging.stagingTemplate,
-            sourceURL.absoluteString
-        ]
-
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: ytdlp)
-        task.arguments = args
-        task.environment = env
-        task.standardError = errorHandle
-        task.standardOutput = FileHandle.nullDevice
-
+        let run: YtDlpRun
         do {
-            try task.run()
+            run = try runYtDlp(ytdlp, args + ["-o", staging.stagingTemplate, sourceURL.absoluteString],
+                               isVideo: isVideo, handle: handle)
+        } catch is CancellationError {
+            run = YtDlpRun(status: -1, stderr: "", outputPath: nil)
         } catch {
             throw DownloadAudioError.processStartFailed(error.localizedDescription)
         }
-
-        task.waitUntilExit()
-        try? errorHandle.close()
-        let status = task.terminationStatus
-
-        let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let outputPath = (reported?.isEmpty == false) ? reported : nil
-
-        if status != 0 || outputPath == nil {
-            let stderr = (try? String(contentsOf: errorFile, encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallback = outputPath == nil
-                ? "yt-dlp did not report output path"
-                : "yt-dlp exited with code \(status)"
-            let errMsg = stderr.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
-            throw DownloadAudioError.downloadFailed(errMsg)
+        if handle.isCancelled {
+            // A cancel keeps nothing, so nothing is recovered to ~/Downloads.
+            try? FileManager.default.removeItem(at: staging.stagingDir)
+            stagingHandled = true
+            throw CancellationError()
         }
-
-        guard let finalPath = outputPath else {
-            throw DownloadAudioError.downloadFailed("Output path is empty")
+        guard run.status == 0, let finalPath = run.outputPath else {
+            let fallback = run.outputPath == nil
+                ? "yt-dlp did not report output path"
+                : "yt-dlp exited with code \(run.status)"
+            throw DownloadAudioError.downloadFailed(run.stderr.isEmpty ? fallback : run.stderr)
         }
 
         do {
@@ -275,6 +207,52 @@ final class StreamRipper {
                 + recovery.message
             )
         }
+    }
+
+    /// What one yt-dlp run left behind.
+    struct YtDlpRun {
+        let status: Int32
+        let stderr: String
+        /// The path yt-dlp moved the finished file to, or nil when it reported none.
+        let outputPath: String?
+    }
+
+    /// One yt-dlp run as `handle`'s process: progress lines feed the job, stderr is collected,
+    /// and the final path is read back (its extension depends on the codec). Throws
+    /// `CancellationError` when the job was cancelled before it could start.
+    nonisolated private static func runYtDlp(
+        _ ytdlp: String, _ args: [String], isVideo: Bool, handle: RipJobHandle
+    ) throws -> YtDlpRun {
+        let pathFile = NSTemporaryDirectory() + "nullplayer-rip-path-\(UUID().uuidString).txt"
+        defer { try? FileManager.default.removeItem(atPath: pathFile) }
+        // Ensure yt-dlp can find ffmpeg even when launched without a login PATH.
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: ytdlp)
+        task.arguments = ["--print-to-file", "after_move:filepath", pathFile] + YtDlpProgressReader.args + args
+        task.environment = env
+        let errPipe = Pipe()
+        task.standardError = errPipe
+        // stdout carries the progress lines. It must be read as it arrives: an unread Pipe()
+        // fills its ~64KB OS buffer mid-download and blocks the process forever.
+        let progressPipe = Pipe()
+        task.standardOutput = progressPipe
+        let progress = YtDlpProgressReader(handle: handle, isVideo: isVideo)
+        progressPipe.fileHandleForReading.readabilityHandler = { progress.consume($0.availableData) }
+        defer { progressPipe.fileHandleForReading.readabilityHandler = nil }
+
+        try handle.launch(task)
+        log(handle.id, "yt-dlp started pid=\(task.processIdentifier)")
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        task.waitUntilExit()
+        handle.processExited()
+        let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return YtDlpRun(status: task.terminationStatus,
+                        stderr: String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines),
+                        outputPath: reported?.isEmpty == false ? reported : nil)
     }
 
     /// The tallest H.264 stream YouTube serves; anything taller is VP9 or AV1 only.
@@ -300,107 +278,24 @@ final class StreamRipper {
         outputTemplate: String,
         extraArgs: [String] = []
     ) async throws -> URL {
-        guard let ytdlp = Self.resolveTool("yt-dlp") else {
-            throw DownloadAudioError.toolNotFound("yt-dlp is not installed. Install via Homebrew: brew install yt-dlp")
+        try await trackedDownload(of: sourceURL, summary: "youtube video") { handle in
+            try performDownloadVideo(from: sourceURL, maxHeight: maxHeight, outputTemplate: outputTemplate,
+                                           extraArgs: extraArgs, handle: handle)
         }
+    }
 
-        guard let staging = Self.makeLocalStaging(for: outputTemplate) else {
-            throw DownloadAudioError.processStartFailed("Could not create a temporary download folder")
-        }
-        // Declared first so it runs last: the lease outlives every cleanup and
-        // recovery path, releasing only once the staging dir is gone/emptied.
-        defer { staging.lease?.release() }
-        var stagingHandled = false
-        defer {
-            if !stagingHandled {
-                _ = Self.recoverStagingContents(from: staging.stagingDir)
-            }
-        }
-
-        let pathFile = NSTemporaryDirectory() + "nullplayer-yt-video-\(UUID().uuidString).txt"
-        defer { try? FileManager.default.removeItem(atPath: pathFile) }
-        let errorFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent("nullplayer-yt-video-error-\(UUID().uuidString)")
-        FileManager.default.createFile(atPath: errorFile.path, contents: nil)
-        guard let errorHandle = try? FileHandle(forWritingTo: errorFile) else {
-            throw DownloadAudioError.processStartFailed("Could not create temporary error output")
-        }
-        defer {
-            try? errorHandle.close()
-            try? FileManager.default.removeItem(at: errorFile)
-        }
-
+    nonisolated private static func performDownloadVideo(
+        from sourceURL: URL,
+        maxHeight: Int?,
+        outputTemplate: String,
+        extraArgs: [String],
+        handle: RipJobHandle
+    ) throws -> URL {
         let codecFilter = (maxHeight ?? .max) <= Self.youTubeH264MaxHeight ? "[vcodec^=avc1]" : ""
         let filter = codecFilter + (maxHeight.map { "[height<=\($0)]" } ?? "")
-        let formatString = "bv*\(filter)+ba[acodec^=mp4a]/b\(filter)"
-        var args = ["-f", formatString]
-        args += [
-            "-S", "res,fps,vcodec:h264",
-            "--merge-output-format", "mp4",
-            "--no-playlist",
-            "--embed-metadata",
-        ]
-        args += extraArgs
-        args += [
-            "--print-to-file", "after_move:filepath", pathFile,
-            "-o", staging.stagingTemplate,
-            sourceURL.absoluteString
-        ]
-
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
-
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: ytdlp)
-        task.arguments = args
-        task.environment = env
-        task.standardError = errorHandle
-        task.standardOutput = FileHandle.nullDevice
-
-        do {
-            try task.run()
-        } catch {
-            throw DownloadAudioError.processStartFailed(error.localizedDescription)
-        }
-
-        task.waitUntilExit()
-        try? errorHandle.close()
-        let status = task.terminationStatus
-
-        let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let outputPath = (reported?.isEmpty == false) ? reported : nil
-
-        if status != 0 || outputPath == nil {
-            let stderr = (try? String(contentsOf: errorFile, encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallback = outputPath == nil
-                ? "yt-dlp did not report output path"
-                : "yt-dlp exited with code \(status)"
-            let errMsg = stderr.flatMap { $0.isEmpty ? nil : $0 } ?? fallback
-            throw DownloadAudioError.downloadFailed(errMsg)
-        }
-
-        guard let finalPath = outputPath else {
-            throw DownloadAudioError.downloadFailed("Output path is empty")
-        }
-
-        do {
-            let destinationURL = try Self.moveDownloaded(
-                stagedPath: finalPath,
-                toDir: staging.destinationDir
-            )
-            try? FileManager.default.removeItem(at: staging.stagingDir)
-            stagingHandled = true
-            return destinationURL
-        } catch {
-            let recovery = Self.recoverStagingContents(from: staging.stagingDir)
-            stagingHandled = true
-            throw DownloadAudioError.downloadFailed(
-                "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)\n\n"
-                + recovery.message
-            )
-        }
+        let args = ["-f", "bv*\(filter)+ba[acodec^=mp4a]/b\(filter)", "-S", "res,fps,vcodec:h264",
+                    "--merge-output-format", "mp4", "--no-playlist", "--embed-metadata"] + extraArgs
+        return try performDownload(sourceURL, args: args, outputTemplate: outputTemplate, isVideo: true, handle: handle)
     }
 
     // MARK: - Local staging for the download helpers
@@ -655,321 +550,174 @@ final class StreamRipper {
         }
     }
 
-    // MARK: - Entry point
+    // MARK: - Rip job
 
-    /// Format choices offered in the rip dialog, in display order.
-    private static let formatChoices: [(title: String, mode: Mode)] = [
-        ("Audio — FLAC (lossless)", .audio(.flac)),
-        ("Audio — MP3", .audio(.mp3)),
-        ("Video — 1080p / 4 Mbps (recommended)", .video(.p1080)),
-        ("Video — 720p / 2.5 Mbps (smaller)", .video(.p720)),
-        ("Video — 1080p / 8 Mbps (high quality)", .video(.p1080High)),
-        ("Video — 1440p / 16 Mbps", .video(.p1440)),
-        ("Video — 4K / 35 Mbps (largest)", .video(.p4k)),
-        ("Video — Full / 50 Mbps (max)", .video(.full)),
-    ]
-
-    /// Prompt for a URL and output type, then a destination, then start the rip.
-    func promptAndRip() {
-        // Both tools are required: yt-dlp drives the download, ffmpeg handles
-        // extraction, video compatibility encoding, metadata, and thumbnails.
-        guard let ytdlp = Self.resolveYtDlp(), let ffmpeg = Self.resolveTool("ffmpeg") else {
-            presentMissingToolAlert()
-            return
-        }
-        guard let (sourceURL, mode) = promptForInput() else { return }
-        guard let folder = promptForDestinationFolder() else { return }
-        rip(mode: mode, sourceURL: sourceURL, folder: folder, ytdlp: ytdlp, ffmpeg: ffmpeg)
+    /// yt-dlp and ffmpeg, or nil when either is missing (`missingToolsMessage`).
+    nonisolated static func resolveRipTools() -> (ytdlp: String, ffmpeg: String)? {
+        guard let ytdlp = resolveYtDlp(), let ffmpeg = resolveTool("ffmpeg") else { return nil }
+        return (ytdlp, ffmpeg)
     }
 
-    // MARK: - URL entry window
+    nonisolated static let missingToolsMessage =
+        "Ripping requires yt-dlp and ffmpeg. Install them with: brew install yt-dlp ffmpeg"
 
-    private func promptForInput() -> (URL, Mode)? {
-        let alert = NSAlert()
-        alert.messageText = "Rip URL"
-        alert.informativeText = "Enter a URL and choose the output type."
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Continue")
-        alert.addButton(withTitle: "Cancel")
-
-        let width: CGFloat = 460
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: width, height: 96))
-
-        let urlLabel = NSTextField(labelWithString: "URL")
-        urlLabel.font = .systemFont(ofSize: 11)
-        urlLabel.textColor = .secondaryLabelColor
-        urlLabel.frame = NSRect(x: 0, y: 76, width: width, height: 16)
-        container.addSubview(urlLabel)
-
-        let textField = NSTextField(frame: NSRect(x: 0, y: 50, width: width, height: 24))
-        textField.placeholderString = "https://…"
-        textField.lineBreakMode = .byTruncatingHead
-        // Pre-fill from the clipboard when it holds a web URL.
-        if let clipboard = NSPasteboard.general.string(forType: .string) {
-            let trimmed = clipboard.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let parsed = URL(string: trimmed), parsed.scheme == "http" || parsed.scheme == "https" {
-                textField.stringValue = trimmed
+    /// Runs one rip on a background queue (download, convert, save), reporting through `handle`,
+    /// and ends its job with `RipJobCenter.finish`.
+    nonisolated static func run(_ handle: RipJobHandle, mode: Mode, sourceURL: URL, folder: String) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = performRip(handle, mode: mode, sourceURL: sourceURL, folder: folder)
+            let size = result.outputPath.flatMap(fileSize)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    RipJobCenter.shared.finish(handle, outputPath: result.outputPath, sizeBytes: size, error: result.error)
+                }
             }
         }
-        container.addSubview(textField)
-
-        let formatLabel = NSTextField(labelWithString: "Output")
-        formatLabel.font = .systemFont(ofSize: 11)
-        formatLabel.textColor = .secondaryLabelColor
-        formatLabel.frame = NSRect(x: 0, y: 28, width: width, height: 16)
-        container.addSubview(formatLabel)
-
-        let formatPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
-        formatPopup.addItems(withTitles: Self.formatChoices.map(\.title))
-        formatPopup.selectItem(at: 0)
-        container.addSubview(formatPopup)
-
-        alert.accessoryView = container
-        alert.window.initialFirstResponder = textField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-
-        let urlString = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !urlString.isEmpty,
-              let url = URL(string: urlString),
-              url.scheme == "http" || url.scheme == "https" else {
-            presentInvalidURLAlert()
-            return nil
-        }
-
-        let mode = Self.formatChoices[formatPopup.indexOfSelectedItem].mode
-        return (url, mode)
     }
 
-    // MARK: - Destination
-
-    /// Returns the chosen destination folder (the filename is derived from the
-    /// source's metadata title), or nil if cancelled.
-    private func promptForDestinationFolder() -> String? {
-        let panel = NSOpenPanel()
-        panel.title = "Choose Destination Folder"
-        panel.prompt = "Save Here"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        return url.path
+    /// The source's audio bitrate in kbit/s as yt-dlp reports it for `selector`, or nil.
+    private nonisolated static func sourceAudioKbps(ytdlp: String, selector: String, url: URL, handle: RipJobHandle) -> Int? {
+        guard let output = RipProcess.run(ytdlp, ["--quiet", "--no-warnings", "--no-playlist", "-f", selector,
+                                                  "--print", "abr", url.absoluteString], handle: handle)
+        else { return nil }
+        let text = String(decoding: output.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(text).map { Int($0.rounded()) }
     }
 
-    // MARK: - Rip
-
-    private func rip(mode: Mode, sourceURL: URL, folder: String, ytdlp: String, ffmpeg: String) {
-        // yt-dlp writes the final on-disk path here so we can reveal the real
-        // file (the extension depends on the native source codec/container).
-        let pathFile = NSTemporaryDirectory() + "nullplayer-rip-\(UUID().uuidString).txt"
+    private nonisolated static func performRip(
+        _ handle: RipJobHandle, mode: Mode, sourceURL: URL, folder: String
+    ) -> (outputPath: String?, error: String?) {
+        let ripID = handle.id
+        let fm = FileManager.default
+        guard let tools = resolveRipTools() else { return (nil, missingToolsMessage) }
 
         // Stage the whole rip on the local disk, then move the finished file(s)
         // to `folder` at the end. Downloading/transcoding straight onto a network
         // mount (NAS via SMB/AFP) fails: yt-dlp's `.part` rename + fsync and
         // ffmpeg's `+faststart` seek-back trigger "Bad file descriptor" and
         // similar errors that never happen on a local volume.
-        let stagingFolder = FileManager.default.temporaryDirectory
+        let stagingFolder = fm.temporaryDirectory
             .appendingPathComponent("nullplayer-rip-\(UUID().uuidString)", isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: stagingFolder, withIntermediateDirectories: true)
+            try fm.createDirectory(at: stagingFolder, withIntermediateDirectories: true)
         } catch {
-            presentFailure(message: "Could not create a temporary download folder: \(error.localizedDescription)")
-            return
+            return (nil, "Could not create a temporary download folder: \(error.localizedDescription)")
         }
-        // Lease the staging dir so the reaper cannot delete it mid-rip. Held for
-        // the whole background job and released once its work (including the
-        // destination move/recovery) is done — see the closure's defer below.
+        // Lease the staging dir so the reaper cannot delete it mid-rip. Declared first so it is
+        // released last, after every cleanup and recovery path below.
         let stagingLease = StagingLease(stagingFolder)
-        let stagingPath = stagingFolder.path
-
-        // Embed source metadata (title/artist/album/date, etc.) into the file.
-        var args: [String] = ["--no-playlist", "--embed-metadata"]
+        defer { stagingLease?.release() }
 
         // For audio rips, capture the source's chapter list so we can write a
         // .cue sheet when the video has timestamps (e.g. album/mix uploads).
         var chaptersFile: String?
+        defer { if let chaptersFile { try? fm.removeItem(atPath: chaptersFile) } }
+
+        let started = Date()
+        /// A failure: remaining staging files go to ~/Downloads, and the message says where.
+        func fail(_ message: String) -> (String?, String?) {
+            log(ripID, "failed after \(elapsed(since: started)): \(message.suffix(2000))")
+            return (nil, message + "\n\n" + recoverStagingContents(from: stagingFolder).message)
+        }
+        /// A cancel: nothing is kept, so nothing is recovered to ~/Downloads.
+        func cancelled() -> (String?, String?) {
+            try? fm.removeItem(at: stagingFolder)
+            return (nil, nil)
+        }
+
+        // Embed source metadata (title/artist/album/date, etc.) into the file.
+        var args: [String] = ["--no-playlist", "--embed-metadata"]
+        let outputTemplate: String
         switch mode {
-        case .audio(let format):
-            // Grab the best audio-only source, then transcode to the requested
-            // format. --audio-quality 0 = best (lossless for FLAC, top VBR for MP3).
+        case .audio(let format, let requested):
+            var kbps = requested ?? RipAudioFormat.defaultKbps
+            if format.takesBitrate {
+                let source = sourceAudioKbps(ytdlp: tools.ytdlp, selector: format.formatSelector, url: sourceURL, handle: handle)
+                if handle.isCancelled { return cancelled() }
+                if let source, source < kbps {
+                    log(ripID, "source audio is \(source)k, below the \(kbps)k requested; capping to \(source)k")
+                    kbps = source
+                } else if source == nil {
+                    log(ripID, "source audio bitrate unknown; encoding at \(kbps)k")
+                }
+            }
             // Embed the thumbnail as cover art (converted to jpg for compatibility).
-            args += ["-f", "bestaudio/best", "-x", "--audio-format", format.rawValue, "--audio-quality", "0",
-                     "--embed-thumbnail", "--convert-thumbnails", "jpg"]
+            args += format.ytdlpArgs(kbps: kbps) + ["--embed-thumbnail", "--convert-thumbnails", "jpg"]
             let cf = NSTemporaryDirectory() + "nullplayer-chapters-\(UUID().uuidString).json"
             chaptersFile = cf
             args += ["--print-to-file", "after_move:%(chapters)j", cf]
+            // Name the file from the source metadata: "Artist - Title" when an artist
+            // is available, otherwise just the title.
+            outputTemplate = "\(stagingFolder.path)/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"
         case .video(let profile):
             // Download the best source streams at the selected height cap, then
-            // normalize with ffmpeg to a predictable H.264/AAC MP4 profile.
-            let format: String
-            if let h = profile.maxHeight {
-                format = "bv*[height<=\(h)]+ba/b[height<=\(h)]/best[height<=\(h)]"
-            } else {
-                format = "bv*+ba/best"
-            }
-            args += ["-f", format, "-S", "res,fps,br", "--merge-output-format", "mkv"]
+            // normalize with ffmpeg to a predictable MP4 (or copy into one; see `copiesSource`).
+            args += ["-f", profile.ytdlpFormat, "-S", "res,fps,br", "--merge-output-format", "mkv"]
+            outputTemplate = "\(stagingFolder.path)/%(artist|)s%(artist& - |)s%(title)s [source].%(ext)s"
         }
-        // Name the file from the source metadata: "Artist - Title" when an artist
-        // is available, otherwise just the title.
-        let outputTemplate: String
-        switch mode {
-        case .video:
-            outputTemplate = "\(stagingPath)/%(artist|)s%(artist& - |)s%(title)s [source].%(ext)s"
-        case .audio:
-            outputTemplate = "\(stagingPath)/%(artist|)s%(artist& - |)s%(title)s.%(ext)s"
+        args += ["-o", outputTemplate, sourceURL.absoluteString]
+
+        let run: YtDlpRun
+        do {
+            run = try runYtDlp(tools.ytdlp, args, isVideo: mode.isVideo, handle: handle)
+        } catch is CancellationError {
+            return cancelled()
+        } catch {
+            return fail("yt-dlp could not start: \(error.localizedDescription)")
         }
-        args += [
-            "--print-to-file", "after_move:filepath", pathFile,
-            "-o", outputTemplate,
-            sourceURL.absoluteString,
-        ]
+        var outputPath = run.outputPath
+        log(ripID, "yt-dlp exited status=\(run.status) after \(elapsed(since: started))"
+            + " output=\(outputPath.map(fileSizeDescription) ?? "unreported")")
+        if handle.isCancelled { return cancelled() }
+        guard run.status == 0 else {
+            return fail(run.stderr.isEmpty ? "yt-dlp exited with code \(run.status)." : run.stderr)
+        }
 
-        // Ensure yt-dlp can find ffmpeg even when launched without a login PATH.
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = (Self.searchPaths + [env["PATH"] ?? ""]).joined(separator: ":")
-
-        // Log only the host + format — avoid leaking full URLs (query tokens)
-        // or local destination paths into the system log.
-        NSLog("StreamRipper: ripping from %@ (%@)", sourceURL.host ?? "?", mode.fileExtension)
-
-        // Show a spinner + message for the duration of the rip; each rip gets its own row.
-        let activityID = "rip-\(UUID().uuidString)"
-        ActivityCenter.shared.show(id: activityID, message: "Ripping… \(sourceURL.host ?? "downloading")")
-
-        let errPipe = Pipe()
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            // Declared first so it runs last: keep the lease until every cleanup
-            // and recovery path below has finished with the staging directory.
-            defer { stagingLease?.release() }
-            // Any failure recovers remaining staging files to ~/Downloads. This
-            // defer is a final guard for early-return paths.
-            var stagingHandled = false
-            defer {
-                if !stagingHandled {
-                    _ = Self.recoverStagingContents(from: stagingFolder)
-                }
+        if case .video(let profile) = mode, let sourcePath = outputPath {
+            switch transcodeVideoForPlayback(inputPath: sourcePath, profile: profile, ffmpeg: tools.ffmpeg, handle: handle) {
+            case .success(let compatiblePath):
+                outputPath = compatiblePath
+            case .failure(let error):
+                return handle.isCancelled ? cancelled() : fail(error.message)
             }
+        }
 
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: ytdlp)
-            task.arguments = args
-            task.environment = env
-            task.standardError = errPipe
-            // Discard stdout: yt-dlp streams progress here and we don't read it.
-            // An unread Pipe() fills its ~64KB OS buffer mid-download and blocks
-            // the process forever (stalls at the same spot every time).
-            task.standardOutput = FileHandle.nullDevice
-
+        // Move the finished file off the local staging disk onto the
+        // destination folder (which may be a NAS). A single sequential
+        // copy is well supported over SMB/AFP, unlike the streaming write
+        // the download itself performs.
+        handle.report(.phase(.moving))
+        if let staged = outputPath {
+            switch moveRippedFile(from: staged, toFolder: folder) {
+            case .success(let moved): outputPath = moved
+            case .failure(let error): return fail(error.message)
+            }
+        } else {
+            // yt-dlp succeeded but didn't report the exact path; move whatever landed in
+            // staging so the file still reaches the destination.
             do {
-                try task.run()
+                try moveAllContents(of: stagingFolder, toFolder: folder)
             } catch {
-                let recovery = Self.recoverStagingContents(from: stagingFolder)
-                stagingHandled = true
-                if let cf = chaptersFile {
-                    try? FileManager.default.removeItem(atPath: cf)
-                }
-                try? FileManager.default.removeItem(atPath: pathFile)
-                let message = error.localizedDescription + "\n\n" + recovery.message
-                DispatchQueue.main.async {
-                    ActivityCenter.shared.hide(id: activityID)
-                    self.presentFailure(message: message)
-                }
-                return
+                return fail("The completed download could not be moved to the destination: " + error.localizedDescription)
             }
+        }
 
-            let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-            task.waitUntilExit()
-            var status = task.terminationStatus
-            var errText = String(data: errData, encoding: .utf8) ?? ""
-
-            // The actual output path yt-dlp reported (nil if it couldn't be
-            // resolved — we must not pretend the destination folder is the file).
-            let reported = (try? String(contentsOfFile: pathFile, encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            try? FileManager.default.removeItem(atPath: pathFile)
-            var outputPath: String? = (reported?.isEmpty == false) ? reported : nil
-
-            if status == 0, case .video(let profile) = mode, let sourcePath = outputPath {
-                switch Self.transcodeVideoForPlayback(inputPath: sourcePath, profile: profile, ffmpeg: ffmpeg) {
-                case .success(let compatiblePath):
-                    outputPath = compatiblePath
-                case .failure(let error):
-                    status = 1
-                    errText = error.message
-                }
-            }
-
-            // Move the finished file off the local staging disk onto the
-            // destination folder (which may be a NAS). A single sequential
-            // copy is well supported over SMB/AFP, unlike the streaming write
-            // the download itself performs.
-            if status == 0 {
-                if let staged = outputPath {
-                    switch Self.moveRippedFile(from: staged, toFolder: folder) {
-                    case .success(let moved):
-                        outputPath = moved
-                    case .failure(let error):
-                        status = 1
-                        errText = error.message
-                    }
-                } else {
-                    // yt-dlp succeeded but didn't report the exact path; move
-                    // whatever landed in staging so the file still reaches the
-                    // destination (success dialog falls back to the folder).
-                    do {
-                        try Self.moveAllContents(of: stagingFolder, toFolder: folder)
-                    } catch {
-                        status = 1
-                        errText = "The completed download could not be moved to the destination: "
-                            + error.localizedDescription
-                    }
-                }
-            }
-
-            // Build the .cue locally, then transfer it through the same safe
-            // destination-volume commit used by the media file.
-            var cueTrackCount = 0
-            if status == 0, let path = outputPath, let cf = chaptersFile {
-                let chapters = Self.readChapters(from: cf)
-                if chapters.count >= 2 {
-                    do {
-                        try Self.writeCueFile(
-                            audioPath: path,
-                            chapters: chapters,
-                            stagingFolder: stagingFolder
-                        )
-                        cueTrackCount = chapters.count
-                    } catch {
-                        status = 1
-                        errText = "The media file was saved to \(path), but its .cue sheet could not be saved: "
-                            + error.localizedDescription
-                    }
-                }
-            }
-            if let cf = chaptersFile { try? FileManager.default.removeItem(atPath: cf) }
-
-            if status == 0 {
-                try? FileManager.default.removeItem(at: stagingFolder)
-                stagingHandled = true
-            } else {
-                let recovery = Self.recoverStagingContents(from: stagingFolder)
-                stagingHandled = true
-                errText += "\n\n" + recovery.message
-            }
-
-            DispatchQueue.main.async {
-                ActivityCenter.shared.hide(id: activityID)
-                if status == 0 {
-                    self.presentSuccess(outputPath: outputPath, folder: folder, mode: mode, cueTrackCount: cueTrackCount)
-                } else {
-                    self.presentFailure(message: errText.isEmpty ? "yt-dlp exited with code \(status)." : errText)
+        // Build the .cue locally, then transfer it through the same safe
+        // destination-volume commit used by the media file.
+        if let path = outputPath, let cf = chaptersFile {
+            let chapters = readChapters(from: cf)
+            if chapters.count >= 2 {
+                do {
+                    try writeCueFile(audioPath: path, chapters: chapters, stagingFolder: stagingFolder)
+                } catch {
+                    return fail("The media file was saved to \(path), but its .cue sheet could not be saved: "
+                        + error.localizedDescription)
                 }
             }
         }
+
+        try? fm.removeItem(at: stagingFolder)
+        return (outputPath, nil)
     }
 
     // MARK: - Staging → destination move
@@ -1138,8 +886,10 @@ final class StreamRipper {
     private nonisolated static func transcodeVideoForPlayback(
         inputPath: String,
         profile: VideoProfile,
-        ffmpeg: String
+        ffmpeg: String,
+        handle: RipJobHandle
     ) -> Result<String, TranscodeError> {
+        let ripID = handle.id
         let fm = FileManager.default
         let finalPath = compatibleVideoOutputPath(forIntermediatePath: inputPath)
         let finalURL = URL(fileURLWithPath: finalPath)
@@ -1154,7 +904,10 @@ final class StreamRipper {
             return .failure(TranscodeError(message: "Could not create a temporary video encode folder: \(error.localizedDescription)"))
         }
 
-        let args = [
+        let source = probeSource(at: inputPath, ffmpeg: ffmpeg)
+        let sourceDescription = "\(source.videoCodec ?? "?") \(source.height.map { "\($0)p" } ?? "?")"
+            + " \(source.audioCodec ?? "?") \(source.kbps.map { "\($0)k" } ?? "?")"
+        var args = [
             "-hide_banner",
             "-loglevel", "error",
             "-y",
@@ -1162,42 +915,85 @@ final class StreamRipper {
             "-map", "0:v:0",
             "-map", "0:a:0?",
             "-map_metadata", "0",
-            "-vf", videoScaleFilter(maxHeight: profile.maxHeight),
-            "-c:v", "libx264",
-            "-preset", "medium",
-            "-profile:v", "high",
-            "-pix_fmt", "yuv420p",
-            "-b:v", profile.videoBitrate,
-            "-maxrate", profile.maxVideoBitrate,
-            "-bufsize", profile.videoBufferSize,
-            "-c:a", "aac",
-            "-b:a", profile.audioBitrate,
+        ]
+        let copies = profile.copiesSource(codec: source.videoCodec, height: source.height)
+        if copies {
+            log(ripID, "source \(sourceDescription) plays on a 4K Chromecast; copying it without re-encoding")
+            // AVPlayer and Chromecasts want HEVC tagged `hvc1`; a copied `hev1` stream may not play.
+            args += ["-c:v", "copy"] + (source.videoCodec == "hevc" ? ["-tag:v", "hvc1"] : [])
+                + (source.audioCodec == "aac" ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", profile.audioBitrate])
+        } else {
+            if profile.format == .original {
+                log(ripID, "source \(sourceDescription) is not castable as-is; encoding HEVC instead")
+            }
+            let rates = profile.cappedRates(sourceKbps: source.kbps)
+            if rates.target < profile.videoKbps {
+                log(ripID, "source is \(source.kbps ?? 0)k, below \(profile)'s \(profile.videoKbps)k target;"
+                    + " capping to b:v=\(rates.target)k maxrate=\(rates.max)k bufsize=\(rates.buffer)k")
+            }
+            args += ["-vf", videoScaleFilter(maxHeight: profile.maxHeight)] + profile.videoCodecArgs + [
+                "-pix_fmt", "yuv420p",
+                "-b:v", "\(rates.target)k",
+                "-maxrate", "\(rates.max)k",
+                "-bufsize", "\(rates.buffer)k",
+                "-c:a", "aac",
+                "-b:a", profile.audioBitrate,
+            ]
+        }
+        args += [
             "-movflags", "+faststart",
+            // Machine-readable progress on stdout, read below; logged every 5 minutes.
+            "-progress", "pipe:1",
+            "-stats_period", "1",
             tempPath,
         ]
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: ffmpeg)
         task.arguments = args
-        task.standardOutput = FileHandle.nullDevice
+
+        let progressPipe = Pipe()
+        task.standardOutput = progressPipe
+        let progress = FFmpegProgressReader(handle: handle, duration: source.duration)
+        progressPipe.fileHandleForReading.readabilityHandler = { progress.consume($0.availableData) }
+        defer { progressPipe.fileHandleForReading.readabilityHandler = nil }
 
         let errPipe = Pipe()
         task.standardError = errPipe
 
+        // A real encode waits for the one hardware encoder; a copy is disk-bound and runs at once.
+        if !copies {
+            handle.report(.phase(.queuedForEncode))
+            guard RipEncodeQueue.acquire(for: handle) else {
+                try? fm.removeItem(at: stagingURL)
+                return .failure(TranscodeError(message: "cancelled"))
+            }
+        }
+        defer { if !copies { RipEncodeQueue.release() } }
+        handle.report(.phase(.converting))
+
+        let encodeStart = Date()
         do {
-            try task.run()
+            try handle.launch(task)
         } catch {
+            log(ripID, "ffmpeg failed to start: \(error.localizedDescription)")
             try? fm.removeItem(at: stagingURL)
             return .failure(TranscodeError(message: "ffmpeg could not start: \(error.localizedDescription)"))
         }
+        log(ripID, "ffmpeg started pid=\(task.processIdentifier) profile=\(profile)"
+            + " source=\(fileSizeDescription(inputPath)) \(sourceDescription)")
 
         let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
         task.waitUntilExit()
+        handle.processExited()
+        log(ripID, "ffmpeg exited status=\(task.terminationStatus) reason=\(task.terminationReason == .uncaughtSignal ? "signal" : "exit")"
+            + " after \(elapsed(since: encodeStart)) output=\(fileSizeDescription(tempPath))")
 
         guard task.terminationStatus == 0 else {
             try? fm.removeItem(at: stagingURL)
             let errText = String(data: errData, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            log(ripID, "ffmpeg stderr: \(errText?.suffix(2000) ?? "")")
             return .failure(TranscodeError(message: errText.map { !$0.isEmpty } == true
                 ? "ffmpeg failed while creating a playback-compatible MP4:\n\(errText ?? "")"
                 : "ffmpeg failed while creating a playback-compatible MP4."))
@@ -1219,6 +1015,38 @@ final class StreamRipper {
         }
     }
 
+    /// What the downloaded source holds. A field ffprobe cannot read is nil: an unknown bitrate
+    /// leaves the profile's rates uncapped, an unknown codec is never copied.
+    private struct SourceInfo {
+        var kbps: Int?
+        var videoCodec: String?
+        var height: Int?
+        var audioCodec: String?
+        var duration: Double?
+    }
+
+    /// Reads the source with the `ffprobe` beside `ffmpeg`.
+    private nonisolated static func probeSource(at path: String, ffmpeg: String) -> SourceInfo {
+        let ffprobe = URL(fileURLWithPath: ffmpeg).deletingLastPathComponent().appendingPathComponent("ffprobe").path
+        guard let output = RipProcess.run(ffprobe, ["-v", "error", "-show_entries",
+                                                    "format=bit_rate,duration:stream=codec_type,codec_name,height",
+                                                    "-of", "json", path]),
+              let json = (try? JSONSerialization.jsonObject(with: output.stdout)) as? [String: Any]
+        else { return SourceInfo() }
+        let streams = json["streams"] as? [[String: Any]] ?? []
+        let video = streams.first { $0["codec_type"] as? String == "video" }
+        let audio = streams.first { $0["codec_type"] as? String == "audio" }
+        let format = json["format"] as? [String: Any]
+        let bitRate = format?["bit_rate"] as? String
+        return SourceInfo(
+            kbps: bitRate.flatMap(Int.init).map { $0 / 1000 },
+            videoCodec: video?["codec_name"] as? String,
+            height: video?["height"] as? Int,
+            audioCodec: audio?["codec_name"] as? String,
+            duration: (format?["duration"] as? String).flatMap(Double.init)
+        )
+    }
+
     private nonisolated static func videoScaleFilter(maxHeight: Int?) -> String {
         if let maxHeight {
             return "scale=-2:trunc(min(\(maxHeight)\\,ih)/2)*2"
@@ -1226,80 +1054,52 @@ final class StreamRipper {
         return "scale=trunc(iw/2)*2:trunc(ih/2)*2"
     }
 
-    // MARK: - Alerts
+    // MARK: - Logging
 
-    private func presentMissingToolAlert() {
-        let alert = NSAlert()
-        alert.messageText = "yt-dlp Not Found"
-        alert.informativeText = "Ripping requires yt-dlp (and ffmpeg). Install them, e.g.:\n\nbrew install yt-dlp ffmpeg"
-        alert.alertStyle = .warning
-        alert.runModal()
+    /// One rip's log line, tagged with its short id so a rip's phases can be followed. URLs and
+    /// file paths are redacted: tool errors quote both, and they name what the user rips and
+    /// where it is kept. The job row still shows the full error.
+    nonisolated static func log(_ ripID: String, _ message: String) {
+        NSLog("StreamRipper[%@]: %@", ripID, redacted(message))
     }
 
-    private func presentInvalidURLAlert() {
-        let alert = NSAlert()
-        alert.messageText = "Invalid URL"
-        alert.informativeText = "Please enter a valid http(s) URL."
-        alert.alertStyle = .warning
-        alert.runModal()
+    nonisolated static func redacted(_ text: String) -> String {
+        text.replacingOccurrences(of: #"https?://\S+"#, with: "<url>", options: .regularExpression)
+            .replacingOccurrences(of: #"/(Users|Volumes|private|var|tmp)/[^\n:'"]*"#, with: "<path>",
+                                  options: .regularExpression)
     }
 
-    private func presentSuccess(outputPath: String?, folder: String, mode: Mode, cueTrackCount: Int) {
-        let alert = NSAlert()
-        alert.messageText = "Rip Complete"
-        alert.alertStyle = .informational
-
-        guard let outputPath else {
-            // yt-dlp succeeded but we couldn't resolve the exact file path, so we
-            // can't offer Play Now / reveal-the-file — point at the folder instead.
-            alert.informativeText = "Saved to \(folder)\n\nThe exact file couldn't be located automatically."
-            alert.addButton(withTitle: "Reveal in Finder")
-            alert.addButton(withTitle: "Done")
-            if alert.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)])
-            }
-            return
-        }
-
-        var info = (outputPath as NSString).lastPathComponent
-        if cueTrackCount > 0 {
-            info += "\n\nWrote a \(cueTrackCount)-track .cue sheet from the chapter timestamps."
-        }
-        alert.informativeText = info
-        alert.addButton(withTitle: "Play Now")
-        alert.addButton(withTitle: "Reveal in Finder")
-        alert.addButton(withTitle: "Done")
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            playFile(at: outputPath, mode: mode)
-        case .alertSecondButtonReturn:
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: outputPath)])
-        default:
-            break
-        }
+    private nonisolated static func elapsed(since start: Date) -> String {
+        formatDuration(Date().timeIntervalSince(start))
     }
 
-    /// Play the ripped file: video opens in the video player window, audio loads
-    /// into the player (same path as opening a file from Finder).
-    private func playFile(at path: String, mode: Mode) {
+    nonisolated static func formatDuration(_ seconds: TimeInterval) -> String {
+        let s = Int(seconds)
+        return String(format: "%dh%02dm%02ds", s / 3600, s / 60 % 60, s % 60)
+    }
+
+    /// A file's size in bytes, or nil when it is missing.
+    nonisolated static func fileSize(_ path: String) -> Int64? {
+        (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int64
+    }
+
+    /// A file's size for the log; never its path, which can name the user's folders.
+    private nonisolated static func fileSizeDescription(_ path: String) -> String {
+        fileSize(path).map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? "missing"
+    }
+
+    // MARK: - Playing a rip
+
+    /// Play a ripped file: video opens in the video player window, audio loads into the player
+    /// (same path as opening a file from Finder).
+    static func play(path: String) {
         let url = URL(fileURLWithPath: path)
-        switch mode {
-        case .video:
-            let track = Track(url: url)
-            WindowManager.shared.showVideoPlayer(url: url, title: track.displayTitle)
-        case .audio:
+        if AudioFileValidator.isVideoFile(url: url) {
+            WindowManager.shared.showVideoPlayer(url: url, title: Track(url: url).displayTitle)
+        } else {
             let engine = WindowManager.shared.audioEngine
             engine.loadFiles([url])
             engine.play()
         }
-    }
-
-    private func presentFailure(message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Rip Failed"
-        // yt-dlp errors can be long; keep the tail which usually has the cause.
-        alert.informativeText = String(message.suffix(600))
-        alert.alertStyle = .warning
-        alert.runModal()
     }
 }

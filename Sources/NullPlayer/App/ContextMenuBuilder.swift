@@ -196,6 +196,9 @@ class ContextMenuBuilder {
                                                 action: #selector(MenuActions.toggleVideoPlayer),
                                                 enabled: wm.currentVideoPlayerController != nil))
         menu.addItem(buildWindowItem("Sonos Rooms", visible: wm.isSonosVisible, action: #selector(MenuActions.toggleSonos), enabled: supportsSkinnedAuxiliaryWindows))
+        let runningRips = MainActor.assumeIsolated { RipJobCenter.shared.runningCount }
+        menu.addItem(buildWindowItem(runningRips > 0 ? "Stream Ripper (\(runningRips) running)" : "Stream Ripper", visible: wm.isRipVisible,
+                                     action: #selector(MenuActions.toggleRip), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Flow", visible: wm.isNetworkMonitorVisible, action: #selector(MenuActions.toggleNetworkMonitor), enabled: supportsSkinnedAuxiliaryWindows))
         menu.addItem(buildWindowItem("Debug Console", visible: wm.isDebugWindowVisible, action: #selector(MenuActions.toggleDebugConsole)))
 
@@ -3265,6 +3268,7 @@ class MenuActions: NSObject {
 
     @objc func showSonos() { WindowManager.shared.showSonos() }
     @objc func toggleSonos() { WindowManager.shared.toggleSonos() }
+    @objc func toggleRip() { WindowManager.shared.toggleRip() }
 
     @objc func toggleEqualizerStudio() { WindowManager.shared.toggleEqualizerStudio() }
 
@@ -5413,7 +5417,7 @@ class MenuActions: NSObject {
     }
 
     @objc func ripURL() {
-        MainActor.assumeIsolated { StreamRipper.shared.promptAndRip() }
+        WindowManager.shared.showRip(focusURL: true)
     }
 
     @objc func castToSonosRoom(_ sender: NSMenuItem) {

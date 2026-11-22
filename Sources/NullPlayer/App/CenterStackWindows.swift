@@ -14,6 +14,7 @@ extension WindowManager {
         case networkMonitor
         case cava
         case sonos
+        case rip
         case waveform
 
         /// The whole column below the main window, top to bottom.
@@ -36,6 +37,7 @@ extension WindowManager {
         case networkMonitor
         case cava
         case sonos
+        case rip
         case waveform
 
         /// Every feature window but Spectrum and Waveform, which the UI Size reflow restacks by
@@ -55,6 +57,7 @@ extension WindowManager {
             case .networkMonitor: .networkMonitor
             case .cava: .cava
             case .sonos: .sonos
+            case .rip: .rip
             case .waveform: .waveform
             }
         }
@@ -69,6 +72,7 @@ extension WindowManager {
             case .networkMonitor: .flow
             case .cava: .cava
             case .sonos: .sonos
+            case .rip: .rip
             case .waveform: .waveform
             }
         }
@@ -87,6 +91,7 @@ extension WindowManager {
             case .networkMonitor: \.isNetworkMonitorVisible
             case .cava: \.isCavaVisible
             case .sonos: \.isSonosVisible
+            case .rip: \.isRipVisible
             case .waveform: \.isWaveformVisible
             }
         }
@@ -100,6 +105,7 @@ extension WindowManager {
             case .networkMonitor: \.networkMonitorWindowFrame
             case .cava: \.cavaWindowFrame
             case .sonos: \.sonosWindowFrame
+            case .rip: \.ripWindowFrame
             case .waveform: \.waveformWindowFrame
             }
         }

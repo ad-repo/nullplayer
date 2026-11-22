@@ -70,6 +70,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
 
 enum WinampModernHostedWindowID: String, CaseIterable {
     case sonos
+    case rip
     case spectrum
     case equalizer
     case cava
@@ -118,6 +119,10 @@ extension WinampModernHostedWindowID {
             return hosted("Sonos Rooms", size: CGSize(width: 275, height: 250),
                           minimum: CGSize(width: 250, height: 160), heightMultiplier: 2,
                           SonosWindowView(frame: NSRect(x: 0, y: 0, width: 275, height: 250)))
+        case .rip:
+            return hosted("Stream Ripper", size: CGSize(width: 300, height: 350),
+                          minimum: CGSize(width: 300, height: 300), heightMultiplier: 3,
+                          RipWindowView(frame: NSRect(x: 0, y: 0, width: 300, height: 350)))
         case .spectrum:
             return hosted("Spectrum Analyzer", size: spectrum.windowSize, minimum: spectrum.minSize,
                           SpectrumView(frame: NSRect(origin: .zero, size: spectrum.windowSize)))

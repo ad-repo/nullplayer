@@ -7,7 +7,7 @@ enum LocalAudioStaging {
     /// Filename prefix for staged NAS playback copies. Must stay specific to playback
     /// copies: `cleanupStaleCopies()` deletes every temp file with this
     /// prefix on launch, so a broad prefix (e.g. bare `nullplayer-`) would also wipe
-    /// other subsystems' temp files (StreamRipper's `nullplayer-yt-*` / `nullplayer-rip-*`,
+    /// other subsystems' temp files (StreamRipper's `nullplayer-rip-*` / `nullplayer-ytdl-*`,
     /// YouTubeManager's `nullplayer-ytdlp-*`). Keep it distinct from those.
     private static let temporaryPlaybackCopyPrefix = "nullplayer-playbackcopy-"
 

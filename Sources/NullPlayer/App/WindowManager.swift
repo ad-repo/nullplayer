@@ -714,6 +714,7 @@ class WindowManager {
     /// Cava spectrum analyzer window controller for the active UI mode, accessed via protocol.
     private var cavaWindowController: CavaWindowProviding?
     private var sonosWindowController: SonosWindowController?
+    var ripWindowController: RipWindowController?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -826,6 +827,7 @@ class WindowManager {
         case .networkMonitor: CenterStackFeatureWindow(controller: networkMonitorWindowController, show: showNetworkMonitor)
         case .cava: CenterStackFeatureWindow(controller: cavaWindowController, show: showCava)
         case .sonos: CenterStackFeatureWindow(controller: sonosWindowController, show: showSonos)
+        case .rip: CenterStackFeatureWindow(controller: ripWindowController, show: { self.showRip(at: $0) })
         case .waveform: CenterStackFeatureWindow(controller: waveformWindowController, show: showWaveform)
         }
     }
@@ -1409,7 +1411,9 @@ class WindowManager {
             (plexBrowserWindowController?.window, .plexBrowser),
             // Sonos Rooms is one controller for Classic, Original and `.wal` too; it joins the rule
             // only where a `.wmz` lends it a border.
-            (isRunningWMPUI ? sonosWindowController?.window : nil, .spectrumFamily)
+            (isRunningWMPUI ? sonosWindowController?.window : nil, .spectrumFamily),
+            // The Rip window is built the same way and joins the rule on the same terms.
+            (isRunningWMPUI ? ripWindowController?.window : nil, .spectrumFamily)
         ]
     }
 
@@ -1527,6 +1531,8 @@ class WindowManager {
             return ClassicLibraryBrowserWindowController.defaultSize
         case sonosWindowController?.window:
             return CGSize(width: width, height: 270 * scale)
+        case ripWindowController?.window:
+            return CGSize(width: width, height: 400 * scale)
         default:
             return nil
         }
@@ -1938,6 +1944,7 @@ class WindowManager {
         case .equalizer: return equalizerWindowController?.window
         case .cava: return cavaWindowController?.window
         case .sonos: return sonosWindowController?.window
+        case .rip: return ripWindowController?.window
         case .flow: return networkMonitorWindowController?.window
         case .peppyMeter: return peppyMeterWindowController?.window
         case .art: return artWindowController?.window
@@ -2073,6 +2080,7 @@ class WindowManager {
         case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .cava: showOnly ? showCava() : toggleCava()
         case .sonos: showOnly ? showSonos() : toggleSonos()
+        case .rip: showOnly ? showRip() : toggleRip()
         case .flow: showOnly ? showNetworkMonitor() : toggleNetworkMonitor()
         case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
         case .art: showOnly ? showArt() : toggleArt()
@@ -2447,7 +2455,7 @@ class WindowManager {
     /// and `.wal` these windows float free, so only the first open in a session is placed; every
     /// reopen after that is where the user left it. Registers the window, so call it once per show,
     /// before any branch — a launch restore counts as the first placement.
-    private func reopensWhereLeft(_ window: NSWindow) -> Bool {
+    func reopensWhereLeft(_ window: NSWindow) -> Bool {
         guard uiMode.controllerFamily.hostsForeignSkin else { return false }
         if placedFreeFloatingWindows.contains(window) { return true }
         placedFreeFloatingWindows.add(window)
@@ -2473,7 +2481,7 @@ class WindowManager {
         winampModernHostedController?.releaseClosedContainerSlots(under: frame, except: window)
     }
 
-    private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
+    func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
         if let kind = centerStackWindowKind(for: window) {
@@ -2571,7 +2579,7 @@ class WindowManager {
     /// After a center-stack window is hidden, slide up any visible sub-windows that
     /// were docked below it (directly or transitively). Only windows within
     /// `dockThreshold` of the closing window's bottom edge are moved.
-    private func slideUpWindowsBelow(closingFrame: NSRect) {
+    func slideUpWindowsBelow(closingFrame: NSRect) {
         let subWindows = managedWindowRecords.compactMap {
             $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
         }
@@ -3242,7 +3250,7 @@ class WindowManager {
         regularWindowSnapshot = nil
     }
 
-    private func markModeDependentWindow(_ window: NSWindow?) {
+    func markModeDependentWindow(_ window: NSWindow?) {
         window?.identifier = Self.modeDependentWindowIdentifier
     }
 
@@ -5513,7 +5521,7 @@ class WindowManager {
     }
     
     /// Apply always on top level to a single window (used when showing windows)
-    private func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
+    func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
         guard let window = window else { return }
         window.level = isAlwaysOnTop ? .floating : .normal
     }
@@ -5797,6 +5805,7 @@ class WindowManager {
         switch kind {
         case .peppyMeter: return 1.75
         case .sonos: return 2
+        case .rip: return 3
         default: return 1
         }
     }
@@ -5824,13 +5833,13 @@ class WindowManager {
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
         let target = centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindowController?.window))
-        guard kind == .playlist || kind == .waveform || kind == .sonos else { return target }
+        guard kind == .playlist || kind == .waveform || kind == .sonos || kind == .rip else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
         return max(target, adjusted)
     }
 
-    private func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
+    func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
         window.minSize = NSSize(width: modernMinimumWidth(for: kind),
                                 height: centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindow)))
@@ -5840,7 +5849,7 @@ class WindowManager {
             : NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    private func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
+    func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
         var frame = window.frame
         let topY = frame.maxY
@@ -5856,7 +5865,7 @@ class WindowManager {
         window.setFrame(frame, display: true)
     }
 
-    private func applyRestoredCenterStackFrame(_ frame: NSRect, to window: NSWindow, kind: CenterStackWindowKind) {
+    func applyRestoredCenterStackFrame(_ frame: NSRect, to window: NSWindow, kind: CenterStackWindowKind) {
         let normalizedFrame = normalizedCenterStackRestoredFrame(frame, kind: kind)
         withProgrammaticWindowFrameChange {
             window.setFrame(normalizedFrame, display: true)
@@ -5869,7 +5878,7 @@ class WindowManager {
             return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
         case .playlist:
             return ModernSkinElements.playlistMinSize.width
-        case .spectrum, .audioAnalysis, .peppyMeter, .art, .networkMonitor, .cava, .sonos:
+        case .spectrum, .audioAnalysis, .peppyMeter, .art, .networkMonitor, .cava, .sonos, .rip:
             return ModernSkinElements.spectrumMinSize.width
         case .waveform:
             return ModernSkinElements.waveformMinSize.width
@@ -5896,6 +5905,8 @@ class WindowManager {
         switch kind {
         case .sonos:
             normalized.size.height = max(targetHeight * 2, normalized.height)
+        case .rip:
+            normalized.size.height = max(targetHeight * 3, normalized.height)
         case .equalizer:
             normalized.size.height = targetHeight
         case .playlist, .spectrum, .waveform, .audioAnalysis, .art, .networkMonitor, .cava:
@@ -7228,7 +7239,7 @@ class WindowManager {
     }
 
     /// Post a windowLayoutDidChange notification, clearing per-cycle caches first.
-    private func postLayoutChangeNotification() {
+    func postLayoutChangeNotification() {
         adjacencyCache.removeAll(keepingCapacity: true)
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)
@@ -7557,6 +7568,9 @@ class WindowManager {
         cavaWindowController = nil
         sonosWindowController?.window?.close()
         sonosWindowController = nil
+        // Only the window goes: its jobs belong to `RipJobCenter` and keep running.
+        ripWindowController?.window?.close()
+        ripWindowController = nil
         waveformWindowController?.window?.close()
         waveformWindowController = nil
 
