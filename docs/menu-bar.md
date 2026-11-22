@@ -4,20 +4,28 @@ This document describes how NullPlayer's macOS top menu bar is wired to global p
 
 ## Top-Level Menus
 
-`AppDelegate.setupMainMenu()` registers:
+`AppDelegate.setupMainMenu()` registers, in order:
 
+- the app menu (`About nullPlayer`, `Check for Updates…`, `Quit nullPlayer`)
+- `Edit`
 - `Windows`
-- `UI`
+- `Skins`
 - `Playback`
 - `Visuals`
 - `Libraries`
 - `Output`
 
-The app menu (`About nullPlayer`, `Quit nullPlayer`) remains separate and unchanged.
+**Edit** is the standard static AppKit menu (Undo, Redo, Cut, Copy, Paste, Select All). Text
+fields receive ⌘Z/⇧⌘Z/⌘X/⌘C/⌘V/⌘A only through these items. A focused playlist (Classic, Original,
+and the `.wmz` list widget) answers Select All, so ⌘A reaches its `selectAll(_:)` through the menu,
+not its `keyDown`. With nothing focused that answers an item, the item validates as disabled and
+the keystroke falls through to the window's own `keyDown` (the main window's bare-letter transport
+keys are unaffected).
 
 ## Builder Ownership Rules
 
-Menu-bar content is built via dedicated `ContextMenuBuilder.buildMenuBar*` methods.
+The dynamic menus (`Windows` onward) are built via dedicated `ContextMenuBuilder.buildMenuBar*`
+methods. The app menu and Edit are static AppKit menus built inline in `setupMainMenu()`.
 
 Important constraints:
 
