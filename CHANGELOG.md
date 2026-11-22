@@ -195,6 +195,8 @@
 - **Streams play on the device picked in Output** (#788): Plex, Jellyfin, Emby, Subsonic and radio
   tracks played on the macOS default output whatever the Output menu said, and moved whenever the
   macOS default changed.
+- **Library row icons no longer flicker** (#800) many times a second, at high CPU, when the Mac is short
+  of memory.
 
 ## 0.35.1
 
