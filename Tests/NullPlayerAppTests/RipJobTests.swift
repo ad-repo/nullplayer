@@ -47,12 +47,15 @@ final class RipRequestTests: XCTestCase {
         XCTAssertTrue(profile(.max, .original).ytdlpFormat.hasPrefix("bv*[vcodec^=vp09]+ba[acodec^=mp4a]"))
     }
 
-    func testModeRoundTripsForHistoryRetry() throws {
-        for mode in [StreamRipper.Mode.audio(.flac), .audio(.mp3, kbps: 192), .video(profile(.p2160, .original))] {
-            XCTAssertEqual(try JSONDecoder().decode(StreamRipper.Mode.self, from: JSONEncoder().encode(mode)), mode)
+    func testRequestRoundTripsForHistoryRetry() throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/a"))
+        let modes: [StreamRipper.Mode] = [.audio(.flac), .audio(.originalOpus), .audio(.mp3(kbps: 192)),
+                                          .video(profile(.p2160, .original))]
+        let requests = modes.map { RipRequest(url: url, kind: .rip($0, folder: "/tmp")) }
+            + [RipRequest(url: url, kind: .youtube(summary: "youtube video"))]
+        for request in requests {
+            XCTAssertEqual(try JSONDecoder().decode(RipRequest.self, from: JSONEncoder().encode(request)), request)
         }
-        // History written before the bitrate choice existed.
-        XCTAssertEqual(try JSONDecoder().decode(StreamRipper.Mode.self, from: Data(#"{"audio":{"_0":"mp3"}}"#.utf8)), .audio(.mp3))
     }
 
     /// Tool errors quote the URL and file paths; the log keeps neither.
@@ -61,17 +64,12 @@ final class RipRequestTests: XCTestCase {
                        "ERROR: [youtube] <url> <path>: Invalid data")
     }
 
-    func testAudioFormatArguments() throws {
-        XCTAssertEqual(RipAudioFormat.originalOpus.ytdlpArgs(kbps: 256),
-                       ["-f", "bestaudio[acodec=opus]/bestaudio", "-x", "--audio-format", "opus"])
-        XCTAssertEqual(RipAudioFormat.originalAAC.ytdlpArgs(kbps: 256),
-                       ["-f", "bestaudio[ext=m4a]/bestaudio", "-x", "--audio-format", "m4a"])
-        XCTAssertEqual(RipAudioFormat(rawValue: "original"), .originalOpus, "a saved choice from before the split")
-        XCTAssertEqual(RipAudioFormat.mp3.ytdlpArgs(kbps: 106),
-                       ["-f", "bestaudio/best", "-x", "--audio-format", "mp3", "--audio-quality", "106K"])
-        XCTAssertEqual(StreamRipper.Mode.audio(.mp3, kbps: 192).description, "audio mp3 192k")
-        XCTAssertEqual(try JSONDecoder().decode(RipAudioFormat.self, from: Data(#""aac""#.utf8)), .originalAAC,
-                       "the retired re-encoded AAC choice")
+    func testAudioChoicesNameTheirDownloadFormat() {
+        XCTAssertEqual(RipAudioFormat.originalOpus.format(kbps: 256), .originalOpus)
+        XCTAssertEqual(RipAudioFormat.originalAAC.format(kbps: 256), .originalAAC)
+        XCTAssertEqual(RipAudioFormat.flac.format(kbps: 192), .flac, "only MP3 takes the bitrate")
+        XCTAssertEqual(RipAudioFormat.mp3.format(kbps: 192), .mp3(kbps: 192))
+        XCTAssertEqual(StreamRipper.Mode.audio(.mp3(kbps: 192)).description, "audio mp3-192")
         XCTAssertEqual(StreamRipper.Mode.audio(.flac).description, "audio flac")
     }
 }
@@ -88,7 +86,7 @@ private final class UpdateRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [RipJobUpdate] = []
     var updates: [RipJobUpdate] { lock.withLock { stored } }
-    func attach(to handle: RipJobHandle) { handle.onUpdate = { [weak self] in self?.record($0) } }
+    func handle(id: String) -> RipJobHandle { RipJobHandle(id: id) { [weak self] in self?.record($0) } }
     private func record(_ update: RipJobUpdate) { lock.withLock { stored.append(update) } }
     var fractions: [Double] {
         updates.compactMap { if case .progress(let fraction, _) = $0 { fraction } else { nil } }
@@ -100,9 +98,8 @@ private final class UpdateRecorder: @unchecked Sendable {
 
 final class RipProgressTests: XCTestCase {
     func testYtDlpProgressAcrossVideoAndAudioStreams() {
-        let handle = RipJobHandle(id: "test")
         let recorder = UpdateRecorder()
-        recorder.attach(to: handle)
+        let handle = recorder.handle(id: "test")
         let reader = YtDlpProgressReader(handle: handle, isVideo: true)
         // yt-dlp's HLS downloader opens each stream with a 100 % line before its first fragment.
         // A split chunk: the 100 % line only completes in the next read.
@@ -118,9 +115,8 @@ final class RipProgressTests: XCTestCase {
     }
 
     func testFFmpegProgressFractionAndRemaining() {
-        let handle = RipJobHandle(id: "test")
         let recorder = UpdateRecorder()
-        recorder.attach(to: handle)
+        let handle = recorder.handle(id: "test")
         let reader = FFmpegProgressReader(handle: handle, duration: 100)
         reader.consume(Data("out_time_us=25000000\nspeed=2.5x\nprogress=continue\n".utf8))
         XCTAssertEqual(recorder.fractions, [0.25])
@@ -155,7 +151,7 @@ final class RipHandleTests: XCTestCase {
         try handle.launch(task)
         var children: [pid_t] = []
         for _ in 0..<50 where children.isEmpty {
-            children = RipJobHandle.descendants(of: task.processIdentifier)
+            children = ProcessTable.snapshot().descendants(of: task.processIdentifier)
             if children.isEmpty { Thread.sleep(forTimeInterval: 0.05) }
         }
         let child = try XCTUnwrap(children.first, "the shell started its sleep")
@@ -169,7 +165,7 @@ final class RipHandleTests: XCTestCase {
         XCTAssertFalse(alive, "the child process was terminated with its parent")
     }
 
-    /// Waiters get the encoder in the order they asked, which `encodeQueuePosition` shows.
+    /// Waiters get the encoder in the order they asked, which `position(of:)` shows.
     func testEncodeQueueServesWaitersInArrivalOrder() {
         let first = RipJobHandle(id: "q1")
         XCTAssertTrue(RipEncodeQueue.acquire(for: first))
@@ -186,6 +182,9 @@ final class RipHandleTests: XCTestCase {
             }
             Thread.sleep(forTimeInterval: 0.1)  // q2 asks first
         }
+        XCTAssertEqual(RipEncodeQueue.position(of: "q2"), 1)
+        XCTAssertEqual(RipEncodeQueue.position(of: "q3"), 2)
+        XCTAssertNil(RipEncodeQueue.position(of: "q1"), "the job holding the encoder is not in line")
         RipEncodeQueue.release()
         wait(for: [done], timeout: 5)
         XCTAssertEqual(order.ids, ["q2", "q3"])
@@ -230,7 +229,7 @@ final class RipJobCenterTests: XCTestCase {
     func testJobsRunTogetherAndFinishIntoHistory() throws {
         let center = makeCenter()
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
-        let handles = (0..<3).map { _ in center.beginExternal(source: .youtube, url: url, summary: "youtube video") }
+        let handles = (0..<3).map { _ in center.beginExternal(url: url, summary: "youtube video") }
         XCTAssertEqual(center.runningCount, 3)
         handles[1].cancel()
         center.finish(handles[1], outputPath: nil, sizeBytes: nil, error: "terminated")
@@ -247,9 +246,11 @@ final class RipJobCenterTests: XCTestCase {
     func testDuplicateMatchesOnlyARunningJobWithTheSameChoices() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
         let mode = StreamRipper.Mode.video(.init(resolution: .p2160, format: .original))
-        let job = RipJob(source: .rip, url: url, mode: mode, summary: mode.description, folder: "/tmp")
+        let job = RipJob(handle: RipJobHandle(id: "dup"), request: RipRequest(url: url, kind: .rip(mode, folder: "/tmp")))
         XCTAssertTrue(job.duplicates(url: url, mode: mode))
         XCTAssertFalse(job.duplicates(url: url, mode: .video(.init(resolution: .p1080, format: .original))))
+        let download = RipJob(handle: RipJobHandle(id: "yt"), request: RipRequest(url: url, kind: .youtube(summary: "youtube video")))
+        XCTAssertFalse(download.duplicates(url: url, mode: mode), "a YouTube download is never a rip's duplicate")
         job.phase = .done
         XCTAssertFalse(job.duplicates(url: url, mode: mode))
     }
@@ -258,14 +259,14 @@ final class RipJobCenterTests: XCTestCase {
         let store = RipHistoryStore(fileURL: historyURL)
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
         for index in 0..<(RipHistoryStore.limit + 2) {
-            store.append(RipHistoryEntry(id: "\(index)", source: .rip, url: url, mode: .audio(.mp3), summary: "audio mp3",
-                                         folder: "/tmp", title: "t\(index)", outcome: .done, startedAt: Date(),
+            store.append(RipHistoryEntry(id: "\(index)", request: RipRequest(url: url, kind: .rip(.audio(.mp3(kbps: 256)), folder: "/tmp")),
+                                         title: "t\(index)", outcome: .done, startedAt: Date(),
                                          finishedAt: Date(), outputPath: nil, sizeBytes: nil, error: nil))
         }
         let reloaded = RipHistoryStore(fileURL: historyURL)
         XCTAssertEqual(reloaded.entries.count, RipHistoryStore.limit)
         XCTAssertEqual(reloaded.entries.first?.id, "\(RipHistoryStore.limit + 1)", "newest first")
-        XCTAssertEqual(reloaded.entries.first?.mode, .audio(.mp3))
+        XCTAssertEqual(reloaded.entries.first?.request.kind, .rip(.audio(.mp3(kbps: 256)), folder: "/tmp"))
         reloaded.remove(id: "\(RipHistoryStore.limit + 1)")
         XCTAssertEqual(RipHistoryStore(fileURL: historyURL).entries.count, RipHistoryStore.limit - 1)
         reloaded.clear()

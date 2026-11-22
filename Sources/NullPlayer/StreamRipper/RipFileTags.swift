@@ -15,9 +15,9 @@ enum RipFileTags {
     static func read(_ file: URL) -> [String: String] {
         guard let ffprobe = StreamRipper.resolveTool("ffprobe") else { return [:] }
         let names = keys.map(\.key).joined(separator: ",")
-        guard let output = RipProcess.run(ffprobe, ["-v", "error", "-select_streams", "a:0",
-                                                    "-show_entries", "stream_tags=\(names):format_tags=\(names)",
-                                                    "-of", "default=noprint_wrappers=1", file.path])
+        guard let output = try? RipProcess.run(ffprobe, ["-v", "error", "-select_streams", "a:0",
+                                                         "-show_entries", "stream_tags=\(names):format_tags=\(names)",
+                                                         "-of", "default=noprint_wrappers=1", file.path])
         else { return [:] }
         let out = String(decoding: output.stdout, as: UTF8.self)
         var tags: [String: String] = [:]
@@ -53,10 +53,9 @@ enum RipFileTags {
         for (key, _) in keys { args += [flag, "\(key)=\(tags[key] ?? "")"] }
         // `.m4a` picks the ipod muxer, which refuses a cover stream; mp4 writes it.
         if ["m4a", "mp4", "m4b"].contains(file.pathExtension.lowercased()) { args += ["-f", "mp4"] }
-        let result = RipProcess.run(ffmpeg, args + [temp.path])
-        guard let result, result.status == 0 else {
-            throw NSError(domain: "RipFileTags", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: result?.stderr ?? "ffmpeg could not start."])
+        let result = try RipProcess.run(ffmpeg, args + [temp.path])
+        guard result.status == 0 else {
+            throw NSError(domain: "RipFileTags", code: 2, userInfo: [NSLocalizedDescriptionKey: result.stderr])
         }
         _ = try FileManager.default.replaceItemAt(file, withItemAt: temp)
 
@@ -75,8 +74,8 @@ enum RipFileTags {
     private static func oggPictureTag(from file: URL, ffmpeg: String) -> String? {
         let jpeg = FileManager.default.temporaryDirectory.appendingPathComponent("nullplayer-cover-\(UUID().uuidString).jpg")
         defer { try? FileManager.default.removeItem(at: jpeg) }
-        guard RipProcess.run(ffmpeg, ["-nostdin", "-y", "-v", "error", "-i", file.path, "-map", "0:v:0",
-                                      "-frames:v", "1", jpeg.path])?.status == 0,
+        guard (try? RipProcess.run(ffmpeg, ["-nostdin", "-y", "-v", "error", "-i", file.path, "-map", "0:v:0",
+                                            "-frames:v", "1", jpeg.path]))?.status == 0,
               let image = try? Data(contentsOf: jpeg),
               let source = CGImageSourceCreateWithData(image as CFData, nil),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]

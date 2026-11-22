@@ -111,7 +111,9 @@ sliders use the skin's text color.
   timeout and Refresh is a no-op meanwhile; per-room revision checks prevent
   a read begun before a slider edit from replacing the new value. One failed room does not disable
   other rooms. Refresh retries discovery as well as topology and levels.
-- `Windows/Sonos/` owns the controller and shared controls; `Windows/Shared/AuxiliaryWindowChrome.swift` (with
+- `Windows/Sonos/` owns the room controls. The window, its drag/close, palette and hosted-surface
+  plumbing are the base it shares with the Stream Ripper (`Windows/Shared/AuxiliarySurfaceWindow.swift`;
+  opened by `WindowManager.showAuxiliaryWindow`). `Windows/Shared/AuxiliaryWindowChrome.swift` (with
   `ModernAuxiliaryChrome` for Original and Metal) supplies the chrome, titled `SONOS`; the Equalizer
   Studio wears the same chrome under its own title. `.wal` uses the `.sonos` hosted-window registry entry and a chromeless
   `WinampModernHostedSurface`, with the standard hosted drag helper and palette.

@@ -714,7 +714,7 @@ class WindowManager {
     /// Cava spectrum analyzer window controller for the active UI mode, accessed via protocol.
     private var cavaWindowController: CavaWindowProviding?
     private var sonosWindowController: SonosWindowController?
-    var ripWindowController: RipWindowController?
+    private var ripWindowController: RipWindowController?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -2455,7 +2455,7 @@ class WindowManager {
     /// and `.wal` these windows float free, so only the first open in a session is placed; every
     /// reopen after that is where the user left it. Registers the window, so call it once per show,
     /// before any branch — a launch restore counts as the first placement.
-    func reopensWhereLeft(_ window: NSWindow) -> Bool {
+    private func reopensWhereLeft(_ window: NSWindow) -> Bool {
         guard uiMode.controllerFamily.hostsForeignSkin else { return false }
         if placedFreeFloatingWindows.contains(window) { return true }
         placedFreeFloatingWindows.add(window)
@@ -2481,7 +2481,7 @@ class WindowManager {
         winampModernHostedController?.releaseClosedContainerSlots(under: frame, except: window)
     }
 
-    func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
+    private func positionSubWindow(_ window: NSWindow, preferBelowEQ: Bool = false) {
         guard let mainWindow = mainWindowController?.window else { return }
         
         if let kind = centerStackWindowKind(for: window) {
@@ -2579,7 +2579,7 @@ class WindowManager {
     /// After a center-stack window is hidden, slide up any visible sub-windows that
     /// were docked below it (directly or transitively). Only windows within
     /// `dockThreshold` of the closing window's bottom edge are moved.
-    func slideUpWindowsBelow(closingFrame: NSRect) {
+    private func slideUpWindowsBelow(closingFrame: NSRect) {
         let subWindows = managedWindowRecords.compactMap {
             $0.centerStack && $0.window !== mainWindowController?.window ? $0.window : nil
         }
@@ -3250,7 +3250,7 @@ class WindowManager {
         regularWindowSnapshot = nil
     }
 
-    func markModeDependentWindow(_ window: NSWindow?) {
+    private func markModeDependentWindow(_ window: NSWindow?) {
         window?.identifier = Self.modeDependentWindowIdentifier
     }
 
@@ -4492,49 +4492,78 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
-    // MARK: - Sonos Rooms Window
+    // MARK: - Auxiliary windows (Sonos Rooms, Stream Ripper)
 
     var isSonosVisible: Bool { isCenterStackWindowVisible(.sonos) }
+    var isRipVisible: Bool { isCenterStackWindowVisible(.rip) }
 
     func showSonos(at restoredFrame: NSRect? = nil) {
-        if routeWinampModernHostedWindow(.sonos, toggle: false, restoredFrame: restoredFrame) { return }
-        let created = sonosWindowController == nil
-        if created { sonosWindowController = SonosWindowController() }
-        guard let window = sonosWindowController?.window else { return }
+        showAuxiliaryWindow(.sonos, hosted: .sonos, controller: \.sonosWindowController, make: SonosWindowController.init,
+                            classicMinSize: NSSize(width: 250, height: 160), defaultSize: NSSize(width: 360, height: 260),
+                            restoredFrame: restoredFrame)
+    }
+
+    func toggleSonos() { toggleAuxiliaryWindow(.sonos, controller: sonosWindowController) { showSonos() } }
+
+    /// Opens the Stream Ripper; `focusURL` focuses its URL field, pre-filled from the clipboard
+    /// (Libraries → YouTube → Rip URL…).
+    func showRip(at restoredFrame: NSRect? = nil, focusURL: Bool = false) {
+        let controller = showAuxiliaryWindow(.rip, hosted: .rip, controller: \.ripWindowController, make: RipWindowController.init,
+                                             classicMinSize: NSSize(width: 300, height: 300),
+                                             defaultSize: NSSize(width: 380, height: 400), restoredFrame: restoredFrame)
+        if focusURL { controller?.ripView.focusURLField() }
+    }
+
+    func toggleRip() { toggleAuxiliaryWindow(.rip, controller: ripWindowController) { showRip() } }
+
+    /// Shows an auxiliary center-stack window, building its controller on first use, or routes it
+    /// into the running `.wal` skin's container (returning nil).
+    @discardableResult
+    private func showAuxiliaryWindow<Controller: AuxiliarySurfaceWindowController>(
+        _ kind: CenterStackWindowKind, hosted: WinampModernHostedWindowID,
+        controller slot: ReferenceWritableKeyPath<WindowManager, Controller?>, make: () -> Controller,
+        classicMinSize: NSSize, defaultSize: NSSize, restoredFrame: NSRect?
+    ) -> Controller? {
+        if routeWinampModernHostedWindow(hosted, toggle: false, restoredFrame: restoredFrame) { return nil }
+        let created = self[keyPath: slot] == nil
+        if created { self[keyPath: slot] = make() }
+        guard let controller = self[keyPath: slot], let window = controller.window else { return nil }
         markModeDependentWindow(window)
         if !isRunningModernUI {
             let scale = uiScaleLevel.scaleFactor
-            window.minSize = NSSize(width: 250 * scale, height: 160 * scale)
+            window.minSize = NSSize(width: classicMinSize.width * scale, height: classicMinSize.height * scale)
         }
-        applyCenterStackSizingConstraints(window, kind: .sonos)
+        applyCenterStackSizingConstraints(window, kind: kind)
         let keepsLeftFrame = reopensWhereLeft(window)
         if let restoredFrame, restoredFrame != .zero {
-            applyRestoredCenterStackFrame(restoredFrame, to: window, kind: .sonos)
+            applyRestoredCenterStackFrame(restoredFrame, to: window, kind: kind)
         } else if keepsLeftFrame {
             // Free-floating family: where the user left it.
         } else if created {
-            window.setContentSize(nativeWindowDefaultSize(for: window) ?? NSSize(width: 360, height: 260))
-            if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: .sonos) }
+            window.setContentSize(nativeWindowDefaultSize(for: window) ?? defaultSize)
+            if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: kind) }
             positionSubWindow(window)
-        } else if !window.isVisible, sonosWindowController?.wasDockedWhenHidden == true {
+        } else if !window.isVisible, controller.wasDockedWhenHidden {
             positionSubWindow(window)
         }
         presizeHostedWindow(window)
-        sonosWindowController?.showWindow(nil)
+        controller.showWindow(nil)
         applyAlwaysOnTopToWindow(window)
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         updateDockedChildWindows()
+        return controller
     }
 
-    func toggleSonos() {
-        if routeWinampModernHostedWindow(.sonos, toggle: true) { return }
-        if let window = sonosWindowController?.window, window.isVisible {
+    private func toggleAuxiliaryWindow(_ hosted: WinampModernHostedWindowID,
+                                       controller: AuxiliarySurfaceWindowController?, show: () -> Void) {
+        if routeWinampModernHostedWindow(hosted, toggle: true) { return }
+        if let window = controller?.window, window.isVisible {
             let frame = window.frame
-            sonosWindowController?.prepareForUITeardown()
+            controller?.prepareForUITeardown()
             window.orderOut(nil)
             slideUpWindowsBelow(closingFrame: frame)
-        } else { showSonos() }
+        } else { show() }
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         updateDockedChildWindows()
@@ -5521,7 +5550,7 @@ class WindowManager {
     }
     
     /// Apply always on top level to a single window (used when showing windows)
-    func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
+    private func applyAlwaysOnTopToWindow(_ window: NSWindow?) {
         guard let window = window else { return }
         window.level = isAlwaysOnTop ? .floating : .normal
     }
@@ -5799,25 +5828,14 @@ class WindowManager {
         isSnappingWindow = previousSnappingState
     }
 
-    /// Height multiplier for a center-stack window's default/minimum height.
-    /// PeppyMeter is taller than single-height windows, but not double-height: its bundled assets are landscape.
-    private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
-        switch kind {
-        case .peppyMeter: return 1.75
-        case .sonos: return 2
-        case .rip: return 3
-        default: return 1
-        }
-    }
-
     private func peppyMeterHeight(for baseHeight: CGFloat) -> CGFloat {
-        (baseHeight * centerStackHeightMultiplier(for: .peppyMeter)).rounded()
+        (baseHeight * CenterStackWindowKind.peppyMeter.heightMultiplier).rounded()
     }
 
     /// A stack window's height from a single-height `base`. PeppyMeter's 1.75 lands between points,
     /// so it alone rounds.
     private func centerStackHeight(for kind: CenterStackWindowKind, base: CGFloat) -> CGFloat {
-        kind == .peppyMeter ? peppyMeterHeight(for: base) : base * centerStackHeightMultiplier(for: kind)
+        kind == .peppyMeter ? peppyMeterHeight(for: base) : base * kind.heightMultiplier
     }
 
     /// Height for a restored PeppyMeter frame. Collapses the previous double-height default
@@ -5839,7 +5857,7 @@ class WindowManager {
         return max(target, adjusted)
     }
 
-    func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
+    private func applyCenterStackSizingConstraints(_ window: NSWindow, kind: CenterStackWindowKind) {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
         window.minSize = NSSize(width: modernMinimumWidth(for: kind),
                                 height: centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindow)))
@@ -5849,7 +5867,7 @@ class WindowManager {
             : NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     }
 
-    func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
+    private func applyDefaultCenterStackFrameForCurrentHT(_ window: NSWindow, kind: CenterStackWindowKind) {
         guard isRunningModernUI, let mainWindow = mainWindowController?.window else { return }
         var frame = window.frame
         let topY = frame.maxY
@@ -5865,7 +5883,7 @@ class WindowManager {
         window.setFrame(frame, display: true)
     }
 
-    func applyRestoredCenterStackFrame(_ frame: NSRect, to window: NSWindow, kind: CenterStackWindowKind) {
+    private func applyRestoredCenterStackFrame(_ frame: NSRect, to window: NSWindow, kind: CenterStackWindowKind) {
         let normalizedFrame = normalizedCenterStackRestoredFrame(frame, kind: kind)
         withProgrammaticWindowFrameChange {
             window.setFrame(normalizedFrame, display: true)
@@ -5903,10 +5921,8 @@ class WindowManager {
 
         let topY = normalized.maxY
         switch kind {
-        case .sonos:
-            normalized.size.height = max(targetHeight * 2, normalized.height)
-        case .rip:
-            normalized.size.height = max(targetHeight * 3, normalized.height)
+        case .sonos, .rip:
+            normalized.size.height = max(targetHeight * kind.heightMultiplier, normalized.height)
         case .equalizer:
             normalized.size.height = targetHeight
         case .playlist, .spectrum, .waveform, .audioAnalysis, .art, .networkMonitor, .cava:
@@ -7239,7 +7255,7 @@ class WindowManager {
     }
 
     /// Post a windowLayoutDidChange notification, clearing per-cycle caches first.
-    func postLayoutChangeNotification() {
+    private func postLayoutChangeNotification() {
         adjacencyCache.removeAll(keepingCapacity: true)
         edgeOcclusionSegmentsCache.removeAll(keepingCapacity: true)
         sharpCornersCache.removeAll(keepingCapacity: true)

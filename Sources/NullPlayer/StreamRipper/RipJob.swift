@@ -1,14 +1,33 @@
 import Foundation
 
+/// What a job was asked to do: enough to list it, match a duplicate and retry it.
+struct RipRequest: Codable, Equatable, Sendable {
+    enum Kind: Codable, Equatable, Sendable {
+        /// A rip from the Stream Ripper window into `folder`; it can be retried.
+        case rip(StreamRipper.Mode, folder: String)
+        /// A download the YouTube source runs (`youtube audio`, `youtube video`); listed, never
+        /// retried here.
+        case youtube(summary: String)
+    }
+
+    let url: URL
+    let kind: Kind
+
+    /// The choices as the window and history show them (`video 4K original`, `youtube video`).
+    var summary: String {
+        switch kind {
+        case .rip(let mode, _): mode.description
+        case .youtube(let summary): summary
+        }
+    }
+
+    var isYouTube: Bool { if case .youtube = kind { true } else { false } }
+}
+
 /// One rip or YouTube download, as the Rip window, the Windows menu count and the history see it.
 /// Main-actor state only; the background work reaches it through its `RipJobHandle`.
 @MainActor
 final class RipJob {
-    enum Source: String, Codable, Sendable {
-        case rip
-        case youtube
-    }
-
     enum Phase: String, Codable, Sendable {
         case downloading
         case queuedForEncode
@@ -35,44 +54,46 @@ final class RipJob {
 
     let handle: RipJobHandle
     var id: String { handle.id }
-    let source: Source
-    let url: URL
-    /// The rip's choices; nil for a YouTube download, which the window cannot retry.
-    let mode: StreamRipper.Mode?
-    /// The choices as the window and history show them (`video 4K original`, `youtube video`).
-    let summary: String
-    let folder: String?
+    let request: RipRequest
     /// What to do with the file once an audio rip is done.
     let followUp: RipFollowUp
     let startedAt = Date()
-    var finishedAt: Date?
+    private(set) var finishedAt: Date?
     var title: String
     var phase: Phase = .downloading
     /// 0...1, or nil while the phase reports no progress.
     var fraction: Double?
     var remaining: TimeInterval?
-    var outputPath: String?
+    private(set) var outputPath: String?
     /// The finished file's size, read once off the main thread when the job ends.
-    var sizeBytes: Int64?
-    var error: String?
-    /// When the job joined the encode queue, for its place in line.
-    var queuedAt: Date?
+    private(set) var sizeBytes: Int64?
+    private(set) var error: String?
 
-    init(source: Source, url: URL, mode: StreamRipper.Mode?, summary: String, folder: String?,
-         followUp: RipFollowUp = RipFollowUp()) {
-        self.handle = RipJobHandle(id: String(UUID().uuidString.prefix(8)))
-        self.source = source
-        self.url = url
-        self.mode = mode
-        self.summary = summary
-        self.folder = folder
+    init(handle: RipJobHandle, request: RipRequest, followUp: RipFollowUp = RipFollowUp()) {
+        self.handle = handle
+        self.request = request
         self.followUp = followUp
-        self.title = url.absoluteString
+        self.title = request.url.absoluteString
     }
 
-    /// Whether this job and a new request are the same rip still in progress.
+    /// Whether this job and a new rip request are the same rip still in progress.
     func duplicates(url: URL, mode: StreamRipper.Mode) -> Bool {
-        !phase.isFinished && self.url == url && self.mode == mode
+        guard !phase.isFinished, case .rip(let running, _) = request.kind else { return false }
+        return request.url == url && running == mode
+    }
+
+    /// Ends the job: `error` nil and not cancelled is success. Returns it as History keeps it.
+    func finish(outputPath: String?, sizeBytes: Int64?, error: String?) -> RipHistoryEntry {
+        let finishedAt = Date()
+        phase = handle.isCancelled ? .cancelled : (error == nil ? .done : .failed)
+        self.finishedAt = finishedAt
+        self.outputPath = outputPath
+        self.sizeBytes = sizeBytes
+        self.error = phase == .failed ? error : nil
+        fraction = phase == .done ? 1 : nil
+        remaining = nil
+        return RipHistoryEntry(id: id, request: request, title: title, outcome: phase, startedAt: startedAt,
+                               finishedAt: finishedAt, outputPath: outputPath, sizeBytes: sizeBytes, error: self.error)
     }
 }
 
@@ -84,16 +105,19 @@ enum RipJobUpdate: Sendable {
 }
 
 /// The thread-safe side of a job: the background rip reports through it and checks it for
-/// cancellation, and a cancel from the main actor terminates whichever process it is running.
+/// cancellation, and a cancel terminates whichever process it is running.
 final class RipJobHandle: @unchecked Sendable {
     let id: String
+    /// Delivers each update; `RipJobCenter` hops it to the main actor.
+    private let onUpdate: (@Sendable (RipJobUpdate) -> Void)?
     private let lock = NSLock()
     private var cancelled = false
     private var process: Process?
-    /// Set by `RipJobCenter`; delivers each update on the main actor.
-    var onUpdate: (@Sendable (RipJobUpdate) -> Void)?
 
-    init(id: String) { self.id = id }
+    init(id: String, onUpdate: (@Sendable (RipJobUpdate) -> Void)? = nil) {
+        self.id = id
+        self.onUpdate = onUpdate
+    }
 
     var isCancelled: Bool { lock.withLock { cancelled } }
 
@@ -111,42 +135,25 @@ final class RipJobHandle: @unchecked Sendable {
     /// Clears the running process once it has exited.
     func processExited() { lock.withLock { process = nil } }
 
-    /// Marks the job cancelled and terminates its running process and everything it started:
-    /// yt-dlp runs ffmpeg as a child, which outlives a terminated yt-dlp and keeps writing into
-    /// the staging folder the cancel then deletes.
+    /// Marks the job cancelled and returns at once: its process tree is terminated on a
+    /// background queue, and a wait for the encoder ends.
     func cancel() {
-        let running: Process? = lock.withLock {
+        guard let running = markCancelled() else { return }
+        DispatchQueue.global(qos: .userInitiated).async { ProcessTable.terminateTrees(of: [running]) }
+    }
+
+    /// Cancels every handle and terminates their process trees before returning, from one `ps`
+    /// snapshot; for the app's quit, which cannot wait on a background queue.
+    static func cancelAndWait(_ handles: [RipJobHandle]) {
+        ProcessTable.terminateTrees(of: handles.compactMap { $0.markCancelled() })
+    }
+
+    private func markCancelled() -> Process? {
+        let running = lock.withLock {
             cancelled = true
             return process
         }
-        guard let running, running.isRunning else { return }
-        for pid in Self.descendants(of: running.processIdentifier) { kill(pid, SIGTERM) }
-        running.terminate()
-    }
-
-    /// Every process below `root`, children before their own children.
-    static func descendants(of root: pid_t) -> [pid_t] {
-        let ps = Process()
-        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-        ps.arguments = ["-axo", "pid=,ppid="]
-        let out = Pipe()
-        ps.standardOutput = out
-        guard (try? ps.run()) != nil else { return [] }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        ps.waitUntilExit()
-        var children: [pid_t: [pid_t]] = [:]
-        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-            let fields = line.split(separator: " ")
-            guard fields.count == 2, let pid = pid_t(fields[0]), let parent = pid_t(fields[1]) else { continue }
-            children[parent, default: []].append(pid)
-        }
-        var result: [pid_t] = []
-        var frontier = [root]
-        while let next = frontier.popLast() {
-            let found = children[next] ?? []
-            result += found
-            frontier += found
-        }
-        return result
+        RipEncodeQueue.wakeWaiters()
+        return running
     }
 }

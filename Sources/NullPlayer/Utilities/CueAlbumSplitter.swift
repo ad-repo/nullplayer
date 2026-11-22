@@ -20,7 +20,7 @@ enum CueAlbumSplitter {
 
             let outDir = outputDirectory(for: cue, cueURL: cueURL)
 
-            let outExt = outputExtension(for: cue, cueURL: cueURL)
+            let outExt = outputExtension(forBacking: resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName))
 
             var paths: [URL] = []
             var pathsSet: Set<String> = []  // Track generated paths to de-dup within this cue
@@ -171,7 +171,7 @@ enum CueAlbumSplitter {
                 }
                 return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
             }
-            let outExt = outputExtension(for: cue, cueURL: cueURL)
+            let outExt = outputExtension(forBacking: backingURL)
             // A container ffmpeg cannot attach a picture to (Ogg/Opus, WAV) gets the cover as
             // the album folder's `cover.jpg`, which `LocalArtwork` reads.
             let embedsCover = hasAttachedPic && coverArtExtensions.contains(outExt)
@@ -312,11 +312,10 @@ enum CueAlbumSplitter {
 
     // MARK: - Output Format
 
-    /// Split tracks keep the backing file's format.
-    /// The backing file's own format when ffmpeg can stream-copy it into that container;
-    /// anything else (APE, WavPack, TTA, no extension) splits to FLAC, as it always did.
-    private static func outputExtension(for cue: CueSheet, cueURL: URL) -> String {
-        let ext = resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName).pathExtension.lowercased()
+    /// Split tracks keep the backing file's format when ffmpeg can stream-copy it into that
+    /// container; anything else (APE, WavPack, TTA, no extension) splits to FLAC, as it always did.
+    private static func outputExtension(forBacking backingURL: URL) -> String {
+        let ext = backingURL.pathExtension.lowercased()
         return keptExtensions.contains(ext) ? ext : "flac"
     }
 

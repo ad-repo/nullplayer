@@ -1,82 +1,18 @@
 import AppKit
 
-/// The Rip window: start rips and follow every rip and YouTube download. A center-stack window
-/// built like Sonos Rooms; its content is a view of `RipJobCenter`, so it holds no job state.
-final class RipWindowController: NSWindowController, ModeDependentWindow, NSWindowDelegate {
-    private(set) var ripView: RipWindowView!
-    private var observers: [NSObjectProtocol] = []
-    private(set) var wasDockedWhenHidden = false
+/// The Rip window: start rips and follow every rip and YouTube download. Its content is a view of
+/// `RipJobCenter`, so it holds no job state.
+final class RipWindowController: AuxiliarySurfaceWindowController {
+    let ripView: RipWindowView
 
-    convenience init() {
-        let window = BorderlessWindow(contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
-                                      styleMask: [.borderless], backing: .buffered, defer: false)
-        self.init(window: window)
-        window.title = "Stream Ripper"
-        window.isReleasedWhenClosed = false
-        window.isMovableByWindowBackground = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasSkinShadow = true
-        window.minSize = NSSize(width: 300, height: 300)
-        window.allowedResizeEdges = [.bottom, .left, .right]
-        window.collectionBehavior = [.managed, .fullScreenPrimary]
-        window.delegate = self
-        window.closeAction = { WindowManager.shared.toggleRip() }
-        window.setAccessibilityIdentifier("RipWindow")
-        window.setAccessibilityLabel("Stream Ripper")
-        ripView = RipWindowView(frame: NSRect(origin: .zero, size: window.frame.size))
-        ripView.autoresizingMask = [.width, .height]
-        window.contentView = ripView
-        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
-                     NSWindow.didDeminiaturizeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                guard let self, let window = self.window else { return }
-                if window.isVisible, !window.isMiniaturized, window.occlusionState.contains(.visible) {
-                    self.ripView.resume()
-                } else { self.ripView.suspend() }
-            })
-        }
+    init() {
+        ripView = RipWindowView(frame: NSRect(x: 0, y: 0, width: 380, height: 400))
+        super.init(surface: ripView, title: "Stream Ripper", size: NSSize(width: 380, height: 400),
+                   minSize: NSSize(width: 300, height: 300), accessibilityID: "RipWindow",
+                   accessibilityLabel: "Stream Ripper", close: { WindowManager.shared.toggleRip() })
     }
 
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
-
-    override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        ripView.needsLayout = true
-        ripView.layoutSubtreeIfNeeded()
-        ripView.resume()
-    }
-
-    func prepareForUITeardown() {
-        if let window, window.isVisible { wasDockedWhenHidden = WindowManager.shared.isWindowDocked(window) }
-        ripView.suspend()
-    }
-
-    func skinDidChange() { ripView.needsLayout = true; ripView.needsDisplay = true }
-
-    func windowWillClose(_ notification: Notification) {
-        if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
-        prepareForUITeardown()
-        WindowManager.shared.notifyMainWindowVisibilityChanged()
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        ripView.needsLayout = true
-        WindowManager.shared.postWindowLayoutDidChange()
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        guard let window else { return }
-        let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        WindowManager.shared.applySnappedPosition(window, to: origin)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        ripView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
-    }
-
-    func windowDidResignKey(_ notification: Notification) { ripView.needsDisplay = true }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 /// The choices the form remembers between rips.
@@ -118,18 +54,13 @@ private struct RipChoices {
 
     var mode: StreamRipper.Mode {
         isVideo ? .video(StreamRipper.VideoProfile(resolution: resolution, format: videoFormat))
-            : .audio(audioFormat, kbps: audioFormat.takesBitrate ? audioKbps : nil)
+            : .audio(audioFormat.format(kbps: audioKbps))
     }
 }
 
-/// The Rip window's content: the form, the Jobs / History list and the footer. Skin-specific
-/// chrome comes from `AuxiliaryWindowChrome`; a `.wal` skin hosts the same view.
-final class RipWindowView: NSView, NSTextFieldDelegate {
-    private var hostedContext: WinampModernHostedSurfaceContext?
-    private var hostedDrag = WinampModernHostedWindowDrag()
-    private var hostedStyle: WinampModernSurfaceStyle?
-    private var dragStart: NSPoint?
-    private var closePressed = false
+/// The Rip window's content: the form, the Jobs / History list and the footer. A `.wal` skin
+/// hosts the same view.
+final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
     private var observing = false
     private var choices = RipChoices.load()
     private var message: String?
@@ -157,14 +88,10 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
     private let clearButton = NSButton(title: "Clear", target: nil, action: nil)
 
     private var center: RipJobCenter { .shared }
-    private var controlScale: CGFloat { WindowManager.shared.uiScaleLevel.scaleFactor }
-    private var chrome: AuxiliaryWindowChrome { AuxiliaryWindowChrome(window: window, title: "STREAM RIPPER") }
-    private var textColor: NSColor { hostedStyle?.text ?? chrome.textColor }
     private var showsHistory: Bool { tabs.selectedSegment == 1 }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
+    init(frame: NSRect) {
+        super.init(frame: frame, chromeTitle: "STREAM RIPPER")
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -204,24 +131,11 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
             control.action = action
         }
         loadChoicesIntoForm()
-        for name in [Notification.Name.windowLayoutDidChange, ModernSkinEngine.skinDidChangeNotification,
-                     .doubleSizeDidChange, .connectedWindowHighlightDidChange] {
-            NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged), name: name, object: nil)
-        }
-        // A `.wmz` palette arrives after the player renders, so the window first draws before it exists.
-        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
-                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    deinit { NotificationCenter.default.removeObserver(self) }
 
-    @objc private func layoutChanged() { needsLayout = true; needsDisplay = true }
-    @objc private func hostedSurfaceStyleDidChange() {
-        guard [.wmp, .winampModern].contains(WindowManager.shared.uiMode.controllerFamily) else { return }
-        layoutChanged()
-        refresh()
-    }
+    override func paletteDidChange() { refresh() }
 
     // MARK: - Form
 
@@ -271,7 +185,7 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
     }
 
     /// Focuses the URL field, pre-filled from the clipboard when it holds a web URL and the field
-    /// is empty (Output → Streaming → Rip URL…).
+    /// is empty (Libraries → YouTube → Rip URL…).
     func focusURLField() {
         if urlField.stringValue.isEmpty, let clip = NSPasteboard.general.string(forType: .string),
            Self.ripURL(from: clip) != nil {
@@ -354,11 +268,8 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
         refresh()
     }
 
-    func refresh() {
-        let background = (hostedStyle?.background ?? chrome.backgroundColor).usingColorSpace(.deviceRGB) ?? .black
-        let brightness = 0.299 * background.redComponent + 0.587 * background.greenComponent + 0.114 * background.blueComponent
-        let appearanceName: NSAppearance.Name = brightness < 0.5 ? .darkAqua : .aqua
-        if appearance?.name != appearanceName { appearance = NSAppearance(named: appearanceName) }
+    override func refresh() {
+        super.refresh()
         let color = textColor
         for control in [ripButton, clearButton, notifyCheckbox, editTagsCheckbox, libraryCheckbox] { control.contentTintColor = color }
         urlLabel.textColor = color
@@ -388,21 +299,21 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
 
     private func model(for job: RipJob) -> RipRowModel {
         var parts = [job.phase.title]
-        if let position = center.encodeQueuePosition(of: job) { parts.append("#\(position) in line") }
+        if job.phase == .queuedForEncode, let position = RipEncodeQueue.position(of: job.id) { parts.append("#\(position) in line") }
         if let fraction = job.fraction, !job.phase.isFinished { parts.append("\(Int(fraction * 100))%") }
         if let remaining = job.remaining, remaining.isFinite { parts.append("\(Self.shortDuration(remaining)) left") }
-        if job.source == .youtube { parts.append("YouTube") }
-        parts.append(job.summary)
+        if job.request.isYouTube { parts.append("YouTube") }
+        parts.append(job.request.summary)
         var actions: [RipRowModel.Action] = []
         switch job.phase {
         case .done:
             if let path = job.outputPath { actions += fileActions(path: path) }
             if let size = job.sizeBytes { parts.insert(ByteCountFormatter.string(fromByteCount: size, countStyle: .file), at: 1) }
         case .failed:
-            parts = ["Failed: " + (job.error?.split(separator: "\n").first.map(String.init) ?? "")]
-            actions += retryAction(url: job.url, mode: job.mode, folder: job.folder, followUp: job.followUp)
+            parts = ["Failed: " + Self.firstLine(of: job.error)]
+            actions += retryAction(job.request, followUp: job.followUp)
         case .cancelled:
-            actions += retryAction(url: job.url, mode: job.mode, folder: job.folder, followUp: job.followUp)
+            actions += retryAction(job.request, followUp: job.followUp)
         default:
             actions.append(.init(symbol: "xmark.circle", label: "Cancel") { [weak self] in self?.center.cancel(job) })
         }
@@ -414,26 +325,29 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
     private func model(for entry: RipHistoryEntry) -> RipRowModel {
         var parts = [Self.dateFormatter.string(from: entry.finishedAt), entry.outcome.title]
         if let size = entry.sizeBytes { parts.append(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)) }
-        if entry.source == .youtube { parts.append("YouTube") }
-        parts.append(entry.summary)
+        if entry.request.isYouTube { parts.append("YouTube") }
+        parts.append(entry.request.summary)
         var actions: [RipRowModel.Action] = []
         if let path = entry.outputPath {
             if FileManager.default.fileExists(atPath: path) { actions += fileActions(path: path) }
             else { parts.append("file moved or deleted") }
         }
-        actions += retryAction(url: entry.url, mode: entry.mode, folder: entry.folder)
+        if entry.outcome == .failed { parts.append(Self.firstLine(of: entry.error)) }
+        actions += retryAction(entry.request)
         actions.append(.init(symbol: "doc.on.doc", label: "Copy URL") {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(entry.url.absoluteString, forType: .string)
+            NSPasteboard.general.setString(entry.request.url.absoluteString, forType: .string)
         })
         actions.append(.init(symbol: "trash", label: "Remove from History") { [weak self] in
             self?.center.removeHistoryEntry(id: entry.id)
         })
-        let detail = entry.outcome == .failed
-            ? parts.joined(separator: " · ") + " · " + (entry.error?.split(separator: "\n").first.map(String.init) ?? "")
-            : parts.joined(separator: " · ")
-        return RipRowModel(id: entry.id, title: entry.title, detail: detail, detailToolTip: entry.error,
+        return RipRowModel(id: entry.id, title: entry.title, detail: parts.joined(separator: " · "), detailToolTip: entry.error,
                            fraction: nil, showsProgress: false, isFailure: entry.outcome == .failed, actions: actions)
+    }
+
+    /// A failure's first line; the row's tooltip carries the whole error.
+    private static func firstLine(of error: String?) -> String {
+        error?.split(separator: "\n").first.map(String.init) ?? ""
     }
 
     private func fileActions(path: String) -> [RipRowModel.Action] {
@@ -443,11 +357,11 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
          }]
     }
 
-    private func retryAction(url: URL, mode: StreamRipper.Mode?, folder: String?,
-                             followUp: RipFollowUp = RipFollowUp()) -> [RipRowModel.Action] {
-        guard mode != nil else { return [] }
+    /// Retry for a rip; a YouTube download has no rip choices and is not retried here.
+    private func retryAction(_ request: RipRequest, followUp: RipFollowUp = RipFollowUp()) -> [RipRowModel.Action] {
+        guard case .rip(let mode, let folder) = request.kind else { return [] }
         return [.init(symbol: "arrow.clockwise", label: "Retry") { [weak self] in
-            self?.center.retry(url: url, mode: mode, folder: folder, followUp: followUp)
+            self?.center.startRip(url: request.url, mode: mode, folder: folder, followUp: followUp)
             self?.tabs.selectedSegment = 0
             self?.refresh()
         }]
@@ -467,14 +381,9 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
 
     // MARK: - Layout and drawing
 
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        needsLayout = true
-    }
-
     override func layout() {
         super.layout()
-        let area = hostedContext == nil ? chrome.contentRect(bounds) : bounds
+        let area = contentArea
         let s = controlScale
         let pad: CGFloat = 10 * s
         let width = max(0, area.width - pad * 2)
@@ -531,81 +440,24 @@ final class RipWindowView: NSView, NSTextFieldDelegate {
         }
         empty.frame = NSRect(x: scroll.frame.minX + pad, y: scroll.frame.midY - 8 * s, width: width, height: 16 * s)
         empty.setBoundsSize(NSSize(width: empty.frame.width / s, height: 16))
-        if hostedContext == nil { (window as? BorderlessWindow)?.titleBarHeight = chrome.titleHeight }
+        finishLayout()
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if let hostedStyle {
-            hostedStyle.background.setFill()
-            bounds.fill()
-        } else { chrome.draw(bounds, closePressed: closePressed) }
-    }
-
-    // MARK: - Window dragging and close
-
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    /// A titleless WMP window's close sits over the form, so it has to win against it.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = superview.map { convert(point, from: $0) } ?? point
-        if hostedContext == nil, SkinnedSurfaceChrome.hidesPaletteTitleBar,
-           chrome.closeRect(bounds).contains(local) { return self }
-        return super.hitTest(point)
-    }
-    override func mouseDown(with event: NSEvent) {
-        if let hostedContext { hostedDrag.prime(event, context: hostedContext); return }
-        let point = convert(event.locationInWindow, from: nil)
-        if chrome.closeRect(bounds).contains(point) { closePressed = true; needsDisplay = true; return }
-        dragStart = event.locationInWindow
-        if let window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
-    }
-    override func mouseDragged(with event: NSEvent) {
-        if hostedContext != nil { hostedDrag.drag(event); return }
-        guard let start = dragStart, let window else { return }
-        let mouse = NSEvent.mouseLocation
-        window.setFrameOrigin(WindowManager.shared.windowWillMove(window, to: NSPoint(x: mouse.x - start.x, y: mouse.y - start.y)))
-    }
-    override func mouseUp(with event: NSEvent) {
-        if hostedContext != nil { hostedDrag.end(); return }
-        if closePressed && chrome.closeRect(bounds).contains(convert(event.locationInWindow, from: nil)) {
-            (window as? BorderlessWindow)?.performCloseAction()
-        }
-        closePressed = false
-        if dragStart != nil, let window { WindowManager.shared.windowDidFinishDragging(window) }
-        dragStart = nil
-        needsDisplay = true
-    }
-}
-
-extension RipWindowView: WinampModernHostedSurface {
-    var view: NSView { self }
-    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
-        hostedContext = context
-        autoresizingMask = [.width, .height]
-    }
-    func applyPalette(_ style: WinampModernSurfaceStyle) {
-        hostedStyle = style
-        needsLayout = true
-        refresh()
-    }
-    func applySkinScale(_ scale: CGFloat) { needsLayout = true; needsDisplay = true }
     /// Reattaches to `RipJobCenter`: rows for every job at its current state, then its updates.
-    func resume() {
+    override func resume() {
         if !observing {
             NotificationCenter.default.addObserver(self, selector: #selector(jobsDidChange), name: .ripJobsDidChange, object: nil)
             observing = true
         }
-        needsLayout = true
-        layoutSubtreeIfNeeded()
-        refresh()
+        super.resume()
     }
+
     /// Detaches from `RipJobCenter`; the jobs carry on without the window.
-    func suspend() {
+    override func suspend() {
         guard observing else { return }
         NotificationCenter.default.removeObserver(self, name: .ripJobsDidChange, object: nil)
         observing = false
     }
-    func unmountFromHolder() { suspend(); removeFromSuperview() }
-    func prepareForUITeardown() { suspend(); hostedContext = nil; removeFromSuperview() }
 }
 
 private final class RipListDocumentView: NSView {

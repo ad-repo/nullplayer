@@ -3,12 +3,8 @@ import Foundation
 /// One finished job, as the Rip window's History lists it.
 struct RipHistoryEntry: Codable, Equatable, Identifiable {
     let id: String
-    let source: RipJob.Source
-    let url: URL
-    /// The rip's choices, for retry; nil for a YouTube download.
-    let mode: StreamRipper.Mode?
-    let summary: String
-    let folder: String?
+    /// What was asked for, for retry; the full URL never goes to the log.
+    let request: RipRequest
     let title: String
     let outcome: RipJob.Phase
     let startedAt: Date

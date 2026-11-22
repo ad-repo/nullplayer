@@ -97,7 +97,7 @@ Nothing installs itself, and the item is absent from the Mac App Store build.
 
 `Output > Sonos` supports persistent-open room checkbox selection (same behavior as the context menu Sonos submenu).
 
-`Output > Streaming > Rip URL…` opens the Stream Ripper window (paste a URL → audio or MP4 video); see Output Devices & Casting below.
+`Libraries > YouTube > Rip URL…` opens the Stream Ripper window (paste a URL → audio or MP4 video); see Output Devices & Casting below.
 
 ### Window Docking
 
@@ -319,7 +319,7 @@ Import discovery is now unified across classic + modern entry points (main windo
 - Native macOS AirPlay support
 - Auto-detected output devices
 
-### Stream Ripper (Windows → Stream Ripper, or Output → Streaming → Rip URL…)
+### Stream Ripper (Windows → Stream Ripper, or Libraries → YouTube → Rip URL…)
 - A window that docks with the others. Paste a URL (Rip URL… pre-fills it from the clipboard), pick
   **Audio** or **Video**, and press **Rip**. Several rips run at once; video encodes take turns.
   The Windows menu shows how many are running, and closing the window never stops a rip.

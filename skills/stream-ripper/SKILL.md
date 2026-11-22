@@ -1,6 +1,6 @@
 ---
 name: stream-ripper
-description: The Stream Ripper window — rip a media URL with yt-dlp/ffmpeg to audio (Original Opus/AAC, FLAC, MP3) or video (VP9/HEVC/H.264 MP4 at a height cap), several jobs at once, one encode at a time, a persistent history, .cue from chapters, and audio follow-ups (edit tags into the file, add to the library split by its cue). Use when working on the Stream Ripper window, RipJobCenter, yt-dlp/ffmpeg arguments, rip progress, or Output → Streaming → Rip URL….
+description: The Stream Ripper window — rip a media URL with yt-dlp/ffmpeg to audio (Original Opus/AAC, FLAC, MP3) or video (VP9/HEVC/H.264 MP4 at a height cap), several jobs at once, one encode at a time, a persistent history, .cue from chapters, and audio follow-ups (edit tags into the file, add to the library split by its cue). Use when working on the Stream Ripper window, RipJobCenter, yt-dlp/ffmpeg arguments, rip progress, or Libraries → YouTube → Rip URL….
 ---
 
 # Stream Ripper
@@ -15,26 +15,29 @@ in the form's hint line.
 
 | Area | File |
 |------|------|
-| Choices: `RipResolution`, `RipVideoFormat`, `RipAudioFormat`, `VideoProfile` | `StreamRipper/RipRequest.swift` |
-| The rip itself (`run` → `performRip`), the one yt-dlp runner (`runYtDlp`), staging, cue writer, video transcode, log | `StreamRipper/StreamRipper.swift` |
+| Choices: `Mode`, `RipResolution`, `RipVideoFormat`, `RipAudioFormat`, `VideoProfile` | `StreamRipper/RipRequest.swift` |
+| The rip itself (`run` → `performRip`), cue writer, video transcode | `StreamRipper/RipPipeline.swift` |
+| The one yt-dlp runner (`runYtDlp`), the YouTube source's downloads, staging, temp reaper, log | `StreamRipper/StreamRipper.swift` |
 | One encode at a time, first come first served | `StreamRipper/RipEncodeQueue.swift` |
-| Short tool runs read whole (ffprobe, yt-dlp query, tag rewrite) | `StreamRipper/RipProcess.swift` |
-| Jobs and their thread-safe handle | `StreamRipper/RipJob.swift` |
+| Every tool run (`RipProcess.run`, streaming stdout for progress) and the `ps` snapshot (`ProcessTable`) | `StreamRipper/RipProcess.swift` |
+| Requests, jobs and their thread-safe handle | `StreamRipper/RipJob.swift` |
 | The one job list, failure alert, activity rows, orphan cleanup | `StreamRipper/RipJobCenter.swift` |
 | History (`Application Support/NullPlayer/rip_history.json`) | `StreamRipper/RipHistoryStore.swift` |
 | yt-dlp / ffmpeg progress parsing | `StreamRipper/RipProgress.swift` |
 | Audio follow-ups | `StreamRipper/RipFollowUp.swift` |
 | File tag read/write | `StreamRipper/RipFileTags.swift` |
-| Window (center-stack, Sonos Rooms pattern) and rows | `Windows/Rip/RipWindowController.swift`, `RipJobRowView.swift`; opening/toggling in `App/WindowManager+Rip.swift` |
+| Window and rows | `Windows/Rip/RipWindowController.swift`, `RipJobRowView.swift` |
+| Window base shared with Sonos Rooms (chrome, drag, close, hosted surface); opening/toggling | `Windows/Shared/AuxiliarySurfaceWindow.swift`; `WindowManager.showAuxiliaryWindow` |
 | Tag editor panel | `Windows/Rip/RipTagsPanel.swift` |
 | Tests | `Tests/NullPlayerAppTests/RipJobTests.swift` |
 
 ## Window
 
 A center-stack feature window (`WindowManager.CenterStackFeature.rip`, saved as `isRipVisible` /
-`ripWindowFrame`), built like Sonos Rooms: `AuxiliaryWindowChrome` for Classic/Original, hosted in
-a `.wal` skin via `WinampModernHostedWindows` ("Stream Ripper"). Opened from **Windows → Stream
-Ripper** (shows "Stream Ripper (N running)") or **Output → Streaming → Rip URL…**, which focuses the
+`ripWindowFrame`), built on the same base as Sonos Rooms (`AuxiliarySurfaceWindowController` /
+`AuxiliarySurfaceView`): `AuxiliaryWindowChrome` in its own window, hosted in a `.wal` skin via
+`WinampModernHostedWindows` ("Stream Ripper"). Its height is `CenterStackWindowKind.rip.heightMultiplier`. Opened from **Windows → Stream
+Ripper** (shows "Stream Ripper (N running)") or **Libraries → YouTube → Rip URL…**, which focuses the
 URL field and pre-fills it from a clipboard `http(s)` URL.
 
 - **Form**, remembered in `UserDefaults` (`rip.*` keys, `RipChoices`):
@@ -50,26 +53,33 @@ URL field and pre-fills it from a clipboard `http(s)` URL.
 
 ## Jobs
 
-`RipJobCenter.shared` owns `jobs` (running and this session's finished). `startRip` registers a
-`RipJob` and calls `StreamRipper.run(handle:…)`, which works on a background queue and reports
-through `RipJobHandle` (`.phase`, `.progress`, `.title`). The handle owns the running `Process`;
-`cancel()` terminates it **and its descendants** (`RipJobHandle.descendants`) — yt-dlp runs ffmpeg
-as a child that survives a terminated yt-dlp and keeps writing into the staging the cancel deletes.
+`RipJobCenter.shared` owns `jobs` (running and this session's finished). Each job carries its
+`RipRequest`: the URL and a `Kind` — `.rip(Mode, folder:)` from the window, retryable, or
+`.youtube(summary:)` for the YouTube source's downloads, listed but never retried. `startRip`
+registers a `RipJob` and calls `StreamRipper.run(handle:…)`, which works on a background queue and
+reports through `RipJobHandle` (`.phase`, `.progress`, `.title`; the handle's `onUpdate` is fixed
+at creation and hops to the main actor by job id). The handle owns the running `Process`;
+`cancel()` marks it cancelled and returns at once, terminating the process **and its descendants**
+(`ProcessTable.terminateTrees`, one `ps` snapshot) on a background queue — yt-dlp runs ffmpeg as a
+child that survives a terminated yt-dlp and keeps writing into the staging the cancel deletes.
 `finish` takes the file size read off the main thread by the caller (the destination can be a NAS),
-records a `RipHistoryEntry`, then runs the job's `RipFollowUp` for a successful audio rip.
+ends the job (`RipJob.finish`, which returns its `RipHistoryEntry`), records it, then runs the
+job's `RipFollowUp` (empty for video and YouTube jobs).
 
 Every `.progress` update posts `.ripJobsDidChange`. The History tab redraws only when
 `RipHistoryStore.revision` changed (its rows check their files on disk), and job rows show the
 stored `sizeBytes`, so progress ticks never touch the disk.
 
-- **Encodes run one at a time, in arrival order**: `RipEncodeQueue` keeps a FIFO of waiting job ids
-  (a plain semaphore wakes waiters in any order, which made *#N in line* wrong); a job waiting shows
-  *Queued for encode · #N in line*.
-- **App quit** terminates every job's process (`terminateAll`). A killed instance's orphans
-  (`ppid` 1, staging path in their arguments) are killed at the next launch before the temp reaper.
-- `Mode` is `Codable` and stored in history for Retry. `RipAudioFormat.originalOpus` keeps raw value
-  `"original"`, and its decoder reads the retired re-encoded `"aac"` as `.originalAAC`, so old
-  history keeps loading — one undecodable entry would drop the whole file.
+- **Encodes run one at a time, in arrival order**: `RipEncodeQueue` keeps the FIFO of waiting job
+  ids behind an `NSCondition` (a plain semaphore wakes waiters in any order). It is the only record
+  of the line: a waiting row shows *Queued for encode · #N in line* from `position(of:)`. `acquire`
+  joins the line before reporting `.queuedForEncode`, so the row never draws without its place; a
+  cancel wakes the waiters so a cancelled one leaves.
+- **App quit** terminates every job's process tree before returning (`terminateAll` →
+  `RipJobHandle.cancelAndWait`). A killed instance's orphans (`ppid` 1, staging path in their
+  arguments) are killed at the next launch before the temp reaper.
+- `RipRequest` is `Codable` and stored in history for Retry; `Mode.audio` carries a
+  `YouTubeAudioFormat`, saved as its `rawValue`. One undecodable entry drops the whole history file.
 
 ## yt-dlp invocation
 
@@ -83,7 +93,8 @@ and `--print-to-file after_move:filepath` so the real final path is read back (t
 depends on the codec). Files download into a local staging dir (NAS-safe), then copy to a
 collision-free name in the destination; on failure the staging contents go to `~/Downloads`.
 
-**Audio** — `RipAudioFormat` reuses `YouTubeAudioFormat` for its selector and arguments:
+**Audio** — `Mode.audio(YouTubeAudioFormat)`; `RipAudioFormat` is only the window's picker, naming
+the format (`format(kbps:)`, MP3 taking the Bitrate popup):
 
 | Choice | Selector / args | Notes |
 |---|---|---|
@@ -93,7 +104,7 @@ collision-free name in the destination; on failure the staging contents go to `~
 | MP3 | `--audio-format mp3 --audio-quality <N>K` | N from the Bitrate popup, capped at the source |
 
 Bitrate cap: before an MP3 encode, `sourceAudioKbps` runs `yt-dlp --print abr` with the same
-selector; a source below the request lowers it, and the log says so. A re-encoded AAC choice was
+selector; a source below the request rebuilds `.mp3(kbps:)` at the source's rate, and the log says so. A re-encoded AAC choice was
 removed — it was Opus → AAC, a generation loss for no gain over the AAC original. All audio adds
 `--embed-thumbnail --convert-thumbnails jpg` and `--print-to-file after_move:%(chapters)j`.
 

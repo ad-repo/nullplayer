@@ -51,11 +51,10 @@ enum RipVideoFormat: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// What an audio rip saves.
-enum RipAudioFormat: String, CaseIterable, Codable, Sendable {
-    /// The source's own Opus stream, without a re-encode. Raw value from when it was the only original.
-    case originalOpus = "original"
-    /// The source's own AAC stream (M4A), without a re-encode.
+/// The audio choices the Stream Ripper window offers. A rip carries the `YouTubeAudioFormat` one
+/// of them names (`format(kbps:)`); MP3 takes its bitrate from the window's own popup.
+enum RipAudioFormat: String, CaseIterable, Sendable {
+    case originalOpus
     case originalAAC
     case flac
     case mp3
@@ -84,18 +83,7 @@ enum RipAudioFormat: String, CaseIterable, Codable, Sendable {
 
     var takesBitrate: Bool { self == .mp3 }
 
-    /// A re-encoded AAC choice was retired for the AAC original, which is the same codec without
-    /// a generation loss; a saved one reads as that, so the history still loads.
-    init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        guard let format = RipAudioFormat(rawValue: raw == "aac" ? Self.originalAAC.rawValue : raw) else {
-            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown audio format \(raw)"))
-        }
-        self = format
-    }
-
-    /// The YouTube source's format for this choice: it carries yt-dlp's per-codec quirks.
-    private func youTubeFormat(kbps: Int) -> YouTubeAudioFormat {
+    func format(kbps: Int) -> YouTubeAudioFormat {
         switch self {
         case .originalOpus: .originalOpus
         case .originalAAC: .originalAAC
@@ -103,18 +91,26 @@ enum RipAudioFormat: String, CaseIterable, Codable, Sendable {
         case .mp3: .mp3(kbps: kbps)
         }
     }
-
-    /// yt-dlp's `-f` selector; the source bitrate probe uses the same one.
-    var formatSelector: String { youTubeFormat(kbps: Self.defaultKbps).formatSelector }
-
-    /// yt-dlp's selection and extraction arguments at `kbps`, already capped to the source.
-    /// An original copies the stream when the site serves that codec, and converts it otherwise.
-    func ytdlpArgs(kbps: Int) -> [String] {
-        ["-f", formatSelector, "-x"] + youTubeFormat(kbps: kbps).ytdlpArgs
-    }
 }
 
 extension StreamRipper {
+    enum Mode: Codable, Sendable, Equatable, CustomStringConvertible {
+        /// The audio stream, kept or converted; an MP3's bitrate is the one requested, which the
+        /// rip caps to the source's.
+        case audio(YouTubeAudioFormat)
+        /// Video transcodes to a playback-safe MP4 profile after download.
+        case video(VideoProfile)
+
+        var description: String {
+            switch self {
+            case .audio(let format): "audio \(format.rawValue)"
+            case .video(let profile): profile.description
+            }
+        }
+
+        var isVideo: Bool { if case .video = self { true } else { false } }
+    }
+
     /// A video rip's resolution and format, and the encode settings that follow from them.
     struct VideoProfile: Codable, Sendable, Equatable, CustomStringConvertible {
         var resolution: RipResolution

@@ -17,6 +17,17 @@ extension WindowManager {
         case rip
         case waveform
 
+        /// The window's default and minimum height, in main-window heights. PeppyMeter is taller
+        /// than single-height windows, but not double-height: its bundled assets are landscape.
+        var heightMultiplier: CGFloat {
+            switch self {
+            case .peppyMeter: 1.75
+            case .sonos: 2
+            case .rip: 3
+            default: 1
+            }
+        }
+
         /// The whole column below the main window, top to bottom.
         static let columnOrder: [CenterStackWindowKind] =
             [.equalizer, .playlist] + CenterStackFeature.stackOrder.map(\.kind)

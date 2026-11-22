@@ -41,31 +41,24 @@ final class RipJobCenter {
     @discardableResult
     func startRip(url: URL, mode: StreamRipper.Mode, folder: String, followUp: RipFollowUp = RipFollowUp()) -> RipJob {
         if let running = jobs.first(where: { $0.duplicates(url: url, mode: mode) }) { return running }
-        let job = register(RipJob(source: .rip, url: url, mode: mode, summary: mode.description, folder: folder,
-                                  followUp: followUp))
-        StreamRipper.log(job.id, "start host=\(url.host ?? "?") \(mode)")
+        let job = register(RipRequest(url: url, kind: .rip(mode, folder: folder)), followUp: followUp)
         StreamRipper.run(job.handle, mode: mode, sourceURL: url, folder: folder)
         return job
     }
 
     /// Registers a download that runs outside `startRip` (the YouTube source); the caller ends it
     /// with `finish`.
-    func beginExternal(source: RipJob.Source, url: URL, summary: String) -> RipJobHandle {
-        let job = register(RipJob(source: source, url: url, mode: nil, summary: summary, folder: nil))
-        StreamRipper.log(job.id, "start host=\(url.host ?? "?") \(summary)")
-        return job.handle
+    func beginExternal(url: URL, summary: String) -> RipJobHandle {
+        register(RipRequest(url: url, kind: .youtube(summary: summary))).handle
     }
 
-    private func register(_ job: RipJob) -> RipJob {
-        // Weak: the job owns its handle, which owns this closure.
-        job.handle.onUpdate = { [weak self, weak job] update in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let job else { return }
-                    self?.apply(update, to: job)
-                }
-            }
+    private func register(_ request: RipRequest, followUp: RipFollowUp = RipFollowUp()) -> RipJob {
+        let id = String(UUID().uuidString.prefix(8))
+        let handle = RipJobHandle(id: id) { [weak self] update in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.apply(update, toJob: id) } }
         }
+        let job = RipJob(handle: handle, request: request, followUp: followUp)
+        StreamRipper.log(id, "start host=\(request.url.host ?? "?") \(request.summary)")
         jobs.insert(job, at: 0)
         syncActivityRow(job)
         postChange()
@@ -74,14 +67,13 @@ final class RipJobCenter {
 
     // MARK: - Updates
 
-    private func apply(_ update: RipJobUpdate, to job: RipJob) {
-        guard !job.phase.isFinished else { return }
+    private func apply(_ update: RipJobUpdate, toJob id: String) {
+        guard let job = jobs.first(where: { $0.id == id }), !job.phase.isFinished else { return }
         switch update {
         case .phase(let phase):
             job.phase = phase
             job.fraction = nil
             job.remaining = nil
-            job.queuedAt = phase == .queuedForEncode ? Date() : nil
         case .progress(let fraction, let remaining):
             job.fraction = fraction
             job.remaining = remaining
@@ -96,35 +88,15 @@ final class RipJobCenter {
     /// off the main thread: the destination can be a network volume.
     func finish(_ handle: RipJobHandle, outputPath: String?, sizeBytes: Int64?, error: String?) {
         guard let job = jobs.first(where: { $0.handle === handle }), !job.phase.isFinished else { return }
-        job.phase = handle.isCancelled ? .cancelled : (error == nil ? .done : .failed)
-        job.finishedAt = Date()
-        job.outputPath = outputPath
-        job.sizeBytes = sizeBytes
-        job.error = job.phase == .failed ? error : nil
-        job.fraction = job.phase == .done ? 1 : nil
-        job.remaining = nil
-        job.queuedAt = nil
-        StreamRipper.log(job.id, "\(job.phase.rawValue) after \(StreamRipper.formatDuration(job.finishedAt!.timeIntervalSince(job.startedAt)))")
-        history.append(RipHistoryEntry(
-            id: job.id, source: job.source, url: job.url, mode: job.mode, summary: job.summary,
-            folder: job.folder, title: job.title, outcome: job.phase, startedAt: job.startedAt,
-            finishedAt: job.finishedAt!, outputPath: outputPath,
-            sizeBytes: sizeBytes,
-            error: job.error))
+        let entry = job.finish(outputPath: outputPath, sizeBytes: sizeBytes, error: error)
+        StreamRipper.log(job.id, "\(entry.outcome.rawValue) after \(StreamRipper.formatDuration(entry.finishedAt.timeIntervalSince(entry.startedAt)))")
+        history.append(entry)
         syncActivityRow(job)
         postChange()
-        if job.phase == .done, case .audio = job.mode, let outputPath {
-            job.followUp.run(jobID: job.id, path: outputPath)
-        }
-        if job.phase == .failed, presentsFailures {
+        if entry.outcome == .done, let outputPath { job.followUp.run(jobID: job.id, path: outputPath) }
+        if entry.outcome == .failed, presentsFailures {
             DispatchQueue.main.async { MainActor.assumeIsolated { self.presentFailure(of: job) } }
         }
-    }
-
-    /// The job's place in the encode queue (1 = next), or nil when it is not waiting.
-    func encodeQueuePosition(of job: RipJob) -> Int? {
-        guard let queuedAt = job.queuedAt else { return nil }
-        return jobs.filter { ($0.queuedAt ?? .distantFuture) <= queuedAt }.count
     }
 
     // MARK: - User actions
@@ -133,13 +105,6 @@ final class RipJobCenter {
         guard !job.phase.isFinished else { return }
         StreamRipper.log(job.id, "cancelled by user (\(job.phase.rawValue))")
         job.handle.cancel()
-    }
-
-    /// Starts the same rip again. A YouTube download has no rip choices and is not retried here.
-    @discardableResult
-    func retry(url: URL, mode: StreamRipper.Mode?, folder: String?, followUp: RipFollowUp = RipFollowUp()) -> RipJob? {
-        guard let mode, let folder else { return nil }
-        return startRip(url: url, mode: mode, folder: folder, followUp: followUp)
     }
 
     func clearFinished() {
@@ -157,12 +122,12 @@ final class RipJobCenter {
         postChange()
     }
 
-    /// Terminates every running job's process; called as the app quits, so no encode outlives it.
+    /// Terminates every running job's process tree before returning; called as the app quits,
+    /// so no encode outlives it.
     func terminateAll() {
-        for job in jobs where !job.phase.isFinished {
-            StreamRipper.log(job.id, "terminated on app quit (\(job.phase.rawValue))")
-            job.handle.cancel()
-        }
+        let running = jobs.filter { !$0.phase.isFinished }
+        for job in running { StreamRipper.log(job.id, "terminated on app quit (\(job.phase.rawValue))") }
+        RipJobHandle.cancelAndWait(running.map(\.handle))
     }
 
     // MARK: - Presentation
@@ -188,9 +153,10 @@ final class RipJobCenter {
         alert.informativeText = job.title + "\n\n" + String((job.error ?? "").suffix(600))
         alert.alertStyle = .warning
         var actions: [() -> Void] = []
-        if job.mode != nil {
+        // A YouTube download has no rip choices and is not retried here.
+        if case .rip(let mode, let folder) = job.request.kind {
             alert.addButton(withTitle: "Retry")
-            actions.append { self.retry(url: job.url, mode: job.mode, folder: job.folder, followUp: job.followUp) }
+            actions.append { self.startRip(url: job.request.url, mode: mode, folder: folder, followUp: job.followUp) }
         }
         alert.addButton(withTitle: "Show in Stream Ripper")
         actions.append { WindowManager.shared.showRip() }
@@ -207,23 +173,12 @@ final class RipJobCenter {
     /// rip staging path in their arguments and by having no parent left (`ppid` 1). Called at
     /// launch, before the temp-item reaper, off the main thread.
     nonisolated static func terminateOrphanedRipProcesses() {
-        let ps = Process()
-        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-        ps.arguments = ["-axo", "pid=,ppid=,command="]
-        let out = Pipe()
-        ps.standardOutput = out
-        guard (try? ps.run()) != nil else { return }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        ps.waitUntilExit()
-        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-            let parts = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard parts.count == 3, let pid = Int32(parts[0]), parts[1] == "1" else { continue }
-            let command = parts[2]
-            guard command.contains("ffmpeg") || command.contains("yt-dlp"),
-                  ["nullplayer-rip-", "nullplayer-ytdl-"].contains(where: { command.contains($0) })
+        for entry in ProcessTable.snapshot().entries where entry.parent == 1 {
+            guard entry.command.contains("ffmpeg") || entry.command.contains("yt-dlp"),
+                  ["nullplayer-rip-", "nullplayer-ytdl-"].contains(where: { entry.command.contains($0) })
             else { continue }
-            kill(pid, SIGTERM)
-            NSLog("StreamRipper: terminated orphaned rip process pid=%d", pid)
+            kill(entry.pid, SIGTERM)
+            NSLog("StreamRipper: terminated orphaned rip process pid=%d", entry.pid)
         }
     }
 }

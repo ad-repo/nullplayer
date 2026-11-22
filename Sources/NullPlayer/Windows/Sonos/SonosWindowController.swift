@@ -1,91 +1,20 @@
 import AppKit
 
-final class SonosWindowController: NSWindowController, ModeDependentWindow, NSWindowDelegate {
-    private(set) var mixerView: SonosWindowView!
-    private var observers: [NSObjectProtocol] = []
-    private(set) var wasDockedWhenHidden = false
-
-    convenience init() {
-        let window = BorderlessWindow(contentRect: NSRect(x: 0, y: 0, width: 360, height: 260),
-                                      styleMask: [.borderless], backing: .buffered, defer: false)
-        self.init(window: window)
-        window.title = "Sonos Rooms"
-        window.isReleasedWhenClosed = false
-        window.isMovableByWindowBackground = false
-        window.isOpaque = false
-        window.backgroundColor = .clear
-        window.hasSkinShadow = true
-        window.minSize = NSSize(width: 250, height: 160)
-        window.allowedResizeEdges = [.bottom, .left, .right]
-        window.collectionBehavior = [.managed, .fullScreenPrimary]
-        window.delegate = self
-        // The toggle tears the rooms UI down and closes the stack gap.
-        window.closeAction = { WindowManager.shared.toggleSonos() }
-        window.setAccessibilityIdentifier("SonosRoomsWindow")
-        window.setAccessibilityLabel("Sonos rooms and volume")
-        mixerView = SonosWindowView(frame: NSRect(origin: .zero, size: window.frame.size))
-        mixerView.autoresizingMask = [.width, .height]
-        window.contentView = mixerView
-        for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.didMiniaturizeNotification,
-                     NSWindow.didDeminiaturizeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
-                guard let self, let window = self.window else { return }
-                if window.isVisible, !window.isMiniaturized, window.occlusionState.contains(.visible) {
-                    self.mixerView.resume()
-                } else { self.mixerView.suspend() }
-            })
-        }
+final class SonosWindowController: AuxiliarySurfaceWindowController {
+    init() {
+        super.init(surface: SonosWindowView(frame: NSRect(x: 0, y: 0, width: 360, height: 260)),
+                   title: "Sonos Rooms", size: NSSize(width: 360, height: 260), minSize: NSSize(width: 250, height: 160),
+                   accessibilityID: "SonosRoomsWindow", accessibilityLabel: "Sonos rooms and volume",
+                   close: { WindowManager.shared.toggleSonos() })
     }
 
-    deinit { observers.forEach(NotificationCenter.default.removeObserver) }
-
-    override func showWindow(_ sender: Any?) {
-        super.showWindow(sender)
-        mixerView.needsLayout = true
-        mixerView.layoutSubtreeIfNeeded()
-        mixerView.refresh()
-        mixerView.resume()
-    }
-
-    func prepareForUITeardown() {
-        if let window, window.isVisible { wasDockedWhenHidden = WindowManager.shared.isWindowDocked(window) }
-        mixerView.suspend()
-    }
-
-    func skinDidChange() { mixerView.needsLayout = true; mixerView.needsDisplay = true }
-
-    func windowWillClose(_ notification: Notification) {
-        if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
-        prepareForUITeardown()
-        WindowManager.shared.notifyMainWindowVisibilityChanged()
-    }
-
-    func windowDidResize(_ notification: Notification) {
-        mixerView.needsLayout = true
-        WindowManager.shared.postWindowLayoutDidChange()
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        guard let window else { return }
-        let origin = WindowManager.shared.windowWillMove(window, to: window.frame.origin)
-        WindowManager.shared.applySnappedPosition(window, to: origin)
-    }
-
-    func windowDidBecomeKey(_ notification: Notification) {
-        mixerView.needsDisplay = true
-        WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
-    }
-
-    func windowDidResignKey(_ notification: Notification) { mixerView.needsDisplay = true }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 /// Shared room controls. Skin-specific chrome is supplied by AuxiliaryWindowChrome.
-final class SonosWindowView: NSView {
+final class SonosWindowView: AuxiliarySurfaceView {
     private var refreshTimer: Timer?
     private var pollTask: Task<Void, Never>?
-    private var hostedContext: WinampModernHostedSurfaceContext?
-    private var hostedDrag = WinampModernHostedWindowDrag()
-    private var hostedStyle: WinampModernSurfaceStyle?
     private let scroll = NSScrollView()
     private let document = SonosRoomDocumentView()
     private let status = NSTextField(labelWithString: "Choose rooms to cast to")
@@ -95,22 +24,17 @@ final class SonosWindowView: NSView {
     private var roomIDs: [String] = []
     private var busy = false
     private var message: String?
-    private var dragStart: NSPoint?
-    private var closePressed = false
     private let mixer: SonosRoomMixer
     private let roomSource: () -> [UPnPManager.SonosRoomSummary]
-    private var controlScale: CGFloat { WindowManager.shared.uiScaleLevel.scaleFactor }
-    private var chrome: AuxiliaryWindowChrome { AuxiliaryWindowChrome(window: window, title: "SONOS") }
 
-    override convenience init(frame: NSRect) {
+    convenience init(frame: NSRect) {
         self.init(frame: frame, mixer: .shared, rooms: { CastManager.shared.sonosRooms })
     }
 
     init(frame: NSRect, mixer: SonosRoomMixer, rooms: @escaping () -> [UPnPManager.SonosRoomSummary]) {
         self.mixer = mixer
         self.roomSource = rooms
-        super.init(frame: frame)
-        wantsLayer = true
+        super.init(frame: frame, chromeTitle: "SONOS")
         needsLayout = true
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
@@ -126,40 +50,17 @@ final class SonosWindowView: NSView {
         castButton.action = #selector(castClicked)
         refreshButton.target = self
         refreshButton.action = #selector(refreshClicked)
-        NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged),
-                                               name: .windowLayoutDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged),
-                                               name: ModernSkinEngine.skinDidChangeNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged),
-                                               name: .doubleSizeDidChange, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(layoutChanged),
-                                               name: .connectedWindowHighlightDidChange, object: nil)
-        // A `.wmz` palette arrives after the player renders, so the window first draws before it exists.
-        NotificationCenter.default.addObserver(self, selector: #selector(hostedSurfaceStyleDidChange),
-                                               name: .hostedSurfaceStyleDidChange, object: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     deinit {
         refreshTimer?.invalidate()
         pollTask?.cancel()
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    @objc private func layoutChanged() { needsLayout = true; needsDisplay = true }
-    @objc private func hostedSurfaceStyleDidChange() {
-        guard [.wmp, .winampModern].contains(WindowManager.shared.uiMode.controllerFamily) else { return }
-        layoutChanged()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        needsLayout = true
     }
 
     override func layout() {
         super.layout()
-        let area = hostedContext == nil ? chrome.contentRect(bounds) : bounds
+        let area = contentArea
         let scale = controlScale
         let padding: CGFloat = 10 * scale
         let width = max(0, area.width - padding * 2)
@@ -178,23 +79,13 @@ final class SonosWindowView: NSView {
             rows[id]?.setBoundsSize(NSSize(width: rowWidth / scale, height: 65))
             rows[id]?.needsLayout = true
         }
-        status.textColor = (hostedStyle?.text ?? chrome.textColor).withAlphaComponent(0.8)
-        if hostedContext == nil { (window as? BorderlessWindow)?.titleBarHeight = chrome.titleHeight }
+        status.textColor = textColor.withAlphaComponent(0.8)
+        finishLayout()
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        if let hostedStyle {
-            hostedStyle.background.setFill()
-            bounds.fill()
-        } else { chrome.draw(bounds, closePressed: closePressed) }
-    }
-
-    func refresh() {
-        let background = (hostedStyle?.background ?? chrome.backgroundColor).usingColorSpace(.deviceRGB) ?? .black
-        let brightness = 0.299 * background.redComponent + 0.587 * background.greenComponent + 0.114 * background.blueComponent
-        let appearanceName: NSAppearance.Name = brightness < 0.5 ? .darkAqua : .aqua
-        if appearance?.name != appearanceName { appearance = NSAppearance(named: appearanceName) }
-        let tint = hostedStyle?.text ?? chrome.textColor
+    override func refresh() {
+        super.refresh()
+        let tint = textColor
         refreshButton.contentTintColor = tint
         castButton.contentTintColor = tint
         let manager = CastManager.shared
@@ -222,7 +113,7 @@ final class SonosWindowView: NSView {
         let changing = busy || mixer.changingRooms
         for room in rooms {
             rows[room.id]?.update(name: room.name, selected: selected.contains(room.id),
-                                  casting: casting, enabled: !changing, color: hostedStyle?.text ?? chrome.textColor)
+                                  casting: casting, enabled: !changing, color: tint)
         }
         castButton.title = casting ? "Stop Casting" : "Start Casting"
         castButton.isEnabled = !changing && (casting || (!selected.isEmpty && WindowManager.shared.audioEngine.currentTrack != nil))
@@ -266,56 +157,8 @@ final class SonosWindowView: NSView {
         }
     }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    /// A titleless WMP window's close sits over the status line, so it has to win against it.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let local = superview.map { convert(point, from: $0) } ?? point
-        if hostedContext == nil, SkinnedSurfaceChrome.hidesPaletteTitleBar,
-           chrome.closeRect(bounds).contains(local) { return self }
-        return super.hitTest(point)
-    }
-    override func mouseDown(with event: NSEvent) {
-        if let hostedContext { hostedDrag.prime(event, context: hostedContext); return }
-        let point = convert(event.locationInWindow, from: nil)
-        if hostedContext == nil && chrome.closeRect(bounds).contains(point) { closePressed = true; needsDisplay = true; return }
-        dragStart = event.locationInWindow
-        if let window { WindowManager.shared.windowWillStartDragging(window, fromTitleBar: true) }
-    }
-    override func mouseDragged(with event: NSEvent) {
-        if hostedContext != nil { hostedDrag.drag(event); return }
-        guard let start = dragStart, let window else { return }
-        let mouse = NSEvent.mouseLocation
-        let origin = NSPoint(x: mouse.x - start.x, y: mouse.y - start.y)
-        window.setFrameOrigin(WindowManager.shared.windowWillMove(window, to: origin))
-    }
-    override func mouseUp(with event: NSEvent) {
-        if hostedContext != nil { hostedDrag.end(); return }
-        if closePressed && chrome.closeRect(bounds).contains(convert(event.locationInWindow, from: nil)) {
-            (window as? BorderlessWindow)?.performCloseAction()
-        }
-        closePressed = false
-        if dragStart != nil, let window { WindowManager.shared.windowDidFinishDragging(window) }
-        dragStart = nil
-        needsDisplay = true
-    }
-}
-
-extension SonosWindowView: WinampModernHostedSurface {
-    var view: NSView { self }
-    func configureForHostedSurface(context: WinampModernHostedSurfaceContext) {
-        hostedContext = context
-        autoresizingMask = [.width, .height]
-    }
-    func applyPalette(_ style: WinampModernSurfaceStyle) {
-        hostedStyle = style
-        needsLayout = true
-        refresh()
-    }
-    func applySkinScale(_ scale: CGFloat) { needsLayout = true; needsDisplay = true }
-    func resume() {
-        needsLayout = true
-        layoutSubtreeIfNeeded()
-        refresh()
+    override func resume() {
+        super.resume()
         guard refreshTimer == nil else { return }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.window?.isVisible == true else { return }
@@ -330,14 +173,12 @@ extension SonosWindowView: WinampModernHostedSurface {
             }
         }
     }
-    func suspend() {
+    override func suspend() {
         refreshTimer?.invalidate()
         refreshTimer = nil
         pollTask?.cancel()
         pollTask = nil
     }
-    func unmountFromHolder() { suspend(); removeFromSuperview() }
-    func prepareForUITeardown() { suspend(); hostedContext = nil; removeFromSuperview() }
 }
 
 private final class SonosRoomDocumentView: NSView {
