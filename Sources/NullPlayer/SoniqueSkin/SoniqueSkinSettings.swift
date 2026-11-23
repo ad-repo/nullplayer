@@ -8,10 +8,10 @@ import Foundation
 struct SoniqueSkinSettings {
     private(set) var values: [String: [String: Int]] = [:]
     private(set) var findings: [SoniqueSkinFinding] = []
-    private let ini: SoniqueSkinINI
+    private let ini: INIFile
     private var visiting: Set<String> = []
 
-    init(_ ini: SoniqueSkinINI) {
+    init(_ ini: INIFile) {
         self.ini = ini
         for (section, keys) in SoniqueSkinDefaults.values.sorted(by: { $0.key < $1.key }) {
             for key in keys.keys.sorted() { _ = resolve(section, key) }

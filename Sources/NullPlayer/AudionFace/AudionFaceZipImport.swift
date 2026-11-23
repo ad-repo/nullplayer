@@ -2,15 +2,14 @@ import Foundation
 import ZIPFoundation
 
 /// A `.zip` of one or more face folders — Panic's distribution format — unpacked into a folder the
-/// caller owns, so each face then goes through `AudionFaceLoader` like any other. Every bound is
-/// checked from the central directory before a byte is inflated, and inflation is held to each
-/// entry's declared size and CRC. Shares nothing with `WMPArchive`; families stay isolated.
+/// caller owns, so each face then goes through `AudionFaceLoader` like any other. The bounds and the
+/// CRC are `SkinZipExtraction`'s; which entries a face takes, and where, are Audion's.
 enum AudionFaceZipImport {
     /// Unpacks `zip` into `destination` and returns every folder it unpacked an `index.json` into.
     /// Off the main thread, like the loader. A zip its central directory rejects writes nothing; one
     /// that fails a CRC can leave part of itself, so discard what it wrote on a throw.
     static func unpack(_ zip: URL, into destination: URL,
-                       limits: AudionFaceZipLimits = .production) throws -> [URL] {
+                       limits: SkinZipLimits = .audionFaces) throws -> [URL] {
         let archive: Archive
         do {
             archive = try Archive(url: zip, accessMode: .read)
@@ -18,65 +17,44 @@ enum AudionFaceZipImport {
             throw AudionFaceFinding(.unreadableZip, "'\(zip.lastPathComponent)' is not a readable zip.")
         }
 
-        var admitted: [(entry: Entry, target: URL)] = []
-        var count = 0
-        var total: UInt64 = 0
-        for entry in archive {
-            count += 1
-            guard count <= limits.entries else {
-                throw AudionFaceFinding(.zipOverLimit, "More than \(limits.entries) entries.")
+        let written: [URL]
+        do {
+            written = try SkinZipExtraction.extract(archive, limits: limits) { entry in
+                // Finder's AppleDouble shadow tree carries no face data; it is never written out.
+                guard !entry.path.hasPrefix("__MACOSX/") else { return nil }
+                guard entry.type != .symlink else {
+                    throw AudionFaceFinding(.pathEscape, "'\(entry.path)' is a symbolic link.")
+                }
+                let components = try safeComponents(entry.path)
+                guard entry.type == .file else { return nil }
+                return components.reduce(destination) { $0.appendingPathComponent($1) }
             }
-            // Finder's AppleDouble shadow tree carries no face data; it is never written out.
-            guard !entry.path.hasPrefix("__MACOSX/") else { continue }
-            guard entry.type != .symlink else {
-                throw AudionFaceFinding(.pathEscape, "'\(entry.path)' is a symbolic link.")
-            }
-            let components = try safeComponents(entry.path)
-            guard entry.type == .file else { continue }
-            let size = entry.uncompressedSize
-            guard size <= limits.entryBytes else {
-                throw AudionFaceFinding(.zipOverLimit, "'\(entry.path)' expands to \(size) bytes.")
-            }
-            guard size <= limits.totalBytes - total else {
-                throw AudionFaceFinding(.zipOverLimit, "The zip expands past \(limits.totalBytes) bytes.")
-            }
-            total += size
-            // Below the floor a ratio measures how plain a file is, not how hostile; above it the
-            // ratio is the bomb test (`.wmz` Amendment 1).
-            let ratio = Double(size) / Double(max(entry.compressedSize, 1))
-            if size > limits.ratioFloorBytes, ratio > Double(limits.ratio) {
-                throw AudionFaceFinding(.zipOverLimit, "'\(entry.path)' expands \(Int(ratio)):1, past \(limits.ratio):1.")
-            }
-            admitted.append((entry, components.reduce(destination) { $0.appendingPathComponent($1) }))
+        } catch let rejection as SkinZipExtraction.Rejection {
+            throw finding(rejection)
         }
 
-        for (entry, target) in admitted {
-            do {
-                try FileManager.default.createDirectory(at: target.deletingLastPathComponent(),
-                                                        withIntermediateDirectories: true)
-                FileManager.default.createFile(atPath: target.path, contents: nil)
-                let output = try FileHandle(forWritingTo: target)
-                defer { try? output.close() }
-                var written: UInt64 = 0
-                let checksum = try archive.extract(entry) { chunk in
-                    written += UInt64(chunk.count)
-                    guard written <= entry.uncompressedSize else {
-                        throw AudionFaceFinding(.zipOverLimit, "'\(entry.path)' inflates past its declared size.")
-                    }
-                    try output.write(contentsOf: chunk)
-                }
-                guard checksum == entry.checksum, written == entry.uncompressedSize else {
-                    throw AudionFaceFinding(.unreadableZip, "'\(entry.path)' fails its CRC or size check.")
-                }
-            } catch let finding as AudionFaceFinding {
-                throw finding
-            } catch {
-                throw AudionFaceFinding(.unreadableZip, "'\(entry.path)' could not be unpacked: \(error.localizedDescription)")
-            }
-        }
-
-        let faces = admitted.map(\.target).filter { $0.lastPathComponent.lowercased() == "index.json" }
+        let faces = written.filter { $0.lastPathComponent.lowercased() == "index.json" }
         return Set(faces.map { $0.deletingLastPathComponent() }).sorted { $0.path < $1.path }
+    }
+
+    /// `AUD0010` for a bound, `AUD0014` for an entry that cannot be unpacked.
+    private static func finding(_ rejection: SkinZipExtraction.Rejection) -> AudionFaceFinding {
+        switch rejection {
+        case let .tooManyEntries(limit):
+            return AudionFaceFinding(.zipOverLimit, "More than \(limit) entries.")
+        case let .entryTooLarge(path, bytes, _):
+            return AudionFaceFinding(.zipOverLimit, "'\(path)' expands to \(bytes) bytes.")
+        case let .totalTooLarge(limit):
+            return AudionFaceFinding(.zipOverLimit, "The zip expands past \(limit) bytes.")
+        case let .compressionRatio(path, ratio, limit):
+            return AudionFaceFinding(.zipOverLimit, "'\(path)' expands \(ratio):1, past \(limit):1.")
+        case let .inflatesPastDeclaredSize(path):
+            return AudionFaceFinding(.zipOverLimit, "'\(path)' inflates past its declared size.")
+        case let .failsCRCOrSize(path):
+            return AudionFaceFinding(.unreadableZip, "'\(path)' fails its CRC or size check.")
+        case let .unpackFailed(path, underlying):
+            return AudionFaceFinding(.unreadableZip, "'\(path)' could not be unpacked: \(underlying.localizedDescription)")
+        }
     }
 
     /// An entry's path as components that stay inside the destination, or `AUD0006`.

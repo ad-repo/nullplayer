@@ -41,7 +41,7 @@ struct SoniqueSkin {
         }
     }
 
-    let ini: SoniqueSkinINI
+    let ini: INIFile
     /// Every `skin.ini` key Sonique reads, the skin's or the default.
     let settings: SoniqueSkinSettings
     /// Decoded JPEGs, keyed by lowercased entry name (`/jpeg/misc`).
@@ -59,7 +59,8 @@ struct SoniqueSkin {
     // ponytail: decoded on first use, which may be the main thread; it is our own 130 KB file, not
     // untrusted input. Warm it off the main thread if a launch ever shows the cost.
     static let defaultSkin: SoniqueSkin = {
-        let empty = SoniqueSkin(ini: SoniqueSkinINI(""), settings: SoniqueSkinSettings(SoniqueSkinINI("")),
+        let noINI = INIFile("")
+        let empty = SoniqueSkin(ini: noINI, settings: SoniqueSkinSettings(noINI),
                                 images: [:], regions: [:], defaultModes: [], findings: [])
         do {
             guard let url = BundleHelper.url(forResource: "NullPlayer-Sonique", withExtension: "sgf", subdirectory: "Skins") else {

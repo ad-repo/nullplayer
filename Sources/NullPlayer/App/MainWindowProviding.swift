@@ -114,6 +114,25 @@ protocol SingleCanvasMainWindow: NSWindowController, SkinSizedMainWindow {
     static func loadSkin(at url: URL) async throws -> Skin
     /// Shows `shown`, or with nil the family's fallback, saying why when `error` is set.
     func present(_ shown: (skin: Skin, url: URL)?, error: Error?)
+
+    // The Skins menu (`SingleCanvasMainWindow+SkinsMenu`).
+    associatedtype Importer: SkinFileImporting
+    /// The mode the family's window runs in, and the feature that gates it.
+    static var mode: PlayerUIMode { get }
+    static var feature: AppFeature { get }
+    /// The family's installed skins and saved choice.
+    static func importer() -> Importer
+    /// The window's own panel for loading a skin from a file.
+    func importFromPanel()
+}
+
+/// What the Skins menu needs of a single-canvas family's installed skins.
+protocol SkinFileImporting {
+    var folder: SkinInstallFolder { get }
+    var selection: SkinSelection { get }
+    /// Deletes the installed skin of that name, clearing the selection if it was that one. Asked
+    /// from the Skins menu, on the main thread.
+    @MainActor func removeSkin(named name: String) async throws
 }
 
 extension SingleCanvasMainWindow {

@@ -5,7 +5,7 @@ Read `../SKILL.md` first; its isolation rule binds every section here.
 This file owns the loader, zip import, policy and diagnostics, and from Phase 3 the importer: what is
 tolerated, what stays fatal, and the order checks run in. The threat model and the locked limits are
 `docs/audion-face/phase-0-decision-record.md` § *Threat model* and § *Loading limits*.
-`AudionFacePolicy` and `AudionFaceZipLimits` are the executable copies. **A limit is never relaxed to
+`AudionFacePolicy` and `SkinZipLimits.audionFaces` are the executable copies. **A limit is never relaxed to
 make one face load**; an amendment goes in the decision record, argued about the threat.
 
 ## Entry points
@@ -15,7 +15,9 @@ make one face load**; an amendment goes in the decision record, argued about the
   `AudionFace.findings`, in a stable order (roles in `allCases` order).
 - `AudionFaceZipImport.unpack(_:into:limits:) throws -> [URL]`: unpacks into a folder the caller
   owns and returns every folder it unpacked an `index.json` into (never anything already there); each
-  then goes through the loader.
+  then goes through the loader. The bounds, size and CRC checks are the shared `SkinZipExtraction`
+  (`App/Skinning/`); which entries a face takes (`__MACOSX/` skipped, symlinks and escaping paths
+  `AUD0006`) and the mapping of its rejections to `AUD0010`/`AUD0014` are Audion's.
   Synchronous, so call it off the main thread. A zip rejected by its central directory writes
   nothing; one failing a CRC may leave a partial tree, so unpack into a fresh folder and discard it on
   a throw.

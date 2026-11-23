@@ -67,7 +67,7 @@ final class SoniqueSkinMainWindowController: NSWindowController, MainWindowProvi
     func selectedSkinURL() throws -> URL? { try importer.selectedSkinURL() }
     static func loadSkin(at url: URL) async throws -> SoniqueSkin { try await SoniqueSkinLoader.load(file: url) }
 
-    func importSkinFromPanel() {
+    func importFromPanel() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
         panel.allowedContentTypes = [UTType(filenameExtension: "sgf") ?? .data]
