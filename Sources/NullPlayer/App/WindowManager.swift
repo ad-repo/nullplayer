@@ -1202,12 +1202,6 @@ class WindowManager {
         return true
     }
 
-    /// Holds the opening of NullPlayer's window until the skin has said whether it draws `surface`
-    /// (a `.wmz` at launch flashed ours beside the held player). Asked after a failed route.
-    private func deferUntilSkinLoads(_ surface: SkinSurface, _ open: @escaping () -> Void) -> Bool {
-        skinSurfaceRouter?.deferUntilSkinLoads(surface, open) ?? false
-    }
-
     /// Whether the skin's copy of `surface` is on screen, or nil when the skin does not draw it.
     private func skinSurfaceVisibility(_ surface: SkinSurface) -> Bool? {
         guard let router = skinSurfaceRouter, router.drawsSurface(surface) else { return nil }
@@ -2162,7 +2156,10 @@ class WindowManager {
 
     func showPlaylist(at restoredFrame: NSRect? = nil) {
         if routeSkinSurface(.playlist, toggle: false, restoredFrame: restoredFrame) { return }
-        if deferUntilSkinLoads(.playlist, { [weak self] in self?.showPlaylist(at: restoredFrame) }) { return }
+        // Asked after a failed route: a `.wmz` at launch flashed ours beside the held player.
+        if skinSurfaceRouter?.deferUntilSkinLoads(.playlist, { [weak self] in self?.showPlaylist(at: restoredFrame) }) == true {
+            return
+        }
         let isNewWindow = playlistWindowController == nil
         if isNewWindow {
             switch auxiliaryControllerStyle {
@@ -2230,7 +2227,10 @@ class WindowManager {
     
     func showEqualizer(at restoredFrame: NSRect? = nil) {
         if routeSkinSurface(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }
-        if deferUntilSkinLoads(.equalizer, { [weak self] in self?.showEqualizer(at: restoredFrame) }) { return }
+        // Asked after a failed route: a `.wmz` at launch flashed ours beside the held player.
+        if skinSurfaceRouter?.deferUntilSkinLoads(.equalizer, { [weak self] in self?.showEqualizer(at: restoredFrame) }) == true {
+            return
+        }
         // The skin owns no equalizer, so NullPlayer's goes inside the skin's own frame when one
         // qualifies (B55) and into the standalone window below when none does.
         if routeWinampModernHostedWindow(.equalizer, toggle: false, restoredFrame: restoredFrame) { return }

@@ -4,8 +4,8 @@ import AppKit
 ///
 /// The skin draws the playlist or the equaliser whenever it declares one (`WMPSkinSurfaces`), and
 /// NullPlayer's window is the fallback for the handful that do not. The format has no library, so
-/// the library is always NullPlayer's. A wrapper rather than a conformance on the controller, so
-/// that `WindowManager` reaches it only through its `.wmp` guard.
+/// the library is always NullPlayer's. `WindowManager.skinSurfaceRouter` builds it over the
+/// controller for the `.wmp` family.
 struct WMPSkinSurfaceRouter: SkinSurfaceRouter {
     let controller: WMPMainWindowController
 
