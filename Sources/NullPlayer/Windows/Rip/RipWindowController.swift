@@ -67,6 +67,8 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
     private var highlightedID: String?
     /// The history revision the History tab last drew, so job progress does not redraw it.
     private var drawnHistoryRevision = -1
+    /// History files found missing, checked off the main thread (a NAS folder can stall it).
+    private var missingPaths: Set<String> = []
 
     private let urlLabel = NSTextField(labelWithString: "URL")
     private let urlField = NSTextField()
@@ -277,6 +279,7 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
 
         let models = showsHistory ? center.history.entries.map(model(for:)) : center.jobs.map(model(for:))
         drawnHistoryRevision = showsHistory ? center.history.revision : -1
+        if showsHistory { checkHistoryFiles() }
         while rows.count < models.count {
             let row = RipJobRowView()
             rows.append(row)
@@ -329,8 +332,8 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
         parts.append(entry.request.summary)
         var actions: [RipRowModel.Action] = []
         if let path = entry.outputPath {
-            if FileManager.default.fileExists(atPath: path) { actions += fileActions(path: path) }
-            else { parts.append("file moved or deleted") }
+            if missingPaths.contains(path) { parts.append("file moved or deleted") }
+            else { actions += fileActions(path: path) }
         }
         if entry.outcome == .failed { parts.append(Self.firstLine(of: entry.error)) }
         actions += retryAction(entry.request)
@@ -343,6 +346,19 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
         })
         return RipRowModel(id: entry.id, title: entry.title, detail: parts.joined(separator: " · "), detailToolTip: entry.error,
                            fraction: nil, showsProgress: false, isFailure: entry.outcome == .failed, actions: actions)
+    }
+
+    /// Looks for History's files in the background and redraws when the missing set changes.
+    private func checkHistoryFiles() {
+        let paths = center.history.entries.compactMap(\.outputPath)
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let missing = Set(paths.filter { !FileManager.default.fileExists(atPath: $0) })
+            DispatchQueue.main.async {
+                guard let self, missing != self.missingPaths else { return }
+                self.missingPaths = missing
+                self.refresh()
+            }
+        }
     }
 
     /// A failure's first line; the row's tooltip carries the whole error.

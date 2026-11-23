@@ -37,11 +37,12 @@ final class RipJobCenter {
 
     // MARK: - Starting jobs
 
-    /// Starts a rip, or returns the same rip already in progress (same URL and choices).
+    /// Starts a rip, or returns the same rip already in progress (same URL, choices and folder).
     @discardableResult
     func startRip(url: URL, mode: StreamRipper.Mode, folder: String, followUp: RipFollowUp = RipFollowUp()) -> RipJob {
-        if let running = jobs.first(where: { $0.duplicates(url: url, mode: mode) }) { return running }
-        let job = register(RipRequest(url: url, kind: .rip(mode, folder: folder)), followUp: followUp)
+        let request = RipRequest(url: url, kind: .rip(mode, folder: folder))
+        if let running = jobs.first(where: { $0.duplicates(request) }) { return running }
+        let job = register(request, followUp: followUp)
         StreamRipper.run(job.handle, mode: mode, sourceURL: url, folder: folder)
         return job
     }

@@ -167,6 +167,16 @@ extension StreamRipper {
             }
         }
 
+        // A cancel during the copy wins: the rip keeps nothing at the destination. Past this check
+        // the rip is done, and `RipJob.finish` keeps it done over a later cancel.
+        if handle.isCancelled {
+            if let path = outputPath {
+                let file = URL(fileURLWithPath: path)
+                try? fm.removeItem(at: file)
+                if chaptersFile != nil { try? fm.removeItem(at: file.deletingPathExtension().appendingPathExtension("cue")) }
+            }
+            return cancelled()
+        }
         try? fm.removeItem(at: stagingFolder)
         return (outputPath, nil)
     }
@@ -328,7 +338,7 @@ extension StreamRipper {
             return .failure(TranscodeError(message: "Could not create a temporary video encode folder: \(error.localizedDescription)"))
         }
 
-        let source = probeSource(at: inputPath, ffmpeg: ffmpeg)
+        let source = probeSource(at: inputPath, ffmpeg: ffmpeg, handle: handle)
         let sourceDescription = "\(source.videoCodec ?? "?") \(source.height.map { "\($0)p" } ?? "?")"
             + " \(source.audioCodec ?? "?") \(source.kbps.map { "\($0)k" } ?? "?")"
         var args = [
@@ -431,11 +441,11 @@ extension StreamRipper {
     }
 
     /// Reads the source with the `ffprobe` beside `ffmpeg`.
-    private static func probeSource(at path: String, ffmpeg: String) -> SourceInfo {
+    private static func probeSource(at path: String, ffmpeg: String, handle: RipJobHandle) -> SourceInfo {
         let ffprobe = URL(fileURLWithPath: ffmpeg).deletingLastPathComponent().appendingPathComponent("ffprobe").path
         guard let output = try? RipProcess.run(ffprobe, ["-v", "error", "-show_entries",
                                                          "format=bit_rate,duration:stream=codec_type,codec_name,height",
-                                                         "-of", "json", path]),
+                                                         "-of", "json", path], handle: handle),
               let json = (try? JSONSerialization.jsonObject(with: output.stdout)) as? [String: Any]
         else { return SourceInfo() }
         let streams = json["streams"] as? [[String: Any]] ?? []

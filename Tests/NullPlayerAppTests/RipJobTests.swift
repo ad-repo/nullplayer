@@ -114,6 +114,18 @@ final class RipProgressTests: XCTestCase {
         XCTAssertEqual(recorder.titles, ["Rush Live"])
     }
 
+    /// A pipe read can end mid-character; the title still decodes whole.
+    func testYtDlpTitleSplitInsideAUTF8Character() {
+        let recorder = UpdateRecorder()
+        let reader = YtDlpProgressReader(handle: recorder.handle(id: "test"), isVideo: false)
+        let line = Data("NPPROG|  5.0%|9|Café Live\n".utf8)
+        let cut = line.firstIndex(of: 0xC3)! + 1  // between the two bytes of "é"
+        reader.consume(line[..<cut])
+        reader.consume(line[cut...])
+        XCTAssertEqual(recorder.fractions, [0.05])
+        XCTAssertEqual(recorder.titles, ["Café Live"])
+    }
+
     func testFFmpegProgressFractionAndRemaining() {
         let recorder = UpdateRecorder()
         let handle = recorder.handle(id: "test")
@@ -180,7 +192,10 @@ final class RipHandleTests: XCTestCase {
                 RipEncodeQueue.release()
                 done.fulfill()
             }
-            Thread.sleep(forTimeInterval: 0.1)  // q2 asks first
+            // q2 is in line before q3 asks.
+            let deadline = Date().addingTimeInterval(5)
+            while RipEncodeQueue.position(of: id) == nil, Date() < deadline { Thread.sleep(forTimeInterval: 0.01) }
+            XCTAssertNotNil(RipEncodeQueue.position(of: id), "\(id) joined the line")
         }
         XCTAssertEqual(RipEncodeQueue.position(of: "q2"), 1)
         XCTAssertEqual(RipEncodeQueue.position(of: "q3"), 2)
@@ -246,13 +261,17 @@ final class RipJobCenterTests: XCTestCase {
     func testDuplicateMatchesOnlyARunningJobWithTheSameChoices() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
         let mode = StreamRipper.Mode.video(.init(resolution: .p2160, format: .original))
-        let job = RipJob(handle: RipJobHandle(id: "dup"), request: RipRequest(url: url, kind: .rip(mode, folder: "/tmp")))
-        XCTAssertTrue(job.duplicates(url: url, mode: mode))
-        XCTAssertFalse(job.duplicates(url: url, mode: .video(.init(resolution: .p1080, format: .original))))
-        let download = RipJob(handle: RipJobHandle(id: "yt"), request: RipRequest(url: url, kind: .youtube(summary: "youtube video")))
-        XCTAssertFalse(download.duplicates(url: url, mode: mode), "a YouTube download is never a rip's duplicate")
+        let request = RipRequest(url: url, kind: .rip(mode, folder: "/tmp"))
+        let job = RipJob(handle: RipJobHandle(id: "dup"), request: request)
+        XCTAssertTrue(job.duplicates(request))
+        XCTAssertFalse(job.duplicates(RipRequest(url: url, kind: .rip(.video(.init(resolution: .p1080, format: .original)), folder: "/tmp"))))
+        XCTAssertFalse(job.duplicates(RipRequest(url: url, kind: .rip(mode, folder: "/Volumes/NAS"))),
+                       "the same rip into another folder is a new rip")
+        let youtube = RipRequest(url: url, kind: .youtube(summary: "youtube video"))
+        XCTAssertFalse(RipJob(handle: RipJobHandle(id: "yt"), request: youtube).duplicates(youtube),
+                       "a YouTube download is never a rip's duplicate")
         job.phase = .done
-        XCTAssertFalse(job.duplicates(url: url, mode: mode))
+        XCTAssertFalse(job.duplicates(request))
     }
 
     func testHistoryPersistsCapsAndSurvivesACorruptFile() throws {

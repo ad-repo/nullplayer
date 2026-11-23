@@ -4511,7 +4511,9 @@ class WindowManager {
         let controller = showAuxiliaryWindow(.rip, hosted: .rip, controller: \.ripWindowController, make: RipWindowController.init,
                                              classicMinSize: NSSize(width: 300, height: 300),
                                              defaultSize: NSSize(width: 380, height: 400), restoredFrame: restoredFrame)
-        if focusURL { controller?.ripView.focusURLField() }
+        guard focusURL else { return }
+        let hosted = winampModernHostedController?.hostedWindowSurface(.rip) as? RipWindowView
+        (controller?.ripView ?? hosted)?.focusURLField()
     }
 
     func toggleRip() { toggleAuxiliaryWindow(.rip, controller: ripWindowController) { showRip() } }
@@ -4562,7 +4564,8 @@ class WindowManager {
             let frame = window.frame
             controller?.prepareForUITeardown()
             window.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: frame)
+            // No stack in WMP: hiding one window must not move the others (as closing it doesn't).
+            if !uiMode.controllerFamily.hostsForeignSkin { slideUpWindowsBelow(closingFrame: frame) }
         } else { show() }
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()

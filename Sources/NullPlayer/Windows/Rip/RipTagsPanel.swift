@@ -8,6 +8,9 @@ final class RipTagsPanel: NSPanel {
     private let jobID: String
     private var fields: [String: NSTextField] = [:]
     private let saveButton = NSButton(title: "Save", target: nil, action: nil)
+    /// While a save runs the panel stays open: closing it would start the follow-up (a split,
+    /// a library add) on the file before its new tags are in.
+    private var saving = false
     /// Open panels, kept alive until they close.
     private static var open: Set<RipTagsPanel> = []
 
@@ -19,12 +22,17 @@ final class RipTagsPanel: NSPanel {
         title = "Edit Tags: \(file.lastPathComponent)"
         isReleasedWhenClosed = false
         buildUI()
-        // ffprobe runs off the main thread; Save waits until the fields are filled.
+        // ffprobe runs off the main thread; Save waits until the fields are filled, and stays off
+        // if they could not be read.
         saveButton.isEnabled = false
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let tags = RipFileTags.read(file)
             DispatchQueue.main.async {
                 guard let self else { return }
+                guard let tags else {
+                    self.alert("Tags Not Read", "The file's tags could not be read, so they cannot be saved.")
+                    return
+                }
                 for (key, field) in self.fields where field.stringValue.isEmpty { field.stringValue = tags[key] ?? "" }
                 self.saveButton.isEnabled = true
             }
@@ -74,6 +82,7 @@ final class RipTagsPanel: NSPanel {
         makeFirstResponder(nil)
         let tags = fields.mapValues { $0.stringValue.trimmingCharacters(in: .whitespacesAndNewlines) }
         saveButton.isEnabled = false
+        saving = true
         let file = file, jobID = jobID
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let error: Error?
@@ -81,20 +90,26 @@ final class RipTagsPanel: NSPanel {
             StreamRipper.log(jobID, error.map { "tag save failed: \($0.localizedDescription)" } ?? "tags saved")
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
+                self.saving = false
                 if let error {
                     self.saveButton.isEnabled = true
-                    let alert = NSAlert()
-                    alert.messageText = "Tags Not Saved"
-                    alert.informativeText = error.localizedDescription
-                    alert.beginSheetModal(for: self)
+                    self.alert("Tags Not Saved", error.localizedDescription)
                 } else { self.close() }
             }
         }
     }
 
+    private func alert(_ title: String, _ text: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = text
+        alert.beginSheetModal(for: self)
+    }
+
     @objc private func cancelClicked() { close() }
 
     override func close() {
+        guard !saving else { NSSound.beep(); return }
         super.close()
         guard Self.open.remove(self) != nil else { return }
         let onClose = onClose

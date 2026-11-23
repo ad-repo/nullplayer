@@ -12,13 +12,16 @@ enum RipFileTags {
     /// Ogg keeps its tags on the audio stream, not the container.
     private static func isOgg(_ file: URL) -> Bool { ["ogg", "oga", "opus"].contains(file.pathExtension.lowercased()) }
 
-    static func read(_ file: URL) -> [String: String] {
-        guard let ffprobe = StreamRipper.resolveTool("ffprobe") else { return [:] }
+    /// The file's tags; nil when they could not be read (no ffprobe, or it failed), which is not
+    /// the same as a file without tags: saving over it would clear every tag.
+    static func read(_ file: URL) -> [String: String]? {
+        guard let ffprobe = StreamRipper.resolveTool("ffprobe") else { return nil }
         let names = keys.map(\.key).joined(separator: ",")
         guard let output = try? RipProcess.run(ffprobe, ["-v", "error", "-select_streams", "a:0",
                                                          "-show_entries", "stream_tags=\(names):format_tags=\(names)",
-                                                         "-of", "default=noprint_wrappers=1", file.path])
-        else { return [:] }
+                                                         "-of", "default=noprint_wrappers=1", file.path]),
+              output.status == 0
+        else { return nil }
         let out = String(decoding: output.stdout, as: UTF8.self)
         var tags: [String: String] = [:]
         for line in out.split(separator: "\n") {
@@ -32,7 +35,8 @@ enum RipFileTags {
     }
 
     /// Rewrites the file with `tags` (an empty value clears that tag). With a sibling .cue, its
-    /// PERFORMER lines follow the artist, since the splitter prefers them to the file's own.
+    /// PERFORMER lines follow the artist, since the splitter prefers them to the file's own; a
+    /// cleared artist removes them.
     static func write(_ tags: [String: String], to file: URL) throws {
         guard let ffmpeg = StreamRipper.resolveTool("ffmpeg") else {
             throw NSError(domain: "RipFileTags", code: 1, userInfo: [NSLocalizedDescriptionKey: "ffmpeg is not installed."])
@@ -60,11 +64,12 @@ enum RipFileTags {
         _ = try FileManager.default.replaceItemAt(file, withItemAt: temp)
 
         let cue = file.deletingPathExtension().appendingPathExtension("cue")
-        if let artist = tags["artist"], !artist.isEmpty, let text = try? String(contentsOf: cue, encoding: .utf8) {
+        if let artist = tags["artist"], let text = try? String(contentsOf: cue, encoding: .utf8) {
             let quoted = artist.replacingOccurrences(of: "\"", with: "'")
-            let lines = text.components(separatedBy: "\n").map { line -> String in
+            let lines = text.components(separatedBy: "\n").compactMap { line -> String? in
                 let indent = line.prefix { $0 == " " || $0 == "\t" }
-                return line.dropFirst(indent.count).hasPrefix("PERFORMER ") ? "\(indent)PERFORMER \"\(quoted)\"" : line
+                guard line.dropFirst(indent.count).hasPrefix("PERFORMER ") else { return line }
+                return artist.isEmpty ? nil : "\(indent)PERFORMER \"\(quoted)\""
             }
             try lines.joined(separator: "\n").write(to: cue, atomically: true, encoding: .utf8)
         }

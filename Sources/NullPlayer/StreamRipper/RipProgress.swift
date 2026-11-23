@@ -1,16 +1,16 @@
 import Foundation
 
-/// Splits a pipe's output into lines, keeping a partial last line for the next chunk.
+/// Splits a pipe's output into lines, keeping a partial last line for the next chunk. Splits on
+/// the newline byte before decoding, so a UTF-8 character cut between two reads survives.
 /// Fed from one readability handler, which runs serially.
 struct LineBuffer {
-    private var pending = ""
+    private var pending = Data()
 
     mutating func lines(from data: Data) -> [Substring] {
-        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return [] }
-        pending += text
-        guard let last = pending.lastIndex(of: "\n") else { return [] }
-        let complete = pending[..<last]
-        pending = String(pending[pending.index(after: last)...])
+        pending.append(data)
+        guard let last = pending.lastIndex(of: UInt8(ascii: "\n")) else { return [] }
+        let complete = String(decoding: pending[..<last], as: UTF8.self)
+        pending = Data(pending[pending.index(after: last)...])
         return complete.split(separator: "\n", omittingEmptySubsequences: true)
     }
 }

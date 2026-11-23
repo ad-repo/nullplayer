@@ -56,19 +56,23 @@ URL field and pre-fills it from a clipboard `http(s)` URL.
 `RipJobCenter.shared` owns `jobs` (running and this session's finished). Each job carries its
 `RipRequest`: the URL and a `Kind` — `.rip(Mode, folder:)` from the window, retryable, or
 `.youtube(summary:)` for the YouTube source's downloads, listed but never retried. `startRip`
-registers a `RipJob` and calls `StreamRipper.run(handle:…)`, which works on a background queue and
+returns the running job for an identical request (URL, choices and folder), else registers a `RipJob` and calls `StreamRipper.run(handle:…)`, which works on a background queue and
 reports through `RipJobHandle` (`.phase`, `.progress`, `.title`; the handle's `onUpdate` is fixed
 at creation and hops to the main actor by job id). The handle owns the running `Process`;
 `cancel()` marks it cancelled and returns at once, terminating the process **and its descendants**
 (`ProcessTable.terminateTrees`, one `ps` snapshot) on a background queue — yt-dlp runs ffmpeg as a
 child that survives a terminated yt-dlp and keeps writing into the staging the cancel deletes.
+A cancel that lands during the copy to the folder removes the copied file (and its `.cue`); past
+that last check the rip is done, and `RipJob.finish` keeps a saved file's job **Done** over a later
+cancel, so History never lists a cancelled job with a file.
 `finish` takes the file size read off the main thread by the caller (the destination can be a NAS),
 ends the job (`RipJob.finish`, which returns its `RipHistoryEntry`), records it, then runs the
 job's `RipFollowUp` (empty for video and YouTube jobs).
 
 Every `.progress` update posts `.ripJobsDidChange`. The History tab redraws only when
-`RipHistoryStore.revision` changed (its rows check their files on disk), and job rows show the
-stored `sizeBytes`, so progress ticks never touch the disk.
+`RipHistoryStore.revision` changed, and job rows show the stored `sizeBytes`, so progress ticks
+never touch the disk. History rows' files are checked off the main thread (`checkHistoryFiles`; a
+NAS folder can stall): a row shows *file moved or deleted* once the check finds it missing.
 
 - **Encodes run one at a time, in arrival order**: `RipEncodeQueue` keeps the FIFO of waiting job
   ids behind an `NSCondition` (a plain semaphore wakes waiters in any order). It is the only record
@@ -135,13 +139,15 @@ Retry does not), run by `RipJobCenter.finish` for a `.done` audio rip.
 
 - **Edit tags when done** → `RipTagsPanel` (title, artist, album, album artist, genre, year, track,
   comment) pre-filled by `RipFileTags.read` (ffprobe, stream then format tags). **Save** runs
-  `RipFileTags.write`: ffmpeg stream copy into a temp sibling, then `replaceItemAt`.
+  `RipFileTags.write`: ffmpeg stream copy into a temp sibling, then `replaceItemAt`. `read` returns
+  nil when ffprobe is missing or fails — distinct from a file with no tags — and Save stays off,
+  since saving blank fields would clear every tag. While a save runs the panel cannot close.
   - Ogg keeps tags on the stream: `-metadata:s:a:0`.
   - Ogg's cover is read by ffmpeg as a picture stream the Ogg muxer cannot write, so only `0:a` is
     mapped and the cover is re-embedded as a base64 FLAC picture block in `METADATA_BLOCK_PICTURE`.
   - `.m4a` defaults to the ipod muxer, which rejects a cover stream; `-f mp4` writes it.
-  - With a sibling `.cue`, its `PERFORMER` lines are rewritten to the new artist — the splitter
-    prefers a track's cue performer to the file's artist.
+  - With a sibling `.cue`, its `PERFORMER` lines are rewritten to the new artist, or removed when
+    the artist is cleared — the splitter prefers a track's cue performer to the file's artist.
 - **Add to Library** → with a sibling `.cue`, `CueAlbumSplitter.splitIfNeeded` (regardless of the
   `cueSplitOnImportEnabled` pref) and the split tracks are added; otherwise the file. Both via
   `MediaLibrary.addTracks`. With both boxes, the add waits for the panel to close (Save or Cancel),

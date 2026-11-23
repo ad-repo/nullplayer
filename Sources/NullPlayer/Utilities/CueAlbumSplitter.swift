@@ -319,7 +319,8 @@ enum CueAlbumSplitter {
         return keptExtensions.contains(ext) ? ext : "flac"
     }
 
-    private static let keptExtensions: Set<String> = ["flac", "mp3", "m4a", "aac", "ogg", "oga", "opus", "wav", "aiff", "aif"]
+    /// Each one `AudioFileValidator` accepts, or the library refuses the split (`.oga` splits to FLAC).
+    private static let keptExtensions: Set<String> = ["flac", "mp3", "m4a", "aac", "ogg", "opus", "wav", "aiff", "aif"]
 
     /// Formats ffmpeg writes an attached cover picture into.
     private static let coverArtExtensions: Set<String> = ["flac", "mp3", "m4a"]

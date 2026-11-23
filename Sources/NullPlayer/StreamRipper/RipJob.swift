@@ -76,16 +76,18 @@ final class RipJob {
         self.title = request.url.absoluteString
     }
 
-    /// Whether this job and a new rip request are the same rip still in progress.
-    func duplicates(url: URL, mode: StreamRipper.Mode) -> Bool {
-        guard !phase.isFinished, case .rip(let running, _) = request.kind else { return false }
-        return request.url == url && running == mode
+    /// Whether this job is the same rip (URL, choices and folder), still in progress.
+    func duplicates(_ other: RipRequest) -> Bool {
+        guard !phase.isFinished, case .rip = request.kind else { return false }
+        return request == other
     }
 
-    /// Ends the job: `error` nil and not cancelled is success. Returns it as History keeps it.
+    /// Ends the job: `error` nil is success, and a cancel that came too late to stop the file
+    /// reaching its folder (`outputPath` set) does not undo it. Returns it as History keeps it.
     func finish(outputPath: String?, sizeBytes: Int64?, error: String?) -> RipHistoryEntry {
         let finishedAt = Date()
-        phase = handle.isCancelled ? .cancelled : (error == nil ? .done : .failed)
+        let saved = error == nil && outputPath != nil
+        phase = handle.isCancelled && !saved ? .cancelled : (error == nil ? .done : .failed)
         self.finishedAt = finishedAt
         self.outputPath = outputPath
         self.sizeBytes = sizeBytes
