@@ -274,6 +274,32 @@ final class RipJobCenterTests: XCTestCase {
         XCTAssertEqual(RipWindowView.errorSummary(nil), "")
     }
 
+    /// Jobs saving the same name at once each keep their own file; neither deletes the other's.
+    func testConcurrentTransfersToOneNameKeepEveryFile() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("rip-transfer-\(UUID().uuidString)")
+        let folder = root.appendingPathComponent("dest")
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let count = 8
+        let staged = try (0..<count).map { index -> URL in
+            let url = root.appendingPathComponent("staged-\(index).opus")
+            try Data(repeating: UInt8(index), count: 2_000_000).write(to: url)
+            return url
+        }
+        let desired = folder.appendingPathComponent("Album.opus")
+        let errors = OrderRecorder()
+        DispatchQueue.concurrentPerform(iterations: count) { index in
+            do { try StreamRipper.transferStagedFile(from: staged[index], to: desired, replaceExisting: false) }
+            catch { errors.append("\(error)") }
+        }
+        XCTAssertEqual(errors.ids, [])
+        let saved = try fm.contentsOfDirectory(atPath: folder.path)
+        XCTAssertEqual(saved.count, count, "every job's file survives: \(saved.sorted())")
+        let firstBytes = Set(try saved.map { try Data(contentsOf: folder.appendingPathComponent($0)).first })
+        XCTAssertEqual(firstBytes.count, count, "each saved file is a different job's")
+    }
+
     func testDuplicateMatchesOnlyARunningJobWithTheSameChoices() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
         let mode = StreamRipper.Mode.video(.init(resolution: .p2160, format: .original))

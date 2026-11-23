@@ -71,8 +71,11 @@ extension StreamRipper {
             log(ripID, "failed after \(elapsed(since: started)): \(message.suffix(2000))")
             return (nil, message + "\n\n" + recoverStagingContents(from: stagingFolder).message)
         }
+        /// Every file this rip has put in `folder`, so a cancel removes those and nothing else.
+        var saved: [URL] = []
         /// A cancel: nothing is kept, so nothing is recovered to ~/Downloads.
         func cancelled() -> (String?, String?) {
+            for file in saved { try? fm.removeItem(at: file) }
             try? fm.removeItem(at: stagingFolder)
             return (nil, nil)
         }
@@ -140,15 +143,18 @@ extension StreamRipper {
         handle.report(.phase(.moving))
         if let staged = outputPath {
             switch moveRippedFile(from: staged, toFolder: folder) {
-            case .success(let moved): outputPath = moved
-            case .failure(let error): return fail(error.message)
+            case .success(let moved):
+                outputPath = moved
+                saved.append(URL(fileURLWithPath: moved))
+            case .failure(let error): return handle.isCancelled ? cancelled() : fail(error.message)
             }
         } else {
             // yt-dlp succeeded but didn't report the exact path; move whatever landed in
             // staging so the file still reaches the destination.
             do {
-                try moveAllContents(of: stagingFolder, toFolder: folder)
+                try moveAllContents(of: stagingFolder, toFolder: folder, saved: &saved)
             } catch {
+                if handle.isCancelled { return cancelled() }
                 return fail("The completed download could not be moved to the destination: " + error.localizedDescription)
             }
         }
@@ -159,8 +165,9 @@ extension StreamRipper {
             let chapters = readChapters(from: cf)
             if chapters.count >= 2 {
                 do {
-                    try writeCueFile(audioPath: path, chapters: chapters, stagingFolder: stagingFolder)
+                    saved.append(try writeCueFile(audioPath: path, chapters: chapters, stagingFolder: stagingFolder))
                 } catch {
+                    if handle.isCancelled { return cancelled() }
                     return fail("The media file was saved to \(path), but its .cue sheet could not be saved: "
                         + error.localizedDescription)
                 }
@@ -169,14 +176,7 @@ extension StreamRipper {
 
         // A cancel during the copy wins: the rip keeps nothing at the destination. Past this check
         // the rip is done, and `RipJob.finish` keeps it done over a later cancel.
-        if handle.isCancelled {
-            if let path = outputPath {
-                let file = URL(fileURLWithPath: path)
-                try? fm.removeItem(at: file)
-                if chaptersFile != nil { try? fm.removeItem(at: file.deletingPathExtension().appendingPathExtension("cue")) }
-            }
-            return cancelled()
-        }
+        if handle.isCancelled { return cancelled() }
         try? fm.removeItem(at: stagingFolder)
         return (outputPath, nil)
     }
@@ -201,8 +201,9 @@ extension StreamRipper {
     }
 
     /// Best-effort move of every top-level item in the staging dir to `folder`.
-    /// Used as a fallback when yt-dlp didn't report the exact output path.
-    private static func moveAllContents(of stagingFolder: URL, toFolder folder: String) throws {
+    /// Used as a fallback when yt-dlp didn't report the exact output path. Each file that
+    /// arrives joins `saved`.
+    private static func moveAllContents(of stagingFolder: URL, toFolder folder: String, saved: inout [URL]) throws {
         let fm = FileManager.default
         let items = try fm.contentsOfDirectory(at: stagingFolder, includingPropertiesForKeys: nil)
         guard !items.isEmpty else {
@@ -211,11 +212,11 @@ extension StreamRipper {
         for item in items {
             let desiredURL = URL(fileURLWithPath: folder)
                 .appendingPathComponent(item.lastPathComponent)
-            try transferStagedFile(
+            saved.append(try transferStagedFile(
                 from: item,
                 to: desiredURL,
                 replaceExisting: false
-            )
+            ))
         }
     }
 
@@ -247,7 +248,7 @@ extension StreamRipper {
         audioPath: String,
         chapters: [Chapter],
         stagingFolder: URL
-    ) throws {
+    ) throws -> URL {
         let audioURL = URL(fileURLWithPath: audioPath)
         let fileName = audioURL.lastPathComponent
         let base = audioURL.deletingPathExtension().lastPathComponent
@@ -282,7 +283,7 @@ extension StreamRipper {
         try (lines.joined(separator: "\n") + "\n")
             .write(to: stagedCueURL, atomically: true, encoding: .utf8)
 
-        try transferStagedFile(
+        return try transferStagedFile(
             from: stagedCueURL,
             to: destinationCueURL,
             replaceExisting: true

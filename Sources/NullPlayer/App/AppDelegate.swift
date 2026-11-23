@@ -366,7 +366,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let ext = url.pathExtension.lowercased()
 
             // Try to expand .cue files or sibling cues first
-            if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if ext == "cue" || AudioFileValidator.supportedExtensions.contains(ext) {
                 if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
                     if !cueExpanded.isEmpty {
                         if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
@@ -384,7 +384,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Fall back to normal audio file loading
-            if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if AudioFileValidator.supportedExtensions.contains(ext) {
                 tracksToLoad.append(Track(url: url))
             }
         }

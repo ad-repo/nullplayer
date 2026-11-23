@@ -69,6 +69,8 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
     private var drawnHistoryRevision = -1
     /// History files found missing, checked off the main thread (a NAS folder can stall it).
     private var missingPaths: Set<String> = []
+    /// The latest History file check; an older one finishing later is dropped.
+    private var historyCheck = 0
 
     private let urlLabel = NSTextField(labelWithString: "URL")
     private let urlField = NSTextField()
@@ -351,10 +353,12 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
     /// Looks for History's files in the background and redraws when the missing set changes.
     private func checkHistoryFiles() {
         let paths = center.history.entries.compactMap(\.outputPath)
+        historyCheck += 1
+        let check = historyCheck
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let missing = Set(paths.filter { !FileManager.default.fileExists(atPath: $0) })
             DispatchQueue.main.async {
-                guard let self, missing != self.missingPaths else { return }
+                guard let self, check == self.historyCheck, missing != self.missingPaths else { return }
                 self.missingPaths = missing
                 self.refresh()
             }

@@ -298,12 +298,23 @@ enum StreamRipper {
     /// remain untouched and SMB/AFP sees one sequential copy with no destination
     /// rename. Replacement is reserved for the small CUE sidecar; its temporary
     /// sibling uses a normal visible filename for NAS compatibility.
+    ///
+    /// Transfers run one at a time: two jobs saving the same name must not both pick it, or the
+    /// one whose copy fails would delete the other's finished file as its own partial copy.
+    /// ponytail: one lock for every destination, so a slow NAS copy holds up a local one; lock
+    /// per destination folder if that is ever felt.
     @discardableResult
     static func transferStagedFile(
         from sourceURL: URL,
         to desiredURL: URL,
         replaceExisting: Bool
     ) throws -> URL {
+        try transferLock.withLock { try transfer(from: sourceURL, to: desiredURL, replaceExisting: replaceExisting) }
+    }
+
+    private static let transferLock = NSLock()
+
+    private static func transfer(from sourceURL: URL, to desiredURL: URL, replaceExisting: Bool) throws -> URL {
         let fm = FileManager.default
         let destinationExists = fm.fileExists(atPath: desiredURL.path)
         let copyURL: URL
