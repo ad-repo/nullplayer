@@ -714,6 +714,7 @@ class WindowManager {
     /// Cava spectrum analyzer window controller for the active UI mode, accessed via protocol.
     private var cavaWindowController: CavaWindowProviding?
     private var sonosWindowController: SonosWindowController?
+    private var ripWindowController: RipWindowController?
 
     /// Shared vis_classic bridge — created on first use, driven by audioWaveform576DataUpdated notifications.
     private(set) var sharedVisClassicBridge: VisClassicBridge?
@@ -826,6 +827,7 @@ class WindowManager {
         case .networkMonitor: CenterStackFeatureWindow(controller: networkMonitorWindowController, show: showNetworkMonitor)
         case .cava: CenterStackFeatureWindow(controller: cavaWindowController, show: showCava)
         case .sonos: CenterStackFeatureWindow(controller: sonosWindowController, show: showSonos)
+        case .rip: CenterStackFeatureWindow(controller: ripWindowController, show: { self.showRip(at: $0) })
         case .waveform: CenterStackFeatureWindow(controller: waveformWindowController, show: showWaveform)
         }
     }
@@ -1409,7 +1411,9 @@ class WindowManager {
             (plexBrowserWindowController?.window, .plexBrowser),
             // Sonos Rooms is one controller for Classic, Original and `.wal` too; it joins the rule
             // only where a `.wmz` lends it a border.
-            (isRunningWMPUI ? sonosWindowController?.window : nil, .spectrumFamily)
+            (isRunningWMPUI ? sonosWindowController?.window : nil, .spectrumFamily),
+            // The Rip window is built the same way and joins the rule on the same terms.
+            (isRunningWMPUI ? ripWindowController?.window : nil, .spectrumFamily)
         ]
     }
 
@@ -1527,6 +1531,8 @@ class WindowManager {
             return ClassicLibraryBrowserWindowController.defaultSize
         case sonosWindowController?.window:
             return CGSize(width: width, height: 270 * scale)
+        case ripWindowController?.window:
+            return CGSize(width: width, height: 400 * scale)
         default:
             return nil
         }
@@ -1938,6 +1944,7 @@ class WindowManager {
         case .equalizer: return equalizerWindowController?.window
         case .cava: return cavaWindowController?.window
         case .sonos: return sonosWindowController?.window
+        case .rip: return ripWindowController?.window
         case .flow: return networkMonitorWindowController?.window
         case .peppyMeter: return peppyMeterWindowController?.window
         case .art: return artWindowController?.window
@@ -2073,6 +2080,7 @@ class WindowManager {
         case .equalizer: showOnly ? showEqualizer() : classicToggleEqualizer()
         case .cava: showOnly ? showCava() : toggleCava()
         case .sonos: showOnly ? showSonos() : toggleSonos()
+        case .rip: showOnly ? showRip() : toggleRip()
         case .flow: showOnly ? showNetworkMonitor() : toggleNetworkMonitor()
         case .peppyMeter: showOnly ? showPeppyMeter() : togglePeppyMeter()
         case .art: showOnly ? showArt() : toggleArt()
@@ -4484,49 +4492,81 @@ class WindowManager {
         updateDockedChildWindows()
     }
 
-    // MARK: - Sonos Rooms Window
+    // MARK: - Auxiliary windows (Sonos Rooms, Stream Ripper)
 
     var isSonosVisible: Bool { isCenterStackWindowVisible(.sonos) }
+    var isRipVisible: Bool { isCenterStackWindowVisible(.rip) }
 
     func showSonos(at restoredFrame: NSRect? = nil) {
-        if routeWinampModernHostedWindow(.sonos, toggle: false, restoredFrame: restoredFrame) { return }
-        let created = sonosWindowController == nil
-        if created { sonosWindowController = SonosWindowController() }
-        guard let window = sonosWindowController?.window else { return }
+        showAuxiliaryWindow(.sonos, hosted: .sonos, controller: \.sonosWindowController, make: SonosWindowController.init,
+                            classicMinSize: NSSize(width: 250, height: 160), defaultSize: NSSize(width: 360, height: 260),
+                            restoredFrame: restoredFrame)
+    }
+
+    func toggleSonos() { toggleAuxiliaryWindow(.sonos, controller: sonosWindowController) { showSonos() } }
+
+    /// Opens the Stream Ripper; `focusURL` focuses its URL field, pre-filled from the clipboard
+    /// (Libraries → YouTube → Rip URL…).
+    func showRip(at restoredFrame: NSRect? = nil, focusURL: Bool = false) {
+        let controller = showAuxiliaryWindow(.rip, hosted: .rip, controller: \.ripWindowController, make: RipWindowController.init,
+                                             classicMinSize: NSSize(width: 300, height: 300),
+                                             defaultSize: NSSize(width: 380, height: 400), restoredFrame: restoredFrame)
+        guard focusURL else { return }
+        let hosted = winampModernHostedController?.hostedWindowSurface(.rip) as? RipWindowView
+        (controller?.ripView ?? hosted)?.focusURLField()
+    }
+
+    func toggleRip() { toggleAuxiliaryWindow(.rip, controller: ripWindowController) { showRip() } }
+
+    /// Shows an auxiliary center-stack window, building its controller on first use, or routes it
+    /// into the running `.wal` skin's container (returning nil).
+    @discardableResult
+    private func showAuxiliaryWindow<Controller: AuxiliarySurfaceWindowController>(
+        _ kind: CenterStackWindowKind, hosted: WinampModernHostedWindowID,
+        controller slot: ReferenceWritableKeyPath<WindowManager, Controller?>, make: () -> Controller,
+        classicMinSize: NSSize, defaultSize: NSSize, restoredFrame: NSRect?
+    ) -> Controller? {
+        if routeWinampModernHostedWindow(hosted, toggle: false, restoredFrame: restoredFrame) { return nil }
+        let created = self[keyPath: slot] == nil
+        if created { self[keyPath: slot] = make() }
+        guard let controller = self[keyPath: slot], let window = controller.window else { return nil }
         markModeDependentWindow(window)
         if !isRunningModernUI {
             let scale = uiScaleLevel.scaleFactor
-            window.minSize = NSSize(width: 250 * scale, height: 160 * scale)
+            window.minSize = NSSize(width: classicMinSize.width * scale, height: classicMinSize.height * scale)
         }
-        applyCenterStackSizingConstraints(window, kind: .sonos)
+        applyCenterStackSizingConstraints(window, kind: kind)
         let keepsLeftFrame = reopensWhereLeft(window)
         if let restoredFrame, restoredFrame != .zero {
-            applyRestoredCenterStackFrame(restoredFrame, to: window, kind: .sonos)
+            applyRestoredCenterStackFrame(restoredFrame, to: window, kind: kind)
         } else if keepsLeftFrame {
             // Free-floating family: where the user left it.
         } else if created {
-            window.setContentSize(nativeWindowDefaultSize(for: window) ?? NSSize(width: 360, height: 260))
-            if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: .sonos) }
+            window.setContentSize(nativeWindowDefaultSize(for: window) ?? defaultSize)
+            if isRunningModernUI { applyDefaultCenterStackFrameForCurrentHT(window, kind: kind) }
             positionSubWindow(window)
-        } else if !window.isVisible, sonosWindowController?.wasDockedWhenHidden == true {
+        } else if !window.isVisible, controller.wasDockedWhenHidden {
             positionSubWindow(window)
         }
         presizeHostedWindow(window)
-        sonosWindowController?.showWindow(nil)
+        controller.showWindow(nil)
         applyAlwaysOnTopToWindow(window)
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         updateDockedChildWindows()
+        return controller
     }
 
-    func toggleSonos() {
-        if routeWinampModernHostedWindow(.sonos, toggle: true) { return }
-        if let window = sonosWindowController?.window, window.isVisible {
+    private func toggleAuxiliaryWindow(_ hosted: WinampModernHostedWindowID,
+                                       controller: AuxiliarySurfaceWindowController?, show: () -> Void) {
+        if routeWinampModernHostedWindow(hosted, toggle: true) { return }
+        if let window = controller?.window, window.isVisible {
             let frame = window.frame
-            sonosWindowController?.prepareForUITeardown()
+            controller?.prepareForUITeardown()
             window.orderOut(nil)
-            slideUpWindowsBelow(closingFrame: frame)
-        } else { showSonos() }
+            // No stack in WMP: hiding one window must not move the others (as closing it doesn't).
+            if !uiMode.controllerFamily.hostsForeignSkin { slideUpWindowsBelow(closingFrame: frame) }
+        } else { show() }
         notifyMainWindowVisibilityChanged()
         postLayoutChangeNotification()
         updateDockedChildWindows()
@@ -5791,24 +5831,14 @@ class WindowManager {
         isSnappingWindow = previousSnappingState
     }
 
-    /// Height multiplier for a center-stack window's default/minimum height.
-    /// PeppyMeter is taller than single-height windows, but not double-height: its bundled assets are landscape.
-    private func centerStackHeightMultiplier(for kind: CenterStackWindowKind) -> CGFloat {
-        switch kind {
-        case .peppyMeter: return 1.75
-        case .sonos: return 2
-        default: return 1
-        }
-    }
-
     private func peppyMeterHeight(for baseHeight: CGFloat) -> CGFloat {
-        (baseHeight * centerStackHeightMultiplier(for: .peppyMeter)).rounded()
+        (baseHeight * CenterStackWindowKind.peppyMeter.heightMultiplier).rounded()
     }
 
     /// A stack window's height from a single-height `base`. PeppyMeter's 1.75 lands between points,
     /// so it alone rounds.
     private func centerStackHeight(for kind: CenterStackWindowKind, base: CGFloat) -> CGFloat {
-        kind == .peppyMeter ? peppyMeterHeight(for: base) : base * centerStackHeightMultiplier(for: kind)
+        kind == .peppyMeter ? peppyMeterHeight(for: base) : base * kind.heightMultiplier
     }
 
     /// Height for a restored PeppyMeter frame. Collapses the previous double-height default
@@ -5824,7 +5854,7 @@ class WindowManager {
                                          titleBarDelta: CGFloat,
                                          preservePlaylistContentHeight: Bool) -> CGFloat {
         let target = centerStackHeight(for: kind, base: expectedMainHeightForCurrentHT(mainWindowController?.window))
-        guard kind == .playlist || kind == .waveform || kind == .sonos else { return target }
+        guard kind == .playlist || kind == .waveform || kind == .sonos || kind == .rip else { return target }
         guard preservePlaylistContentHeight else { return target }
         let adjusted = hideTitleBars ? (currentHeight - titleBarDelta) : (currentHeight + titleBarDelta)
         return max(target, adjusted)
@@ -5869,7 +5899,7 @@ class WindowManager {
             return mainWindowController?.window?.frame.width ?? ModernSkinElements.mainWindowSize.width
         case .playlist:
             return ModernSkinElements.playlistMinSize.width
-        case .spectrum, .audioAnalysis, .peppyMeter, .art, .networkMonitor, .cava, .sonos:
+        case .spectrum, .audioAnalysis, .peppyMeter, .art, .networkMonitor, .cava, .sonos, .rip:
             return ModernSkinElements.spectrumMinSize.width
         case .waveform:
             return ModernSkinElements.waveformMinSize.width
@@ -5894,8 +5924,8 @@ class WindowManager {
 
         let topY = normalized.maxY
         switch kind {
-        case .sonos:
-            normalized.size.height = max(targetHeight * 2, normalized.height)
+        case .sonos, .rip:
+            normalized.size.height = max(targetHeight * kind.heightMultiplier, normalized.height)
         case .equalizer:
             normalized.size.height = targetHeight
         case .playlist, .spectrum, .waveform, .audioAnalysis, .art, .networkMonitor, .cava:
@@ -7557,6 +7587,9 @@ class WindowManager {
         cavaWindowController = nil
         sonosWindowController?.window?.close()
         sonosWindowController = nil
+        // Only the window goes: its jobs belong to `RipJobCenter` and keep running.
+        ripWindowController?.window?.close()
+        ripWindowController = nil
         waveformWindowController?.window?.close()
         waveformWindowController = nil
 

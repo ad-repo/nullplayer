@@ -70,6 +70,7 @@ enum WinampModernSurfaceID: Hashable, CustomStringConvertible {
 
 enum WinampModernHostedWindowID: String, CaseIterable {
     case sonos
+    case rip
     case spectrum
     case equalizer
     case cava
@@ -113,11 +114,16 @@ extension WinampModernHostedWindowID {
     /// Exhaustive, so a new hosted id does not compile without its window (B163).
     var definition: WinampModernHostedWindowDefinition {
         let spectrum = SkinElements.SpectrumWindow.self
+        let stack = WindowManager.CenterStackWindowKind.self
         switch self {
         case .sonos:
             return hosted("Sonos Rooms", size: CGSize(width: 275, height: 250),
-                          minimum: CGSize(width: 250, height: 160), heightMultiplier: 2,
+                          minimum: CGSize(width: 250, height: 160), heightMultiplier: stack.sonos.heightMultiplier,
                           SonosWindowView(frame: NSRect(x: 0, y: 0, width: 275, height: 250)))
+        case .rip:
+            return hosted("Stream Ripper", size: CGSize(width: 300, height: 350),
+                          minimum: CGSize(width: 300, height: 300), heightMultiplier: stack.rip.heightMultiplier,
+                          RipWindowView(frame: NSRect(x: 0, y: 0, width: 300, height: 350)))
         case .spectrum:
             return hosted("Spectrum Analyzer", size: spectrum.windowSize, minimum: spectrum.minSize,
                           SpectrumView(frame: NSRect(origin: .zero, size: spectrum.windowSize)))
@@ -138,7 +144,8 @@ extension WinampModernHostedWindowID {
                           NetworkMonitorView(frame: NSRect(origin: .zero, size: spectrum.windowSize)))
         case .peppyMeter:
             let peppy = SkinElements.PeppyMeterWindow.self
-            return hosted("PeppyMeter", size: peppy.windowSize, minimum: peppy.minSize, heightMultiplier: 1.75,
+            return hosted("PeppyMeter", size: peppy.windowSize, minimum: peppy.minSize,
+                          heightMultiplier: stack.peppyMeter.heightMultiplier,
                           PeppyMeterView(frame: NSRect(origin: .zero, size: peppy.windowSize)))
         case .audioAnalysis:
             return hosted("Audio Analyzer", size: spectrum.windowSize, minimum: spectrum.minSize,

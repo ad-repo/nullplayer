@@ -16,6 +16,7 @@ final class CenterStackWindowTests: XCTestCase {
         .networkMonitor: ("isNetworkMonitorVisible", "networkMonitorWindowFrame"),
         .cava: ("isCavaVisible", "cavaWindowFrame"),
         .sonos: ("isSonosVisible", "sonosWindowFrame"),
+        .rip: ("isRipVisible", "ripWindowFrame"),
         .waveform: ("isWaveformVisible", "waveformWindowFrame"),
     ]
 

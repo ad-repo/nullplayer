@@ -20,8 +20,7 @@ enum CueAlbumSplitter {
 
             let outDir = outputDirectory(for: cue, cueURL: cueURL)
 
-            // Output extension: always FLAC (re-encode for all sources per spec)
-            let outExt = "flac"
+            let outExt = outputExtension(forBacking: resolveBackingFileWithFallback(for: cueURL, fileName: cue.fileName))
 
             var paths: [URL] = []
             var pathsSet: Set<String> = []  // Track generated paths to de-dup within this cue
@@ -172,7 +171,13 @@ enum CueAlbumSplitter {
                 }
                 return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
             }
-            let outExt = "flac"
+            let outExt = outputExtension(forBacking: backingURL)
+            // A container ffmpeg cannot attach a picture to (Ogg/Opus, WAV) gets the cover as
+            // the album folder's `cover.jpg`, which `LocalArtwork` reads.
+            let embedsCover = hasAttachedPic && coverArtExtensions.contains(outExt)
+            if hasAttachedPic && !embedsCover {
+                writeFolderCover(from: backingURL, ffmpeg: ffmpegPath, into: outDir)
+            }
 
             var anyWriteFailed = false
             var successCount = 0
@@ -221,29 +226,33 @@ enum CueAlbumSplitter {
                 // `-map_metadata 0` copies the source global metadata; per-track title and
                 // track number always override; album/artist/album_artist override ONLY when
                 // the cue provides a non-empty value, so we never blank an inherited field.
+                // Ogg keeps its tags on the audio stream, which would outrank global overrides.
+                let tag = oggExtensions.contains(outExt) ? "-metadata:s:a:0" : "-metadata"
                 args.append(contentsOf: [
                     "-map", "0:a:0",
-                    "-c:a", "flac",
+                    // FLAC is re-encoded: lossless, and cut on the exact sample. Anything else
+                    // is copied, so a lossy source is never encoded twice.
+                    "-c:a", outExt == "flac" ? "flac" : "copy",
                     "-map_metadata", "0",
-                    "-metadata", "title=\(entry.title)",
-                    "-metadata", "track=\(trackNum)/\(cue.entries.count)"
+                    tag, "title=\(entry.title)",
+                    tag, "track=\(trackNum)/\(cue.entries.count)"
                 ])
                 if let artist = (entry.performer ?? src.artist ?? cue.performer)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !artist.isEmpty {
-                    args.append(contentsOf: ["-metadata", "artist=\(artist)"])
+                    args.append(contentsOf: [tag, "artist=\(artist)"])
                 }
                 // Album comes from the source file's tag (the real release), not the cue TITLE.
                 if let album = (src.album ?? cue.title)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !album.isEmpty {
-                    args.append(contentsOf: ["-metadata", "album=\(album)"])
+                    args.append(contentsOf: [tag, "album=\(album)"])
                 }
                 if let albumArtist = (src.albumArtist ?? src.artist ?? cue.performer)?.trimmingCharacters(in: .whitespacesAndNewlines),
                    !albumArtist.isEmpty {
-                    args.append(contentsOf: ["-metadata", "album_artist=\(albumArtist)"])
+                    args.append(contentsOf: [tag, "album_artist=\(albumArtist)"])
                 }
 
                 // Conditionally add cover art (only if source has video/attached-pic)
-                if hasAttachedPic {
+                if embedsCover {
                     args.append(contentsOf: [
                         "-map", "0:v:0",
                         "-c:v", "copy",
@@ -298,6 +307,38 @@ enum CueAlbumSplitter {
         } catch {
             NSLog("CueAlbumSplitter: Error during split: %@", error.localizedDescription)
             return SplitResult(backingFile: nil, trackFiles: [], skipWarnNotice: nil)
+        }
+    }
+
+    // MARK: - Output Format
+
+    /// Split tracks keep the backing file's format when ffmpeg can stream-copy it into that
+    /// container; anything else (APE, WavPack, TTA, no extension) splits to FLAC, as it always did.
+    private static func outputExtension(forBacking backingURL: URL) -> String {
+        let ext = backingURL.pathExtension.lowercased()
+        return keptExtensions.contains(ext) ? ext : "flac"
+    }
+
+    /// Each one `AudioFileValidator` accepts, or the library refuses the split (`.oga` splits to FLAC).
+    private static let keptExtensions: Set<String> = ["flac", "mp3", "m4a", "aac", "ogg", "opus", "wav", "aiff", "aif"]
+
+    /// Formats ffmpeg writes an attached cover picture into.
+    private static let coverArtExtensions: Set<String> = ["flac", "mp3", "m4a"]
+    private static let oggExtensions: Set<String> = ["ogg", "oga", "opus"]
+
+    private static func writeFolderCover(from backingURL: URL, ffmpeg: String, into outDir: URL) {
+        let cover = outDir.appendingPathComponent("cover.jpg")
+        guard !FileManager.default.fileExists(atPath: cover.path) else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: ffmpeg)
+        task.arguments = ["-hide_banner", "-loglevel", "error", "-y", "-i", backingURL.path,
+                          "-map", "0:v:0", "-frames:v", "1", cover.path]
+        task.standardError = FileHandle.nullDevice
+        task.standardOutput = FileHandle.nullDevice
+        guard (try? task.run()) != nil else { return }
+        task.waitUntilExit()
+        if task.terminationStatus != 0 {
+            NSLog("CueAlbumSplitter: could not write folder cover for %@", backingURL.lastPathComponent)
         }
     }
 
@@ -478,7 +519,8 @@ enum CueAlbumSplitter {
         task.executableURL = URL(fileURLWithPath: ffprobe)
         task.arguments = [
             "-v", "error",
-            "-show_entries", "format_tags=artist,album,album_artist",
+            // Ogg files keep their tags on the stream, not the container.
+            "-show_entries", "format_tags=artist,album,album_artist:stream_tags=artist,album,album_artist",
             "-of", "default=noprint_wrappers=1",
             backingURL.path
         ]

@@ -56,10 +56,25 @@ final class CueAlbumSplitterTests: XCTestCase {
         XCTAssertTrue(paths?[1].lastPathComponent.hasPrefix("2 -") ?? false)
         XCTAssertTrue(paths?[2].lastPathComponent.hasPrefix("3 -") ?? false)
 
-        // All should have .flac extension (always re-encode)
+        // Split tracks keep the backing file's format.
         XCTAssertEqual(paths?[0].pathExtension, "flac")
         XCTAssertEqual(paths?[1].pathExtension, "flac")
         XCTAssertEqual(paths?[2].pathExtension, "flac")
+    }
+
+    func testExpectedOutputPathsKeepAnOpusBackingFormat() throws {
+        let cueURL = tempDirectory.appendingPathComponent("show.cue")
+        try "FILE \"show.opus\" WAVE\nTRACK 01 AUDIO\n  TITLE \"A\"\n  INDEX 01 00:00:00\n"
+            .write(to: cueURL, atomically: true, encoding: .utf8)
+        XCTAssertEqual(CueAlbumSplitter.expectedOutputPaths(for: cueURL)?.map(\.pathExtension), ["opus"])
+    }
+
+    /// A format ffmpeg cannot stream-copy into its own container still splits to FLAC.
+    func testExpectedOutputPathsSplitAnApeBackingToFlac() throws {
+        let cueURL = tempDirectory.appendingPathComponent("album.cue")
+        try "FILE \"album.ape\" WAVE\nTRACK 01 AUDIO\n  TITLE \"A\"\n  INDEX 01 00:00:00\n"
+            .write(to: cueURL, atomically: true, encoding: .utf8)
+        XCTAssertEqual(CueAlbumSplitter.expectedOutputPaths(for: cueURL)?.map(\.pathExtension), ["flac"])
     }
 
     func testExpectedOutputPathsIncludesSanitizedTitles() throws {
@@ -370,26 +385,6 @@ final class CueAlbumSplitterTests: XCTestCase {
         XCTAssertTrue(paths?[1].lastPathComponent.hasPrefix("2 - ") ?? false)
         XCTAssertTrue(paths?[2].lastPathComponent.hasPrefix("3 - ") ?? false)
         XCTAssertTrue(paths?[3].lastPathComponent.hasPrefix("4 - ") ?? false)
-    }
-
-    func testFilenameAlwaysUsesFlacExtension() throws {
-        // Even if source is MP3, output should be FLAC
-        let cueContent = """
-        PERFORMER "Artist"
-        TITLE "Album"
-        FILE "backing.mp3" WAVE
-        TRACK 01 AUDIO
-            TITLE "Track One"
-            INDEX 01 00:00:00
-        """
-
-        let cueURL = tempDirectory.appendingPathComponent("flac_output.cue")
-        try cueContent.write(to: cueURL, atomically: true, encoding: .utf8)
-
-        let paths = CueAlbumSplitter.expectedOutputPaths(for: cueURL)
-        let filename = paths?[0].lastPathComponent ?? ""
-
-        XCTAssertTrue(filename.hasSuffix(".flac"))
     }
 
     // MARK: - Backing File Sibling Fallback Tests

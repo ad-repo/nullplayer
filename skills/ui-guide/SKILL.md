@@ -240,10 +240,10 @@ provider protocol (see the center-stack list below). A NullPlayer-owned window t
 
 ## Dockable Center-Stack Windows
 
-Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, Flow, and Sonos Rooms all participate in the center stack managed by `WindowManager`.
+Main, EQ, Playlist, Spectrum, Waveform, Audio Analysis, PeppyMeter, Flow, Sonos Rooms, and Stream Ripper all participate in the center stack managed by `WindowManager`.
 
 - Width is normalized to the main stack
-- Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height; Sonos Rooms uses a double-height baseline and preserves a taller restored list
+- Height is window-specific: Flow is single-height; PeppyMeter uses a 1.75x landscape height; Sonos Rooms uses a double-height baseline and preserves a taller restored list; Stream Ripper is triple-height the same way (`CenterStackWindowKind.heightMultiplier` holds them all)
 - Saved frames are restored through `WindowManager` rather than ad hoc per-window logic
 - Opening a center-stack window must calculate gaps from windows actually docked below main, not
   every visible stack-capable window. Use `dockedCenterStackWindowsBelowMain(mainFrame:)` (vertical
@@ -278,9 +278,10 @@ differs per window: the stored controller, `showX` / `toggleX`, the teardown's `
 `nativeWindowDefaultSize`, `hostedBorderWindows` and the `.wal` re-homing switches
 (`classicHostedFallbackWindow`, `showClassicHostedWindowForWinampModern`).
 
-Sonos Rooms uses a shared controller/content view with separate Original/Metal chrome and a
-`.wal` hosted-surface adapter. Its scrollable list must leave Refresh and casting controls in a
-fixed footer. Explicitly lay out controls on first show and resize, including when the room list
+Sonos Rooms and Stream Ripper share one base (`AuxiliarySurfaceWindowController` /
+`AuxiliarySurfaceView`, `Windows/Shared/AuxiliarySurfaceWindow.swift`): the window, the chrome
+from `AuxiliaryWindowChrome`, drag, close and the `.wal` hosted-surface adapter. The Sonos Rooms
+scrollable list must leave Refresh and casting controls in a fixed footer. Explicitly lay out controls on first show and resize, including when the room list
 is empty, and match native AppKit control appearance to the skin's background. The implementation,
 volume semantics, lifecycle, and rendering fixtures are owned by the
 [Sonos casting skill](../sonos-casting/SKILL.md#sonos-rooms-window).

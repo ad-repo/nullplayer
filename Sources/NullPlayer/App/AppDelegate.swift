@@ -40,6 +40,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // waveform-prerender, or skin-extraction operations. Runs off-main so
         // it never delays launch; skips items that may still be active.
         DispatchQueue.global(qos: .utility).async {
+            // A rip process a killed instance left running would keep writing into the staging
+            // the reaper is about to judge, so it goes first.
+            RipJobCenter.terminateOrphanedRipProcesses()
             StreamRipper.reapOrphanedTempItems()
         }
         EQProfileResolver.shared.pruneMissingLocalTracks()
@@ -306,6 +309,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         windowManager.audioEngine.flushActiveRadioSession()
 
+        // No rip or YouTube download outlives the app (an orphaned ffmpeg keeps encoding for hours).
+        RipJobCenter.shared.terminateAll()
+
         // Stop any active casting (video or audio)
         // Use sync version to avoid deadlock - async stopCasting() uses MainActor.run
         // which can't execute while main thread is blocked waiting for completion
@@ -360,7 +366,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let ext = url.pathExtension.lowercased()
 
             // Try to expand .cue files or sibling cues first
-            if ext == "cue" || ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if ext == "cue" || AudioFileValidator.supportedExtensions.contains(ext) {
                 if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
                     if !cueExpanded.isEmpty {
                         if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
@@ -378,7 +384,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // Fall back to normal audio file loading
-            if ["mp3", "m4a", "aac", "wav", "aiff", "aif", "flac", "ogg", "alac"].contains(ext) {
+            if AudioFileValidator.supportedExtensions.contains(ext) {
                 tracksToLoad.append(Track(url: url))
             }
         }

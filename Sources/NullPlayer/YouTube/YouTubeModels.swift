@@ -274,6 +274,22 @@ enum YouTubeAudioFormat: Hashable {
     }
 }
 
+/// Saved as its `rawValue` (a rip's history keeps the format it asked for).
+extension YouTubeAudioFormat: Codable, Sendable {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let format = YouTubeAudioFormat(savedValue: raw) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown audio format \(raw)"))
+        }
+        self = format
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 /// Height cap for a video's MP4 download
 enum YouTubeVideoQuality: Hashable {
     case height(Int)
