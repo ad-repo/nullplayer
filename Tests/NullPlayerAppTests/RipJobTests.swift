@@ -258,6 +258,22 @@ final class RipJobCenterTests: XCTestCase {
         XCTAssertFalse(center.showsActivityNotifications, "the notification panel is off by default")
     }
 
+    /// A failed row names yt-dlp's error, not the warnings printed before it.
+    @MainActor
+    func testErrorSummaryPrefersTheErrorOverWarnings() {
+        let stderr = """
+        https://example.com/x
+
+        WARNING: Your yt-dlp version (2026.08.19) is older than 90 days!
+        It is strongly recommended to always use the latest version.
+        ERROR: [generic] x: Unable to download webpage: HTTP Error 404: Not Found
+        """
+        XCTAssertEqual(RipWindowView.errorSummary(stderr), "ERROR: [generic] x: Unable to download webpage: HTTP Error 404: Not Found")
+        XCTAssertEqual(RipWindowView.errorSummary("WARNING: old\nffmpeg exited with code 1"), "ffmpeg exited with code 1")
+        XCTAssertEqual(RipWindowView.errorSummary("Could not create a temporary download folder"), "Could not create a temporary download folder")
+        XCTAssertEqual(RipWindowView.errorSummary(nil), "")
+    }
+
     func testDuplicateMatchesOnlyARunningJobWithTheSameChoices() throws {
         let url = try XCTUnwrap(URL(string: "https://example.com/a"))
         let mode = StreamRipper.Mode.video(.init(resolution: .p2160, format: .original))

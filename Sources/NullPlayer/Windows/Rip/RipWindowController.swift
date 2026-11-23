@@ -313,7 +313,7 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
             if let path = job.outputPath { actions += fileActions(path: path) }
             if let size = job.sizeBytes { parts.insert(ByteCountFormatter.string(fromByteCount: size, countStyle: .file), at: 1) }
         case .failed:
-            parts = ["Failed: " + Self.firstLine(of: job.error)]
+            parts = ["Failed: " + Self.errorSummary(job.error)]
             actions += retryAction(job.request, followUp: job.followUp)
         case .cancelled:
             actions += retryAction(job.request, followUp: job.followUp)
@@ -335,7 +335,7 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
             if missingPaths.contains(path) { parts.append("file moved or deleted") }
             else { actions += fileActions(path: path) }
         }
-        if entry.outcome == .failed { parts.append(Self.firstLine(of: entry.error)) }
+        if entry.outcome == .failed { parts.append(Self.errorSummary(entry.error)) }
         actions += retryAction(entry.request)
         actions.append(.init(symbol: "doc.on.doc", label: "Copy URL") {
             NSPasteboard.general.clearContents()
@@ -361,9 +361,12 @@ final class RipWindowView: AuxiliarySurfaceView, NSTextFieldDelegate {
         }
     }
 
-    /// A failure's first line; the row's tooltip carries the whole error.
-    private static func firstLine(of error: String?) -> String {
-        error?.split(separator: "\n").first.map(String.init) ?? ""
+    /// A failure's one-line summary; the row's tooltip carries the whole error. yt-dlp prints
+    /// `WARNING:` lines (an out-of-date version, say) before its `ERROR:`, so the error wins.
+    static func errorSummary(_ error: String?) -> String {
+        let lines = (error ?? "").split(separator: "\n")
+        let line = lines.first { $0.hasPrefix("ERROR:") } ?? lines.first { !$0.hasPrefix("WARNING:") } ?? lines.first
+        return line.map(String.init) ?? ""
     }
 
     private func fileActions(path: String) -> [RipRowModel.Action] {
