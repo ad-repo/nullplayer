@@ -70,9 +70,7 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
   **Frame rate:** chunks arrive several at a time per tap buffer (~10/s), so a per-view
   `WaveformPlayout` plays them out at the audio's own rate and each `NSView.displayLink` tick steps its
   clock one chunk at a time up to now — every chunk lands in order, one redraw per new chunk (~77/s at
-  44.1 kHz). The blend weight is scaled to the old ~20 updates/s so smoothing is rate-independent. The
-  view resets its playout once the trace is flat on silence: a pause leaves the playout's clock behind
-  real time, and from then on it would consume each burst in one read (one chunk per tap). The display
+  44.1 kHz). The blend weight is scaled to the old ~20 updates/s so smoothing is rate-independent. The display
   link retains the view, so it is created and invalidated by `setRenderingPaused` (the windows' pause
   walk, on hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a

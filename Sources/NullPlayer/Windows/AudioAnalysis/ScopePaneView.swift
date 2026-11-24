@@ -124,13 +124,8 @@ class ScopeCanvasView: NSView {
             let chunk = playout.samples(at: time)
             // The playout repeats its current chunk until the next is due; take each chunk once,
             // except silence (paused, or a silent passage), which repeats until the trace is flat.
-            let isSilence = chunk.left == WaveformPlayout.silence
-            let flattening = isSilence && displayBuffer.contains { abs($0) > Self.flatThreshold }
-            if isSilence && !flattening {
-                // Flat after a pause: restart the playout's clock. A gap leaves it behind real time,
-                // so every later burst would be consumed in one read and show one chunk per tap.
-                playout.reset()
-            }
+            let flattening = chunk.left == WaveformPlayout.silence
+                && displayBuffer.contains { abs($0) > Self.flatThreshold }
             if chunk.left != lastChunk || flattening {
                 lastChunk = chunk.left
                 append(chunk)

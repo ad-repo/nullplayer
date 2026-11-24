@@ -63,20 +63,7 @@ final class WaveformPlayout {
         guard let lastArrival, now - lastArrival < Self.silenceTimeout else {
             return (Self.silence, Self.silence)
         }
-        if let playoutStart, chunkDuration > 0, !chunks.isEmpty {
-            // `playoutStart` is the moment the **head** of the queue becomes current, so at exactly
-            // that instant one chunk is already due — a chunk that has just arrived is shown now,
-            // not one chunk-duration later. Everything whose moment has passed is consumed and the
-            // last of them is what to show; the clock moves with it, so two reads at the same
-            // instant answer the same thing.
-            let due = max(0, Int(((now - playoutStart) / chunkDuration).rounded(.down)) + 1)
-            let advance = min(due, chunks.count)
-            if advance > 0 {
-                current = chunks[advance - 1]
-                chunks.removeFirst(advance)
-                self.playoutStart = playoutStart + Double(advance) * chunkDuration
-            }
-        }
+        advanceClock(to: now)
         guard let current else { return (Self.silence, Self.silence) }
         return (current.left.isEmpty ? Self.silence : current.left,
                 current.right.isEmpty ? Self.silence : current.right)
@@ -88,6 +75,14 @@ final class WaveformPlayout {
         if let sampleRate, sampleRate > 0 {
             rate = sampleRate
         }
+        // Consume what is already due before queueing, so the clock and the queue do not depend on
+        // when, or how often, the playout is read. Into an empty queue nothing is overdue: a clock
+        // left behind (a pause, a late tap buffer) restarts now. Left behind, every later read would
+        // consume a whole burst and show one chunk per tap.
+        advanceClock(to: now)
+        if chunks.isEmpty, let start = playoutStart, start < now {
+            playoutStart = now
+        }
         chunks.append((left, right))
         let cap = Self.maximumQueuedChunks(chunkDuration: chunkDuration)
         if chunks.count > cap {
@@ -97,6 +92,22 @@ final class WaveformPlayout {
         if playoutStart == nil { playoutStart = now }
         lastArrival = now
         lock.unlock()
+    }
+
+    /// Consume every chunk due at `now`; the last of them becomes current. Caller holds `lock`.
+    ///
+    /// `playoutStart` is the moment the **head** of the queue becomes current, so at exactly that
+    /// instant one chunk is already due — a chunk that has just arrived is shown now, not one
+    /// chunk-duration later. Everything whose moment has passed is consumed and the last of them is
+    /// what to show; the clock moves with it, so two reads at the same instant answer the same thing.
+    private func advanceClock(to now: TimeInterval) {
+        guard let playoutStart, chunkDuration > 0, !chunks.isEmpty else { return }
+        let due = max(0, Int(((now - playoutStart) / chunkDuration).rounded(.down)) + 1)
+        let advance = min(due, chunks.count)
+        guard advance > 0 else { return }
+        current = chunks[advance - 1]
+        chunks.removeFirst(advance)
+        self.playoutStart = playoutStart + Double(advance) * chunkDuration
     }
 
     /// Forget everything queued and shown: the next read is silence until a chunk arrives.

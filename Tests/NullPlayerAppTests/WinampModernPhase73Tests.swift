@@ -219,6 +219,23 @@ final class WinampModernPhase73Tests: XCTestCase {
         }
     }
 
+    /// **A pause does not leave the clock behind.** The tap posts nothing while paused, so the clock
+    /// stopped where the last chunk was, seconds in the past; from then on every read consumed a whole
+    /// burst at once and the scope showed one chunk per tap buffer (about 10 a second) until the next
+    /// track. A chunk arriving into an empty queue restarts the clock, so the burst plays out in order.
+    func testABurstAfterAPausePlaysOutChunkByChunk() {
+        let tap = WaveformPlayout()
+        tap.receive(left: chunk(1), right: chunk(1), sampleRate: 44_100, at: 100)
+        XCTAssertEqual(tap.samples(at: 100).left.first, 1)
+        let resume = 105.0
+        for value in 10...17 {
+            tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)), sampleRate: 44_100, at: resume)
+        }
+        let step = 576.0 / 44_100
+        let shown = (0..<8).compactMap { tap.samples(at: resume + step * (Double($0) + 0.5)).left.first }
+        XCTAssertEqual(shown, (10...17).map { UInt8($0) })
+    }
+
     /// The rate the chunks arrived at is what an analyzer maps its bins with: the `.wmz` effects
     /// surface assumed 44.1 kHz, which put every bar at the wrong frequency on a 48 kHz stream.
     func testThePlayoutReportsTheRateItsChunksArrivedAt() {
