@@ -30,6 +30,9 @@
 - **Splitting a cue album keeps its format** (#799): an Opus, MP3 or M4A album splits into Opus, MP3 or
   M4A tracks without a re-encode, instead of always FLAC. An Opus album's cover is saved as the
   folder's `cover.jpg`.
+- **Winamp Modern (`.wal`) fixes from corpus intake 15**: Playlist rows are readable when a skin's
+  list text matches its list background (Manutd, Gintama Gintoki & Katsura); GonchiSkin's Images
+  button opens its window.
 
 ## 0.35.2
 

@@ -3013,7 +3013,9 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private enum ActivationFlip { case none, toggled, radio, config }
+    /// `targetMoved`: the release handlers already opened or closed the window the button's `TOGGLE`
+    /// names, so the action must not toggle it back (B477, GonchiSkin).
+    private enum ActivationFlip { case none, toggled, radio, config, targetMoved }
 
     /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
     /// set goes off, and clicking the one already on changes nothing — so it is tried before the
@@ -3035,7 +3037,15 @@ final class WinampModernMainView: NSView {
             : scripts.toggleActivation(of: object) ? .toggled
             : object.attributes["action"] == nil && scripts.toggleConfigAttribute(of: object) ? .config
             : .none
+        // GonchiSkin's `boton.gonchi.esp` is `TOGGLE especial` and its script shows or hides that same
+        // container from `onLeftButtonUp`; the action then ran second and closed the window the script
+        // had just opened, so the button never appeared to do anything.
+        let target = object.attributes["action"]?.uppercased() == "TOGGLE"
+            ? toggleTargetIsVisible(parameter: object.attributes["param"]) : nil
         release()
+        if let target, flip != .radio, toggleTargetIsVisible(parameter: object.attributes["param"]) != target {
+            return .targetMoved
+        }
         return flip
     }
 
@@ -3050,7 +3060,7 @@ final class WinampModernMainView: NSView {
         // The flip runs alongside whatever `action=` the button also carries, as it does in Wasabi;
         // a radio carries none.
         if flip != .none { needsDisplay = true }
-        if flip == .radio { return }
+        if flip == .radio || flip == .targetMoved { return }
         if cycleVisualizationMode(of: object) { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]

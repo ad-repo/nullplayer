@@ -3989,8 +3989,8 @@ final class WasabiSceneRenderer {
             // but only when the skin actually named one. `currentText` falls back to `listText`, and
             // list text over the selection background is what `selectionText` exists to avoid.
             let hasCurrentColor = palette.currentText != palette.listText
-            let plain = legibleRowColor(selected ? palette.selectionText : palette.listText,
-                                        selected: selected)
+            let plain = selected ? legibleRowColor(palette.selectionText, selected: true)
+                                 : playlistRowText
             // The guard runs against the bar this row actually filled, never the one the skin named
             // (B113's rule), and the playing row is additionally kept apart from `plain` (B122).
             let color = row.isCurrent && hasCurrentColor
