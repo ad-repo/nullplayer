@@ -11,11 +11,17 @@ class KeychainHelper {
     
     static let shared = KeychainHelper()
     
-    /// Only use Keychain when running as a signed .app bundle.
+    /// Only use Keychain when running as a signed release .app bundle.
     /// Raw binaries from `swift build` are unsigned and generate per-item
-    /// Keychain prompts. Falls back to UserDefaults in dev.
+    /// Keychain prompts. Falls back to UserDefaults in dev. A debug build assembled
+    /// into a bundle (`finder-open-matrix.sh`) is still dev: its fresh ad-hoc
+    /// signature would block launch on a prompt for the release app's items.
     private var useKeychain: Bool {
+        #if DEBUG
+        return false
+        #else
         return Bundle.main.bundlePath.hasSuffix(".app")
+        #endif
     }
     
     private init() {}
