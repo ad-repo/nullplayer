@@ -67,6 +67,14 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
   periodic content stays phase-locked (stationary) instead of swimming, then gently blended into the
   previous frame (`frameWeight`) to reduce flicker, and drawn as a smoothed quadratic curve. Idles flat
   on silence (no trigger found → no lock).
+  **Frame rate:** PCM arrives once per tap buffer (~10–21/s depending on the device's buffer size),
+  so the view keeps the last two frames and, on an `NSView.displayLink` tick, slides its window
+  through them by the time since the newest frame arrived (one frame of latency); the blend weight is
+  scaled per tick so smoothing does not depend on the refresh rate. The link pauses itself once frames
+  stop (pause, window hidden). **Caveat:** each frame is only the first 2048 samples of its buffer, so
+  with a 4800-frame tap (48 kHz) the two frames are not contiguous — a window straddling the seam can
+  show a small step. The gap-free fix is to feed the Scope from the waveform consumer
+  (`.audioWaveform576DataUpdated`, every sample, both engines) instead of the spectrum consumer.
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
   −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
   more smoothly than peak.

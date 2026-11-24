@@ -14,18 +14,32 @@ struct ScopePaneView: NSViewRepresentable {
 
 /// Canvas-based oscilloscope renderer.
 ///
-/// Two things keep the trace readable: a **trigger** that phase-locks each frame to a rising
+/// The engine posts one 512-point PCM frame per 2048-sample tap buffer (~21 per second), so drawing
+/// once per frame caps the trace at ~21 FPS. Instead the view keeps the last two frames and, on every
+/// display refresh, slides its window through them by the time elapsed since the newest frame arrived
+/// (the trace runs one frame behind, ~46 ms).
+///
+/// Two things keep the trace readable: a **trigger** that phase-locks each window to a rising
 /// zero-crossing (so periodic content stays stationary instead of swimming horizontally), and a
-/// gentle **temporal blend** of the now-aligned frames (so the line stops flickering frame to frame
+/// gentle **temporal blend** of the now-aligned windows (so the line stops flickering frame to frame
 /// without smearing transients).
 class ScopeCanvasView: NSView {
     /// Phase-aligned, temporally smoothed window that is actually drawn.
     private var displayBuffer: [Float] = []
+    /// The previous and newest PCM frames, back to back.
+    private var history: [Float] = []
+    private var frameLength = 0
+    private var lastFrameTime: CFTimeInterval = 0
+    /// Smoothed interval between frame arrivals; the slide covers one frame in this time.
+    private var frameInterval: CFTimeInterval = 2048.0 / 44100.0
+    private var lastTickTime: CFTimeInterval = 0
+    private var link: CADisplayLink?
     private var pcmObserver: NSObjectProtocol?
 
-    /// Temporal-blend weights (1 = no smoothing, lower = smoother). The blend is asymmetric: a frame
-    /// that is louder than what's on screen (a beat) snaps in quickly so it is never averaged away,
-    /// while quieter frames blend slowly to suppress flicker.
+    /// Temporal-blend weights per arriving frame (1 = no smoothing, lower = smoother); converted to a
+    /// per-refresh weight so the feel does not depend on the display rate. The blend is asymmetric: a
+    /// window that is louder than what's on screen (a beat) snaps in quickly so it is never averaged
+    /// away, while quieter windows blend slowly to suppress flicker.
     private let attackWeight: Float = 0.85
     private let releaseWeight: Float = 0.45
 
@@ -64,40 +78,83 @@ class ScopeCanvasView: NSView {
         if let observer = pcmObserver {
             NotificationCenter.default.removeObserver(observer)
         }
+        link?.invalidate()
     }
 
-    /// Trigger-align an incoming frame and blend it into the display buffer.
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        link?.invalidate()
+        link = nil
+        guard window != nil else { return }
+        let link = displayLink(target: self, selector: #selector(tick(_:)))
+        link.isPaused = true
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+
     private func ingest(_ pcm: [Float]) {
-        let count = pcm.count
+        let now = CACurrentMediaTime()
+        if pcm.count != frameLength {
+            frameLength = pcm.count
+            history = pcm + pcm
+        } else {
+            history.removeFirst(frameLength)
+            history += pcm
+            let interval = now - lastFrameTime
+            if interval < 0.5 { frameInterval += (interval - frameInterval) * 0.1 }
+        }
+        lastFrameTime = now
+        if link?.isPaused == true {
+            lastTickTime = now
+            link?.isPaused = false
+        }
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        let elapsed = now - lastFrameTime
+        // Frames stopped (paused, silence gate, window hidden): park on the newest frame and idle.
+        if elapsed > frameInterval * 3 { link.isPaused = true }
+        let progress = min(1, elapsed / frameInterval)
+        let dt = now - lastTickTime
+        lastTickTime = now
+        render(windowStart: Int(progress * Double(frameLength)), framesElapsed: Float(dt / frameInterval))
+    }
+
+    /// Trigger-align the window at `windowStart` in `history` and blend it into the display buffer.
+    private func render(windowStart: Int, framesElapsed: Float) {
+        let count = frameLength
         let maxTriggerOffset = count / 4          // search the first quarter for the trigger
         let windowLength = count - maxTriggerOffset
         guard windowLength > 1, maxTriggerOffset >= 1 else { return }
+        let start = min(windowStart, history.count - count)
 
-        // Trigger: first rising zero-crossing in the search region. Falls back to 0 (no lock) when
+        // Trigger: first rising zero-crossing in the search region. Falls back to the window start (no lock) when
         // none is found (silence / aperiodic noise), which simply leaves the trace where it is.
-        var trigger = 0
-        for i in 1...maxTriggerOffset where pcm[i - 1] <= 0 && pcm[i] > 0 {
+        var trigger = start
+        for i in (start + 1)...(start + maxTriggerOffset) where history[i - 1] <= 0 && history[i] > 0 {
             trigger = i
             break
         }
 
         if displayBuffer.count != windowLength {
-            displayBuffer = Array(pcm[trigger..<(trigger + windowLength)])
+            displayBuffer = Array(history[trigger..<(trigger + windowLength)])
             needsDisplay = true
             return
         }
 
-        // Asymmetric blend: snap toward a louder frame (a beat), ease toward a quieter one. This stops
+        // Asymmetric blend: snap toward a louder window (a beat), ease toward a quieter one. This stops
         // the smoothing from averaging away a strong beat whose trigger locked to a different cycle.
         var framePeak: Float = 0
         var displayPeak: Float = 0
         for i in 0..<windowLength {
-            framePeak = max(framePeak, abs(pcm[trigger + i]))
+            framePeak = max(framePeak, abs(history[trigger + i]))
             displayPeak = max(displayPeak, abs(displayBuffer[i]))
         }
-        let weight = framePeak > displayPeak ? attackWeight : releaseWeight
+        let frameWeight = framePeak > displayPeak ? attackWeight : releaseWeight
+        let weight = 1 - pow(1 - frameWeight, min(1, framesElapsed))
         for i in 0..<windowLength {
-            displayBuffer[i] += (pcm[trigger + i] - displayBuffer[i]) * weight
+            displayBuffer[i] += (history[trigger + i] - displayBuffer[i]) * weight
         }
         needsDisplay = true
     }
