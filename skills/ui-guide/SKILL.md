@@ -418,20 +418,11 @@ private var currentTrackTextWidth: CGFloat = 0
 let xOffset = needsMarquee ? -marqueeOffset : 0
 ```
 
-### Unicode Fallback
+### Track Row Font
 
-The bitmap font (`TEXT.BMP`) only supports ASCII characters. Track titles with Japanese, Chinese, Korean, Cyrillic, Arabic, or other non-Latin characters are automatically detected and rendered using system font fallback. (The main window marquee has its own tiers; see *Title Font Tiers*.)
-
-```swift
-private func containsNonLatinCharacters(_ text: String) -> Bool {
-    // Returns true if text contains characters outside A-Z, 0-9, and common symbols
-}
-```
-
-This ensures:
-- **Latin text**: Uses skin bitmap font for authentic look
-- **Non-Latin text**: Falls back to system font for proper Unicode display
-- **Mixed text**: Falls back to system font if any non-Latin characters present
+Track rows always draw in the system font (`drawTrackText`; the row marquee layer is set to
+`useSystemFont`), at every title, so `updateCurrentTrackTextWidth` measures in the system font too.
+The main window marquee picks a font per title instead; see *Title Font Tiers*.
 
 ### Selected Track Appearance
 

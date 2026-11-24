@@ -23,10 +23,9 @@ extension SkinElements.TextFont {
 
     // MARK: - Skin font (TEXT.BMP)
 
-    /// Characters the bitmap path draws. `,` has no cell and draws as a space, as it always has.
-    static let drawableCharacters = Set<Character>(
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ÅÖÄ \"@:()-'!_+\\/[]^&%.=$#?*,"
-    )
+    /// Characters the bitmap path draws: TEXT.BMP's cells, and `,`, which has none and draws as a
+    /// space, as it always has.
+    static let drawableCharacters = Set(cells.keys).union([","])
 
     /// Uppercase characters with no compatibility decomposition onto the glyph set.
     private static let standIns: [Character: String] = [
@@ -56,16 +55,18 @@ extension SkinElements.TextFont {
         return !base.isEmpty && base.allSatisfy(drawableCharacters.contains) ? base : nil
     }
 
-    /// The colour of the skin's lettering: the pixel of the `A` cell least like the space cell.
-    /// Nil when the `A` cell is blank.
-    static func glyphColor(in sheet: CGImage) -> CGColor? {
+    /// The colour of the skin's lettering: the pixel of the `A` cell least like the space cell. A
+    /// blank `A` cell gives the system font fallback's green, so the two fallbacks match.
+    // ponytail: one colour from one cell; a skin with gradient or outlined lettering gets one flat
+    // colour in the pixel tier. Sample per row, or take a text colour from the skin, if that shows.
+    static func glyphColor(in sheet: CGImage) -> CGColor {
         let space = character(" "), letter = character("A")
         guard let context = CGContext(data: nil, width: 2 * Int(charWidth), height: Int(charHeight),
                                       bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
               let spaceCell = sheet.cropping(to: space), let letterCell = sheet.cropping(to: letter),
-              let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+              let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return NSColor.green.cgColor }
         context.draw(spaceCell, in: CGRect(x: 0, y: 0, width: charWidth, height: charHeight))
         context.draw(letterCell, in: CGRect(x: charWidth, y: 0, width: charWidth, height: charHeight))
         let bytesPerRow = context.bytesPerRow
@@ -79,9 +80,9 @@ extension SkinElements.TextFont {
                 if distance > best.distance { best = (distance, pixel) }
             }
         }
-        guard best.distance > 0 else { return nil }
+        guard best.distance > 0 else { return NSColor.green.cgColor }
         let c = best.rgb.map { CGFloat($0) / 255 }
-        return CGColor(colorSpace: CGColorSpaceCreateDeviceRGB(), components: [c[0], c[1], c[2], 1])
+        return CGColor(red: c[0], green: c[1], blue: c[2], alpha: 1)
     }
 
     // MARK: - Pixel font (Tiny5)
@@ -105,9 +106,32 @@ extension SkinElements.TextFont {
         return CTFontGetGlyphsForCharacters(pixelFont, units, &glyphs, units.count)
     }
 
-    /// A line of `text` in the pixel font, drawn in the context's fill colour. Tiny5 has whole-pixel
-    /// advances and no kerning, so a marquee's `text + separator` is exactly as wide as its parts.
-    static func pixelFontLine(_ text: String) -> CTLine? {
+    /// The width of `text` in the pixel font. Tiny5 has whole-pixel advances and no kerning, so a
+    /// marquee's `text + separator` is exactly as wide as its parts.
+    static func pixelFontWidth(_ text: String) -> CGFloat {
+        pixelFontLine(text).map { CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil)) } ?? 0
+    }
+
+    /// `text` in the pixel font, one font pixel per image pixel, unsmoothed, its 9 px line (7 ascent
+    /// + 2 descent) centred in `height` the way TEXT.BMP's 6 px cell is. The marquee stretches it
+    /// with nearest sampling, as it does the TEXT.BMP glyphs.
+    static func pixelFontImage(_ text: String, width: CGFloat, height: CGFloat, color: CGColor) -> CGImage? {
+        guard let pixelFont, let line = pixelFontLine(text),
+              let context = CGContext(data: nil, width: Int(ceil(width)), height: Int(ceil(height)),
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.setShouldAntialias(false)
+        context.setFillColor(color)
+        let descent = CTFontGetDescent(pixelFont)
+        let lineHeight = CTFontGetAscent(pixelFont) + descent
+        context.textPosition = CGPoint(x: 0, y: floor((height - lineHeight) / 2) + descent)
+        CTLineDraw(line, context)
+        return context.makeImage()
+    }
+
+    /// A line of `text` in the pixel font, drawn in the context's fill colour.
+    private static func pixelFontLine(_ text: String) -> CTLine? {
         guard let pixelFont else { return nil }
         let attributes: [NSAttributedString.Key: Any] = [
             .font: pixelFont,

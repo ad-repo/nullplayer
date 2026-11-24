@@ -256,86 +256,30 @@ struct SkinElements {
         /// Characters per row
         static let charsPerRow = 31
         
-        /// Row 0: A-Z (uppercase)
-        /// Row 1: Special characters or lowercase mapping
-        /// Row 2: 0-9 and symbols
-        
-        static func character(_ char: Character) -> NSRect {
-            let ascii = char.asciiValue ?? 0
-            var col: Int
-            var row: Int
-            
-            switch char {
-            case "Å", "å":
-                row = 2; col = 0
-            case "Ö", "ö":
-                row = 2; col = 1
-            case "Ä", "ä":
-                row = 2; col = 2
-            case "A"..."Z":
-                row = 0
-                col = Int(ascii) - 65  // A=0, B=1, etc.
-            case "a"..."z":
-                // Lowercase maps to uppercase
-                row = 0
-                col = Int(ascii) - 97
-            case "0"..."9":
-                row = 1
-                col = Int(ascii) - 48
-            case "\"":
-                row = 0; col = 26
-            case "@":
-                row = 0; col = 27
-            case " ":
-                row = 0; col = 29  // Space
-            case ":":
-                row = 1; col = 12
-            case "(":
-                row = 1; col = 13
-            case ")":
-                row = 1; col = 14
-            case "-":
-                row = 1; col = 15
-            case "'":
-                row = 1; col = 16
-            case "!":
-                row = 1; col = 17
-            case "_":
-                row = 1; col = 18
-            case "+":
-                row = 1; col = 19
-            case "\\":
-                row = 1; col = 20
-            case "/":
-                row = 1; col = 21
-            case "[":
-                row = 1; col = 22
-        case "]":
-            row = 1; col = 23
-            case "^":
-                row = 1; col = 24
-            case "&":
-                row = 1; col = 25
-            case "%":
-                row = 1; col = 26
-            case ".":
-                row = 1; col = 27
-            case "=":
-                row = 1; col = 28
-            case "$":
-                row = 1; col = 29
-            case "#":
-                row = 1; col = 30
-            case "?":
-                row = 2; col = 3
-            case "*":
-                row = 2; col = 4
-            default:
-                row = 0; col = 29  // Default to space
+        /// TEXT.BMP's layout, one string per row; `·` is a cell with no character.
+        private static let layout = [
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ\"@· ",
+            "0123456789··:()-'!_+\\/[]^&%.=$#",
+            "ÅÖÄ?*",
+        ]
+
+        /// The column and row of every character TEXT.BMP draws.
+        static let cells: [Character: (col: Int, row: Int)] = {
+            var cells: [Character: (col: Int, row: Int)] = [:]
+            for (row, characters) in layout.enumerated() {
+                for (col, character) in characters.enumerated() where character != "·" {
+                    cells[character] = (col, row)
+                }
             }
-            
-            return NSRect(x: CGFloat(col) * charWidth,
-                         y: CGFloat(row) * charHeight,
+            return cells
+        }()
+
+        /// `char`'s cell; lowercase draws as its capital, anything else as a space.
+        static func character(_ char: Character) -> NSRect {
+            let capital = String(char).uppercased()
+            let cell = cells[char] ?? (capital.count == 1 ? cells[Character(capital)] : nil) ?? cells[" "]!
+            return NSRect(x: CGFloat(cell.col) * charWidth,
+                         y: CGFloat(cell.row) * charHeight,
                          width: charWidth,
                          height: charHeight)
         }

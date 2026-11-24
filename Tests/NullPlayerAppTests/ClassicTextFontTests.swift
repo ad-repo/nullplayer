@@ -21,12 +21,25 @@ final class ClassicTextFontTests: XCTestCase {
         XCTAssertEqual(font.character("A"), NSRect(x: 0, y: 0, width: 5, height: 6))
     }
 
-    /// Every character the folder emits must have a real cell, or a folded title draws gaps.
-    /// Only space (and `,`, which never had a cell) may land on the space cell.
-    func testEveryDrawableCharacterHasItsOwnCell() {
-        let spaceCell = font.character(" ")
-        for character in font.drawableCharacters where character != " " && character != "," {
-            XCTAssertNotEqual(font.character(character), spaceCell, "\(character) draws as a space")
+    func testLowercaseDrawsAsItsCapitalAndAnythingElseAsASpace() {
+        XCTAssertEqual(font.character("q"), font.character("Q"))
+        XCTAssertEqual(font.character("ö"), font.character("Ö"))
+        for unknown: Character in [",", ";", "é", "Ж", "由", "ß"] {
+            XCTAssertEqual(font.character(unknown), font.character(" "), "\(unknown)")
+        }
+    }
+
+    /// U+212A KELVIN SIGN is canonically `K`. The old switch matched it as "A"..."Z" but read its
+    /// (missing) ASCII value, putting the cell at x = -325, off the sheet.
+    func testCanonicalEquivalentsUseTheSameCell() {
+        XCTAssertEqual(font.character("\u{212A}"), font.character("K"))
+        XCTAssertEqual(font.character("A\u{030A}"), font.character("Å"))
+    }
+
+    func testEveryCellIsOnTheSheet() {
+        let sheet = NSRect(x: 0, y: 0, width: 155, height: 18)
+        for character in font.cells.keys {
+            XCTAssertTrue(sheet.contains(font.character(character)), "\(character)")
         }
     }
 }
@@ -159,17 +172,64 @@ final class ClassicTitleFontTests: XCTestCase {
 
     /// The marquee loops `text + separator`; its width must be the sum of the parts and land on whole
     /// pixels, or the scroll jumps at the seam and the glyphs smear between device pixels.
-    func testPixelLineWidthsAreWholePixelsAndAdditive() throws {
-        func width(_ text: String) throws -> CGFloat {
-            CGFloat(CTLineGetTypographicBounds(try XCTUnwrap(Font.pixelFontLine(text)), nil, nil, nil))
-        }
+    func testPixelLineWidthsAreWholePixelsAndAdditive() {
+        let width = Font.pixelFontWidth
         let title = "КИНО - ГРУППА КРОВИ ♥ AVAWAY", separator = "  -  "
-        XCTAssertEqual(try width(title + separator + title), try width(title) + width(separator) + width(title),
+        XCTAssertEqual(width(title + separator + title), width(title) + width(separator) + width(title),
                        accuracy: 0.001)
         for text in [title, separator, "ΩMEGA Λ"] {
-            let w = try width(text)
-            XCTAssertEqual(w, w.rounded(), accuracy: 0.001, text)
+            XCTAssertEqual(width(text), width(text).rounded(), accuracy: 0.001, text)
+            XCTAssertGreaterThan(width(text), 0, text)
         }
+    }
+
+    /// The pixel tier renders one font pixel per image pixel and the marquee only ever enlarges it with
+    /// nearest sampling, so this image is exactly what a 1x display shows. Every pixel must be fully
+    /// clear or fully the lettering colour: any in-between alpha is smoothing that would blur.
+    func testPixelImageIsUnsmoothedInTheGivenColour() throws {
+        let text = "КИНО - ГРУППА КРОВИ ♥ SEÁN ΩMEGA"
+        let color = CGColor(colorSpace: CGColorSpaceCreateDeviceRGB(), components: [0.2, 0.8, 0.1, 1])!
+        let image = try XCTUnwrap(Font.pixelFontImage(text, width: Font.pixelFontWidth(text), height: 13, color: color))
+        XCTAssertEqual(image.height, 13)
+        let rows = try opaqueRows(image, expecting: [51, 204, 26])
+        XCTAssertFalse(rows.isEmpty, "drew nothing")
+    }
+
+    /// The 9 px line (7 ascent + 2 descent) sits 2 px from the bottom of the 13 pt marquee, so the
+    /// 5 px capitals fill rows 4–8 from the bottom, the TEXT.BMP cell's band, and accents stay inside.
+    func testPixelImageIsCentredLikeATextBMPCell() throws {
+        let color = CGColor(colorSpace: CGColorSpaceCreateDeviceRGB(), components: [1, 1, 1, 1])!
+        func rowsFromBottom(_ text: String) throws -> Set<Int> {
+            let image = try XCTUnwrap(Font.pixelFontImage(text, width: Font.pixelFontWidth(text), height: 13, color: color))
+            return Set(try opaqueRows(image, expecting: [255, 255, 255]).map { 12 - $0 })
+        }
+        XCTAssertEqual(try rowsFromBottom("КИНО"), Set(4...8))
+        let accented = try rowsFromBottom("ÁÖ")
+        XCTAssertTrue(accented.isSuperset(of: 4...8))
+        XCTAssertLessThan(accented.max() ?? 99, 13)
+    }
+
+    /// The rows (from the top) holding any opaque pixel; fails on any pixel that is neither clear nor
+    /// exactly `rgb` at full alpha.
+    private func opaqueRows(_ image: CGImage, expecting rgb: [UInt8],
+                            file: StaticString = #filePath, line: UInt = #line) throws -> [Int] {
+        let width = image.width, height = image.height
+        var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        let context = try XCTUnwrap(CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8,
+                                              bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        var rows: Set<Int> = []
+        for y in 0..<height {
+            for x in 0..<width {
+                let p = Array(bytes[(y * width + x) * 4..<(y * width + x) * 4 + 4])
+                guard p[3] != 0 else { continue }
+                XCTAssertEqual(p, rgb + [255], "smoothed or off-colour pixel at (\(x), \(y))", file: file, line: line)
+                // CGContext's buffer starts at the top row
+                rows.insert(y)
+            }
+        }
+        return rows.sorted()
     }
 
     // MARK: - Glyph colour
@@ -190,15 +250,16 @@ final class ClassicTitleFontTests: XCTestCase {
     func testGlyphColorIsTheLetterPixelLeastLikeTheBackground() throws {
         let image = sheet(background: [10, 20, 30],
                           pixels: [(1, 1, [0, 100, 0]), (2, 3, [0, 220, 0]), (3, 4, [10, 30, 30])])
-        let color = try XCTUnwrap(Font.glyphColor(in: image))
-        let c = try XCTUnwrap(color.components)
+        let c = try XCTUnwrap(Font.glyphColor(in: image).components)
         XCTAssertEqual(c[0], 0, accuracy: 0.01)
         XCTAssertEqual(c[1], 220.0 / 255, accuracy: 0.01)
         XCTAssertEqual(c[2], 0, accuracy: 0.01)
     }
 
-    /// The `A` cell is the top-left one; a lit pixel outside it (here in the `B` cell) is not the lettering.
-    func testGlyphColorReadsOnlyTheACell() {
-        XCTAssertNil(Font.glyphColor(in: sheet(background: [10, 20, 30], pixels: [(6, 2, [255, 0, 0])])))
+    /// The `A` cell is the top-left one; a lit pixel outside it (here in the `B` cell) is not the
+    /// lettering, so this sheet's `A` is blank and the colour is the system font fallback's green.
+    func testBlankACellGivesTheSystemFallbackGreen() {
+        let color = Font.glyphColor(in: sheet(background: [10, 20, 30], pixels: [(6, 2, [255, 0, 0])]))
+        XCTAssertEqual(NSColor(cgColor: color), NSColor(cgColor: NSColor.green.cgColor))
     }
 }

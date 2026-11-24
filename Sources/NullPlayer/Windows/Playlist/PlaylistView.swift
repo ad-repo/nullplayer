@@ -335,8 +335,8 @@ class PlaylistView: NSView {
 
     // MARK: - Marquee Layer Management
 
-    /// Calculate current track text width for marquee scrolling
-    /// Uses system font width for non-Latin characters, bitmap font width otherwise
+    /// Calculate current track text width for marquee scrolling. Track rows always draw in the
+    /// system font (`drawTrackText`), so that is what it measures.
     private func updateCurrentTrackTextWidth() {
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
@@ -349,15 +349,7 @@ class PlaylistView: NSView {
         let track = engine.playlist[currentIndex]
         let titleText = "\(currentIndex + 1). \(EQProfileResolver.shared.queueTitle(for: track))"
 
-        // Check if we need system font fallback for non-Latin characters
-        if cachedTextBitmapCGImage == nil || containsNonLatinCharacters(titleText) {
-            // Use system font width for non-Latin characters
-            currentTrackTextWidth = systemFontTextWidth(titleText)
-        } else {
-            // Calculate text width using bitmap font's fixed character width
-            let charWidth = SkinElements.TextFont.charWidth
-            currentTrackTextWidth = CGFloat(titleText.count) * charWidth
-        }
+        currentTrackTextWidth = systemFontTextWidth(titleText)
     }
 
     private func setupPlaylistMarqueeLayer() {
@@ -944,26 +936,6 @@ class PlaylistView: NSView {
         }
 
         return offscreenContext.makeImage()
-    }
-
-    // MARK: - Non-Latin Character Detection
-
-    /// Check if text contains characters not supported by the bitmap font (TEXT.BMP).
-    /// The bitmap font only supports A-Z, 0-9, and limited symbols.
-    /// Non-Latin characters (Japanese, Chinese, Korean, Cyrillic, Arabic, etc.) need system font fallback.
-    private func containsNonLatinCharacters(_ text: String) -> Bool {
-        for char in text {
-            switch char {
-            case "A"..."Z", "a"..."z", "0"..."9":
-                continue
-            case " ", "\"", "@", ":", "(", ")", "-", "'", "!", "_", "+", "\\", "/",
-                 "[", "]", "^", "&", "%", ".", "=", "$", "#", "?", "*":
-                continue
-            default:
-                return true  // Non-Latin or unsupported character
-            }
-        }
-        return false
     }
 
     /// Draw text using system font (fallback for non-Latin characters).
