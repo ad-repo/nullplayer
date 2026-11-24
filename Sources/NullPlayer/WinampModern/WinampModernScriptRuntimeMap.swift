@@ -40,8 +40,8 @@ extension WinampModernScriptRuntime {
             return host.trackFolderCover(forImage: imageID) == nil ? 0 : 1
         }
         guard let imageID = object.attributes["image"], let sheet = bitmapSize(identifier: imageID) else { return 1 }
-        return WasabiSceneRenderer.AnimationGrid(sheetWidth: Int(sheet.width), sheetHeight: Int(sheet.height),
-                                                 attributes: object.attributes).count
+        return WasabiAnimationGrid(sheetWidth: Int(sheet.width), sheetHeight: Int(sheet.height),
+                                   attributes: object.attributes).count
     }
 
     func animationFrame(of object: WasabiObject) -> Int {

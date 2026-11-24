@@ -312,7 +312,7 @@ final class WinampModernPhase13Tests: XCTestCase {
     /// SUPER_BLACK: a 43x450 strip in an 86-wide box with `frameheight="45"` is ten frames one strip
     /// wide, the same cut for the renderer and for `getLength()`.
     func testAnAnimationBoxWiderThanItsStripCutsTheStripWidth() {
-        let grid = WasabiSceneRenderer.AnimationGrid(sheetWidth: 43, sheetHeight: 450,
+        let grid = WasabiAnimationGrid(sheetWidth: 43, sheetHeight: 450,
                                                      attributes: ["w": "86", "frameheight": "45"])
         XCTAssertEqual(grid.width, 43)
         XCTAssertEqual(grid.height, 45)
