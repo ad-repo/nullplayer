@@ -250,8 +250,11 @@ extension WasabiSceneRenderer {
         let boxHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
         let isWholeSheet = bitmap.width <= boxWidth && bitmap.height <= boxHeight
             && (bitmap.width < boxWidth || bitmap.height < boxHeight)
-        let frameWidth = isWholeSheet ? bitmap.width : boxWidth
-        let frameHeight = isWholeSheet ? bitmap.height : boxHeight
+        // A box wider (or taller) than the sheet on one axis is a strip one frame across on that axis:
+        // SUPER_BLACK's ClassicPro beat layer is 86 wide for its VU art, and the 43 px strips of its
+        // other styles were cut 86 wide, ran off the sheet and drew nothing.
+        let frameWidth = isWholeSheet ? bitmap.width : min(boxWidth, bitmap.width)
+        let frameHeight = isWholeSheet ? bitmap.height : min(boxHeight, bitmap.height)
         let columns = max(1, bitmap.width / frameWidth)
         let rows = max(1, bitmap.height / frameHeight)
         let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))

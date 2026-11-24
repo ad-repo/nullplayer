@@ -36,6 +36,9 @@
 - **Winamp Modern (`.wal`)**: a skin whose Playlist window is really a web page to the author's site
   (Red_Pearl, Laboratory Clinical Art and eight others built from the same template) now opens a
   real playlist in the skin's frame.
+- **Winamp Modern (`.wal`)**: an animated layer wider or taller than its artwork strip draws its frames
+  instead of nothing: SUPER_BLACK's beat-meter styles other than VU Meter now animate, and Live Times
+  Square's volume bar, YoYoBoy's seek arc, Lobe's face and Kyoko Fukada's visor text now show.
 
 ## 0.35.2
 
