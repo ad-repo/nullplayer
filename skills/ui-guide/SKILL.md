@@ -420,7 +420,7 @@ let xOffset = needsMarquee ? -marqueeOffset : 0
 
 ### Unicode Fallback
 
-The bitmap font (`TEXT.BMP`) only supports ASCII characters. Track titles with Japanese, Chinese, Korean, Cyrillic, Arabic, or other non-Latin characters are automatically detected and rendered using system font fallback, matching the behavior of the main window marquee.
+The bitmap font (`TEXT.BMP`) only supports ASCII characters. Track titles with Japanese, Chinese, Korean, Cyrillic, Arabic, or other non-Latin characters are automatically detected and rendered using system font fallback. (The main window marquee has its own tiers; see *Title Font Tiers*.)
 
 ```swift
 private func containsNonLatinCharacters(_ text: String) -> Bool {
@@ -467,40 +467,25 @@ A key issue was `NSImage.cgImage()` affecting shared graphics state during rende
 
 The main window uses a scrolling marquee to display the current track title.
 
-### Skin Bitmap Font
+### Title Font Tiers
 
-By default, the marquee uses the skin's `TEXT.BMP` bitmap font, which provides the authentic Winamp look. This font only supports:
-- A-Z (case-insensitive)
-- 0-9
-- Common symbols: `" @ : ( ) - ' ! _ + \ / [ ] ^ & % . = $ # ? *`
+`MarqueeLayer` draws a title in the first of three fonts that can spell it (#798). The choice is
+`SkinElements.TextFont.titleFont(for:)` in `Skin/SkinTitleFont.swift`, made once per render; the
+whole title always draws in one font.
 
-### Unicode Fallback
-
-When track titles contain characters not supported by the skin font (Japanese, Cyrillic, Chinese, Korean, accented characters, etc.), the marquee automatically falls back to system font rendering:
-
-```swift
-private func containsNonLatinCharacters(_ text: String) -> Bool {
-    for char in text {
-        switch char {
-        case "A"..."Z", "a"..."z", "0"..."9":
-            continue
-        case " ", "\"", "@", ":", "(", ")", "-", "'", "!", "_", "+", "\\", "/",
-             "[", "]", "^", "&", "%", ".", "=", "$", "#", "?", "*":
-            continue
-        default:
-            return true  // Non-Latin character detected
-        }
-    }
-    return false
-}
-```
-
-This ensures:
-- **Latin text**: Uses skin bitmap font for authentic look
-- **Non-Latin text**: Falls back to system font for proper Unicode display
-- **Mixed text**: Falls back to system font if any non-Latin characters present
-
-The system font fallback maintains the green color and scrolling behavior, just with full Unicode support.
+1. **The skin's `TEXT.BMP`.** It has A–Z, 0–9, `Å Ö Ä` (row 2, columns 0–2) and
+   `" @ : ( ) - ' ! _ + \ / [ ] ^ & % . = $ # ? *`. `bitmapText(_:)` folds the title onto that set
+   first: accents are stripped (`é`→`E`), compatibility forms expand (`Ⅱ`→`II`, `…`→`...`,
+   full-width→ASCII), curly quotes and dashes go straight, and `Ø Æ Œ Ł Đ Þ` get letter stand-ins.
+   Every Latin-script title lands here. `,` has no cell and draws as a space.
+2. **Tiny5** (`Resources/Fonts/Tiny5-Regular.ttf`, read from the bundle, never registered) for what
+   does not fold: Greek, Cyrillic, `♥`, and ASCII with no cell (`;`, `~`). Drawn in capitals at
+   8 pt — one font pixel per point, 5 px capitals — unsmoothed at 1x and stretched with nearest
+   sampling like the glyph sprites, in the colour `glyphColor(in:)` samples from the `A` cell.
+   A skin whose lettering is a gradient or outline gets one flat colour here.
+3. **The system font** for scripts Tiny5 has no glyphs for (CJK, kana, Hangul; Tiny5 also lacks
+   Roman numerals, so tier 2 expands them with NFKC first). A layer with `useSystemFont` set (the Playlist's) or a skin with no
+   `TEXT.BMP` always draws here.
 
 ### Scaling
 

@@ -266,6 +266,12 @@ struct SkinElements {
             var row: Int
             
             switch char {
+            case "Å", "å":
+                row = 2; col = 0
+            case "Ö", "ö":
+                row = 2; col = 1
+            case "Ä", "ä":
+                row = 2; col = 2
             case "A"..."Z":
                 row = 0
                 col = Int(ascii) - 65  // A=0, B=1, etc.
