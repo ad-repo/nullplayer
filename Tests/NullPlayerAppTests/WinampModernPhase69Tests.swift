@@ -203,6 +203,88 @@ final class WinampModernPhase69Tests: XCTestCase {
         XCTAssertEqual(title.attributes["default"], "Song")
     }
 
+    // MARK: - A notifier that scripts its own show (#805)
+
+    /// A notifier whose own container carries the script that shows it on a track change is the
+    /// skin's (Jpod's Do Not Show, side and slide settings). A skin-level notifier script — stock
+    /// Winamp Modern's, Big Bento's — a container script that only follows play/pause, and another
+    /// window's script keep the host's show.
+    func testANotifierIsTheSkinsWhenItsOwnContainerScriptsTheShow() throws {
+        let cases: [(owner: (type: String, id: String)?, event: String, expected: Bool)] = [
+            (("container", "notifier"), "ontitlechange", true),
+            (("text", "title"), "onshownotification", true),
+            (nil, "ontitlechange", false),
+            (("container", "notifier"), "onplay", false),
+            (("container", "main"), "ontitlechange", false),
+        ]
+        for (owner, event, expected) in cases {
+            let runtime = try makeToastRuntime()
+            try bindSystem(runtime, event: event, owner: owner)
+            let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+            XCTAssertEqual(runtime.notifierShowsItself(notifier), expected,
+                           "owner \(owner?.id ?? "skin") binding System.\(event)")
+        }
+    }
+
+    /// Only a notifier: the player's own track-change script does not make it a toast.
+    func testAWindowThatIsNotANotifierNeverShowsItselfAsOne() throws {
+        let runtime = try makeToastRuntime()
+        try bindSystem(runtime, event: "ontitlechange", owner: ("container", "main"))
+        let main = try XCTUnwrap(object(runtime, type: "container", id: "main"))
+        XCTAssertFalse(runtime.notifierShowsItself(main))
+    }
+
+    /// The host shows and fills the toast only when the skin does not.
+    func testTheHostNeitherShowsNorFillsANotifierThatShowsItself() throws {
+        for showsItself in [false, true] {
+            let runtime = try makeToastRuntime()
+            if showsItself { try bindSystem(runtime, event: "ontitlechange", owner: ("container", "notifier")) }
+            let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+            let shown = runtime.announceNotification(title: "Song", artist: "Artist", album: "Album")
+            XCTAssertTrue(shown === (showsItself ? nil : notifier))
+            let title = try XCTUnwrap(object(runtime, type: "text", id: "title"))
+            XCTAssertEqual(title.attributes["text"], showsItself ? nil : "Song")
+        }
+    }
+
+    /// The host's toast is the plain `notifier`, wherever it is declared. A `notifier.*` sibling is
+    /// never shown in its place: Rectangular's `notifier.preferences` is a settings window, and it
+    /// popped up at the screen corner on every track change (#810).
+    func testOnlyThePlainNotifierIsTheHostsToShow() throws {
+        let runtime = try makeRuntime(loaded: makeSkin(xml: """
+        <WasabiXML>
+          <container id="notifier.preferences"><layout id="normal" w="250" h="30"/></container>
+          <container id="notifier"><layout id="normal" w="300" h="80"/></container>
+        </WasabiXML>
+        """))
+        let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+        XCTAssertTrue(runtime.announceNotification(title: "Song", artist: "", album: "") === notifier)
+
+        let prefixedOnly = try makeRuntime(loaded: makeSkin(xml: """
+        <WasabiXML>
+          <container id="notifier.preferences"><layout id="normal" w="250" h="30"/></container>
+          <container id="notifier.popup"><layout id="normal" w="275" h="50"/></container>
+        </WasabiXML>
+        """))
+        XCTAssertNil(prefixedOnly.announceNotification(title: "Song", artist: "", album: ""))
+    }
+
+    /// Its moves are pins, so the slide may start below the screen edge; another toast's are
+    /// placements, kept on screen.
+    func testASelfShownNotifiersMovesArePins() throws {
+        for showsItself in [false, true] {
+            let runtime = try makeToastRuntime()
+            if showsItself { try bindSystem(runtime, event: "ontitlechange", owner: ("container", "notifier")) }
+            var pinned: Bool?
+            runtime.hooks.containerMoveRequested = { _, _, pin in pinned = pin }
+            let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+            _ = try runtime.invoke(method: "resize", on: MakiObjectReference(.gui(notifier.stableID)),
+                                   arguments: [.integer(1490), .integer(1130), .integer(300), .integer(125)],
+                                   program: Self.syntheticProgram)
+            XCTAssertEqual(pinned, showsItself)
+        }
+    }
+
     // MARK: - Helpers
 
     /// The graph, walked. The runtime's own root lookup is private, and a test that reached for it
@@ -272,6 +354,36 @@ final class WinampModernPhase69Tests: XCTestCase {
         </WasabiXML>
         """)
         return try makeRuntime(loaded: loaded)
+    }
+
+    /// A player beside a notifier, as Jpod declares them, with no script yet.
+    private func makeToastRuntime() throws -> WinampModernScriptRuntime {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="player" w="300" h="200"/>
+          </container>
+          <container id="notifier">
+            <layout id="normal" w="300" h="125">
+              <text id="title" x="0" y="0" w="200" h="20" default="Placeholder"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """)
+        return try makeRuntime(loaded: loaded)
+    }
+
+    /// A script loaded in `owner` (nil: at skin level) with a `System.<event>` handler.
+    private func bindSystem(_ runtime: WinampModernScriptRuntime, event: String,
+                            owner: (type: String, id: String)?) throws {
+        let ownerID = try owner.map { try XCTUnwrap(object(runtime, type: $0.type, id: $0.id)).stableID }
+        runtime.programs.append(MakiProgram(
+            version: 0x0403, classes: [], methods: [MakiMethod(classIndex: 0, name: event)],
+            variables: [MakiVariable(declaredKind: .object, isSystem: true,
+                                     value: .object(MakiObjectReference(.system)))],
+            bindings: [MakiBinding(variableIndex: 0, methodIndex: 0, instructionIndex: 0)],
+            instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/notifier.maki"),
+            ownerID: ownerID, parameter: nil))
     }
 
     private func makeRuntime(loaded: WinampModernLoadedSkin) throws -> WinampModernScriptRuntime {

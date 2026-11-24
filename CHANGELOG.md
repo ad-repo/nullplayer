@@ -50,6 +50,11 @@
   letters, and Greek, Cyrillic and `♥` draw in a matching pixel font (Tiny5) in the skin's text
   colour. Only Japanese, Chinese and Korean titles still use the system font. The bundled Silver
   skin now has `Å Ö Ä` letters, and its `?` and `*` no longer draw blank.
+- **Winamp Modern (`.wal`): Jpod's Notifier Settings work** (#805). Do Not Show hides the song-change
+  toast, Display On Left moves it, and Slide slides it up from the bottom of the screen and back down.
+  Before, it always appeared in the lower right with no animation. CNYforWinamp, WTM, YST and
+  Symplicipod, whose notifiers come from the same author's scripts, behave the same way. Rectangular
+  no longer pops its Notifier Preferences window up in the corner on every song change.
 
 ## 0.35.2
 

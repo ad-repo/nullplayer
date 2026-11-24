@@ -125,6 +125,45 @@ capabilities have to be present for any of that to appear:
 The host's text override stays regardless, because the skins' timer-driven text chains do not
 reliably run — but on a skin like this one it is the *only* thing the host should be doing.
 
+### A notifier whose own container scripts its show (#805, 2026-11-24)
+
+Steps 4–8 above are the host's fallback for a notifier the skin does not drive. **Jpod's drives
+everything**: `<script file="Scripts/Notifier-Notifier.maki">` sits *inside* `<container
+id="notifier">`, and its `System.onTitleChange` reads the skin's own Notifier Settings (Do Not Show,
+Display On Left/Right, Anim Off/Slide), then `show()`s, `resize()`s, slides and `hide()`s the
+layout itself. The host showing it as well overrode every one of those: the toast appeared under
+Do Not Show, the 350 floor widened its authored 300 (which its left/right arithmetic is cut for),
+the 5 s dismiss ran beside its own 3 s one, and the visible-frame clamp in `moveContainerWindow`
+pulled the slide's start — below the screen edge — back on screen, so the toast popped up whole and
+hopped the last 49 px.
+
+`WinampModernScriptRuntime.notifierShowsItself(_:)` is the test: a notifier container with a
+program **owned by it or by something inside it** that binds `System.onTitleChange` or
+`onShowNotification` (found through `programsBinding`). When it holds, `announceNotification` only
+dispatches `onshownotification` and tells `showNotifier` not to show, fill or dismiss the toast, and
+`applyContainerGeometry` sends that container's moves as **pins**, which `moveContainerWindow`
+does not clamp. Ownership is the line because stock Winamp Modern's,
+Love is War Miku's and Big Bento's notifier scripts are **skin-level** (`owner=-#-` in
+`RENDER_SCRIPTS`) and Big Bento's in-container groups bind only `onPlay`/`onPause`: all three keep
+the host's show. Measured reach (static scan of gold+silver, then `RENDER_EVENTS=ontitlechange` +
+`CALL_TRACE` on each): Jpod, CNYforWinamp, WTM, YST and Symplicipod — one script family, and every
+one `show()`s and places its own layout. A static scan sees only `<script>`s written directly in the
+container, so it is a lower bound.
+
+**The host's toast is the plain `notifier` id, never a `notifier.*` sibling** (#810).
+`announceNotification` finds `<container id="notifier">` itself and answers it (or nil), and
+`showNotifier` shows that window. It used to show the first container `isNotifier` matched, which
+on Rectangular (`notifier.preferences` then `notifier.popup`, no plain `notifier`) was the
+preferences window, popped up at the screen corner on every track change beside the popup its own
+script shows. Ten corpus skins, the Love is War Miku family, also declare `notifier.preferences`
+ahead of `notifier` in archive order; Love is War Miku now shows its 350×80 `notifier`, measured live.
+`isNotifier`'s prefix rule still decides suppression and placement.
+
+Two things that look like defects and are the skin's: its **first** toast after launch never slides
+(the hide timer `onScriptLoaded` starts is still running, so `ShowNotifier` keeps the `ANIM_STYLE_NONE`
+it was born with), and the slide starts about 39 px visible, because the skin takes the viewport's
+height as its bottom edge and ignores `getViewportTop()` (the menu bar).
+
 ### `getPlayItemMetaDataString` — per-field metadata
 
 MAKI scripts use `System.getPlayItemMetaDataString("artist")` etc. to read track metadata.
@@ -156,10 +195,11 @@ handler's text-setting (which doesn't work anyway) is overridden.
 ### Files
 
 - `WinampModernMainWindowController.swift` — `AuxiliaryContainer.isNotifier`, `noActivation`,
-  `showNotifier(for:)`, `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
+  `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
   bottom-right positioning in `place()`, `containerAlphaChanged` wiring
-- `WinampModernScriptRuntimeText.swift` — `setNotifierText(title:artist:album:)`,
-  `setTextInSubtree(_:id:text:)`
+- `WinampModernMainWindowController+Notifier.swift` — `showNotifier(for:)`
+- `WinampModernScriptRuntimeText.swift` — `announceNotification(title:artist:album:)`,
+  `notifierShowsItself(_:)`, `setNotifierText(title:artist:album:)`, `setTextInSubtree(_:id:text:)`
 - `WinampModernScriptRuntimeTimer.swift` — `applyContainerGeometry(_:)`
 - `WinampModernScriptRuntime.swift` — `containerAlphaChanged` and `containerMoveRequested`
   callbacks, `isdesktopalphaavailable`, `onshownotification` in `dispatchableEventArity`,

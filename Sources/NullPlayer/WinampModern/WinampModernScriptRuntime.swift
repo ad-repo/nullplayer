@@ -663,8 +663,12 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
 
     /// The scripts with a handler bound to `object` for an event `matches` accepts.
     func programsBinding(_ object: WasabiObject, event matches: (String) -> Bool) -> [MakiProgram] {
-        let target = MakiObjectReference(.gui(object.stableID))
-        return programs.filter { program in
+        programsBinding(MakiObjectReference(.gui(object.stableID)), event: matches)
+    }
+
+    /// The same, for any target — `System` included.
+    func programsBinding(_ target: MakiObjectReference, event matches: (String) -> Bool) -> [MakiProgram] {
+        programs.filter { program in
             program.bindings.contains { binding in
                 if !matches(program.methods[binding.methodIndex].name) { return false }
                 let variable = program.variables[binding.variableIndex]

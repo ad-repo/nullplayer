@@ -50,6 +50,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var placedAuxiliaryWindows: Set<String> = []
     private var isApplyingSkinSize = false
     private var boundTextTimer: Timer?
+    /// The host-shown track-change toast's dismissal; see `+Notifier.swift`.
+    var notifierDismissTimer: Timer?
 
     /// A separate visible container (the "separate windows" arrangement) rendered in its own native
     /// window with the shared script runtime + component host. cPro-Bento is a single-window SUI so
@@ -78,7 +80,7 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         /// which is when the window is stacked under whatever is already on screen instead.
         let defaultOffset: CGPoint?
         /// A track-change toast popup (`<container id="notifier">`). Shown by the host on track
-        /// change; the skin's MAKI scripts handle fade animation and auto-dismiss.
+        /// change unless its own script shows it (`+Notifier.swift`).
         var isNotifier: Bool { WinampModernContainerTopology.isNotifier(id: info.id) }
         /// `noactivation="1"`: the window must not steal focus when shown.
         let noActivation: Bool
@@ -2546,25 +2548,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    private var notifierDismissTimer: Timer?
-
-    private func showNotifier(for track: Track) {
-        guard let container = auxiliaryContainers.first(where: { $0.isNotifier }),
-              let scripts = skinView?.scripts else { return }
-        _ = try? scripts.dispatchSystem(event: "onshownotification")
-        scripts.setNotifierText(title: track.title,
-                                artist: track.artist ?? "",
-                                album: track.album ?? "")
-        container.window.alphaValue = 1
-        setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
-        container.view.needsDisplay = true
-        notifierDismissTimer?.invalidate()
-        notifierDismissTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
-            [weak self] _ in
-            guard let self else { return }
-            self.setAuxiliaryWindow(id: container.containerID, visible: false, activate: false)
-        }
-    }
     func updateVideoTrackInfo(title: String, artworkTrack: Track?) { skinView?.updateTrackInfo() }
     func clearVideoTrackInfo() { skinView?.updateTrackInfo() }
     func updateTime(current: TimeInterval, duration: TimeInterval) {

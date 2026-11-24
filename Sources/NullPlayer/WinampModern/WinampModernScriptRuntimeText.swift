@@ -36,6 +36,44 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
     }
 
+    /// The host's half of a track-change toast: `onShowNotification` to the skin, then the host's
+    /// text in `<container id="notifier">` — unless that toast shows itself. Answers the container
+    /// the host should show, or nil.
+    ///
+    /// Only the plain `notifier` id is the host's to show. A `notifier.*` sibling is not a toast it
+    /// can stand in for: Rectangular's are `notifier.preferences`, a settings window that popped up
+    /// at the screen corner on every track change, and `notifier.popup`, which its own script
+    /// shows (#810).
+    func announceNotification(title: String, artist: String, album: String) -> WasabiObject? {
+        _ = try? dispatchSystem(event: "onshownotification")
+        guard let toast = findRoot(type: .container, xmlID: "notifier"),
+              !notifierShowsItself(toast) else { return nil }
+        setNotifierText(title: title, artist: artist, album: album)
+        return toast
+    }
+
+    /// Whether `container` is a notifier whose own container carries the script that shows it: a
+    /// program owned by the container, or by something inside it, listening for
+    /// `System.onTitleChange` or `onShowNotification`. Such a toast is the skin's — Jpod's
+    /// `Notifier-Notifier.maki` reads its Do Not Show, left/right and slide settings there, and
+    /// shows, places, slides and hides the layout itself (#805). So the host neither shows nor
+    /// fills it, and its moves are pins (`applyContainerGeometry`): the slide starts below the
+    /// screen edge, and clamping that start on screen turned it into a 49px hop. Stock Winamp
+    /// Modern's and Big Bento's notifier scripts are skin-level, not the container's, and keep the
+    /// host's show.
+    func notifierShowsItself(_ container: WasabiObject) -> Bool {
+        guard container.tag.is(.container),
+              WinampModernContainerTopology.isNotifier(id: container.xmlID ?? "") else { return false }
+        return programsBinding(MakiObjectReference(.system)) { Self.notifierTriggers.contains($0) }
+            .contains { program in
+                guard let ownerID = program.ownerID,
+                      let owner = loadedSkin.runtime.graph.object(withID: ownerID) else { return false }
+                return owner === container || Self.isDescendant(owner, of: container)
+            }
+    }
+
+    private static let notifierTriggers: Set<String> = ["ontitlechange", "onshownotification"]
+
     private func setTextInSubtree(_ root: WasabiObject, id: String, text: String) {
         if let xmlID = root.xmlID,
            root.tag.is(.text),
