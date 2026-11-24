@@ -203,6 +203,36 @@ final class WinampModernPhase69Tests: XCTestCase {
         XCTAssertEqual(title.attributes["default"], "Song")
     }
 
+    /// #805: a notifier whose own container carries the script that shows it on a track change is
+    /// the skin's (Jpod's Do Not Show, side and slide settings). A skin-level notifier script — stock
+    /// Winamp Modern's, Big Bento's — and a container script that only follows play/pause keep the
+    /// host's show.
+    func testANotifierIsTheSkinsWhenItsOwnContainerScriptsTheShow() throws {
+        let cases: [(owner: String?, event: String, expected: Bool)] = [
+            ("notifier", "ontitlechange", true),
+            ("title", "onshownotification", true),
+            (nil, "ontitlechange", false),
+            ("notifier", "onplay", false),
+        ]
+        for (owner, event, expected) in cases {
+            let runtime = try makeNotifierRuntime(layoutWidth: 300)
+            let container = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+            let ownerID = try owner.map { name -> WasabiObjectID in
+                try XCTUnwrap(object(runtime, type: name == "notifier" ? "container" : "text", id: name))
+                    .stableID
+            }
+            runtime.programs.append(MakiProgram(
+                version: 0x0403, classes: [], methods: [MakiMethod(classIndex: 0, name: event)],
+                variables: [MakiVariable(declaredKind: .object, isSystem: true,
+                                         value: .object(MakiObjectReference(.system)))],
+                bindings: [MakiBinding(variableIndex: 0, methodIndex: 0, instructionIndex: 0)],
+                instructions: [], source: WalSourceLocation(path: "/Skins/Synthetic/notifier.maki"),
+                ownerID: ownerID, parameter: nil))
+            XCTAssertEqual(runtime.notifierShowsItself(container), expected,
+                           "owner \(owner ?? "skin") binding System.\(event)")
+        }
+    }
+
     // MARK: - Helpers
 
     /// The graph, walked. The runtime's own root lookup is private, and a test that reached for it

@@ -36,6 +36,27 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
     }
 
+    /// Whether a notifier's own container carries the script that shows it: a program owned by the
+    /// container, or by something inside it, listening for `System.onTitleChange` or
+    /// `onShowNotification`. Such a toast is the skin's — Jpod's `Notifier-Notifier.maki` reads its
+    /// Do Not Show, left/right and slide settings there, and shows, places, animates and hides the
+    /// layout itself (#805). Stock Winamp Modern's and Big Bento's notifier scripts are skin-level,
+    /// not the container's, and keep the host's show.
+    func notifierShowsItself(_ container: WasabiObject) -> Bool {
+        let system = MakiObjectReference(.system)
+        return programs.contains { program in
+            guard let ownerID = program.ownerID,
+                  let owner = loadedSkin.runtime.graph.object(withID: ownerID),
+                  owner === container || Self.isDescendant(owner, of: container) else { return false }
+            return program.dispatchBindings.contains { binding in
+                Self.notifierTriggers.contains(program.methods[binding.methodIndex].name)
+                    && object(program.variables[binding.variableIndex].value, equals: system)
+            }
+        }
+    }
+
+    private static let notifierTriggers: Set<String> = ["ontitlechange", "onshownotification"]
+
     private func setTextInSubtree(_ root: WasabiObject, id: String, text: String) {
         if let xmlID = root.xmlID,
            root.tag.is(.text),
