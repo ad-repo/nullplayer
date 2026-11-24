@@ -850,7 +850,7 @@ registered, inheritance-validated, instantiated, and script-bound exactly like t
   `drawEqualizerComponent` paints eleven tracks with 3px thumbs and nothing else — no on/off, no auto,
   no presets, no band labels, no dB scale.
   **Two routes reach an equalizer and they must agree.** The menu resolves through the catalog
-  (`routeWinampModernSurface`), while a skin's own `TOGGLE Eq` button goes through
+  (`WindowManager.routeSkinSurface`, which asks the coordinator as `.wal`'s `SkinSurfaceRouter`), while a skin's own `TOGGLE Eq` button goes through
   `WinampModernMainView.routeComponentToggle`, which checks the *auxiliary containers* before falling
   through to `WindowManager.toggleEqualizer()`. Leaving the container synthesized but unrouted made
   those two disagree: the menu opened the full classic EQ and the skin's button opened the stub. Not
@@ -1622,7 +1622,7 @@ mounted nothing and every tab's content area stayed black (2026-11-10).
 **Hosted surfaces must clip to their holder frame** (`layer.masksToBounds = true`). Without this,
 NSView's default non-clipping layer lets the browser's tab headers ("+ADD", "History", etc.) bleed
 through the titlebar on skins like cPro-Bento. The clip is applied once at construction in
-`WinampModernLibrarySurfaceView`.
+`EmbeddedLibraryBrowserSurface`, which `WinampModernLibrarySurfaceView` subclasses.
 
 **Unmounting is not teardown, and confusing the two is a bug the user sees.** The component bridge
 owns **one surface of each kind per skin** and re-serves that same instance whenever a holder for it

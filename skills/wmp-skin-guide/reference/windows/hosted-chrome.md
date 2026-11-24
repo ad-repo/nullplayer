@@ -4,12 +4,12 @@ Moved verbatim from `reference/windows.md` on 2026-09-25; that file is the route
 
 ### Current hosting contract, continued: routing, theming and the borrowed frame
 
-Routing is `routeWMPSkinSurface` / `WMPSkinSurfaces` — 171 of the 180 archives declare a playlist and
+Routing is the shared `WindowManager.routeSkinSurface` through `WMPSkinSurfaceRouter` / `WMPSkinSurfaces` — 171 of the 180 archives declare a playlist and
 164 an equaliser, so ours is the fallback for the handful that declare neither. **A fallback is
 decided when the window opens, and the skin can change underneath it**: loading a `.wmz` with no
 equaliser opened ours, and switching to one that has an equaliser left ours standing beside the
 skin's — two equalizer windows on `xsn_sports`.
-`WindowManager.dismissWMPFallbackSurfacesTheSkinProvides()` runs on every presentation and closes
+`WindowManager.dismissFallbackSurfacesTheSkinProvides()` runs on every presentation and closes
 (never destroys) ours, so the window keeps its frame for the next skin that needs it.
 
 Theming is two layers, and the second is the one a skin with styled panels is asking for:

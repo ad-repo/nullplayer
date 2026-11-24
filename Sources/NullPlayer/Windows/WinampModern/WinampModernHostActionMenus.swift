@@ -576,65 +576,20 @@ extension WinampModernMainView {
         popUpMenu(menu, from: object)
     }
 
-    /// `PE_REM`. "Selected" and "Crop" are disabled with nothing selected rather than hidden — a
-    /// greyed item says *why* it did nothing, an absent one does not.
+    /// `PE_REM`, `PE_SEL` and `PE_MISC`: the shared section menus (`PlaylistMenuBuilder`).
     private func showPlaylistRemoveMenu(from object: WasabiObject?) {
         let hasSelection = !(componentHost?.playlistSnapshot().selectedRows.isEmpty ?? true)
-        let menu = NSMenu(title: "Remove")
-        menu.autoenablesItems = false
-        for (title, selector, enabled) in
-            [("Remove Selected", #selector(PlaylistMenuTarget.removeSelected(_:)), hasSelection),
-             ("Crop Selection", #selector(PlaylistMenuTarget.cropSelection(_:)), hasSelection),
-             ("Remove All", #selector(PlaylistMenuTarget.removeAll(_:)), true),
-             ("Remove Dead Files", #selector(PlaylistMenuTarget.removeDeadFiles(_:)), true)] {
-            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = playlistMenuTarget
-            item.isEnabled = enabled
-            menu.addItem(item)
-        }
-        popUpMenu(menu, from: object)
+        popUpMenu(PlaylistMenuBuilder.removeMenu(target: playlistMenuTarget, hasSelection: hasSelection), from: object)
     }
 
-    /// `PE_SEL`.
     private func showPlaylistSelectMenu(from object: WasabiObject?) {
-        let menu = NSMenu(title: "Select")
-        menu.autoenablesItems = false
-        for (title, selector) in [("Select All", #selector(PlaylistMenuTarget.selectAll(_:))),
-                                  ("Select None", #selector(PlaylistMenuTarget.selectNone(_:))),
-                                  ("Invert Selection", #selector(PlaylistMenuTarget.invertSelection(_:)))] {
-            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = playlistMenuTarget
-            menu.addItem(item)
-        }
-        popUpMenu(menu, from: object)
+        popUpMenu(PlaylistMenuBuilder.selectMenu(target: playlistMenuTarget), from: object)
     }
 
-    /// `PE_MISC` — Winamp's sort submenu and the file info of the selected row.
     private func showPlaylistMiscMenu(from object: WasabiObject?) {
-        let sort = NSMenu(title: "Sort")
-        sort.autoenablesItems = false
-        for (title, selector) in [("Sort by Title", #selector(PlaylistMenuTarget.sortByTitle(_:))),
-                                  ("Sort by Filename", #selector(PlaylistMenuTarget.sortByFilename(_:))),
-                                  ("Sort by Path", #selector(PlaylistMenuTarget.sortByPath(_:))),
-                                  ("Randomize", #selector(PlaylistMenuTarget.randomize(_:))),
-                                  ("Reverse", #selector(PlaylistMenuTarget.reverse(_:)))] {
-            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-            item.target = playlistMenuTarget
-            sort.addItem(item)
-        }
-        let menu = NSMenu(title: "Misc")
-        menu.autoenablesItems = false
-        let sortItem = NSMenuItem(title: "Sort", action: nil, keyEquivalent: "")
-        sortItem.submenu = sort
-        menu.addItem(sortItem)
-        menu.addItem(.separator())
-        let info = NSMenuItem(title: "File Info...", action: #selector(PlaylistMenuTarget.showFileInfo(_:)),
-                              keyEquivalent: "")
-        info.target = playlistMenuTarget
-        info.isEnabled = playlistMenuTarget.selectedTrack != nil
-        menu.addItem(info)
-        EQProfileMenu.addAssignItem(to: menu, queueRows: componentHost?.playlistSnapshot().selectedRows ?? [])
-        PlaylistRowFields.addItems(to: menu)
+        let menu = PlaylistMenuBuilder.miscMenu(target: playlistMenuTarget,
+                                                selectedRows: componentHost?.playlistSnapshot().selectedRows ?? [],
+                                                canShowFileInfo: playlistMenuTarget.selectedTrack != nil)
         popUpMenu(menu, from: object)
     }
 

@@ -50,7 +50,7 @@ struct WMPVisualizationSettingsStore {
     }
 
     func storedRecord(skin: String) -> [String: Any]? {
-        defaults.dictionary(forKey: Self.defaultsKey)?[key(skin)] as? [String: Any]
+        defaults.dictionary(forKey: Self.defaultsKey)?[SkinWindowStore.skinKey(skin)] as? [String: Any]
     }
 
     /// Writes this skin's record, and only when something actually changed: an unconditional write
@@ -61,7 +61,7 @@ struct WMPVisualizationSettingsStore {
         if let existing = storedRecord(skin: skin),
            NSDictionary(dictionary: existing).isEqual(to: record) { return false }
         var records = defaults.dictionary(forKey: Self.defaultsKey) ?? [:]
-        records[key(skin)] = record
+        records[SkinWindowStore.skinKey(skin)] = record
         defaults.set(records, forKey: Self.defaultsKey)
         return true
     }
@@ -82,13 +82,7 @@ struct WMPVisualizationSettingsStore {
 
     func forget(skin: String) {
         guard var records = defaults.dictionary(forKey: Self.defaultsKey),
-              records.removeValue(forKey: key(skin)) != nil else { return }
+              records.removeValue(forKey: SkinWindowStore.skinKey(skin)) != nil else { return }
         defaults.set(records, forKey: Self.defaultsKey)
-    }
-
-    /// Length-prefixed like `WMPViewFrameStore`'s, so two skins whose names differ only by case or
-    /// by a separator cannot collide.
-    private func key(_ skin: String) -> String {
-        "\(skin.utf8.count):\(skin.lowercased())"
     }
 }

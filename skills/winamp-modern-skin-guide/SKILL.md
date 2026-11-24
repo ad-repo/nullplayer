@@ -272,7 +272,7 @@ All engine code is in `Sources/NullPlayer/WinampModern/`; all UI/controller code
 | Application-owned hosted-window registry | `WinampModernHostedWindows.swift` |
 | Lazy hosted-window materializer + surface contract | `Windows/WinampModern/WinampModernHostedWindowMaterializer.swift`, `…HostedWindowSurface.swift` |
 | Shared `.wal` fallback chrome (the WMP gloss frame) | `App/Skinning/SkinnedSurfaceChrome.swift` (`WinampModernChrome` is a typealias) |
-| Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift` |
+| Embedded library surface | `Windows/WinampModern/WinampModernLibrarySurfaceView.swift`, a subclass of the family-neutral `Windows/ClassicLibraryBrowser/EmbeddedLibraryBrowserSurface.swift` that adds only `applyPalette` |
 | Embedded web browser | `Windows/WinampModern/WinampModernBrowserSurfaceView.swift` |
 
 Design records and per-phase handoffs: `docs/winamp-modern/` — see its `INDEX.md`.

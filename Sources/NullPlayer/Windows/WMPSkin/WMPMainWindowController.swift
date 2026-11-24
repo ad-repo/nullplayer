@@ -238,12 +238,12 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// The loaded `.wmz` archive — the skin's identity for once-per-skin defaults.
     var loadedSkinURL: URL? { loadedSkin?.archive.sourceURL }
 
-    /// The key a hosted window's interior is stored under for this skin — `WMPViewFrameStore`'s, so
-    /// a skin's view sizes and its hosted windows' sizes belong to the same identity. Nil with no
+    /// The key a hosted window's interior is stored under for this skin — `SkinWindowStore`'s, so a
+    /// skin's view geometry and its hosted windows' sizes belong to the same identity. Nil with no
     /// skin loaded (the unskinned fallback), which stores nothing.
     var hostedInteriorSkinKey: String? {
         guard loadedSkin != nil, let name = importer.selection.name, !name.isEmpty else { return nil }
-        return WMPViewFrameStore.skinKey(name)
+        return SkinWindowStore.skinKey(name)
     }
 
     /// Which skin's border the hosted windows are wearing: the live frame provider's skin, which a
@@ -284,7 +284,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// Opens of NullPlayer's fallback playlist/equalizer asked for during the launch hold, replayed
     /// when it ends — by then the skin has said whether it draws that surface itself, which 171 and
     /// 164 of the 180 corpus skins do. Opened at once, the fallback stood on screen beside the
-    /// hidden player until `dismissWMPFallbackSurfacesTheSkinProvides` put it away.
+    /// hidden player until `dismissFallbackSurfacesTheSkinProvides` put it away.
     private var launchHoldDeferred: [() -> Void] = []
 
     /// Holds `open` until the launch hold ends; false when there is no hold, and the caller opens
@@ -963,8 +963,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
     /// preference raises the window this restored rather than opening a second one.
     private func restoreOpenAuxiliaryViews(skin: WMPLoadedSkin, store: WMPImageStore,
                                            runtime: WMPScriptRuntime) {
-        let stored = WMPViewFrameStore(defaults: importer.defaults)
-            .openViews(skin: importer.selection.name ?? "")
+        let stored = windowStore.openWindows(skin: importer.selection.name ?? "")
         guard !stored.isEmpty, let player = materializer.playerPresentation else { return }
         for viewID in stored.prefix(Self.maximumOpenViews)
         where !materializer.isOpen(viewID)
@@ -1362,7 +1361,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         }
         skinSurfaces = WMPSkinSurfaces(skin: skin)
         // A fallback window opened under the *previous* skin is not a fallback under this one.
-        WindowManager.shared.dismissWMPFallbackSurfacesTheSkinProvides()
+        WindowManager.shared.dismissFallbackSurfacesTheSkinProvides()
         if !presentation.isPlayer { presentation.window.orderFront(nil) }
         persistOpenViews()
     }
@@ -1805,7 +1804,7 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         let savedSize = Self.authoredResizable(in: skin, viewID: registration.id)
             ? frameStore.size(skin: skinName, view: registration.id)
                 .flatMap { Self.restorableViewSize($0, for: window) } : nil
-        let savedOrigin = frameStore.origin(skin: skinName, view: registration.id)
+        let savedOrigin = windowStore.origin(skin: skinName, window: registration.id)
         let task = Task { [weak self] in
             guard let self else { return }
             defer { self.pendingOpenTasks.removeValue(forKey: key) }
@@ -2094,23 +2093,24 @@ final class WMPMainWindowController: NSWindowController, MainWindowProviding, NS
         _ = finished.wait(timeout: .now() + timeout)
     }
 
+    /// Where this skin's view origins and open views are kept.
+    private var windowStore: SkinWindowStore { SkinWindowStore(defaults: importer.defaults, keys: .wmp) }
+
     /// Which auxiliary views are open, so the next launch can put them back. The player's view is
     /// not one of them — that is `WMPSkinImporter.selectedViewIDKey`.
     private func persistOpenViews() {
         guard loadedSkin != nil else { return }
         let open = materializer.openPresentations.filter { !$0.isPlayer }.map(\.viewID)
-        WMPViewFrameStore(defaults: importer.defaults)
-            .setOpenViews(open, skin: importer.selection.name ?? "")
+        windowStore.setOpenWindows(open, skin: importer.selection.name ?? "")
     }
 
     /// Persist one window's size and origin, so the user's own arrangement survives a relaunch.
     func persistViewFrame(for window: NSWindow) {
         guard let presentation = materializer.presentation(for: window), loadedSkin != nil else { return }
-        let store = WMPViewFrameStore(defaults: importer.defaults)
         let skinName = importer.selection.name ?? ""
-        store.setOrigin(CGPoint(x: presentation.window.frame.minX,
+        windowStore.setOrigin(CGPoint(x: presentation.window.frame.minX,
                                 y: presentation.window.frame.maxY),
-                        skin: skinName, view: presentation.viewID)
+                        skin: skinName, window: presentation.viewID)
     }
 
     // MARK: - Window delegate (the player window; the materializer owns the panels')

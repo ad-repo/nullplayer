@@ -282,6 +282,7 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
     /// re-adds the holder's subview, and so browse mode can be saved and restored through the
     /// provider protocol. One per skin: a second holder for the same component reuses this surface's
     /// state rather than opening a second browser against the same servers.
+    @MainActor
     func makeLibrarySurface() -> WinampModernLibrarySurface? {
         if let librarySurface { return librarySurface }
         let surface = WinampModernLibrarySurfaceView(

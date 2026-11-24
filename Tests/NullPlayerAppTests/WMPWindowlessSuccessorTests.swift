@@ -223,15 +223,15 @@ final class WMPWindowlessSuccessorTests: XCTestCase {
         defaults.set("mainView", forKey: WMPSkinImporter.selectedViewIDKey)
         let controller = WMPMainWindowController(importer: importer)
         defer { controller.prepareForUITeardown(); controller.window?.close() }
-        let store = WMPViewFrameStore(defaults: defaults)
+        let store = SkinWindowStore(defaults: defaults, keys: .wmp)
         let skin = try XCTUnwrap(importer.selection.name)
         let clock = ContinuousClock(), deadline = clock.now.advanced(by: .seconds(3))
-        while !store.openViews(skin: skin).contains("plView"), clock.now < deadline {
+        while !store.openWindows(skin: skin).contains("plView"), clock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertEqual(controller.selectedViewID, "mainView",
                        "the walk started at the persisted player, not at controlView")
-        XCTAssertEqual(store.openViews(skin: skin), ["plView"],
+        XCTAssertEqual(store.openWindows(skin: skin), ["plView"],
                        "controlView's onLoad was skipped, so the panel it re-opens never opened")
     }
 }

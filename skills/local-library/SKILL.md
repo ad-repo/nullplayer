@@ -396,7 +396,7 @@ The Library Browser's Data tab is the `.history` case (displayed as "Data"), bac
   hot end = `currentText`), the Modern library and stats window from `init(modernSkin:)` (hot end =
   the spectrum top, so metal finishes stay bright). An accent under 1.8:1 against the background
   falls back to the text colour. A `.wal`/`.wmz` colour-theme switch recolours the tab through
-  `applyWinampModernStyle` / `hostedSurfaceStyleDidChange`; with no theme the view falls back to
+  `applyStyle` / `hostedSurfaceStyleDidChange`; with no theme the view falls back to
   GitHub light/dark.
 - Play Time summary (day/week/month/year/all-time)
 - Top Artists (music only — excludes radio)
