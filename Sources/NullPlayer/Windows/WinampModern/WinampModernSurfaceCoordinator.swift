@@ -214,6 +214,15 @@ final class WinampModernSurfaceCoordinator {
         }
     }
 
+    /// A menu toggle or show of a surface this skin owns. A skin-owned *container* window keeps its
+    /// saved geometry; an embedded surface has no window of its own and is never fed a frame.
+    func reveal(_ kind: WinampModernComponentKind, toggle: Bool, restoredFrame: NSRect?) {
+        if toggle { toggleSurface(kind) } else { showSurface(kind) }
+        if let restoredFrame, restoredFrame != .zero, let window = nativeWindow(for: kind) {
+            window.setFrame(restoredFrame, display: true)
+        }
+    }
+
     /// A skin switch carrying "closed" over from the outgoing skin. An embedded surface has no window
     /// of its own to close.
     func closeCarriedOver(_ kind: WinampModernComponentKind) {
@@ -237,6 +246,29 @@ final class WinampModernSurfaceCoordinator {
 
     /// One line per surface, for the compatibility report and the render harness.
     var summary: String { catalog.summaryLine }
+}
+
+/// `.wal`'s answer to the shared route: the catalog decides, in its one order (embedded → declared or
+/// synthesized container → classic fallback).
+extension WinampModernSurfaceCoordinator: SkinSurfaceRouter {
+    private static func kind(_ surface: SkinSurface) -> WinampModernComponentKind {
+        switch surface {
+        case .playlist: return .playlist
+        case .library: return .library
+        case .equalizer: return .equalizer
+        case .video: return .video
+        }
+    }
+
+    /// Video stays on `.wal`'s own path (`WinampModernMainWindowController.toggleVideo()`) until it
+    /// moves to this route, so the route never takes it here.
+    func drawsSurface(_ surface: SkinSurface) -> Bool { surface != .video && handles(Self.kind(surface)) }
+
+    func isShowingSurface(_ surface: SkinSurface) -> Bool { isSurfaceVisible(Self.kind(surface)) }
+
+    func revealSurface(_ surface: SkinSurface, toggle: Bool, restoredFrame: NSRect?) {
+        reveal(Self.kind(surface), toggle: toggle, restoredFrame: restoredFrame)
+    }
 }
 
 extension WinampModernSurfaceCatalog {

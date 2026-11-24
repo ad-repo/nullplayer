@@ -58,11 +58,11 @@ is a regression by definition. `skin-subsystem-blueprint` § *The rule that outr
 | AppKit: controller, windows, views | `Sources/NullPlayer/Windows/SoniqueSkin/` |
 | Shared files | only through a gated seam, recorded in this skill |
 
-- **The equaliser seam:** `SkinDrawnEqualizer` (`App/MainWindowProviding.swift`). Only
-  `SoniqueSkinMainWindowController` conforms, so the conformance is the family gate: `WindowManager`
-  sends every Equalizer show and toggle, and `isEqualizerVisible`, to the drawer
-  (`routeSkinDrawnEqualizer`). A mode switch closes NullPlayer's EQ window, so none survives into
-  the family.
+- **The equaliser seam:** the shared `SkinSurfaceRouter` (`App/MainWindowProviding.swift`).
+  `SoniqueSkinMainWindowController` conforms and draws `.equalizer` only, so the conformance is the
+  family gate: `WindowManager.routeSkinSurface` sends every Equalizer show and toggle, and
+  `isEqualizerVisible`, to the drawer (`revealEqualizer(toggle:)`); the playlist and library stay
+  NullPlayer's. A mode switch closes NullPlayer's EQ window, so none survives into the family.
 
 - Never teach another family's types about `.sgf`; never share a loader with another family.
 - Never use another family's artwork as a default. A skin that omits an entry falls back to that

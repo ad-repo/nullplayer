@@ -90,7 +90,9 @@ Part of [compatibility.md](../compatibility.md). What the markup layer supports 
     analyzer's `bandwidth`); `VIS_FS` opens the visualization window fullscreen
   - `PE_ADD` / `PE_REM` / `PE_SEL` / `PE_MISC` / `PE_LIST` are Winamp's five playlist menus, against
     the shared `AudioEngine` — the same calls the classic playlist window's buttons make.
-    `PE_LISTOFLISTS` opens the same menu as `PE_LIST`. `PE_SEL`/`PE_REM` need a **multi-row
+    `PE_LISTOFLISTS` opens the same menu as `PE_LIST`. `PE_REM`, `PE_SEL` and `PE_MISC` are built by
+    `PlaylistMenuBuilder.removeMenu` / `selectMenu` / `miscMenu`, shared with any family whose skin
+    draws those buttons. `PE_SEL`/`PE_REM` need a **multi-row
     selection**, so the host seam gained `playlistSetSelection` / `playlistRemoveRows` and the
     snapshot a `selectedRows` set; `selectedIndex` is still the anchor a click and the Delete key
     mean, and both default in the protocol extension so a host without a selection model still works

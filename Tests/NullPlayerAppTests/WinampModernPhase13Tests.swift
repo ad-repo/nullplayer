@@ -1556,6 +1556,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(embedded.searchBarHeight, classic.searchBarHeight)
     }
 
+    @MainActor
     func testLibrarySurfaceViewClipsContentToItsBounds() {
         let surface = WinampModernLibrarySurfaceView(
             frame: NSRect(x: 0, y: 0, width: 200, height: 100),

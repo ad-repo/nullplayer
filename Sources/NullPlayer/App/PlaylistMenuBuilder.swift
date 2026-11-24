@@ -69,18 +69,10 @@ enum PlaylistMenuBuilder {
         let hasSelection = state.hasSelection, hasTracks = state.hasTracks, canEdit = state.canEdit
 
         func item(_ title: String, _ action: Selector, enabled: Bool, key: String = "") -> NSMenuItem {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
-            item.target = target
-            item.isEnabled = enabled
-            return item
+            Self.item(title, action, target: target, enabled: enabled, key: key)
         }
         func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
-            let submenu = NSMenu()
-            submenu.autoenablesItems = autoenablesItems
-            items.forEach(submenu.addItem)
-            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-            item.submenu = submenu
-            return item
+            Self.submenu(title, autoenablesItems: autoenablesItems, items)
         }
         let fileCommands = target is PlaylistFileCommands
 
@@ -135,6 +127,75 @@ enum PlaylistMenuBuilder {
                           enabled: state.selectionCount == 1 && canEdit))
         if canEdit { EQProfileMenu.addAssignItem(to: menu, queueRows: state.selectedRows) }
         PlaylistRowFields.addItems(to: menu)
+        return menu
+    }
+
+    // MARK: - A skin's REM, SEL and MISC buttons
+
+    /// Winamp's `PE_REM`, for a skin that draws the playlist editor's buttons itself. "Selected" and
+    /// "Crop" are disabled with nothing selected rather than hidden — a greyed item says *why* it did
+    /// nothing, an absent one does not.
+    static func removeMenu(target: PlaylistMenuTarget, hasSelection: Bool) -> NSMenu {
+        section("Remove", [
+            item("Remove Selected", #selector(PlaylistMenuTarget.removeSelected(_:)), target: target, enabled: hasSelection),
+            item("Crop Selection", #selector(PlaylistMenuTarget.cropSelection(_:)), target: target, enabled: hasSelection),
+            item("Remove All", #selector(PlaylistMenuTarget.removeAll(_:)), target: target, enabled: true),
+            item("Remove Dead Files", #selector(PlaylistMenuTarget.removeDeadFiles(_:)), target: target, enabled: true)
+        ])
+    }
+
+    /// Winamp's `PE_SEL`.
+    static func selectMenu(target: PlaylistMenuTarget) -> NSMenu {
+        section("Select", [
+            item("Select All", #selector(PlaylistMenuTarget.selectAll(_:)), target: target, enabled: true),
+            item("Select None", #selector(PlaylistMenuTarget.selectNone(_:)), target: target, enabled: true),
+            item("Invert Selection", #selector(PlaylistMenuTarget.invertSelection(_:)), target: target, enabled: true)
+        ])
+    }
+
+    /// Winamp's `PE_MISC`: its sort submenu, and File Info for `selectedRows` (enabled when the target
+    /// has a track to show), with the EQ-profile and row-field items every playlist menu carries.
+    static func miscMenu(target: PlaylistMenuTarget, selectedRows: Set<Int>, canShowFileInfo: Bool) -> NSMenu {
+        let menu = section("Misc", [
+            submenu("Sort", autoenablesItems: false, [
+                item("Sort by Title", #selector(PlaylistMenuTarget.sortByTitle(_:)), target: target, enabled: true),
+                item("Sort by Filename", #selector(PlaylistMenuTarget.sortByFilename(_:)), target: target, enabled: true),
+                item("Sort by Path", #selector(PlaylistMenuTarget.sortByPath(_:)), target: target, enabled: true),
+                item("Randomize", #selector(PlaylistMenuTarget.randomize(_:)), target: target, enabled: true),
+                item("Reverse", #selector(PlaylistMenuTarget.reverse(_:)), target: target, enabled: true)
+            ]),
+            .separator(),
+            item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)), target: target, enabled: canShowFileInfo)
+        ])
+        EQProfileMenu.addAssignItem(to: menu, queueRows: selectedRows)
+        PlaylistRowFields.addItems(to: menu)
+        return menu
+    }
+
+    // MARK: - Building
+
+    private static func item(_ title: String, _ action: Selector, target: PlaylistMenuTarget, enabled: Bool,
+                             key: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = target
+        item.isEnabled = enabled
+        return item
+    }
+
+    private static func submenu(_ title: String, autoenablesItems: Bool, _ items: [NSMenuItem]) -> NSMenuItem {
+        let submenu = NSMenu(title: title)
+        submenu.autoenablesItems = autoenablesItems
+        items.forEach(submenu.addItem)
+        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    /// A skin button's menu: its enabled states hold.
+    private static func section(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
+        let menu = NSMenu(title: title)
+        menu.autoenablesItems = false
+        items.forEach(menu.addItem)
         return menu
     }
 

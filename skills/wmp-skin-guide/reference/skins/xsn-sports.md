@@ -68,7 +68,7 @@ color theme selected in xsn"*, *"on the xsn the issue is there are 2 eq windows"
    there to xsn left ours standing beside the skin's. The reporter diagnosed it themselves — *"if
    you switch skins from a skin that has no internal eq to one that does it carries that window to
    the new skin"* — and they were right.
-   `WindowManager.dismissWMPFallbackSurfacesTheSkinProvides()` now runs on every presentation.
+   `WindowManager.dismissFallbackSurfacesTheSkinProvides()` (then `dismissWMPFallbackSurfacesTheSkinProvides`) now runs on every presentation.
    **The lesson generalises past the equaliser**: any "ours or the skin's" decision taken when a
    window opens has to be retaken when the skin changes.
 6. **A borrowed window frame wore the skin's *opening* colour, not its selected one** (W145,
