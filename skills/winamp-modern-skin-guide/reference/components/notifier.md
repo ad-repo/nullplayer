@@ -137,10 +137,12 @@ the 5 s dismiss ran beside its own 3 s one, and the visible-frame clamp in `move
 pulled the slide's start — below the screen edge — back on screen, so the toast popped up whole and
 hopped the last 49 px.
 
-`WinampModernScriptRuntime.notifierShowsItself(_:)` is the test: a program **owned by the notifier
-container or something inside it** that binds `System.onTitleChange` or `onShowNotification`. When
-it holds, `showNotifier` only dispatches `onshownotification` and returns, and that container's
-script moves skip the on-screen clamp. Ownership is the line because stock Winamp Modern's,
+`WinampModernScriptRuntime.notifierShowsItself(_:)` is the test: a notifier container with a
+program **owned by it or by something inside it** that binds `System.onTitleChange` or
+`onShowNotification` (found through `programsBinding`). When it holds, `announceNotification` only
+dispatches `onshownotification` and tells `showNotifier` not to show, fill or dismiss the toast, and
+`applyContainerGeometry` sends that container's moves as **pins**, which `moveContainerWindow`
+does not clamp. Ownership is the line because stock Winamp Modern's,
 Love is War Miku's and Big Bento's notifier scripts are **skin-level** (`owner=-#-` in
 `RENDER_SCRIPTS`) and Big Bento's in-container groups bind only `onPlay`/`onPause`: all three keep
 the host's show. Measured reach (static scan of gold+silver, then `RENDER_EVENTS=ontitlechange` +
@@ -184,10 +186,11 @@ handler's text-setting (which doesn't work anyway) is overridden.
 ### Files
 
 - `WinampModernMainWindowController.swift` — `AuxiliaryContainer.isNotifier`, `noActivation`,
-  `showNotifier(for:)`, `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
+  `notifierDismissTimer`, notifier detection in `setupAuxiliaryContainers`,
   bottom-right positioning in `place()`, `containerAlphaChanged` wiring
-- `WinampModernScriptRuntimeText.swift` — `setNotifierText(title:artist:album:)`,
-  `setTextInSubtree(_:id:text:)`
+- `WinampModernMainWindowController+Notifier.swift` — `showNotifier(for:)`
+- `WinampModernScriptRuntimeText.swift` — `announceNotification(title:artist:album:)`,
+  `notifierShowsItself(_:)`, `setNotifierText(title:artist:album:)`, `setTextInSubtree(_:id:text:)`
 - `WinampModernScriptRuntimeTimer.swift` — `applyContainerGeometry(_:)`
 - `WinampModernScriptRuntime.swift` — `containerAlphaChanged` and `containerMoveRequested`
   callbacks, `isdesktopalphaavailable`, `onshownotification` in `dispatchableEventArity`,

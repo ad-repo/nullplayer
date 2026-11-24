@@ -203,7 +203,10 @@ extension WinampModernScriptRuntime {
             let unmoved = reportedOrigin.map {
                 Int(x.rounded()) == Int($0.x.rounded()) && Int(y.rounded()) == Int($0.y.rounded())
             } ?? false
-            if !unmoved { hooks.containerMoveRequested?(target.stableID, CGPoint(x: x, y: y), false) }
+            if !unmoved {
+                hooks.containerMoveRequested?(target.stableID, CGPoint(x: x, y: y),
+                                              notifierShowsItself(target))
+            }
         }
     }
 

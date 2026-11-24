@@ -36,23 +36,34 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
     }
 
-    /// Whether a notifier's own container carries the script that shows it: a program owned by the
-    /// container, or by something inside it, listening for `System.onTitleChange` or
-    /// `onShowNotification`. Such a toast is the skin's — Jpod's `Notifier-Notifier.maki` reads its
-    /// Do Not Show, left/right and slide settings there, and shows, places, animates and hides the
-    /// layout itself (#805). Stock Winamp Modern's and Big Bento's notifier scripts are skin-level,
-    /// not the container's, and keep the host's show.
+    /// The host's half of a track-change toast: `onShowNotification` to the skin, then the host's
+    /// text — unless the toast shows itself. Answers whether the host should show it.
+    func announceNotification(title: String, artist: String, album: String) -> Bool {
+        _ = try? dispatchSystem(event: "onshownotification")
+        guard let container = findRoot(type: .container, xmlID: "notifier"),
+              !notifierShowsItself(container) else { return false }
+        setNotifierText(title: title, artist: artist, album: album)
+        return true
+    }
+
+    /// Whether `container` is a notifier whose own container carries the script that shows it: a
+    /// program owned by the container, or by something inside it, listening for
+    /// `System.onTitleChange` or `onShowNotification`. Such a toast is the skin's — Jpod's
+    /// `Notifier-Notifier.maki` reads its Do Not Show, left/right and slide settings there, and
+    /// shows, places, slides and hides the layout itself (#805). So the host neither shows nor
+    /// fills it, and its moves are pins (`applyContainerGeometry`): the slide starts below the
+    /// screen edge, and clamping that start on screen turned it into a 49px hop. Stock Winamp
+    /// Modern's and Big Bento's notifier scripts are skin-level, not the container's, and keep the
+    /// host's show.
     func notifierShowsItself(_ container: WasabiObject) -> Bool {
-        let system = MakiObjectReference(.system)
-        return programs.contains { program in
-            guard let ownerID = program.ownerID,
-                  let owner = loadedSkin.runtime.graph.object(withID: ownerID),
-                  owner === container || Self.isDescendant(owner, of: container) else { return false }
-            return program.dispatchBindings.contains { binding in
-                Self.notifierTriggers.contains(program.methods[binding.methodIndex].name)
-                    && object(program.variables[binding.variableIndex].value, equals: system)
+        guard container.tag.is(.container),
+              WinampModernContainerTopology.isNotifier(id: container.xmlID ?? "") else { return false }
+        return programsBinding(MakiObjectReference(.system)) { Self.notifierTriggers.contains($0) }
+            .contains { program in
+                guard let ownerID = program.ownerID,
+                      let owner = loadedSkin.runtime.graph.object(withID: ownerID) else { return false }
+                return owner === container || Self.isDescendant(owner, of: container)
             }
-        }
     }
 
     private static let notifierTriggers: Set<String> = ["ontitlechange", "onshownotification"]

@@ -32,7 +32,8 @@ struct WinampModernScriptHooks {
     /// The third argument says the point is **pinned** to another window rather than chosen: it is
     /// the desktop origin of a window the script just read, so it must be honoured as-is. Placing a
     /// window is clamped to the visible frame; mirroring one is not, or a pair that the host has
-    /// already let sit partly off-screen comes apart at the edge (B69).
+    /// already let sit partly off-screen comes apart at the edge (B69). A notifier that scripts its
+    /// own show is pinned too: its slide starts below the screen edge (#805).
     var containerMoveRequested: ((WasabiObjectID, CGPoint, Bool) -> Void)?
     /// `layout.setScale(f)` — the skin asking for the **whole UI** at a different size. Defix's
     /// configurator offers seven of them (100–300%) and every one of its five window scripts calls
