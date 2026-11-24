@@ -3033,18 +3033,21 @@ final class WinampModernMainView: NSView {
     /// NEO's `shuf_rep` reads the new value back from `onLeftClick` to name the button's tooltip, and
     /// flipped after the release it named the state the click had just left (B279).
     private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
+        // GonchiSkin's `boton.gonchi.esp` is `TOGGLE especial` and its script shows or hides that same
+        // container from `onLeftButtonUp`; the action then ran second and closed the window the script
+        // had just opened, so the button never appeared to do anything. Read before the flip: a
+        // togglebutton's `onToggle` runs inside it and can move the window too.
+        let command = object.attributes["action"].map {
+            WasabiClickAction.split(action: $0, parameter: object.attributes["param"])
+        }
+        let target = command?.action.uppercased() == "TOGGLE" ? command?.parameter : nil
+        let before = toggleTargetIsVisible(parameter: target)
         let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
             : scripts.toggleActivation(of: object) ? .toggled
             : object.attributes["action"] == nil && scripts.toggleConfigAttribute(of: object) ? .config
             : .none
-        // GonchiSkin's `boton.gonchi.esp` is `TOGGLE especial` and its script shows or hides that same
-        // container from `onLeftButtonUp`; the action then ran second and closed the window the script
-        // had just opened, so the button never appeared to do anything.
-        let toggled = flip != .radio && object.attributes["action"]?.uppercased() == "TOGGLE"
-            ? object.attributes["param"] : nil
-        let before = toggled.flatMap { toggleTargetIsVisible(parameter: $0) }
         release()
-        if let before, toggleTargetIsVisible(parameter: toggled) != before { return .targetMoved }
+        if flip != .radio, let before, toggleTargetIsVisible(parameter: target) != before { return .targetMoved }
         return flip
     }
 

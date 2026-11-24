@@ -1755,7 +1755,7 @@ final class WasabiSceneRenderer {
     }
 
     static func isBrowserElement(_ object: WasabiObject) -> Bool {
-        object.tag.is(.browser) || object.tag.is(.browser, in: .winamp)
+        object.tag.isBrowser
     }
 
     /// Whether a `<browser>` element is currently visible in the scene (all ancestors visible).

@@ -106,6 +106,9 @@ struct WasabiTag: Hashable {
         self.namespace == namespace && kinds.contains(kind)
     }
 
+    /// `<browser>` or ClassicPro's `<Winamp:Browser>`.
+    var isBrowser: Bool { `is`(.browser) || `is`(.browser, in: .winamp) }
+
     /// Whether the tag is `kind` bare or in the standard library: `<text>` or `<Wasabi:Text>`.
     func isStandard(_ kind: WasabiKind) -> Bool {
         isStandard(anyOf: [kind])

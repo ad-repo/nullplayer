@@ -284,6 +284,17 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertTrue(inventory.synthesizableKinds.contains(.playlist))
     }
 
+    /// ClassicPro spells the browser `<Winamp:Browser>`; it is the same web page.
+    func testAWinampBrowserOnlyWindowDoesNotClaimThePlaylist() throws {
+        let inventory = try makeInventory(xml: """
+        <container id="main" default_visible="1"><layout id="normal" w="100" h="50"/></container>
+        <container id="browser.main" component="guid:pl" default_visible="1">
+          <layout id="normal" w="400" h="300"><Winamp:Browser id="browser" x="0" y="0" w="400" h="300"/></layout>
+        </container>
+        """)
+        XCTAssertNil(inventory.declaredContainers[.playlist])
+    }
+
     /// The browser only overrules a claim nothing backs: a window that also holds the playlist keeps it.
     func testAWindowWithABrowserAndAPlaylistHolderKeepsThePlaylist() throws {
         let inventory = try makeInventory(xml: """

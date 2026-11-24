@@ -218,7 +218,7 @@ struct WinampModernSurfaceInventory {
                     }
                 }
                 if isEqualizerControl(node) { equalizerControls = true }
-                if node.name.caseInsensitiveCompare("browser") == .orderedSame { holdsBrowser = true }
+                if WasabiTag(node.name).isBrowser { holdsBrowser = true }
 
                 for identifier in referencedGroupIdentifiers(of: node, xuiTags: groupdefsByXUITag) {
                     visitGroup(identifier, at: nodeOrder, depth: depth + 1)
