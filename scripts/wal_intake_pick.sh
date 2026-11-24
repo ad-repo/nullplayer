@@ -10,6 +10,8 @@
 # intakes/intake-<n>.tsv with every row at `admitted`. Why no crawl: by intake #6 the greedy order's
 # gain was 2 or less for every remaining candidate and no crawl had quarantined a skin (plan §8).
 # A new crawl of new candidates still goes through wal_intake.sh, which writes a fresh ranking.
+# With no bronze left in the ranking it adopts the skins already in silver (the B167 seed set and any
+# held back from an earlier batch) instead: they stay where they are and only join the skin menu.
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -34,23 +36,28 @@ rows = [line.split("\t") for line in open(manifest).read().splitlines()]
 at = {fields[0]: i for i, fields in enumerate(rows)}
 order = [line.split("\t")[1] for line in open(ranking).read().splitlines()[1:]]
 picks = [name for name in order if name in at and rows[at[name]][2] == "bronze"][:int(count)]
+tier = "bronze"
 if not picks:
-    sys.exit("wal_intake_pick: no bronze left in the ranking; crawl with wal_intake.sh")
+    tier = "silver"
+    picks = sorted(fields[0] for fields in rows[1:] if fields[2] == "silver")[:int(count)]
+if not picks:
+    sys.exit("wal_intake_pick: no bronze or silver left; crawl with wal_intake.sh")
 if os.path.exists(ledger):
     sys.exit(f"wal_intake_pick: {ledger} exists")
-moves = [(os.path.join(root, "bronze", name), os.path.join(root, "silver", name), os.path.join(skins, name))
+moves = [(os.path.join(root, tier, name), os.path.join(root, "silver", name), os.path.join(skins, name))
          for name in picks]
 for source, destination, _ in moves:
     if not os.path.exists(source):
         sys.exit(f"wal_intake_pick: {source} is missing; nothing moved")
-    if os.path.exists(destination):
+    if tier == "bronze" and os.path.exists(destination):
         sys.exit(f"wal_intake_pick: {destination} exists; nothing moved")
 os.makedirs(os.path.join(root, "silver"), exist_ok=True)
 os.makedirs(skins, exist_ok=True)
 done = []
 try:
     for source, destination, copy in moves:
-        shutil.move(source, destination)
+        if tier == "bronze":
+            shutil.move(source, destination)
         installed = os.path.exists(copy)
         done.append((source, destination, copy, installed))
         shutil.copy2(destination, copy)
@@ -60,9 +67,10 @@ except BaseException:
     for source, destination, copy, installed in reversed(done):
         if not installed and os.path.exists(copy):
             os.remove(copy)
-        shutil.move(destination, source)
+        if tier == "bronze":
+            shutil.move(destination, source)
     raise
-for name in picks:
+for name in picks if tier == "bronze" else []:
     rows[at[name]][2], rows[at[name]][5] = "silver", rev
 with open(ledger, "w") as handle:
     handle.write("file\tsha256\tstage\tupdated\trows\tnote\n")

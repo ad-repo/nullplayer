@@ -62,7 +62,8 @@ A stage moves only on its evidence, in the commit that carries it; it moves back
 | `promoted` | **Close** once the PR is merged: `rm -rf WinampModernCorpus/runs`, then pick batch n+1 | — |
 
 `wal_intake_pick.sh [count]` takes the next 25 (or `count`, at most 200) still-bronze skins in the newest `intakes/*.ranking.tsv`'s
-order. A crawl of *new* candidates still goes through `wal_intake.sh` (about 47 minutes; run it with
+order; with no bronze left it adopts the skins already in silver instead (intake #16: the B167 seed set
+and held-back skins), leaving them in place. A crawl of *new* candidates still goes through `wal_intake.sh` (about 47 minutes; run it with
 `run_in_background`, check for its `wal_intake: … -> intake.tsv` line, not the exit code), which
 writes a fresh ranking.
 
