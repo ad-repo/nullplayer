@@ -12,7 +12,8 @@ import Foundation
 /// Thread rules: `receive` runs on the **posting thread** — the real-time audio tap — so it is a
 /// lock, a few stores and an append; reads take the same lock and never wait on the audio thread.
 /// Owned by `WinampModernWaveformTap` (the `.wal` scope and `.wmz` effects) and by
-/// `SpectrumAnalyzerView` (vis_classic), each of which observes the notification itself.
+/// `SpectrumAnalyzerView` (vis_classic) and by the Audio Analyzer's `ScopeCanvasView`, each of which
+/// observes the notification itself.
 final class WaveformPlayout {
     /// Winamp's vis block: 576 samples, 0…255, silence at 128.
     static let sampleCount = 576
@@ -35,6 +36,13 @@ final class WaveformPlayout {
     private var rate: Double = 44_100
     private var chunkDuration: TimeInterval { TimeInterval(Self.sampleCount) / rate }
     private var lastArrival: TimeInterval?
+    /// Chunks played out so far; never reset, so it numbers each chunk once.
+    private var playedCount = 0
+    /// The most recently played chunks with their numbers, oldest first, for `chunksPlayed(after:at:)`.
+    private var recentlyPlayed: [(number: Int, left: [UInt8], right: [UInt8])] = []
+    /// The Audio Analyzer Scope's whole history (`ScopeTrace.historyChunks`): anything older would be
+    /// shifted out of it unread, however long the reader stalled.
+    static let recentlyPlayedLimit = 3
     private let lock = NSLock()
 
     /// The chunk current now, or a flat centre line once the audio has stopped.
@@ -62,23 +70,23 @@ final class WaveformPlayout {
         guard let lastArrival, now - lastArrival < Self.silenceTimeout else {
             return (Self.silence, Self.silence)
         }
-        if let playoutStart, chunkDuration > 0, !chunks.isEmpty {
-            // `playoutStart` is the moment the **head** of the queue becomes current, so at exactly
-            // that instant one chunk is already due — a chunk that has just arrived is shown now,
-            // not one chunk-duration later. Everything whose moment has passed is consumed and the
-            // last of them is what to show; the clock moves with it, so two reads at the same
-            // instant answer the same thing.
-            let due = max(0, Int(((now - playoutStart) / chunkDuration).rounded(.down)) + 1)
-            let advance = min(due, chunks.count)
-            if advance > 0 {
-                current = chunks[advance - 1]
-                chunks.removeFirst(advance)
-                self.playoutStart = playoutStart + Double(advance) * chunkDuration
-            }
-        }
+        advanceClock(to: now)
         guard let current else { return (Self.silence, Self.silence) }
         return (current.left.isEmpty ? Self.silence : current.left,
                 current.right.isEmpty ? Self.silence : current.right)
+    }
+
+    /// Every chunk played out after chunk `number` (all recent ones for `nil`), oldest first, each
+    /// with its number — for a reader that must draw every chunk in order (the Audio Analyzer Scope).
+    /// `samples(at:)` returns only the current chunk, and a burst arriving between two reads can play
+    /// out more than one. `nil` once the audio has stopped, where `samples(at:)` returns silence.
+    func chunksPlayed(after number: Int?, at now: TimeInterval) -> [(number: Int, left: [UInt8], right: [UInt8])]? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let lastArrival, now - lastArrival < Self.silenceTimeout else { return nil }
+        advanceClock(to: now)
+        guard let number else { return recentlyPlayed }
+        return recentlyPlayed.filter { $0.number > number }
     }
 
     /// Queue one arriving chunk. Runs on the posting thread.
@@ -86,6 +94,14 @@ final class WaveformPlayout {
         lock.lock()
         if let sampleRate, sampleRate > 0 {
             rate = sampleRate
+        }
+        // Consume what is already due before queueing, so the clock and the queue do not depend on
+        // when, or how often, the playout is read. Into an empty queue nothing is overdue: a clock
+        // left behind (a pause, a late tap buffer) restarts now. Left behind, every later read would
+        // consume a whole burst and show one chunk per tap.
+        advanceClock(to: now)
+        if chunks.isEmpty, let start = playoutStart, start < now {
+            playoutStart = now
         }
         chunks.append((left, right))
         let cap = Self.maximumQueuedChunks(chunkDuration: chunkDuration)
@@ -98,11 +114,33 @@ final class WaveformPlayout {
         lock.unlock()
     }
 
+    /// Consume every chunk due at `now`; the last of them becomes current. Caller holds `lock`.
+    ///
+    /// `playoutStart` is the moment the **head** of the queue becomes current, so at exactly that
+    /// instant one chunk is already due — a chunk that has just arrived is shown now, not one
+    /// chunk-duration later. Everything whose moment has passed is consumed and the last of them is
+    /// what to show; the clock moves with it, so two reads at the same instant answer the same thing.
+    private func advanceClock(to now: TimeInterval) {
+        guard let playoutStart, chunkDuration > 0, !chunks.isEmpty else { return }
+        let due = max(0, Int(((now - playoutStart) / chunkDuration).rounded(.down)) + 1)
+        let advance = min(due, chunks.count)
+        guard advance > 0 else { return }
+        current = chunks[advance - 1]
+        for chunk in chunks.prefix(advance) {
+            playedCount += 1
+            recentlyPlayed.append((playedCount, chunk.left, chunk.right))
+        }
+        recentlyPlayed.removeFirst(max(0, recentlyPlayed.count - Self.recentlyPlayedLimit))
+        chunks.removeFirst(advance)
+        self.playoutStart = playoutStart + Double(advance) * chunkDuration
+    }
+
     /// Forget everything queued and shown: the next read is silence until a chunk arrives.
     func reset() {
         lock.lock()
         chunks = []
         current = nil
+        recentlyPlayed = []
         playoutStart = nil
         lastArrival = nil
         lock.unlock()

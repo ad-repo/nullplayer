@@ -14,20 +14,18 @@ struct ScopePaneView: NSViewRepresentable {
 
 /// Canvas-based oscilloscope renderer.
 ///
-/// Two things keep the trace readable: a **trigger** that phase-locks each frame to a rising
-/// zero-crossing (so periodic content stays stationary instead of swimming horizontally), and a
-/// gentle **temporal blend** of the now-aligned frames (so the line stops flickering frame to frame
-/// without smearing transients).
-class ScopeCanvasView: NSView {
-    /// Phase-aligned, temporally smoothed window that is actually drawn.
-    private var displayBuffer: [Float] = []
-    private var pcmObserver: NSObjectProtocol?
-
-    /// Temporal-blend weights (1 = no smoothing, lower = smoother). The blend is asymmetric: a frame
-    /// that is louder than what's on screen (a beat) snaps in quickly so it is never averaged away,
-    /// while quieter frames blend slowly to suppress flicker.
-    private let attackWeight: Float = 0.85
-    private let releaseWeight: Float = 0.45
+/// Fed by the waveform consumer (`.audioWaveform576DataUpdated`): every sample, in 576-sample chunks
+/// that arrive several at a time per tap buffer. A `WaveformPlayout` plays them out at the audio's own
+/// rate, and each display refresh takes every chunk played since the last one it took, so every chunk
+/// lands in the `ScopeTrace` in order — contiguous audio at the display's refresh rate.
+class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
+    private let playout = WaveformPlayout()
+    private var trace = ScopeTrace()
+    /// The playout's number for the last chunk taken, so each chunk is taken once and none is missed.
+    private var lastChunkNumber: Int?
+    private var displayLink: CADisplayLink?
+    private var renderingPaused = false
+    private var waveformObserver: NSObjectProtocol?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -43,62 +41,67 @@ class ScopeCanvasView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
 
-        // Observe PCM data updates from the audio engine
-        // Receive on the posting thread (`queue: nil`) and hop to main ourselves. `queue: .main`
-        // makes NotificationCenter deliver synchronously and blocks the real-time audio tap
-        // thread on the main queue, deadlocking against tap teardown during rapid track loads.
-        pcmObserver = NotificationCenter.default.addObserver(
-            forName: .audioPCMDataUpdated,
+        // `WaveformPlayout.receive` is built to run on the posting thread (the real-time audio tap):
+        // a lock and an append. Never `queue: .main`, which blocks the tap on the main queue and
+        // deadlocks against tap teardown during rapid track loads.
+        let playout = playout
+        waveformObserver = NotificationCenter.default.addObserver(
+            forName: .audioWaveform576DataUpdated,
             object: nil,
             queue: nil
         ) { notification in
             guard let userInfo = notification.userInfo,
-                  let pcm = userInfo["pcm"] as? [Float] else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.ingest(pcm)
-            }
+                  let left = userInfo["left"] as? [UInt8],
+                  let right = userInfo["right"] as? [UInt8] else { return }
+            playout.receive(left: left, right: right, sampleRate: userInfo["sampleRate"] as? Double,
+                            at: ProcessInfo.processInfo.systemUptime)
         }
     }
 
     deinit {
-        if let observer = pcmObserver {
+        if let observer = waveformObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
 
-    /// Trigger-align an incoming frame and blend it into the display buffer.
-    private func ingest(_ pcm: [Float]) {
-        let count = pcm.count
-        let maxTriggerOffset = count / 4          // search the first quarter for the trigger
-        let windowLength = count - maxTriggerOffset
-        guard windowLength > 1, maxTriggerOffset >= 1 else { return }
+    /// Hidden, minimized or closed: drop the display link (it retains this view) until shown again.
+    func setRenderingPaused(_ paused: Bool) {
+        renderingPaused = paused
+        updateDisplayLink()
+    }
 
-        // Trigger: first rising zero-crossing in the search region. Falls back to 0 (no lock) when
-        // none is found (silence / aperiodic noise), which simply leaves the trace where it is.
-        var trigger = 0
-        for i in 1...maxTriggerOffset where pcm[i - 1] <= 0 && pcm[i] > 0 {
-            trigger = i
-            break
-        }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateDisplayLink()
+    }
 
-        if displayBuffer.count != windowLength {
-            displayBuffer = Array(pcm[trigger..<(trigger + windowLength)])
-            needsDisplay = true
-            return
+    private func updateDisplayLink() {
+        let wanted = window != nil && !renderingPaused
+        guard wanted != (displayLink != nil) else { return }
+        if wanted {
+            let newLink = displayLink(target: self, selector: #selector(tick(_:)))
+            newLink.add(to: .main, forMode: .common)
+            displayLink = newLink
+        } else {
+            displayLink?.invalidate()
+            displayLink = nil
         }
+    }
 
-        // Asymmetric blend: snap toward a louder frame (a beat), ease toward a quieter one. This stops
-        // the smoothing from averaging away a strong beat whose trigger locked to a different cycle.
-        var framePeak: Float = 0
-        var displayPeak: Float = 0
-        for i in 0..<windowLength {
-            framePeak = max(framePeak, abs(pcm[trigger + i]))
-            displayPeak = max(displayPeak, abs(displayBuffer[i]))
+    @objc private func tick(_ sender: CADisplayLink) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let played = playout.chunksPlayed(after: lastChunkNumber, at: now) {
+            guard let newest = played.last else { return }
+            for chunk in played {
+                trace.append(left: chunk.left, right: chunk.right)
+            }
+            lastChunkNumber = newest.number
+        } else {
+            // The audio has stopped: ease to a flat line, then stop redrawing.
+            guard !trace.isFlat else { return }
+            trace.append(left: WaveformPlayout.silence, right: WaveformPlayout.silence)
         }
-        let weight = framePeak > displayPeak ? attackWeight : releaseWeight
-        for i in 0..<windowLength {
-            displayBuffer[i] += (pcm[trigger + i] - displayBuffer[i]) * weight
-        }
+        trace.render(at: now)
         needsDisplay = true
     }
 
@@ -111,7 +114,7 @@ class ScopeCanvasView: NSView {
         NSColor.black.setFill()
         bounds.fill()
 
-        guard displayBuffer.count > 1 else { return }
+        guard trace.points.count > 1 else { return }
 
         drawWaveform(in: context)
     }
@@ -137,10 +140,11 @@ class ScopeCanvasView: NSView {
         context.setLineJoin(.round)
         context.setLineCap(.round)
 
-        let n = displayBuffer.count
+        let points = trace.points
+        let n = points.count
         func point(_ i: Int) -> CGPoint {
             let x = width * CGFloat(i) / CGFloat(n - 1)
-            let clamped = max(-1.0, min(1.0, CGFloat(displayBuffer[i])))
+            let clamped = max(-1.0, min(1.0, CGFloat(points[i])))
             return CGPoint(x: x, y: centerY - clamped * (centerY - 4))
         }
 

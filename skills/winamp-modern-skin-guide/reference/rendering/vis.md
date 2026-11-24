@@ -44,6 +44,13 @@ and a read is a pure function of the clock so every box in a frame draws the sam
 takes the waveform **once per frame** for the same reason: two boxes reading microseconds apart can
 straddle a 13 ms boundary, and in Big Bento's butterfly that is a mirror that does not mirror.
 
+**The clock moves on arrival as well as on reads** (`WaveformPlayout.receive`, #797). It used to move
+only when read, so its state depended on the reader: the tap posts nothing while paused, the clock
+stayed where the last chunk was, and after the pause every read consumed a whole burst — the `.wal`
+scope (GonchiSkin) fell from ~67 distinct chunks a second to ~11, vis_classic and the Audio Analyzer
+Scope likewise, until the next track. `receive` now consumes what is already due, and a chunk arriving
+into an empty queue restarts a clock that is behind.
+
 Every other `<vis>` attribute is read too — `oscstyle`, `coloring`, `peaks`, `falloff`,
 `peakfalloff`, `colorosc1`…`5` — see `compatibility/wasabi-surface.md` for the list and the measured
 0…4 falloff scale. **Both falloffs are per second, not per draw**: draws are not a clock (the vis

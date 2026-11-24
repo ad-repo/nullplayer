@@ -44,14 +44,14 @@ Spectrum windows in each UI mode.
 
 | Pane | Source notification | Consumer(s) it registers | Render |
 |------|--------------------|----------------------|--------|
-| **Scope** (oscilloscope) | `.audioPCMDataUpdated` (`userInfo["pcm"]` 512 mono) | spectrum | CoreGraphics (`NSView`) |
+| **Scope** (oscilloscope) | `.audioWaveform576DataUpdated` (576-sample `UInt8` L/R chunks, every sample) | waveform | CoreGraphics (`NSView`) + display link |
 | **Levels** (peak/RMS) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI bars |
 | **Spectrogram** (waterfall) | `.audioSpectrumDataUpdated` (`spectrum` 75 bands) | spectrum | Metal (`MTKView`) |
 | **Octave** (1/3-octave spectrum) | `.audioFFTMagnitudesUpdated` (`magnitudes` raw linear, `sampleRate`, `fftSize`) | magnitudes | CoreGraphics (`NSView`) bars + peak-hold |
 | **Pitch** (fundamental frequency) | `.audioPCMDataUpdated` (512 mono) | spectrum | SwiftUI (Hz, note name, cents deviation) |
 | **Delay** (L/R phase delay) | `.audioStereoPCMDataUpdated` (`left`/`right` 512) | stereo | SwiftUI (ms, samples, direction) |
 
-`.audioPCMDataUpdated` is posted *inside* the spectrum block, so the Scope and Pitch panes register a
+`.audioPCMDataUpdated` is posted *inside* the spectrum block, so the Pitch pane registers a
 **spectrum** consumer (not a dedicated PCM one) to make mono PCM flow.
 
 **Octave uses the magnitudes consumer alone.** The magnitudes path is independent: the FFT runs when
@@ -62,11 +62,22 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
 
 ## What each pane shows (behavior + accuracy caveats)
 
-- **Scope** — time-domain oscilloscope: a green waveform line of the 512-sample mono PCM frame over
-  a faint grid. Each frame is **trigger-aligned** to a rising zero-crossing in its first quarter so
-  periodic content stays phase-locked (stationary) instead of swimming, then gently blended into the
-  previous frame (`frameWeight`) to reduce flicker, and drawn as a smoothed quadratic curve. Idles flat
-  on silence (no trigger found → no lock).
+- **Scope** — time-domain oscilloscope: a green waveform line over a faint grid, drawn from the last
+  three 576-sample chunks (mono, every 3rd sample). Each window is **trigger-aligned** to a rising
+  zero-crossing in its first quarter so periodic content stays phase-locked (stationary) instead of
+  swimming, then gently blended into the previous one to reduce flicker, and drawn as a smoothed
+  quadratic curve. On silence (paused, or a silent passage) it eases to a flat line and stops redrawing.
+  **Frame rate:** chunks arrive several at a time per tap buffer (~10/s), so a per-view
+  `WaveformPlayout` plays them out at the audio's own rate. Each `NSView.displayLink` tick takes every
+  chunk played since the last one it took, in order, from `chunksPlayed(after:at:)` (`nil` once the
+  audio has stopped) — one redraw per new chunk, ~77/s at 44.1 kHz. The playout keeps only the last
+  `ScopeTrace.historyChunks` played chunks (`recentlyPlayedLimit`): anything older would be shifted out
+  of the Scope's history unread. History, trigger, blend and flatness live in the pure `ScopeTrace`
+  (`ScopeTrace.swift`, tested in `ScopeTraceTests`); the blend is weighted by the time since the last
+  render, scaled to the old ~20 updates/s. The feed is 8-bit, which is fine at the Analyzer's sizes:
+  one step is 1/127 of the half-height (~0.3 pt in the classic pane), and the blend averages it. The
+  display link retains the view, so it is created and invalidated by `setRenderingPaused` (the shared
+  pause walk, on hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
   −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
   more smoothly than peak.
@@ -102,7 +113,7 @@ larger analysis buffer, not pane code.
   it (radio items + Close); the shared content view's `.onChange` persists it (UserDefaults) and
   invokes its `onPaneChange` callback, which each window's NSView routes to
   `controller.setVisiblePane(_:)` → `AudioAnalysisConsumerCoordinator`.
-- **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift`,
+- **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift` (+ `ScopeTrace.swift`),
   `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text),
   `SpectrogramPaneView.swift`, `OctavePaneView.swift` (1/3-octave bands CoreGraphics with peak-hold),
   `PitchPaneView.swift` (Hz + note + cents SwiftUI), and `DelayPaneView.swift` (stereo delay
@@ -135,7 +146,7 @@ larger analysis buffer, not pane code.
 
 `AudioAnalysisConsumerCoordinator` owns the gating (shared by both windows): `setVisiblePane(_:)`
 maps each pane to its consumer(s):
-- Scope (pane 0) → spectrum
+- Scope (pane 0) → waveform
 - Levels (pane 1) → stereo
 - Spectrogram (pane 2) → spectrum
 - Octave (pane 3) → magnitudes
@@ -147,8 +158,10 @@ everything via a `consumerRemovers` map that tracks which remove function to cal
 The controller registers the initial pane in `showWindow(_:)`; the shared content view re-invokes
 it on `.onChange(of: model.selectedPane)`. Both `stopRenderingForHide()` and `windowWillClose` call
 `consumerCoordinator.deregisterAll()` so a hidden/closed window leaves the FFT, stereo, and
-magnitudes paths idle. The spectrogram also pauses its `MTKView` (`isPaused`) while hidden or
-miniaturized.
+magnitudes paths idle. Panes that render on their own clock conform to `AudioAnalysisPausableRenderer`
+and are paused by one walk, `setAudioAnalysisRenderingPaused(_:)`, which both windows call while hidden
+or miniaturized: the spectrogram pauses its `MTKView` (`isPaused`), the Scope drops its display link. A
+new self-clocked pane only has to conform.
 
 ## Persistence
 

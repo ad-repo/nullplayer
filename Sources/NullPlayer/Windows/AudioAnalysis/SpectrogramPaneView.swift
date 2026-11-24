@@ -16,7 +16,7 @@ struct SpectrogramPaneView: NSViewRepresentable {
 }
 
 /// Metal-based spectrogram renderer with scrolling history
-class SpectrogramMetalView: NSView {
+class SpectrogramMetalView: NSView, AudioAnalysisPausableRenderer {
     private var metalView: MTKView?
     private var device: MTLDevice?
     private var commandQueue: MTLCommandQueue?

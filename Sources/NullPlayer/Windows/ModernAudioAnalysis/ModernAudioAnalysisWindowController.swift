@@ -74,13 +74,13 @@ class ModernAudioAnalysisWindowController: NSWindowController, AudioAnalysisWind
     override func showWindow(_ sender: Any?) {
         super.showWindow(sender)
         analysisView.needsDisplay = true
-        analysisView.setRenderingPaused(false)
+        analysisView.setAudioAnalysisRenderingPaused(false)
         setVisiblePane(analysisView.selectedPane)
         startRendering()
     }
 
     func stopRenderingForHide() {
-        analysisView.setRenderingPaused(true)
+        analysisView.setAudioAnalysisRenderingPaused(true)
         deregisterAllConsumers()
     }
 
@@ -135,7 +135,7 @@ extension ModernAudioAnalysisWindowController: NSWindowDelegate {
 
     func windowDidDeminiaturize(_ notification: Notification) {
         setVisiblePane(analysisView.selectedPane)
-        analysisView.setRenderingPaused(false)
+        analysisView.setAudioAnalysisRenderingPaused(false)
         startRendering()
     }
 
