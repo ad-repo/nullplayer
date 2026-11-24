@@ -150,6 +150,15 @@ the host's show. Measured reach (static scan of gold+silver, then `RENDER_EVENTS
 one `show()`s and places its own layout. A static scan sees only `<script>`s written directly in the
 container, so it is a lower bound.
 
+**The host's toast is the plain `notifier` id, never a `notifier.*` sibling** (#810).
+`announceNotification` finds `<container id="notifier">` itself and answers it (or nil), and
+`showNotifier` shows that window. It used to show the first container `isNotifier` matched, which
+on Rectangular (`notifier.preferences` then `notifier.popup`, no plain `notifier`) was the
+preferences window, popped up at the screen corner on every track change beside the popup its own
+script shows. Ten corpus skins, the Love is War Miku family, also declare `notifier.preferences`
+ahead of `notifier` in archive order; Love is War Miku now shows its 350×80 `notifier`, measured live.
+`isNotifier`'s prefix rule still decides suppression and placement.
+
 Two things that look like defects and are the skin's: its **first** toast after launch never slides
 (the hide timer `onScriptLoaded` starts is still running, so `ShowNotifier` keeps the `ANIM_STYLE_NONE`
 it was born with), and the slide starts about 39 px visible, because the skin takes the viewport's

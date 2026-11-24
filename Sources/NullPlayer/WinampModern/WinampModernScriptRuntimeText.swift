@@ -37,14 +37,19 @@ extension WinampModernScriptRuntime {
     }
 
     /// The host's half of a track-change toast: `onShowNotification` to the skin, then the host's
-    /// text — unless `container`, the toast the host picked, shows itself. Answers whether the host
-    /// should show it.
-    func announceNotification(in container: WasabiObject, title: String, artist: String,
-                              album: String) -> Bool {
+    /// text in `<container id="notifier">` — unless that toast shows itself. Answers the container
+    /// the host should show, or nil.
+    ///
+    /// Only the plain `notifier` id is the host's to show. A `notifier.*` sibling is not a toast it
+    /// can stand in for: Rectangular's are `notifier.preferences`, a settings window that popped up
+    /// at the screen corner on every track change, and `notifier.popup`, which its own script
+    /// shows (#810).
+    func announceNotification(title: String, artist: String, album: String) -> WasabiObject? {
         _ = try? dispatchSystem(event: "onshownotification")
-        guard !notifierShowsItself(container) else { return false }
+        guard let toast = findRoot(type: .container, xmlID: "notifier"),
+              !notifierShowsItself(toast) else { return nil }
         setNotifierText(title: title, artist: artist, album: album)
-        return true
+        return toast
     }
 
     /// Whether `container` is a notifier whose own container carries the script that shows it: a

@@ -240,24 +240,33 @@ final class WinampModernPhase69Tests: XCTestCase {
             let runtime = try makeToastRuntime()
             if showsItself { try bindSystem(runtime, event: "ontitlechange", owner: ("container", "notifier")) }
             let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
-            XCTAssertEqual(runtime.announceNotification(in: notifier, title: "Song", artist: "Artist",
-                                                        album: "Album"),
-                           !showsItself)
+            let shown = runtime.announceNotification(title: "Song", artist: "Artist", album: "Album")
+            XCTAssertTrue(shown === (showsItself ? nil : notifier))
             let title = try XCTUnwrap(object(runtime, type: "text", id: "title"))
             XCTAssertEqual(title.attributes["text"], showsItself ? nil : "Song")
         }
     }
 
-    /// The decision is about the toast the host picked, which may be a `notifier.*` with no plain
-    /// `notifier` beside it (raised by CodeRabbit on #810).
-    func testAPrefixedNotifierStillGetsTheHostsShow() throws {
+    /// The host's toast is the plain `notifier`, wherever it is declared. A `notifier.*` sibling is
+    /// never shown in its place: Rectangular's `notifier.preferences` is a settings window, and it
+    /// popped up at the screen corner on every track change (#810).
+    func testOnlyThePlainNotifierIsTheHostsToShow() throws {
         let runtime = try makeRuntime(loaded: makeSkin(xml: """
         <WasabiXML>
-          <container id="notifier.alt"><layout id="normal" w="300" h="80"/></container>
+          <container id="notifier.preferences"><layout id="normal" w="250" h="30"/></container>
+          <container id="notifier"><layout id="normal" w="300" h="80"/></container>
         </WasabiXML>
         """))
-        let toast = try XCTUnwrap(object(runtime, type: "container", id: "notifier.alt"))
-        XCTAssertTrue(runtime.announceNotification(in: toast, title: "Song", artist: "", album: ""))
+        let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+        XCTAssertTrue(runtime.announceNotification(title: "Song", artist: "", album: "") === notifier)
+
+        let prefixedOnly = try makeRuntime(loaded: makeSkin(xml: """
+        <WasabiXML>
+          <container id="notifier.preferences"><layout id="normal" w="250" h="30"/></container>
+          <container id="notifier.popup"><layout id="normal" w="275" h="50"/></container>
+        </WasabiXML>
+        """))
+        XCTAssertNil(prefixedOnly.announceNotification(title: "Song", artist: "", album: ""))
     }
 
     /// Its moves are pins, so the slide may start below the screen edge; another toast's are
