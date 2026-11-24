@@ -239,11 +239,25 @@ final class WinampModernPhase69Tests: XCTestCase {
         for showsItself in [false, true] {
             let runtime = try makeToastRuntime()
             if showsItself { try bindSystem(runtime, event: "ontitlechange", owner: ("container", "notifier")) }
-            XCTAssertEqual(runtime.announceNotification(title: "Song", artist: "Artist", album: "Album"),
+            let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+            XCTAssertEqual(runtime.announceNotification(in: notifier, title: "Song", artist: "Artist",
+                                                        album: "Album"),
                            !showsItself)
             let title = try XCTUnwrap(object(runtime, type: "text", id: "title"))
             XCTAssertEqual(title.attributes["text"], showsItself ? nil : "Song")
         }
+    }
+
+    /// The decision is about the toast the host picked, which may be a `notifier.*` with no plain
+    /// `notifier` beside it (raised by CodeRabbit on #810).
+    func testAPrefixedNotifierStillGetsTheHostsShow() throws {
+        let runtime = try makeRuntime(loaded: makeSkin(xml: """
+        <WasabiXML>
+          <container id="notifier.alt"><layout id="normal" w="300" h="80"/></container>
+        </WasabiXML>
+        """))
+        let toast = try XCTUnwrap(object(runtime, type: "container", id: "notifier.alt"))
+        XCTAssertTrue(runtime.announceNotification(in: toast, title: "Song", artist: "", album: ""))
     }
 
     /// Its moves are pins, so the slide may start below the screen edge; another toast's are

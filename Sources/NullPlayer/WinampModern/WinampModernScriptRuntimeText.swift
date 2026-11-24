@@ -37,11 +37,12 @@ extension WinampModernScriptRuntime {
     }
 
     /// The host's half of a track-change toast: `onShowNotification` to the skin, then the host's
-    /// text — unless the toast shows itself. Answers whether the host should show it.
-    func announceNotification(title: String, artist: String, album: String) -> Bool {
+    /// text — unless `container`, the toast the host picked, shows itself. Answers whether the host
+    /// should show it.
+    func announceNotification(in container: WasabiObject, title: String, artist: String,
+                              album: String) -> Bool {
         _ = try? dispatchSystem(event: "onshownotification")
-        guard let container = findRoot(type: .container, xmlID: "notifier"),
-              !notifierShowsItself(container) else { return false }
+        guard !notifierShowsItself(container) else { return false }
         setNotifierText(title: title, artist: artist, album: album)
         return true
     }

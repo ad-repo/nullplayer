@@ -7,8 +7,8 @@ extension WinampModernMainWindowController {
     func showNotifier(for track: Track) {
         guard let container = auxiliaryContainers.first(where: { $0.isNotifier }),
               let scripts = skinView?.scripts,
-              scripts.announceNotification(title: track.title, artist: track.artist ?? "",
-                                           album: track.album ?? "")
+              scripts.announceNotification(in: container.info.object, title: track.title,
+                                           artist: track.artist ?? "", album: track.album ?? "")
         else { return }
         container.window.alphaValue = 1
         setAuxiliaryWindow(id: container.containerID, visible: true, activate: false)
