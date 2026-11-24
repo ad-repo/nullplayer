@@ -69,10 +69,12 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
   quadratic curve. On silence (paused, or a silent passage) it eases to a flat line and stops redrawing.
   **Frame rate:** chunks arrive several at a time per tap buffer (~10/s), so a per-view
   `WaveformPlayout` plays them out at the audio's own rate and each `NSView.displayLink` tick steps its
-  clock one chunk at a time up to now — every chunk lands in order, one redraw per new chunk (~77/s at
-  44.1 kHz). The blend weight is scaled to the old ~20 updates/s so smoothing is rate-independent. The display
-  link retains the view, so it is created and invalidated by `setRenderingPaused` (the windows' pause
-  walk, on hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
+  clock one chunk at a time up to now, taking each chunk once by `numberedSamples(at:)`'s chunk number —
+  every chunk lands in order, one redraw per new chunk (~77/s at 44.1 kHz). History, trigger, blend and
+  flatness live in the pure `ScopeTrace` (`ScopeTrace.swift`, tested in `ScopeTraceTests`); the blend is
+  weighted by the time since the last render, scaled to the old ~20 updates/s. The display link retains
+  the view, so it is created and invalidated by `setRenderingPaused` (the shared pause walk, on
+  hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
   −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
   more smoothly than peak.
@@ -108,7 +110,7 @@ larger analysis buffer, not pane code.
   it (radio items + Close); the shared content view's `.onChange` persists it (UserDefaults) and
   invokes its `onPaneChange` callback, which each window's NSView routes to
   `controller.setVisiblePane(_:)` → `AudioAnalysisConsumerCoordinator`.
-- **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift`,
+- **Panes**: shared files under `Windows/AudioAnalysis/`: `ScopePaneView.swift` (+ `ScopeTrace.swift`),
   `LevelsPaneView.swift` (vertical full-height peak/RMS meters, no title text),
   `SpectrogramPaneView.swift`, `OctavePaneView.swift` (1/3-octave bands CoreGraphics with peak-hold),
   `PitchPaneView.swift` (Hz + note + cents SwiftUI), and `DelayPaneView.swift` (stereo delay
@@ -153,8 +155,10 @@ everything via a `consumerRemovers` map that tracks which remove function to cal
 The controller registers the initial pane in `showWindow(_:)`; the shared content view re-invokes
 it on `.onChange(of: model.selectedPane)`. Both `stopRenderingForHide()` and `windowWillClose` call
 `consumerCoordinator.deregisterAll()` so a hidden/closed window leaves the FFT, stereo, and
-magnitudes paths idle. The spectrogram pauses its `MTKView` (`isPaused`) and the Scope drops its display link while hidden or
-miniaturized.
+magnitudes paths idle. Panes that render on their own clock conform to `AudioAnalysisPausableRenderer`
+and are paused by one walk, `setAudioAnalysisRenderingPaused(_:)`, which both windows call while hidden
+or miniaturized: the spectrogram pauses its `MTKView` (`isPaused`), the Scope drops its display link. A
+new self-clocked pane only has to conform.
 
 ## Persistence
 

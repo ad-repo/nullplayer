@@ -36,6 +36,8 @@ final class WaveformPlayout {
     private var rate: Double = 44_100
     private var chunkDuration: TimeInterval { TimeInterval(Self.sampleCount) / rate }
     private var lastArrival: TimeInterval?
+    /// Chunks played out so far; never reset, so it numbers each chunk once.
+    private var playedCount = 0
     private let lock = NSLock()
 
     /// The chunk current now, or a flat centre line once the audio has stopped.
@@ -58,14 +60,23 @@ final class WaveformPlayout {
     /// pure function of `now`, so several boxes drawn in one frame (Big Bento's six) draw the *same*
     /// chunk, and a frame drawn twice draws the same thing.
     func samples(at now: TimeInterval) -> (left: [UInt8], right: [UInt8]) {
+        let read = numberedSamples(at: now)
+        return (read.left, read.right)
+    }
+
+    /// `samples(at:)` plus the number of chunks played out so far, which changes exactly when a new
+    /// chunk becomes current, so a reader that must take every chunk once can tell a new chunk from
+    /// the current one repeated (or from silence, which keeps the number).
+    func numberedSamples(at now: TimeInterval) -> (number: Int, left: [UInt8], right: [UInt8]) {
         lock.lock()
         defer { lock.unlock() }
         guard let lastArrival, now - lastArrival < Self.silenceTimeout else {
-            return (Self.silence, Self.silence)
+            return (playedCount, Self.silence, Self.silence)
         }
         advanceClock(to: now)
-        guard let current else { return (Self.silence, Self.silence) }
-        return (current.left.isEmpty ? Self.silence : current.left,
+        guard let current else { return (playedCount, Self.silence, Self.silence) }
+        return (playedCount,
+                current.left.isEmpty ? Self.silence : current.left,
                 current.right.isEmpty ? Self.silence : current.right)
     }
 
@@ -107,6 +118,7 @@ final class WaveformPlayout {
         guard advance > 0 else { return }
         current = chunks[advance - 1]
         chunks.removeFirst(advance)
+        playedCount += advance
         self.playoutStart = playoutStart + Double(advance) * chunkDuration
     }
 

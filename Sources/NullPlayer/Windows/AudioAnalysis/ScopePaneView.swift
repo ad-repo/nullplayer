@@ -17,39 +17,17 @@ struct ScopePaneView: NSViewRepresentable {
 /// Fed by the waveform consumer (`.audioWaveform576DataUpdated`): every sample, in 576-sample chunks
 /// that arrive several at a time per tap buffer. A `WaveformPlayout` plays them out at the audio's own
 /// rate, and each display refresh steps its clock one chunk at a time up to now, so every chunk lands
-/// in `history` in order — contiguous audio at the display's refresh rate.
-///
-/// Two things keep the trace readable: a **trigger** that phase-locks each window to a rising
-/// zero-crossing (so periodic content stays stationary instead of swimming horizontally), and a
-/// gentle **temporal blend** of the now-aligned windows (so the line stops flickering frame to frame
-/// without smearing transients).
-class ScopeCanvasView: NSView {
-    /// Chunks of history kept: the drawn window is three chunks less the trigger search region.
-    private static let historyChunks = 3
-    /// Samples per drawn point.
-    private static let drawStride = 3
-    /// The blend weights below were tuned at the old ~20 updates per second; scaled per refresh to it.
-    private static let blendReferenceRate = 20.0
-    /// Below half an 8-bit step the trace is drawn flat; silence stops repeating there.
-    private static let flatThreshold: Float = 0.002
-
+/// in the `ScopeTrace` in order — contiguous audio at the display's refresh rate.
+class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
     private let playout = WaveformPlayout()
-    /// The last `historyChunks` played-out chunks, mono, -1…1, oldest first.
-    private var history = [Float](repeating: 0, count: WaveformPlayout.sampleCount * ScopeCanvasView.historyChunks)
-    private var lastChunk: [UInt8] = []
+    private var trace = ScopeTrace()
+    /// The playout's number for the last chunk taken, so each chunk is taken once.
+    private var lastChunkNumber: Int?
     /// Playout time already stepped through.
     private var readTime: TimeInterval?
-    /// Phase-aligned, temporally smoothed window that is actually drawn.
-    private var displayBuffer: [Float] = []
     private var displayLink: CADisplayLink?
     private var renderingPaused = false
     private var waveformObserver: NSObjectProtocol?
-
-    /// Temporal-blend weights (1 = no smoothing, lower = smoother). The blend is asymmetric: a window
-    /// that is louder than what's on screen (a beat) snaps in quickly so it is never averaged away,
-    /// while quieter windows blend slowly to suppress flicker.
-    private let attackWeight: Float = 0.85
-    private let releaseWeight: Float = 0.45
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -117,69 +95,23 @@ class ScopeCanvasView: NSView {
         let now = ProcessInfo.processInfo.systemUptime
         let chunkDuration = TimeInterval(WaveformPlayout.sampleCount) / playout.sampleRate
         // Step the playout clock one chunk at a time so no chunk is skipped between refreshes.
-        var time = max(readTime ?? now, now - chunkDuration * Double(Self.historyChunks))
-        var stepped: TimeInterval = 0
+        var time = max(readTime ?? now, now - chunkDuration * Double(ScopeTrace.historyChunks))
         var appended = false
         while time <= now {
-            let chunk = playout.samples(at: time)
-            // The playout repeats its current chunk until the next is due; take each chunk once,
-            // except silence (paused, or a silent passage), which repeats until the trace is flat.
-            let flattening = chunk.left == WaveformPlayout.silence
-                && displayBuffer.contains { abs($0) > Self.flatThreshold }
-            if chunk.left != lastChunk || flattening {
-                lastChunk = chunk.left
-                append(chunk)
+            let read = playout.numberedSamples(at: time)
+            // Each new chunk once; silence (paused, the playout timed out) repeats until the trace is flat.
+            let isNew = read.number != lastChunkNumber
+            if isNew || (read.left == WaveformPlayout.silence && !trace.isFlat) {
+                lastChunkNumber = read.number
+                trace.append(left: read.left, right: read.right)
                 appended = true
             }
             time += chunkDuration
-            stepped += chunkDuration
         }
         readTime = time
-        if appended { render(elapsed: stepped) }
-    }
-
-    private func append(_ chunk: (left: [UInt8], right: [UInt8])) {
-        let count = WaveformPlayout.sampleCount
-        history.removeFirst(count)
-        for i in 0..<count {
-            history.append((Float(chunk.left[i]) + Float(chunk.right[i]) - 256) / 254)
-        }
-    }
-
-    /// Trigger-align the newest window of `history` and blend it into the display buffer.
-    private func render(elapsed: TimeInterval) {
-        let maxTriggerOffset = history.count / 4          // search the first quarter for the trigger
-        let windowLength = (history.count - maxTriggerOffset) / Self.drawStride
-
-        // Trigger: first rising zero-crossing in the search region. Falls back to 0 (no lock) when
-        // none is found (silence / aperiodic noise), which simply leaves the trace where it is.
-        var trigger = 0
-        for i in 1...maxTriggerOffset where history[i - 1] <= 0 && history[i] > 0 {
-            trigger = i
-            break
-        }
-        func sample(_ i: Int) -> Float { history[trigger + i * Self.drawStride] }
-
-        if displayBuffer.count != windowLength {
-            displayBuffer = (0..<windowLength).map(sample)
+        if appended {
             needsDisplay = true
-            return
         }
-
-        // Asymmetric blend: snap toward a louder window (a beat), ease toward a quieter one. This stops
-        // the smoothing from averaging away a strong beat whose trigger locked to a different cycle.
-        var framePeak: Float = 0
-        var displayPeak: Float = 0
-        for i in 0..<windowLength {
-            framePeak = max(framePeak, abs(sample(i)))
-            displayPeak = max(displayPeak, abs(displayBuffer[i]))
-        }
-        let frameWeight = framePeak > displayPeak ? attackWeight : releaseWeight
-        let weight = 1 - pow(1 - frameWeight, Float(min(1, elapsed * Self.blendReferenceRate)))
-        for i in 0..<windowLength {
-            displayBuffer[i] += (sample(i) - displayBuffer[i]) * weight
-        }
-        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -191,7 +123,7 @@ class ScopeCanvasView: NSView {
         NSColor.black.setFill()
         bounds.fill()
 
-        guard displayBuffer.count > 1 else { return }
+        guard trace.points.count > 1 else { return }
 
         drawWaveform(in: context)
     }
@@ -217,10 +149,11 @@ class ScopeCanvasView: NSView {
         context.setLineJoin(.round)
         context.setLineCap(.round)
 
-        let n = displayBuffer.count
+        let points = trace.points
+        let n = points.count
         func point(_ i: Int) -> CGPoint {
             let x = width * CGFloat(i) / CGFloat(n - 1)
-            let clamped = max(-1.0, min(1.0, CGFloat(displayBuffer[i])))
+            let clamped = max(-1.0, min(1.0, CGFloat(points[i])))
             return CGPoint(x: x, y: centerY - clamped * (centerY - 4))
         }
 

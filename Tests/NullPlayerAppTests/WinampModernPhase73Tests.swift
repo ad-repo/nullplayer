@@ -236,6 +236,22 @@ final class WinampModernPhase73Tests: XCTestCase {
         XCTAssertEqual(shown, (10...17).map { UInt8($0) })
     }
 
+    /// The numbered read changes exactly when a new chunk becomes current: not on a repeat, not on
+    /// silence. The Audio Analyzer Scope takes each chunk once by it.
+    func testTheChunkNumberChangesOncePerChunk() {
+        let tap = WaveformPlayout()
+        for value in [10, 20] as [UInt8] {
+            tap.receive(left: chunk(value), right: chunk(value), sampleRate: 44_100, at: 100)
+        }
+        let step = 576.0 / 44_100
+        let first = tap.numberedSamples(at: 100)
+        XCTAssertEqual(tap.numberedSamples(at: 100 + step * 0.5).number, first.number, "the same chunk again")
+        XCTAssertEqual(tap.numberedSamples(at: 100 + step * 1.5).number, first.number + 1)
+        let quiet = tap.numberedSamples(at: 100 + WaveformPlayout.silenceTimeout + 1)
+        XCTAssertEqual(quiet.left, WaveformPlayout.silence)
+        XCTAssertEqual(quiet.number, first.number + 1, "silence keeps the number")
+    }
+
     /// The rate the chunks arrived at is what an analyzer maps its bins with: the `.wmz` effects
     /// surface assumed 44.1 kHz, which put every bar at the wrong frequency on a 48 kHz stream.
     func testThePlayoutReportsTheRateItsChunksArrivedAt() {

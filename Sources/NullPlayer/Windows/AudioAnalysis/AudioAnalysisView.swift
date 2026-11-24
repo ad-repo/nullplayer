@@ -152,18 +152,6 @@ final class AudioAnalysisView: NSView {
         needsDisplay = true
     }
 
-    func setRenderingPaused(_ paused: Bool) {
-        func update(in view: NSView) {
-            if let spectrogram = view as? SpectrogramMetalView {
-                spectrogram.setRenderingPaused(paused)
-            } else if let scope = view as? ScopeCanvasView {
-                scope.setRenderingPaused(paused)
-            }
-            view.subviews.forEach { update(in: $0) }
-        }
-        update(in: self)
-    }
-
     private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         var skinPoint = NSPoint(x: point.x, y: bounds.height - point.y)
         if WindowManager.shared.hideTitleBars {
@@ -322,11 +310,11 @@ extension AudioAnalysisView: WinampModernHostedSurface {
         needsDisplay = true
     }
     func resume() {
-        setRenderingPaused(false)
+        setAudioAnalysisRenderingPaused(false)
         hostedConsumerCoordinator?.setVisiblePane(selectedPane)
     }
     func suspend() {
-        setRenderingPaused(true)
+        setAudioAnalysisRenderingPaused(true)
         hostedConsumerCoordinator?.deregisterAll()
     }
     func unmountFromHolder() { removeFromSuperview() }
