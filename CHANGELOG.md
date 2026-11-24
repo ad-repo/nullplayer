@@ -44,6 +44,12 @@
 - **Oscilloscopes stay smooth after a pause** (#797): a Winamp Modern (`.wal`) skin's scope and the
   vis_classic visualizer dropped to about 10 updates a second after pausing and resuming, until the
   next track.
+- **Classic skins keep their own font for accented song titles** (#798): one `é`, `Ⅱ` or curly
+  apostrophe used to switch the whole main-window title to a small system font. Accents are now
+  dropped onto the skin's capitals (`Seán` → `SEAN`, `Ⅱ` → `II`), `Å Ö Ä` draw from the skin's own
+  letters, and Greek, Cyrillic and `♥` draw in a matching pixel font (Tiny5) in the skin's text
+  colour. Only Japanese, Chinese and Korean titles still use the system font. The bundled Silver
+  skin now has `Å Ö Ä` letters, and its `?` and `*` no longer draw blank.
 
 ## 0.35.2
 
