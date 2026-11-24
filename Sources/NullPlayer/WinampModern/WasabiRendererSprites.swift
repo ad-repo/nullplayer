@@ -216,53 +216,15 @@ extension WasabiSceneRenderer {
 
     private func animatedFrame(_ bitmap: WasabiBitmap, object: WasabiObject,
                                in frame: CGRect) -> (image: CGImage, rect: CGRect)? {
-        let grid = animationGrid(bitmap, object: object)
+        let grid = WasabiAnimationGrid(sheetWidth: bitmap.width, sheetHeight: bitmap.height, attributes: object.attributes)
         guard let image = animatedFrameImage(bitmap, object: object, grid: grid) else { return nil }
         return (image, grid.drawRect(in: frame))
-    }
-
-    /// How an animated layer's sheet is cut into frames: one frame's size, how many there are, and how
-    /// many sit side by side. Shared by the frame the layer draws and the region it can be clicked on.
-    struct AnimationGrid {
-        let width: Int
-        let height: Int
-        let count: Int
-        let columns: Int
-        /// The box is larger than the whole sheet, so the sheet is the one frame, shown at its own
-        /// size from the box's top left. ONYX V2's shade volume fill is an 89x12 image in an 89x24
-        /// box: cut at the box's height it ran off the bitmap and nothing drew, and stretched it would
-        /// spill out of its 13px track. Only this case: a sheet *larger* than its box (Lobe's 59x2006
-        /// strips in 110x113 boxes) is still cut by the box, and a frame smaller than its box by
-        /// `framewidth`/`frameheight` is still stretched (Nullsoft 2000 SP4 Lite's `frameheight="1"
-        /// h="5"`).
-        let isWholeSheet: Bool
-
-        /// Where the current frame is drawn, and where it is hit-tested, inside the layer's `frame`.
-        func drawRect(in frame: CGRect) -> CGRect {
-            guard isWholeSheet else { return frame }
-            return CGRect(x: frame.minX, y: frame.minY,
-                          width: min(frame.width, CGFloat(width)), height: min(frame.height, CGFloat(height)))
-        }
-    }
-
-    private func animationGrid(_ bitmap: WasabiBitmap, object: WasabiObject) -> AnimationGrid {
-        let boxWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
-        let boxHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
-        let isWholeSheet = bitmap.width <= boxWidth && bitmap.height <= boxHeight
-            && (bitmap.width < boxWidth || bitmap.height < boxHeight)
-        let frameWidth = isWholeSheet ? bitmap.width : boxWidth
-        let frameHeight = isWholeSheet ? bitmap.height : boxHeight
-        let columns = max(1, bitmap.width / frameWidth)
-        let rows = max(1, bitmap.height / frameHeight)
-        let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
-        return AnimationGrid(width: frameWidth, height: frameHeight, count: count, columns: columns,
-                             isWholeSheet: isWholeSheet)
     }
 
     /// The most opaque any frame is at `point` — the layer's region, see the call site in `object(at:)`.
     func animationUnionAlpha(_ bitmap: WasabiBitmap, object: WasabiObject,
                                      node: WasabiSceneNode, point: CGPoint) -> Int {
-        let grid = animationGrid(bitmap, object: object)
+        let grid = WasabiAnimationGrid(sheetWidth: bitmap.width, sheetHeight: bitmap.height, attributes: object.attributes)
         let drawn = grid.drawRect(in: node.frame)
         guard drawn.contains(point) else { return 0 }
         let x = (point.x - drawn.minX) / max(1, drawn.width) * CGFloat(grid.width)
@@ -331,7 +293,7 @@ extension WasabiSceneRenderer {
     }
 
     private func animatedFrameImage(_ bitmap: WasabiBitmap, object: WasabiObject,
-                                    grid: AnimationGrid) -> CGImage? {
+                                    grid: WasabiAnimationGrid) -> CGImage? {
         WasabiAnimation.stampFirstShow(object, clock: clock())
         let frameIndex = max(0, min(grid.count - 1, WasabiAnimation.state(of: object, frameCount: grid.count,
                                                                           clock: clock()).frame))

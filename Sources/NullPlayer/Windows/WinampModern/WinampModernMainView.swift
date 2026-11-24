@@ -3013,7 +3013,9 @@ final class WinampModernMainView: NSView {
                                   arguments: [.integer(position)])
     }
 
-    private enum ActivationFlip { case none, toggled, radio, config }
+    /// `targetMoved`: the release handlers already opened or closed the window the button's `TOGGLE`
+    /// names, so the action must not toggle it back (B477, GonchiSkin).
+    private enum ActivationFlip { case none, toggled, radio, config, targetMoved }
 
     /// A `<Wasabi:CheckBox radioid="…">` is a radio, not a toggle: the clicked member goes on and its
     /// set goes off, and clicking the one already on changes nothing — so it is tried before the
@@ -3031,11 +3033,21 @@ final class WinampModernMainView: NSView {
     /// NEO's `shuf_rep` reads the new value back from `onLeftClick` to name the button's tooltip, and
     /// flipped after the release it named the state the click had just left (B279).
     private func flipActivation(of object: WasabiObject, around release: () -> Void) -> ActivationFlip {
+        // GonchiSkin's `boton.gonchi.esp` is `TOGGLE especial` and its script shows or hides that same
+        // container from `onLeftButtonUp`; the action then ran second and closed the window the script
+        // had just opened, so the button never appeared to do anything. Read before the flip: a
+        // togglebutton's `onToggle` runs inside it and can move the window too.
+        let command = object.attributes["action"].map {
+            WasabiClickAction.split(action: $0, parameter: object.attributes["param"])
+        }
+        let target = command?.action.uppercased() == "TOGGLE" ? command?.parameter : nil
+        let before = toggleTargetIsVisible(parameter: target)
         let flip: ActivationFlip = scripts.selectRadioMember(object) ? .radio
             : scripts.toggleActivation(of: object) ? .toggled
             : object.attributes["action"] == nil && scripts.toggleConfigAttribute(of: object) ? .config
             : .none
         release()
+        if flip != .radio, let before, toggleTargetIsVisible(parameter: target) != before { return .targetMoved }
         return flip
     }
 
@@ -3050,7 +3062,7 @@ final class WinampModernMainView: NSView {
         // The flip runs alongside whatever `action=` the button also carries, as it does in Wasabi;
         // a radio carries none.
         if flip != .none { needsDisplay = true }
-        if flip == .radio { return }
+        if flip == .radio || flip == .targetMoved { return }
         if cycleVisualizationMode(of: object) { return }
         let action = object.attributes["action"]
         let parameter = object.attributes["param"]

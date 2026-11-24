@@ -192,6 +192,7 @@ struct WinampModernSurfaceInventory {
             var found: Set<WinampModernComponentKind> = []
             var equalizerControls = false
             var showsVideo = false
+            var holdsBrowser = false
 
             func visit(_ node: WalXMLNode, depth: Int, enclosingOrder: Int? = nil) {
                 guard visitedBudget > 0, depth <= limits.maximumGroupDepth else {
@@ -217,6 +218,7 @@ struct WinampModernSurfaceInventory {
                     }
                 }
                 if isEqualizerControl(node) { equalizerControls = true }
+                if WasabiTag(node.name).isBrowser { holdsBrowser = true }
 
                 for identifier in referencedGroupIdentifiers(of: node, xuiTags: groupdefsByXUITag) {
                     visitGroup(identifier, at: nodeOrder, depth: depth + 1)
@@ -256,7 +258,11 @@ struct WinampModernSurfaceInventory {
                 }
             }
 
-            let declaredKind = containerKind(of: container)
+            // A web page where the component should be is a browser window that kept a copied
+            // `component=`: Red_Pearl's `browser.main` says `guid:pl` and holds only a `<browser>` to
+            // the author's site (nine other skins share the template). Taken at its word, the
+            // Playlist button opened that page and the skin had no playlist at all.
+            let declaredKind = holdsBrowser && found.isEmpty ? nil : containerKind(of: container)
             containers.append(Container(
                 id: id,
                 kind: declaredKind,

@@ -172,7 +172,7 @@ extension WasabiSceneRenderer {
     /// apart, and a *current* row over that same bar is orange on orange at 1.00:1.
     ///
     /// Unselected rows are returned untouched: they land on the content background, which is a
-    /// separate pairing and a separate measurement.
+    /// separate pairing and a separate measurement (the Playlist's is `playlistRowText`).
     func legibleRowColor(_ preferred: NSColor, selected: Bool) -> NSColor {
         guard selected else { return preferred }
         let palette = rowPalette
@@ -185,6 +185,22 @@ extension WasabiSceneRenderer {
                          palette.contentBackground],
             on: rowSelectionBackground)
     }
+
+    /// An unselected Playlist row's text, rescued only when it is all but invisible on the plate
+    /// (B476): Manutd's white list text on its white list plate drew the Playlist blank, and
+    /// Gintama's navy on blue sat at 1.5:1. The 2:1 bar leaves an author's dim-but-readable rows,
+    /// and every other list this renderer draws, as the skin made them.
+    var playlistRowText: NSColor {
+        let palette = rowPalette
+        guard !palette.isUserChosen(palette.listText) else { return palette.listText }
+        return WinampModernSurfaceStyle.legible(
+            preferring: [palette.listText, palette.currentText, palette.selectionText],
+            on: palette.contentBackground, threshold: Self.playlistRowRescueContrast)
+    }
+
+    /// Below this an unselected Playlist row is all but invisible; above it, dim-but-readable is the
+    /// author's choice (Gintama's navy on blue measured 1.5:1).
+    static let playlistRowRescueContrast: CGFloat = 2
 
     /// The bar a selected row is actually **filled** with, which is not always the one the skin
     /// named (B122).

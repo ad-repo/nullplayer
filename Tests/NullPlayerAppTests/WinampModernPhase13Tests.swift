@@ -271,6 +271,55 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue }, [.library])
     }
 
+    /// Red_Pearl: a window that says `component="guid:pl"` and holds only a `<browser>` is a web page,
+    /// not the playlist, so the playlist is synthesized in the skin's frame instead.
+    func testABrowserOnlyWindowDoesNotClaimThePlaylist() throws {
+        let inventory = try makeInventory(xml: """
+        <container id="main" default_visible="1"><layout id="normal" w="100" h="50"/></container>
+        <container id="browser.main" component="guid:pl" default_visible="1">
+          <layout id="normal" w="400" h="300"><browser id="browser" x="0" y="0" w="400" h="300"/></layout>
+        </container>
+        """)
+        XCTAssertNil(inventory.declaredContainers[.playlist])
+        XCTAssertTrue(inventory.synthesizableKinds.contains(.playlist))
+    }
+
+    /// ClassicPro spells the browser `<Winamp:Browser>`; it is the same web page.
+    func testAWinampBrowserOnlyWindowDoesNotClaimThePlaylist() throws {
+        let inventory = try makeInventory(xml: """
+        <container id="main" default_visible="1"><layout id="normal" w="100" h="50"/></container>
+        <container id="browser.main" component="guid:pl" default_visible="1">
+          <layout id="normal" w="400" h="300"><Winamp:Browser id="browser" x="0" y="0" w="400" h="300"/></layout>
+        </container>
+        """)
+        XCTAssertNil(inventory.declaredContainers[.playlist])
+    }
+
+    /// The browser only overrules a claim nothing backs: a window that also holds the playlist keeps it.
+    func testAWindowWithABrowserAndAPlaylistHolderKeepsThePlaylist() throws {
+        let inventory = try makeInventory(xml: """
+        <container id="main" default_visible="1"><layout id="normal" w="100" h="50"/></container>
+        <container id="pl" component="guid:pl" default_visible="1">
+          <layout id="normal" w="400" h="300">
+            <browser id="browser" x="0" y="0" w="400" h="100"/>
+            <windowholder id="holder" hold="guid:pl" x="0" y="100" w="400" h="200"/>
+          </layout>
+        </container>
+        """)
+        XCTAssertEqual(inventory.declaredContainers[.playlist], "pl")
+    }
+
+    /// SUPER_BLACK: a 43x450 strip in an 86-wide box with `frameheight="45"` is ten frames one strip
+    /// wide, the same cut for the renderer and for `getLength()`.
+    func testAnAnimationBoxWiderThanItsStripCutsTheStripWidth() {
+        let grid = WasabiAnimationGrid(sheetWidth: 43, sheetHeight: 450,
+                                                     attributes: ["w": "86", "frameheight": "45"])
+        XCTAssertEqual(grid.width, 43)
+        XCTAssertEqual(grid.height, 45)
+        XCTAssertEqual(grid.count, 10)
+        XCTAssertFalse(grid.isWholeSheet)
+    }
+
     /// B442: a skin that embeds its playlist in the player and reaches no library is still given a
     /// library window in the skin's frame, and nothing else is synthesized into it.
     func testSingleWindowSkinWithoutLibraryIsSynthesizedALibraryOnly() throws {
