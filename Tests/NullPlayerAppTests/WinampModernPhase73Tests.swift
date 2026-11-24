@@ -236,20 +236,46 @@ final class WinampModernPhase73Tests: XCTestCase {
         XCTAssertEqual(shown, (10...17).map { UInt8($0) })
     }
 
-    /// The numbered read changes exactly when a new chunk becomes current: not on a repeat, not on
-    /// silence. The Audio Analyzer Scope takes each chunk once by it.
-    func testTheChunkNumberChangesOncePerChunk() {
+    /// `chunksPlayed(after:at:)` returns each chunk once, numbered, and nothing once the audio stops.
+    func testChunksPlayedReturnsEachChunkOnce() {
         let tap = WaveformPlayout()
         for value in [10, 20] as [UInt8] {
             tap.receive(left: chunk(value), right: chunk(value), sampleRate: 44_100, at: 100)
         }
         let step = 576.0 / 44_100
-        let first = tap.numberedSamples(at: 100)
-        XCTAssertEqual(tap.numberedSamples(at: 100 + step * 0.5).number, first.number, "the same chunk again")
-        XCTAssertEqual(tap.numberedSamples(at: 100 + step * 1.5).number, first.number + 1)
-        let quiet = tap.numberedSamples(at: 100 + WaveformPlayout.silenceTimeout + 1)
-        XCTAssertEqual(quiet.left, WaveformPlayout.silence)
-        XCTAssertEqual(quiet.number, first.number + 1, "silence keeps the number")
+        let first = tap.chunksPlayed(after: nil, at: 100)
+        XCTAssertEqual(first.map { $0.left[0] }, [10])
+        XCTAssertTrue(tap.chunksPlayed(after: first.last?.number, at: 100 + step * 0.5).isEmpty, "not again")
+        let second = tap.chunksPlayed(after: first.last?.number, at: 100 + step * 1.5)
+        XCTAssertEqual(second.map { $0.left[0] }, [20])
+        XCTAssertTrue(tap.chunksPlayed(after: nil, at: 100 + WaveformPlayout.silenceTimeout + 1).isEmpty)
+    }
+
+    /// CodeRabbit's interleaving on PR #808: a burst arriving between two reads must not cost a
+    /// reader that takes every chunk (the Audio Analyzer Scope) a chunk. At 48 kHz nine chunks queue at
+    /// 100; a read at 100.0835 consumes through the 7th; the next burst arrives at 100.1, and the next
+    /// read must still be able to get the 8th as well as the 9th.
+    func testABurstBetweenTwoReadsDoesNotLoseAChunk() {
+        let tap = WaveformPlayout()
+        let rate = 48_000.0
+        for value in 1...9 {
+            tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)), sampleRate: rate, at: 100)
+        }
+        var taken: [UInt8] = []
+        var last: Int?
+        func take(at time: TimeInterval) {
+            let played = tap.chunksPlayed(after: last, at: time)
+            taken += played.map { $0.left[0] }
+            last = played.last?.number ?? last
+        }
+        let step = 576.0 / rate
+        var time = 100.0
+        while time <= 100.0835 { take(at: time); time += step }
+        for value in 10...18 {
+            tap.receive(left: chunk(UInt8(value)), right: chunk(UInt8(value)), sampleRate: rate, at: 100.1)
+        }
+        while time <= 100.2 { take(at: time); time += step }
+        XCTAssertEqual(Array(taken.prefix(10)), (1...10).map { UInt8($0) })
     }
 
     /// The rate the chunks arrived at is what an analyzer maps its bins with: the `.wmz` effects

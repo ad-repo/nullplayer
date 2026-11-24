@@ -69,7 +69,7 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
   quadratic curve. On silence (paused, or a silent passage) it eases to a flat line and stops redrawing.
   **Frame rate:** chunks arrive several at a time per tap buffer (~10/s), so a per-view
   `WaveformPlayout` plays them out at the audio's own rate and each `NSView.displayLink` tick steps its
-  clock one chunk at a time up to now, taking each chunk once by `numberedSamples(at:)`'s chunk number —
+  clock one chunk at a time up to now, taking every chunk played since the last one it took, in order, from `chunksPlayed(after:at:)` (a burst arriving between two refreshes can play out more than one) —
   every chunk lands in order, one redraw per new chunk (~77/s at 44.1 kHz). History, trigger, blend and
   flatness live in the pure `ScopeTrace` (`ScopeTrace.swift`, tested in `ScopeTraceTests`); the blend is
   weighted by the time since the last render, scaled to the old ~20 updates/s. The display link retains

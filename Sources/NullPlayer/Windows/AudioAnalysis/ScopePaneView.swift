@@ -21,7 +21,7 @@ struct ScopePaneView: NSViewRepresentable {
 class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
     private let playout = WaveformPlayout()
     private var trace = ScopeTrace()
-    /// The playout's number for the last chunk taken, so each chunk is taken once.
+    /// The playout's number for the last chunk taken, so each chunk is taken once and none is missed.
     private var lastChunkNumber: Int?
     /// Playout time already stepped through.
     private var readTime: TimeInterval?
@@ -98,12 +98,17 @@ class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
         var time = max(readTime ?? now, now - chunkDuration * Double(ScopeTrace.historyChunks))
         var appended = false
         while time <= now {
-            let read = playout.numberedSamples(at: time)
-            // Each new chunk once; silence (paused, the playout timed out) repeats until the trace is flat.
-            let isNew = read.number != lastChunkNumber
-            if isNew || (read.left == WaveformPlayout.silence && !trace.isFlat) {
-                lastChunkNumber = read.number
-                trace.append(left: read.left, right: read.right)
+            // Every chunk played since the last one taken, in order; once the audio has stopped,
+            // silence repeats until the trace is flat.
+            let played = playout.chunksPlayed(after: lastChunkNumber, at: time)
+            for chunk in played {
+                trace.append(left: chunk.left, right: chunk.right)
+            }
+            if let newest = played.last {
+                lastChunkNumber = newest.number
+                appended = true
+            } else if !trace.isFlat, playout.samples(at: time).left == WaveformPlayout.silence {
+                trace.append(left: WaveformPlayout.silence, right: WaveformPlayout.silence)
                 appended = true
             }
             time += chunkDuration
