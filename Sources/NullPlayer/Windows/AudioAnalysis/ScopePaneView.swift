@@ -110,6 +110,7 @@ class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
         }
         readTime = time
         if appended {
+            trace.render(at: now)
             needsDisplay = true
         }
     }
