@@ -271,6 +271,19 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertEqual(inventory.synthesizableKinds.sorted { $0.rawValue < $1.rawValue }, [.library])
     }
 
+    /// Red_Pearl: a window that says `component="guid:pl"` and holds only a `<browser>` is a web page,
+    /// not the playlist, so the playlist is synthesized in the skin's frame instead.
+    func testABrowserOnlyWindowDoesNotClaimThePlaylist() throws {
+        let inventory = try makeInventory(xml: """
+        <container id="main" default_visible="1"><layout id="normal" w="100" h="50"/></container>
+        <container id="browser.main" component="guid:pl" default_visible="1">
+          <layout id="normal" w="400" h="300"><browser id="browser" x="0" y="0" w="400" h="300"/></layout>
+        </container>
+        """)
+        XCTAssertNil(inventory.declaredContainers[.playlist])
+        XCTAssertTrue(inventory.synthesizableKinds.contains(.playlist))
+    }
+
     /// B442: a skin that embeds its playlist in the player and reaches no library is still given a
     /// library window in the skin's frame, and nothing else is synthesized into it.
     func testSingleWindowSkinWithoutLibraryIsSynthesizedALibraryOnly() throws {

@@ -33,6 +33,9 @@
 - **Winamp Modern (`.wal`) fixes from corpus intake 15**: Playlist rows are readable when a skin's
   list text matches its list background (Manutd, Gintama Gintoki & Katsura); GonchiSkin's Images
   button opens its window.
+- **Winamp Modern (`.wal`)**: a skin whose Playlist window is really a web page to the author's site
+  (Red_Pearl, Laboratory Clinical Art and eight others built from the same template) now opens a
+  real playlist in the skin's frame.
 
 ## 0.35.2
 
