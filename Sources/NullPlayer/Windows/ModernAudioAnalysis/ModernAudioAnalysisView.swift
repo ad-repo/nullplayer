@@ -350,6 +350,8 @@ class ModernAudioAnalysisView: NSView {
         func update(in view: NSView) {
             if let spectrogram = view as? SpectrogramMetalView {
                 spectrogram.setRenderingPaused(paused)
+            } else if let scope = view as? ScopeCanvasView {
+                scope.setRenderingPaused(paused)
             }
             for subview in view.subviews {
                 update(in: subview)

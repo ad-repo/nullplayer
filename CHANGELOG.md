@@ -39,7 +39,8 @@
 - **Winamp Modern (`.wal`)**: an animated layer wider or taller than its artwork strip draws its frames
   instead of nothing: SUPER_BLACK's beat-meter styles other than VU Meter now animate, and Live Times
   Square's volume bar, YoYoBoy's seek arc, Lobe's face and Kyoko Fukada's visor text now show.
-- **The Audio Analyzer's Scope runs at the display's refresh rate** (#797) instead of about 20 FPS.
+- **The Audio Analyzer's Scope is smooth** (#797): it redraws for every slice of audio, about 75 times a
+  second, instead of about 20, and goes flat when playback is paused.
 
 ## 0.35.2
 

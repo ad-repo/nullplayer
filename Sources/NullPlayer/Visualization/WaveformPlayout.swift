@@ -12,7 +12,8 @@ import Foundation
 /// Thread rules: `receive` runs on the **posting thread** — the real-time audio tap — so it is a
 /// lock, a few stores and an append; reads take the same lock and never wait on the audio thread.
 /// Owned by `WinampModernWaveformTap` (the `.wal` scope and `.wmz` effects) and by
-/// `SpectrumAnalyzerView` (vis_classic), each of which observes the notification itself.
+/// `SpectrumAnalyzerView` (vis_classic) and by the Audio Analyzer's `ScopeCanvasView`, each of which
+/// observes the notification itself.
 final class WaveformPlayout {
     /// Winamp's vis block: 576 samples, 0…255, silence at 128.
     static let sampleCount = 576

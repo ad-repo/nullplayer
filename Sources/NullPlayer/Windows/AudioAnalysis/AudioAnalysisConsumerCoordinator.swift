@@ -17,12 +17,12 @@ final class AudioAnalysisConsumerCoordinator {
     func setVisiblePane(_ index: Int) {
         let engine = WindowManager.shared.audioEngine
 
-        // Pane 0: Scope — spectrum consumer
+        // Pane 0: Scope — waveform consumer (every sample, played out by `WaveformPlayout`)
         updateConsumer(
             scopeConsumerId,
             needed: index == 0,
-            add: engine.addSpectrumConsumer,
-            remove: engine.removeSpectrumConsumer
+            add: engine.addWaveformConsumer,
+            remove: engine.removeWaveformConsumer
         )
 
         // Pane 1: Levels — stereo consumer
