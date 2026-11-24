@@ -18,6 +18,31 @@
   its tags in a window that saves them into the file, and to add it to the local library — split
   into tracks first when the video has chapters.
 
+### Winamp Modern (`.wal`) skins
+
+- **129 more skins checked** (corpus intake fifteen): 1933 Philco Cathedral, 1936 Zenith
+  Stratosphere, _SD777_, ABPlayer, Airtel, Allsurf.fr, Almin Agic Skin, Amber, analogaudio, Ancient
+  Powers, AntiqueRadio, AS Fx21 EVO, Azenis_mimi, Barracuda, Batman, Batman_Arkham_Inspiration, Beer
+  Fest, BIG PROOF skin, BlockedWIRE 1.0, BumbleBee, capsule, CCPC, CELL, Charmed, Chevy - Red, CindY
+  v 1.0, Classic_Grafiti, Classic_Sara_Aspen, Classix 10k, CLIENT V3 Winamp5 audio player skin.,
+  CLIENT Winamp5 audio player skin., Coca Cola, Coldplay - A Rush of Blood to the Head, cPro -
+  Anunaki, cPro - Erbium, cPro - FR-19, cPro - MPxi remix, cPro - Steam, cPro - Super Black, cPro -
+  Venus Port v1.3, cPro - Winamp Classic, cPro Zen, cPro_Cyanian2010, cPro_Fluke, cPro_GUNS N'
+  ROSES, cPro_Munchen, cPro_smpldrk, cPro_ZunAmp, Cruz Azul, CTI 2, Customize.RU AMP, dark peace
+  skin, DewyTears V4, Dragon Skin v2.0, Electric Guitar Skin, Eve, FIFA World Cup Germany 2006,
+  Final-Fantasy X-2 (two versions), Flo, Funktion, Ghost Slate, Gintama__Gintoki_&_Katsura, Gonchi
+  Skin, Grafika, Grind, Hardware, Harmoniagh, Harmonized Water, HP, Ichigo And Rukia Modern 1.0,
+  Intensity 3, iTunes Mini LabelOS, Jeep, Jelly Fingers (two versions), KMS, Laboratory Clinical
+  Art, Ludwig_Bemelmans_Madeline, Manutd, Massive Attack, Matrix Online Winamp5 Skin, Megan_Fox,
+  Miley_Cyrus_Gray_line_1, Mortal Kombat Deadly Alliance Amp, Musica, Musique Macabre, My Skin Name,
+  Neon, NIKE TOTAL 90 AEROW, Noir's Kirika, Nokia, Nokia X6 Winamp Skin, ocrana skin, PDU Fridge,
+  PlastAmp, Qwest, reflexion.mini, Reliance, REVIVAL, S, Samurai Champloo Modern, sh\*t the fuu,
+  Shara Aryo, Six Feet Under (two versions), Six Flags, Smallville, Sony S2 Sports Audio MZ-S2,
+  SpecialClock, Sreet Fighter v2, Te iubesc (two versions), Technicalium, Troy, Tutorial Simple
+  Skin, Urban Terror 2.6, VANDREAD WINAMP5 SKIN, Vision, Vista_Player, Vocaloid Miku Hatsune 2.0
+  Append, White Noise, Winamp3 Base Skin, WMP_Aero, World Cup 2010, X-Slant, Xploit, YANNI, English
+  Ver. by ramin mousavi (raminmousavi.com), Zelda.
+
 ### Fixes
 
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
