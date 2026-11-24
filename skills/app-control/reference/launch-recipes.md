@@ -32,12 +32,11 @@ skills/app-control/scripts/launch.sh corona                 # Windows Media Play
 |  | **Local** | **Streaming** |
 |---|---|---|
 | **Audio** | `NULLPLAYER_PLAY` (GUI) or `"$BIN" --cli --file` | `"$BIN" --cli --source plex\|subsonic\|jellyfin\|emby …`, or `--source radio --station` |
-| **Video** | library scan → browser **MOVIES** tab → double-click | Plex browser **MOVIES** tab → double-click (GUI); `--movie … --cast` (CLI only) |
+| **Video** | `NULLPLAYER_PLAY=<file.mp4>` (GUI), or library scan → browser **MOVIES** tab → double-click | Plex browser **MOVIES** tab → double-click (GUI); `--movie … --cast` (CLI only) |
 
-**Video never goes through `NULLPLAYER_PLAY`** — `application(_:openFiles:)` takes audio and
-`.cue` only, and Windows → Video Player stays inert until a video has been opened
-(`video-playback` § *Routing rules*). Start one from a browser, as below; a drag onto the playlist
-also works but needs a drag tool.
+**A video in `NULLPLAYER_PLAY` opens the video window**: it goes through `application(_:openFiles:)`,
+as a Finder double-click does. Windows → Video Player stays inert until a video has been opened
+(`video-playback` § *Routing rules*). The browser route below is the one for a library film.
 
 ### Local audio
 

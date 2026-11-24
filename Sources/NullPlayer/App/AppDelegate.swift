@@ -11,7 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isUITesting = false
     
     /// Tracks to open after app finishes launching (when opened via double-click before app is ready)
-    private var pendingFilesToOpen: [Track] = []
+    private(set) var pendingFilesToOpen: [Track] = []
     
     /// Whether the app has finished launching and is ready to handle file opens
     private var isAppReady = false
@@ -354,40 +354,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     // MARK: - File Open Handling
     
+    /// A Finder open: double-click, Open With, or a drop on the Dock icon. Every type it accepts is
+    /// declared in Info.plist's `CFBundleDocumentTypes` (`FinderOpenRoutingTests` holds the two together).
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
-        let urls = filenames.map { URL(fileURLWithPath: $0) }
-
-        // Process each URL: expand cues or accept as audio files
-        var tracksToLoad: [Track] = []
-        // Dedupe by cue source so opening both a .cue and its backing audio (which resolve
-        // to the same cueSourceURL) doesn't enqueue the album's tracks twice.
-        var seenCueSources = Set<String>()
-        for url in urls {
-            let ext = url.pathExtension.lowercased()
-
-            // Try to expand .cue files or sibling cues first
-            if ext == "cue" || AudioFileValidator.supportedExtensions.contains(ext) {
-                if let cueExpanded = AudioEngine.tracksForCueOrSibling(url: url) {
-                    if !cueExpanded.isEmpty {
-                        if let src = cueExpanded.first?.cueSourceURL?.standardizedFileURL.path,
-                           !seenCueSources.insert(src).inserted {
-                            continue  // album already enqueued from its .cue or sibling audio
-                        }
-                        tracksToLoad.append(contentsOf: cueExpanded)
-                        continue
-                    } else {
-                        // Empty cue — log and skip
-                        NSLog("AppDelegate: Cue sheet has no tracks, skipping: %@", url.lastPathComponent)
-                        continue
-                    }
-                }
-            }
-
-            // Fall back to normal audio file loading
-            if AudioFileValidator.supportedExtensions.contains(ext) {
-                tracksToLoad.append(Track(url: url))
-            }
-        }
+        let tracksToLoad = PlaylistDrop.openedTracks(filenames.map { URL(fileURLWithPath: $0) })
 
         guard !tracksToLoad.isEmpty else {
             NSApp.reply(toOpenOrPrint: .failure)
@@ -405,6 +375,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Load files into the audio engine
         windowManager.audioEngine.loadTracks(tracksToLoad)
         windowManager.audioEngine.play()
+        // macOS brings the app forward for an open, not its windows: a player the user had closed
+        // stayed hidden while the file played. Show it as a Dock click does.
+        windowManager.handleAppReopen()
 
         NSApp.reply(toOpenOrPrint: .success)
     }

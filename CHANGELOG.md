@@ -80,6 +80,11 @@
   Before, it always appeared in the lower right with no animation. CNYforWinamp, WTM, YST and
   Symplicipod, whose notifiers come from the same author's scripts, behave the same way. Rectangular
   no longer pops its Notifier Preferences window up in the corner on every song change.
+- **Videos and playlists open from Finder** (#812). Double-clicking or choosing Open With on a video
+  (mp4, mov, mkv…) plays it in the video window, and an `.m3u`, `.m3u8` or `.pls` queues its tracks.
+  Both used to be refused, and a video opened together with music files was dropped. NullPlayer can
+  now also be made the default app for `.cue` and `.alac` files. Opening a file while the player
+  window is closed brings the player back, as clicking the Dock icon does.
 
 ## 0.35.2
 

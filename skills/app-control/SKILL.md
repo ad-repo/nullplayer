@@ -151,10 +151,11 @@ launches that way. Reproduce it by killing the app and relaunching the debug bin
 **The mode names do not match the menu.** `-uiMode modern` is the **Original** submenu;
 `-uiMode winampModern` is the **Modern** submenu (`App/PlayerUIMode.swift:33-39`).
 
-**`NULLPLAYER_PLAY` takes audio and `.cue` only** — `mp3 m4a aac wav aiff aif flac ogg alac`
-(`App/AppDelegate.swift:340,357`). An `.m3u` or `.mp4` there is dropped with no log line and reads
-exactly like a playback bug. **Video never goes through it**, and Windows → Video Player stays
-inert until a video has been opened (`video-playback` § *Routing rules*). Media
+**`NULLPLAYER_PLAY` takes whatever a Finder open takes**, because it is the same call
+(`application(_:openFiles:)` → `PlaylistDrop.openedTracks`): audio, `.cue`, video, and `.m3u`/`.m3u8`/`.pls`
+(their entries). A folder or any other file is dropped with no log line and reads exactly like a
+playback bug. A video there opens the video window, as a double-clicked one does; Windows → Video
+Player stays inert until a video has been opened (`video-playback` § *Routing rules*). Media
 recipes (audio/video × local/streaming) are in `reference/launch-recipes.md`.
 
 Launch rules that still apply to anything `launch.sh` does not cover:
@@ -455,6 +456,63 @@ real menus: a skin picked in every family from every other family, every "Switch
 cells, about three minutes, ending `SKIN-PICK MATRIX PASS|FAIL`. It saves and restores the debug
 defaults domain and deletes the `Matrix*` skins it imports. The load pass types into the open panel,
 so keep the keyboard free. Run it after any change to a Skins-menu action or to `reloadUI`.
+
+### Finder open matrix
+
+What a Finder open (double-click, Open With, or a drop on the Dock icon) does in each skin family. Run
+it after any change to `application(_:openFiles:)`, the launch order in `applicationDidFinishLaunching`,
+`CFBundleDocumentTypes`, or how the app activates:
+
+```bash
+skills/app-control/scripts/finder-open-matrix.sh                        # every family, ~17 min (Classic ~3)
+skills/app-control/scripts/finder-open-matrix.sh --family wal --scenario 3
+```
+
+It is the one recipe that runs the debug build **as an app bundle**, because only a bundle receives
+the `odoc` Apple Event Finder sends. `NULLPLAYER_PLAY` and `launch.sh` call `openFiles` directly and
+skip the event. The script builds, assembles `<out>/NullPlayer.app` with `scripts/lib/assemble_app.sh`,
+signs it ad hoc and registers it with LaunchServices. Then each row sends `open -a <bundle> <files>`.
+The trap unregisters and deletes the bundle.
+
+- **Rule zero still holds.** The bundle's `CFBundleIdentifier` is rewritten to `NullPlayer`, so it reads
+  and writes the debug domain and never `com.nullplayer.app`. A DEBUG build keeps credentials in
+  that domain rather than the Keychain (`KeychainHelper.useKeychain`). Without that, the fresh ad-hoc
+  signature blocks launch on a Keychain prompt for the release app's items. The domain is saved
+  first, then put back before every cold launch and on exit.
+- **Flags:** `--family classic,modern,metal,wal,wmz,audion,sonique` (default: all);
+  `--scenario 0..7`. The default is 0–7 for Classic, 1 3 6 7 for Original/Metal and 1 3 6 for the
+  rest; an explicit list applies to every family. Also `--out <dir>` (default
+  `/tmp/np-finder-open/<timestamp>`), `--no-build`, and `--keep`, which leaves the bundle on disk,
+  unregistered.
+- **Scenarios:**
+  - 0: which registered `com.nullplayer.app` copy LaunchServices would launch. It is read through
+    NSWorkspace; nothing is launched.
+  - 1: cold open with Remember State on and a different session saved. The seed is a real AppleScript
+    quit.
+  - 2: cold open with Remember State off.
+  - 3: warm open while playing. In 3a another app is frontmost; in 3b the main window is closed through
+    Windows > Main Window.
+  - 4: warm open of mp3 + flac + m4a.
+  - 5: m4a, flac, ogg, opus, wav, cue, m3u and pls, one at a time.
+  - 6: mp4, mov and mkv, cold and warm, then mp3 + mp4 together.
+  - 7: cold into Compact Mode, then a warm open there, then cold into Compact Window.
+- **A PASS is what a Mac user expects of a default app.** That means the file plays (from the snapshot's
+  title and queue size), NullPlayer is frontmost (`lsappinfo`), a window is on screen (`winhelper`), and
+  the type is declared in the bundle's own `CFBundleDocumentTypes`. Compact Mode is menu-bar only by
+  design, so there the file plays and no window may open. Row 1 also needs the saved settings to
+  have been restored. An unknown `--scenario` number exits 2. All 72 family rows passed on
+  2026-11-24, so a FAIL is a regression.
+- **What it reads, and why:**
+  - Each cold launch's NSLog goes to `<out>/logs/` through `open --stderr`. The unified log shows a
+    bundled build's NSLog as `<private>`.
+  - Frontmost is read with `lsappinfo`. System Events' `first process whose frontmost is true` errors
+    on macOS 27.
+  - "Declared" is computed from the Info.plist. LaunchServices' Open With list leaves out a bundle in
+    a temp directory.
+  - Test media is cut from a 3-minute track and titled after its file name. A short clip ended during a
+    later row once and read as that row stopping playback.
+- `<out>/rows.tsv` has columns `result family row evidence`. `<out>/shots/` holds window captures.
+  `swift test --filter FinderOpenRoutingTests` is the unit-level counterpart.
 
 ### Window open / stretch / close matrix
 
