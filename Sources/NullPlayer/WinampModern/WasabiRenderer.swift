@@ -3973,6 +3973,10 @@ final class WasabiSceneRenderer {
         if let scrollbar { drawPlaylistScrollbar(scrollbar, context: context) }
         let rowWidth = frame.width - (scrollbar?.track.width ?? 0)
         let fields = PlaylistRowFields.current
+        // Row-invariant: each is a palette read plus contrast checks.
+        let bar = rowSelectionBackground
+        let selectedText = legibleRowColor(palette.selectionText, selected: true)
+        let plainText = playlistRowText
         for slot in 0..<visible {
             let index = offset + slot
             guard index < snapshot.rows.count else { break }
@@ -3980,7 +3984,6 @@ final class WasabiSceneRenderer {
             let rowRect = CGRect(x: frame.minX, y: frame.minY + CGFloat(slot) * rowHeight,
                                  width: rowWidth, height: rowHeight)
             let selected = snapshot.isSelected(index)
-            let bar = rowSelectionBackground
             if selected {
                 context.setFillColor(bar.cgColor)
                 context.fill(rowRect)
@@ -3989,8 +3992,7 @@ final class WasabiSceneRenderer {
             // but only when the skin actually named one. `currentText` falls back to `listText`, and
             // list text over the selection background is what `selectionText` exists to avoid.
             let hasCurrentColor = palette.currentText != palette.listText
-            let plain = selected ? legibleRowColor(palette.selectionText, selected: true)
-                                 : playlistRowText
+            let plain = selected ? selectedText : plainText
             // The guard runs against the bar this row actually filled, never the one the skin named
             // (B113's rule), and the playing row is additionally kept apart from `plain` (B122).
             let color = row.isCurrent && hasCurrentColor

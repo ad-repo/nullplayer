@@ -40,13 +40,8 @@ extension WinampModernScriptRuntime {
             return host.trackFolderCover(forImage: imageID) == nil ? 0 : 1
         }
         guard let imageID = object.attributes["image"], let sheet = bitmapSize(identifier: imageID) else { return 1 }
-        let frameWidth = Int(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Int(sheet.width)
-        let frameHeight = Int(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Int(sheet.height)
-        guard frameWidth > 0, frameHeight > 0 else { return 1 }
-        // At least one frame per axis, as the renderer cuts the sheet (`animationGrid`): SUPER_BLACK's
-        // ClassicPro engine sizes its beat layer to the 86 px VU art, and the 43 px wide strips of the
-        // other five styles counted 0 columns, so `getLength()` said 1 and they sat on blank frame 0.
-        return max(1, Int(sheet.width) / frameWidth) * max(1, Int(sheet.height) / frameHeight)
+        return WasabiSceneRenderer.AnimationGrid(sheetWidth: Int(sheet.width), sheetHeight: Int(sheet.height),
+                                                 attributes: object.attributes).count
     }
 
     func animationFrame(of object: WasabiObject) -> Int {

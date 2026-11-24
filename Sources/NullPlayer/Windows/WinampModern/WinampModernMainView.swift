@@ -3040,12 +3040,11 @@ final class WinampModernMainView: NSView {
         // GonchiSkin's `boton.gonchi.esp` is `TOGGLE especial` and its script shows or hides that same
         // container from `onLeftButtonUp`; the action then ran second and closed the window the script
         // had just opened, so the button never appeared to do anything.
-        let target = object.attributes["action"]?.uppercased() == "TOGGLE"
-            ? toggleTargetIsVisible(parameter: object.attributes["param"]) : nil
+        let toggled = flip != .radio && object.attributes["action"]?.uppercased() == "TOGGLE"
+            ? object.attributes["param"] : nil
+        let before = toggled.flatMap { toggleTargetIsVisible(parameter: $0) }
         release()
-        if let target, flip != .radio, toggleTargetIsVisible(parameter: object.attributes["param"]) != target {
-            return .targetMoved
-        }
+        if let before, toggleTargetIsVisible(parameter: toggled) != before { return .targetMoved }
         return flip
     }
 

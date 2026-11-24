@@ -237,6 +237,23 @@ extension WasabiSceneRenderer {
         /// h="5"`).
         let isWholeSheet: Bool
 
+        /// The one cut of a sheet, read by the renderer and by `getLength()` alike so the frame a
+        /// script steps to is the frame drawn.
+        init(sheetWidth: Int, sheetHeight: Int, attributes: [String: String]) {
+            let boxWidth = max(1, Int(Double(attributes["framewidth"] ?? attributes["w"] ?? "") ?? Double(sheetWidth)))
+            let boxHeight = max(1, Int(Double(attributes["frameheight"] ?? attributes["h"] ?? "") ?? Double(sheetHeight)))
+            isWholeSheet = sheetWidth <= boxWidth && sheetHeight <= boxHeight
+                && (sheetWidth < boxWidth || sheetHeight < boxHeight)
+            // A box wider (or taller) than the sheet on one axis is a strip one frame across on that
+            // axis: SUPER_BLACK's ClassicPro beat layer is 86 wide for its VU art, and the 43 px strips
+            // of its other styles were cut 86 wide, ran off the sheet and drew nothing.
+            width = max(1, isWholeSheet ? sheetWidth : min(boxWidth, sheetWidth))
+            height = max(1, isWholeSheet ? sheetHeight : min(boxHeight, sheetHeight))
+            columns = max(1, sheetWidth / width)
+            let rows = max(1, sheetHeight / height)
+            count = max(1, Int(Double(attributes["frames"] ?? "") ?? Double(columns * rows)))
+        }
+
         /// Where the current frame is drawn, and where it is hit-tested, inside the layer's `frame`.
         func drawRect(in frame: CGRect) -> CGRect {
             guard isWholeSheet else { return frame }
@@ -246,20 +263,7 @@ extension WasabiSceneRenderer {
     }
 
     private func animationGrid(_ bitmap: WasabiBitmap, object: WasabiObject) -> AnimationGrid {
-        let boxWidth = max(1, Int(Double(object.attributes["framewidth"] ?? object.attributes["w"] ?? "") ?? Double(bitmap.width)))
-        let boxHeight = max(1, Int(Double(object.attributes["frameheight"] ?? object.attributes["h"] ?? "") ?? Double(bitmap.height)))
-        let isWholeSheet = bitmap.width <= boxWidth && bitmap.height <= boxHeight
-            && (bitmap.width < boxWidth || bitmap.height < boxHeight)
-        // A box wider (or taller) than the sheet on one axis is a strip one frame across on that axis:
-        // SUPER_BLACK's ClassicPro beat layer is 86 wide for its VU art, and the 43 px strips of its
-        // other styles were cut 86 wide, ran off the sheet and drew nothing.
-        let frameWidth = isWholeSheet ? bitmap.width : min(boxWidth, bitmap.width)
-        let frameHeight = isWholeSheet ? bitmap.height : min(boxHeight, bitmap.height)
-        let columns = max(1, bitmap.width / frameWidth)
-        let rows = max(1, bitmap.height / frameHeight)
-        let count = max(1, Int(Double(object.attributes["frames"] ?? "") ?? Double(columns * rows)))
-        return AnimationGrid(width: frameWidth, height: frameHeight, count: count, columns: columns,
-                             isWholeSheet: isWholeSheet)
+        AnimationGrid(sheetWidth: bitmap.width, sheetHeight: bitmap.height, attributes: object.attributes)
     }
 
     /// The most opaque any frame is at `point` — the layer's region, see the call site in `object(at:)`.

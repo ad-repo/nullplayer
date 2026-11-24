@@ -195,8 +195,12 @@ extension WasabiSceneRenderer {
         guard !palette.isUserChosen(palette.listText) else { return palette.listText }
         return WinampModernSurfaceStyle.legible(
             preferring: [palette.listText, palette.currentText, palette.selectionText],
-            on: palette.contentBackground, threshold: 2)
+            on: palette.contentBackground, threshold: Self.playlistRowRescueContrast)
     }
+
+    /// Below this an unselected Playlist row is all but invisible; above it, dim-but-readable is the
+    /// author's choice (Gintama's navy on blue measured 1.5:1).
+    static let playlistRowRescueContrast: CGFloat = 2
 
     /// The bar a selected row is actually **filled** with, which is not always the one the skin
     /// named (B122).
