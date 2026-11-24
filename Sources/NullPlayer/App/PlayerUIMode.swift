@@ -54,6 +54,16 @@ enum PlayerUIControllerFamily {
         case .classic, .nullPlayerModern, .winampModern, .wmp: return false
         }
     }
+
+    /// The skin opens top-level windows of its own beside the player (`.wmz` views, `.wal`
+    /// containers), which its controller hands `WindowManager` through `SkinOwnedWindowsProviding`.
+    /// A single-canvas family (`isSingleCanvas`) has none.
+    var hasSkinOwnedWindows: Bool {
+        switch self {
+        case .wmp, .winampModern: return true
+        case .classic, .nullPlayerModern, .audion, .sonique: return false
+        }
+    }
 }
 
 enum PlayerUIMode: String, CaseIterable {

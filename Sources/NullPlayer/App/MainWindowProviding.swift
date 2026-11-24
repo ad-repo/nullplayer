@@ -95,6 +95,23 @@ protocol SkinSizedMainWindow: MainWindowProviding {
 extension WinampModernMainWindowController: SkinSizedMainWindow {}
 extension WMPMainWindowController: SkinSizedMainWindow {}
 
+/// A main window whose skin opens top-level windows of its own beside the player, in a family whose
+/// `PlayerUIControllerFamily.hasSkinOwnedWindows` says so: `WindowManager` manages and raises them
+/// through this (`skinOwnedWindowsProvider`), with no branch per family.
+protocol SkinOwnedWindowsProviding: MainWindowProviding {
+    /// The skin's windows made so far, in the order they are raised, each as `WindowManager` manages
+    /// it (`managedWindowRecords`).
+    var managedSkinWindows: [ManagedSkinWindow] { get }
+}
+
+/// One of a skin's own windows as `WindowManager` manages it: in the centre stack or not, a snap
+/// target or not.
+struct ManagedSkinWindow {
+    let window: NSWindow
+    var centerStack = false
+    var snapTarget = true
+}
+
 /// A main window that is one skin canvas and nothing else (`PlayerUIControllerFamily.isSingleCanvas`):
 /// it loads the selected skin itself, and the skin decides its size, so a restored frame places only
 /// its top-left. The family supplies its selection, its loader and what to show; choosing, reloading

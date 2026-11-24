@@ -999,8 +999,9 @@ every skin-owned step has declined (B55, above).
 - **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
   (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
   containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends
-  `WinampModernMainWindowController.skinOwnedWindows` (auxiliary containers, then materialized hosted
-  windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the
+  the controller's `SkinOwnedWindowsProviding.managedSkinWindows`
+  (`WinampModernMainWindowController+SkinOwnedWindows.swift`: auxiliary containers, then materialized
+  hosted windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the
   raise uses `orderFrontRegardless` in both. Both `.wal` `windowDidBecomeKey`s (the controller's, for
   the player and its containers, and the hosted materializer's) defer the raise one turn. Raising
   everything can bury a glued frame under its client, so `bringAllWindowsToFront` itself calls

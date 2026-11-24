@@ -2720,12 +2720,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         }
     }
 
-    /// The skin's windows that are not the player: its containers and the hosted windows it has
-    /// materialized, bottom first. `WindowManager.bringAllWindowsToFront` raises them with the app's.
-    var skinOwnedWindows: [NSWindow] {
-        auxiliaryContainers.map(\.window) + (hostedWindowMaterializer?.materializedWindows.map(\.window) ?? [])
-    }
-
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let restored = notification.object as? NSWindow else { return }
