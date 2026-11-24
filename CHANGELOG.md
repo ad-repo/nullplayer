@@ -48,7 +48,8 @@
   apostrophe used to switch the whole main-window title to a small system font. Accents are now
   dropped onto the skin's capitals (`Seán` → `SEAN`, `Ⅱ` → `II`), `Å Ö Ä` draw from the skin's own
   letters, and Greek, Cyrillic and `♥` draw in a matching pixel font (Tiny5) in the skin's text
-  colour. Only Japanese, Chinese and Korean titles still use the system font.
+  colour. Only Japanese, Chinese and Korean titles still use the system font. The bundled Silver
+  skin now has `Å Ö Ä` letters, and its `?` and `*` no longer draw blank.
 
 ## 0.35.2
 

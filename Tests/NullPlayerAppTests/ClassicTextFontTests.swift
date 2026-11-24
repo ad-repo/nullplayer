@@ -263,3 +263,30 @@ final class ClassicTitleFontTests: XCTestCase {
         XCTAssertEqual(NSColor(cgColor: color), NSColor(cgColor: NSColor.green.cgColor))
     }
 }
+
+/// The bundled Silver skin must draw every TEXT.BMP cell the title can pick (M96): its row 2 once
+/// held `?` and `*` in the `Å`/`Ö` cells, so `Åsa` read `?SA` and `?`/`*` drew blank.
+final class BundledSilverTextFontTests: XCTestCase {
+    func testRowTwoDrawsEveryCharacter() throws {
+        let url = try XCTUnwrap(BundleHelper.url(forResource: "NullPlayer-Silver", withExtension: "wsz",
+                                                 subdirectory: "Resources/Skins"))
+        let text = try XCTUnwrap(try SkinLoader.shared.load(from: url).text)
+        let sheet = try XCTUnwrap(text.cgImage(forProposedRect: nil, context: nil, hints: nil))
+        func pixels(_ character: Character) throws -> [UInt8] {
+            let cell = try XCTUnwrap(sheet.cropping(to: SkinElements.TextFont.character(character)))
+            var bytes = [UInt8](repeating: 0, count: 5 * 6 * 4)
+            let context = try XCTUnwrap(CGContext(data: &bytes, width: 5, height: 6, bitsPerComponent: 8,
+                                                  bytesPerRow: 20, space: CGColorSpaceCreateDeviceRGB(),
+                                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(cell, in: CGRect(x: 0, y: 0, width: 5, height: 6))
+            return bytes
+        }
+        let space = try pixels(" ")
+        let row = try Array("ÅÖÄ?*").map(pixels)
+        for (character, cell) in zip("ÅÖÄ?*", row) {
+            XCTAssertNotEqual(cell, space, "\(character) draws blank")
+        }
+        XCTAssertEqual(Set(row.map { $0 }).count, 5, "two of Å Ö Ä ? * share a glyph")
+        XCTAssertNotEqual(try pixels("Å"), try pixels("A"))
+    }
+}
