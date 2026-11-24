@@ -453,6 +453,29 @@ load; `classicpro.md` now says never to move it.
 Open, promoted with the skin: B464 (Trance_Critic_v2_0's opaque frame plate leaves an 11 px content band) and B465
 (Center_Fresh, EGG, Anime_Shogo: some hosted windows intermittently open without the skin's frame).
 
+### Done: intake #15, promoted to gold (2026-11-23)
+
+The last 129 bronze skins in `intake-6.ranking.tsv` were picked for batch 15 by `wal_intake_pick.sh 200` and scanned
+live (`wal_live_smoke.sh` with its Library pass, `window-census.sh --shots`, a headless `wal_dump.sh`) on
+`feat/wal-intake-15`; the ranking is now exhausted. One fix pass ran. All 129 were accepted by the user, one with an open
+row, and promoted to gold on 2026-11-23, with rows on `skin-compatibility.md` (127 B, 2 C, graded from the ledger notes,
+backlog rows and a `wal_skin_census.sh` run over the batch). The per-skin record is `intakes/intake-15.tsv`; the row ids
+are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| Manutd, Gintama__Gintoki_&_Katsura | Playlist rows white on white, and navy on blue (B476) | An unselected Playlist row under 2:1 on its plate falls back through the skin's current and selection text to black or white; other lists keep their author colours |
+| GonchiSkin | The Images button opened nothing (B477) | A `TOGGLE` whose own script already showed or hid the named window no longer toggles it back |
+| Red_Pearl, Laboratory_Clinical_Art (and six more of the template) | The Playlist button opened a web page to the author's site | A window that holds only a `<browser>` no longer claims the `component="guid:pl"` it copied; the playlist is synthesized in the skin's frame |
+| SUPER_BLACK | Only the VU Meter beat style drew; the other five were blank | An animated layer wider or taller than its strip is cut one frame across on that axis, in the renderer and in `getLength()`; Live_Times_Square, YoYoBoy, Lobe, Kyoko_Fukada and Bingo gain art that drew nothing |
+
+User round, working as the skin is built: Vista_Player's title sits at the bottom of its grey band, where the skin's own
+text box puts it; cPro_GUNS_N'_ROSES shows its promo picture until the player is wider than 557 px, the engine's
+`beat.m` rule, and its beat meters work dragged wider.
+
+Open, promoted with the skin: B475 (Official_Coldplay_skin's Thinger icons sit low under the status bar; the fix that
+works for it moves hundreds of gold frames, so it waits on a rule).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
