@@ -85,15 +85,28 @@ final class FinderOpenRoutingTests: XCTestCase {
         let docTypes = info["CFBundleDocumentTypes"] as? [[String: Any]] ?? []
         let declared = docTypes.flatMap { $0["LSItemContentTypes"] as? [String] ?? [] }.compactMap(UTType.init)
         let declaredExtensions = Set(docTypes.flatMap { $0["CFBundleTypeExtensions"] as? [String] ?? [] }.map { $0.lowercased() })
+        // A type the bundle imports names its parents itself: what the system says of the extension
+        // depends on the apps installed on the test Mac.
+        let imported = (info["UTImportedTypeDeclarations"] as? [[String: Any]] ?? []).flatMap { decl -> [(String, [UTType])] in
+            let tags = (decl["UTTypeTagSpecification"] as? [String: Any])?["public.filename-extension"] as? [String] ?? []
+            let parents = (decl["UTTypeConformsTo"] as? [String] ?? []).compactMap(UTType.init)
+            return tags.map { ($0.lowercased(), parents) }
+        }
 
+        // Each playlist names one real track, or it would queue nothing and be skipped unchecked.
+        try "".write(to: dir.appendingPathComponent("a.mp3"), atomically: true, encoding: .utf8)
+        let a = dir.appendingPathComponent("a.mp3").path
+        let fixtures = ["cue": cue, "m3u": "\(a)\n", "m3u8": "\(a)\n", "pls": "[playlist]\nFile1=\(a)\nNumberOfEntries=1\n"]
         let candidates = AudioFileValidator.supportedExtensions
             .union(AudioFileValidator.supportedVideoExtensions)
-            .union(["cue", "m3u", "m3u8", "pls"])
+            .union(fixtures.keys)
         for ext in candidates.sorted() {
             let name = "probe.\(ext)"
-            guard !(try pending(after: [name], contents: ext == "cue" ? [name: cue] : [:])).isEmpty else { continue }
-            let type = UTType(filenameExtension: ext)
-            let covered = declaredExtensions.contains(ext) || declared.contains { type?.conforms(to: $0) == true }
+            let accepted = !(try pending(after: [name], contents: fixtures[ext].map { [name: $0] } ?? [:])).isEmpty
+            if fixtures[ext] != nil { XCTAssertTrue(accepted, ".\(ext) fixture queued nothing") }
+            guard accepted else { continue }
+            let types = [UTType(filenameExtension: ext)].compactMap { $0 } + imported.filter { $0.0 == ext }.flatMap(\.1)
+            let covered = declaredExtensions.contains(ext) || declared.contains { d in types.contains { $0.conforms(to: d) } }
             XCTAssertTrue(covered, ".\(ext) is accepted by openFiles but no CFBundleDocumentTypes entry declares it")
         }
     }

@@ -495,12 +495,13 @@ The trap unregisters and deletes the bundle.
   - 4: warm open of mp3 + flac + m4a.
   - 5: m4a, flac, ogg, opus, wav, cue, m3u and pls, one at a time.
   - 6: mp4, mov and mkv, cold and warm, then mp3 + mp4 together.
-  - 7: cold into Compact Mode, then Compact Window.
+  - 7: cold into Compact Mode, then a warm open there, then cold into Compact Window.
 - **A PASS is what a Mac user expects of a default app.** That means the file plays (from the snapshot's
   title and queue size), NullPlayer is frontmost (`lsappinfo`), a window is on screen (`winhelper`), and
   the type is declared in the bundle's own `CFBundleDocumentTypes`. Compact Mode is menu-bar only by
-  design, so there only playback is judged. All 72 family rows passed on 2026-11-24, so a FAIL is a
-  regression.
+  design, so there the file plays and no window may open. Row 1 also needs the saved settings to
+  have been restored. An unknown `--scenario` number exits 2. All 72 family rows passed on
+  2026-11-24, so a FAIL is a regression.
 - **What it reads, and why:**
   - Each cold launch's NSLog goes to `<out>/logs/` through `open --stderr`. The unified log shows a
     bundled build's NSLog as `<private>`.

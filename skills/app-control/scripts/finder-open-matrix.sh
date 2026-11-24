@@ -49,6 +49,9 @@ while [ $# -gt 0 ]; do
     *) echo "finder-open-matrix: unknown option $1" >&2; exit 2 ;;
   esac
 done
+for s in $SCEN; do
+  case "$s" in [0-7]) ;; *) echo "finder-open-matrix: unknown scenario $s (0-7)" >&2; exit 2 ;; esac
+done
 OUT=${OUT:-/tmp/np-finder-open/$(date +%Y%m%d-%H%M%S)}
 mkdir -p "$OUT/shots" "$OUT/media" "$OUT/logs"
 OUT=$(cd "$OUT" && pwd -P)            # LaunchServices and pgrep see /private/tmp, not /tmp
@@ -228,7 +231,7 @@ scenario_1() {
   # The settings restore runs asynchronously after launch; judge only once it has applied.
   wait_until 15 'logged "AppStateManager: Restoring settings state"'; local restored=$?
   wait_until 15 'playing fo-a 1'; local ok=$?
-  judge $ROW '[ $ok = 0 ] && [ "$(front_pid)" = "$PID" ] && [ "$(win_count)" -gt 0 ]' \
+  judge $ROW '[ $restored = 0 ] && [ $ok = 0 ] && [ "$(front_pid)" = "$PID" ] && [ "$(win_count)" -gt 0 ]' \
     "$(state) settingsRestored=$([ $restored = 0 ] && echo yes || echo no)"
   shot $ROW
 }
@@ -322,7 +325,14 @@ scenario_7() {
   FILES=("$M/fo-a.mp3"); XENV=(); XARGS=(-rememberStateEnabled NO -compactModeEnabled YES)
   if cold_or_skip; then
     wait_until 20 'playing fo-a 1'; local ok=$?
-    judge $ROW '[ $ok = 0 ]' "$(state)"   # Compact Mode is menu-bar only by design: playing is the test
+    # Compact Mode is menu-bar only by design: the file plays and no window opens, cold or warm
+    # (a warm open runs handleAppReopen, which must show nothing here).
+    judge $ROW '[ $ok = 0 ] && [ "$(win_count)" = 0 ]' "$(state)"
+    ROW=7-compact-mode-warm
+    warm_open "$M/fo-b.mp3"
+    wait_until 15 'playing fo-b 1'; ok=$?
+    # A window handleAppReopen showed would be up within 3 s.
+    judge $ROW '[ $ok = 0 ] && ! wait_until 3 "[ \$(win_count) -gt 0 ]"' "$(state)"
   fi
   ROW=7-compact-window
   FILES=("$M/fo-a.mp3"); XENV=(); XARGS=(-rememberStateEnabled NO -compactWindowEnabled YES)
