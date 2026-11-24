@@ -49,9 +49,7 @@ only when read, so its state depended on the reader: the tap posts nothing while
 stayed where the last chunk was, and after the pause every read consumed a whole burst — the `.wal`
 scope (GonchiSkin) fell from ~67 distinct chunks a second to ~11, vis_classic and the Audio Analyzer
 Scope likewise, until the next track. `receive` now consumes what is already due, and a chunk arriving
-into an empty queue restarts a clock that is behind. Clamping the lag to the queue cap instead fixed
-the 30 fps vis_classic but not a fast reader, and restarting at every late arrival without consuming
-first made a slow reader's due-but-unread chunks count against the cap (resyncs several times a second).
+into an empty queue restarts a clock that is behind.
 
 Every other `<vis>` attribute is read too — `oscstyle`, `coloring`, `peaks`, `falloff`,
 `peakfalloff`, `colorosc1`…`5` — see `compatibility/wasabi-surface.md` for the list and the measured

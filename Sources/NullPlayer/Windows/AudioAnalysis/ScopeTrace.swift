@@ -8,8 +8,9 @@ import Foundation
 /// gentle **temporal blend** of the aligned windows (so the line stops flickering frame to frame
 /// without smearing transients).
 struct ScopeTrace {
-    /// Chunks of history kept: the drawn window is three chunks less the trigger search region.
-    static let historyChunks = 3
+    /// Chunks of history kept: the drawn window is three chunks less the trigger search region. The
+    /// playout keeps exactly this many played chunks for the Scope to take.
+    static let historyChunks = WaveformPlayout.recentlyPlayedLimit
     /// Samples per drawn point.
     static let drawStride = 3
     static let historyLength = WaveformPlayout.sampleCount * historyChunks

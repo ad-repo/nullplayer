@@ -40,8 +40,9 @@ final class WaveformPlayout {
     private var playedCount = 0
     /// The most recently played chunks with their numbers, oldest first, for `chunksPlayed(after:at:)`.
     private var recentlyPlayed: [(number: Int, left: [UInt8], right: [UInt8])] = []
-    /// More than one read's worth at any rate: a full queue plus a burst.
-    private static let recentlyPlayedLimit = 32
+    /// The Audio Analyzer Scope's whole history (`ScopeTrace.historyChunks`): anything older would be
+    /// shifted out of it unread, however long the reader stalled.
+    static let recentlyPlayedLimit = 3
     private let lock = NSLock()
 
     /// The chunk current now, or a flat centre line once the audio has stopped.
@@ -78,11 +79,11 @@ final class WaveformPlayout {
     /// Every chunk played out after chunk `number` (all recent ones for `nil`), oldest first, each
     /// with its number — for a reader that must draw every chunk in order (the Audio Analyzer Scope).
     /// `samples(at:)` returns only the current chunk, and a burst arriving between two reads can play
-    /// out more than one. Empty once the audio has stopped; `samples(at:)` reports that as silence.
-    func chunksPlayed(after number: Int?, at now: TimeInterval) -> [(number: Int, left: [UInt8], right: [UInt8])] {
+    /// out more than one. `nil` once the audio has stopped, where `samples(at:)` returns silence.
+    func chunksPlayed(after number: Int?, at now: TimeInterval) -> [(number: Int, left: [UInt8], right: [UInt8])]? {
         lock.lock()
         defer { lock.unlock() }
-        guard let lastArrival, now - lastArrival < Self.silenceTimeout else { return [] }
+        guard let lastArrival, now - lastArrival < Self.silenceTimeout else { return nil }
         advanceClock(to: now)
         guard let number else { return recentlyPlayed }
         return recentlyPlayed.filter { $0.number > number }

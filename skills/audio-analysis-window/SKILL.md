@@ -68,13 +68,16 @@ own — no spectrum consumer required, and an octave-only window skips the 75-ba
   swimming, then gently blended into the previous one to reduce flicker, and drawn as a smoothed
   quadratic curve. On silence (paused, or a silent passage) it eases to a flat line and stops redrawing.
   **Frame rate:** chunks arrive several at a time per tap buffer (~10/s), so a per-view
-  `WaveformPlayout` plays them out at the audio's own rate and each `NSView.displayLink` tick steps its
-  clock one chunk at a time up to now, taking every chunk played since the last one it took, in order, from `chunksPlayed(after:at:)` (a burst arriving between two refreshes can play out more than one) —
-  every chunk lands in order, one redraw per new chunk (~77/s at 44.1 kHz). History, trigger, blend and
-  flatness live in the pure `ScopeTrace` (`ScopeTrace.swift`, tested in `ScopeTraceTests`); the blend is
-  weighted by the time since the last render, scaled to the old ~20 updates/s. The display link retains
-  the view, so it is created and invalidated by `setRenderingPaused` (the shared pause walk, on
-  hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
+  `WaveformPlayout` plays them out at the audio's own rate. Each `NSView.displayLink` tick takes every
+  chunk played since the last one it took, in order, from `chunksPlayed(after:at:)` (`nil` once the
+  audio has stopped) — one redraw per new chunk, ~77/s at 44.1 kHz. The playout keeps only the last
+  `ScopeTrace.historyChunks` played chunks (`recentlyPlayedLimit`): anything older would be shifted out
+  of the Scope's history unread. History, trigger, blend and flatness live in the pure `ScopeTrace`
+  (`ScopeTrace.swift`, tested in `ScopeTraceTests`); the blend is weighted by the time since the last
+  render, scaled to the old ~20 updates/s. The feed is 8-bit, which is fine at the Analyzer's sizes:
+  one step is 1/127 of the half-height (~0.3 pt in the classic pane), and the blend averages it. The
+  display link retains the view, so it is created and invalidated by `setRenderingPaused` (the shared
+  pause walk, on hide/minimize/close) and `viewDidMoveToWindow` (pane switches).
 - **Levels** — per-channel **Peak** and **RMS** vertical meters (LEFT/RIGHT), in dBFS over a
   −120…0 dB range. Meter color: green normally, yellow above −12 dB, red above −6 dB. RMS responds
   more smoothly than peak.

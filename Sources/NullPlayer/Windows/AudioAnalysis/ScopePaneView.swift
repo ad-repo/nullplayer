@@ -16,15 +16,13 @@ struct ScopePaneView: NSViewRepresentable {
 ///
 /// Fed by the waveform consumer (`.audioWaveform576DataUpdated`): every sample, in 576-sample chunks
 /// that arrive several at a time per tap buffer. A `WaveformPlayout` plays them out at the audio's own
-/// rate, and each display refresh steps its clock one chunk at a time up to now, so every chunk lands
-/// in the `ScopeTrace` in order — contiguous audio at the display's refresh rate.
+/// rate, and each display refresh takes every chunk played since the last one it took, so every chunk
+/// lands in the `ScopeTrace` in order — contiguous audio at the display's refresh rate.
 class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
     private let playout = WaveformPlayout()
     private var trace = ScopeTrace()
     /// The playout's number for the last chunk taken, so each chunk is taken once and none is missed.
     private var lastChunkNumber: Int?
-    /// Playout time already stepped through.
-    private var readTime: TimeInterval?
     private var displayLink: CADisplayLink?
     private var renderingPaused = false
     private var waveformObserver: NSObjectProtocol?
@@ -87,37 +85,24 @@ class ScopeCanvasView: NSView, AudioAnalysisPausableRenderer {
         } else {
             displayLink?.invalidate()
             displayLink = nil
-            readTime = nil
         }
     }
 
     @objc private func tick(_ sender: CADisplayLink) {
         let now = ProcessInfo.processInfo.systemUptime
-        let chunkDuration = TimeInterval(WaveformPlayout.sampleCount) / playout.sampleRate
-        // Step the playout clock one chunk at a time so no chunk is skipped between refreshes.
-        var time = max(readTime ?? now, now - chunkDuration * Double(ScopeTrace.historyChunks))
-        var appended = false
-        while time <= now {
-            // Every chunk played since the last one taken, in order; once the audio has stopped,
-            // silence repeats until the trace is flat.
-            let played = playout.chunksPlayed(after: lastChunkNumber, at: time)
+        if let played = playout.chunksPlayed(after: lastChunkNumber, at: now) {
+            guard let newest = played.last else { return }
             for chunk in played {
                 trace.append(left: chunk.left, right: chunk.right)
             }
-            if let newest = played.last {
-                lastChunkNumber = newest.number
-                appended = true
-            } else if !trace.isFlat, playout.samples(at: time).left == WaveformPlayout.silence {
-                trace.append(left: WaveformPlayout.silence, right: WaveformPlayout.silence)
-                appended = true
-            }
-            time += chunkDuration
+            lastChunkNumber = newest.number
+        } else {
+            // The audio has stopped: ease to a flat line, then stop redrawing.
+            guard !trace.isFlat else { return }
+            trace.append(left: WaveformPlayout.silence, right: WaveformPlayout.silence)
         }
-        readTime = time
-        if appended {
-            trace.render(at: now)
-            needsDisplay = true
-        }
+        trace.render(at: now)
+        needsDisplay = true
     }
 
     override func draw(_ dirtyRect: NSRect) {

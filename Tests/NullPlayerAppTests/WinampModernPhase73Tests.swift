@@ -236,19 +236,19 @@ final class WinampModernPhase73Tests: XCTestCase {
         XCTAssertEqual(shown, (10...17).map { UInt8($0) })
     }
 
-    /// `chunksPlayed(after:at:)` returns each chunk once, numbered, and nothing once the audio stops.
+    /// `chunksPlayed(after:at:)` returns each chunk once, numbered, and `nil` once the audio stops.
     func testChunksPlayedReturnsEachChunkOnce() {
         let tap = WaveformPlayout()
         for value in [10, 20] as [UInt8] {
             tap.receive(left: chunk(value), right: chunk(value), sampleRate: 44_100, at: 100)
         }
         let step = 576.0 / 44_100
-        let first = tap.chunksPlayed(after: nil, at: 100)
+        let first = tap.chunksPlayed(after: nil, at: 100) ?? []
         XCTAssertEqual(first.map { $0.left[0] }, [10])
-        XCTAssertTrue(tap.chunksPlayed(after: first.last?.number, at: 100 + step * 0.5).isEmpty, "not again")
-        let second = tap.chunksPlayed(after: first.last?.number, at: 100 + step * 1.5)
+        XCTAssertEqual(tap.chunksPlayed(after: first.last?.number, at: 100 + step * 0.5)?.count, 0, "not again")
+        let second = tap.chunksPlayed(after: first.last?.number, at: 100 + step * 1.5) ?? []
         XCTAssertEqual(second.map { $0.left[0] }, [20])
-        XCTAssertTrue(tap.chunksPlayed(after: nil, at: 100 + WaveformPlayout.silenceTimeout + 1).isEmpty)
+        XCTAssertNil(tap.chunksPlayed(after: nil, at: 100 + WaveformPlayout.silenceTimeout + 1), "stopped")
     }
 
     /// CodeRabbit's interleaving on PR #808: a burst arriving between two reads must not cost a
@@ -264,7 +264,7 @@ final class WinampModernPhase73Tests: XCTestCase {
         var taken: [UInt8] = []
         var last: Int?
         func take(at time: TimeInterval) {
-            let played = tap.chunksPlayed(after: last, at: time)
+            let played = tap.chunksPlayed(after: last, at: time) ?? []
             taken += played.map { $0.left[0] }
             last = played.last?.number ?? last
         }
