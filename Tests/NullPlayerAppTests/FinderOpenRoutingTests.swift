@@ -31,9 +31,7 @@ final class FinderOpenRoutingTests: XCTestCase {
         }
         let delegate = AppDelegate()
         delegate.application(NSApplication.shared, openFiles: names.map { dir.appendingPathComponent($0).path })
-        // The queue is private; reflection reads it without widening the delegate for a test.
-        return Mirror(reflecting: delegate).children
-            .first { $0.label == "pendingFilesToOpen" }?.value as? [Track] ?? []
+        return delegate.pendingFilesToOpen
     }
 
     private let cue = """

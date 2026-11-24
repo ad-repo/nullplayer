@@ -2827,7 +2827,10 @@ class WindowManager {
         postLayoutChangeNotification()
     }
 
+    /// A Dock click or a Finder open: shows the player. Compact Mode is menu-bar only by choice, so
+    /// it shows nothing there.
     func handleAppReopen() {
+        guard !compactModeEnabled else { return }
         if compactWindowEnabled {
             mainWindowController?.window?.orderOut(nil)
             createCompactWindowControllerIfNeeded()

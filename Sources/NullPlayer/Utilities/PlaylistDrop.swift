@@ -38,7 +38,9 @@ enum PlaylistDrop {
     /// The tracks a Finder open hands the app (`application(_:openFiles:)`): what `namedTracks` takes,
     /// then each video file and each playlist file's entries. Finder hands files, never folders, so
     /// nothing is searched and the tracks are ready at once, which a cold open needs: they must be
-    /// parked before launch finishes, or the restored session plays instead.
+    /// parked before launch finishes, or the restored session plays instead. So a playlist is read on
+    /// the caller's thread, the main thread: one stat and one library lookup per entry, lighter than
+    /// the metadata read each opened audio file already costs there.
     static func openedTracks(_ urls: [URL]) -> [Track] {
         namedTracks(urls) + urls.flatMap { url -> [Track] in
             if LocalFileDiscovery.isSupportedVideoFile(url) { return [Track(url: url)] }

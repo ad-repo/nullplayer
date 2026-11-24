@@ -442,9 +442,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             #endif
             #if DEBUG
             // `WINAMP_MODERN_DEBUG_PLAY=/path/film.mp4` starts a local video a few seconds after
-            // launch, after the skin has settled; `NULLPLAYER_PLAY` opens a video too, but at
-            // launch, before any tab a click opens. Ordered *after*
-            // `DEBUG_CLICK` on purpose: the tab a click opens is the surface the film should land in,
+            // launch, once the skin has settled (`NULLPLAYER_PLAY` opens one at launch itself, too
+            // early for this case). Ordered *after* `DEBUG_CLICK` on purpose: the tab a click opens
+            // is the surface the film should land in,
             // so the two together are the whole B23 case in one command.
             //
             // An **audio** path is loaded into the engine and played instead (B52): every

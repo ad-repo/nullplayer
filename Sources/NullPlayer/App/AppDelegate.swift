@@ -11,7 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var isUITesting = false
     
     /// Tracks to open after app finishes launching (when opened via double-click before app is ready)
-    private var pendingFilesToOpen: [Track] = []
+    private(set) var pendingFilesToOpen: [Track] = []
     
     /// Whether the app has finished launching and is ready to handle file opens
     private var isAppReady = false
@@ -376,11 +376,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager.audioEngine.loadTracks(tracksToLoad)
         windowManager.audioEngine.play()
         // macOS brings the app forward for an open, not its windows: a player the user had closed
-        // stayed hidden while the file played. Show it as a Dock click does, except in Compact Mode,
-        // which is menu-bar only by choice.
-        if !windowManager.compactModeEnabled {
-            windowManager.handleAppReopen()
-        }
+        // stayed hidden while the file played. Show it as a Dock click does.
+        windowManager.handleAppReopen()
 
         NSApp.reply(toOpenOrPrint: .success)
     }
