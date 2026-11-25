@@ -19,14 +19,8 @@ extension SkinRenderer {
         // corner is drawn to abut the 20px scrollbar border, and carries the close and shade glyphs.
         drawPlaylistTitleBar(in: context, bounds: bounds, isActive: isActive, pressedButton: nil)
 
-        guard let pledit = skin.pledit else {
-            NSColor(calibratedRed: 0.08, green: 0.08, blue: 0.10, alpha: 1).setFill()
-            context.fill(NSRect(x: 0, y: titleHeight, width: 12, height: bottomY - titleHeight))
-            context.fill(NSRect(x: bounds.width - rightBorder, y: titleHeight, width: rightBorder,
-                                height: bottomY - titleHeight))
-            context.fill(NSRect(x: 0, y: bottomY, width: bounds.width, height: bottomHeight))
-            return
-        }
+        // `PlaylistView.isWinampStyle` picks this frame only for a skin with PLEDIT.BMP.
+        guard let pledit = skin.pledit else { return }
 
         let rightCorner = isActive ? PL.TitleBarActive.rightCorner : PL.TitleBarInactive.rightCorner
         drawSprite(from: pledit, sourceRect: rightCorner,

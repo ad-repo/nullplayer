@@ -119,8 +119,8 @@ class SkinLoader {
     
     /// Find the actual directory containing skin files.
     /// Some skins extract directly, others into one or more nested folders
-    /// (MERYXMS1.wsz: meryxmas/Merry Christmas Amp/main.bmp). Search breadth-first,
-    /// so the shallowest folder holding BMP files wins, and prefer one that has main.bmp.
+    /// (MERYXMS1.wsz: meryxmas/Merry Christmas Amp/main.bmp). Search breadth-first for the
+    /// shallowest folder with main.bmp; failing that, the shallowest folder holding any BMP.
     private func findSkinDirectory(in directory: URL) -> URL {
         let fm = FileManager.default
         var level = [directory]
@@ -134,10 +134,9 @@ class SkinLoader {
                 if !bmps.isEmpty, firstWithBMP == nil { firstWithBMP = dir }
                 next += contents.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && $0.lastPathComponent != "__MACOSX" }
             }
-            if let found = firstWithBMP { return found }
             level = next
         }
-        return directory
+        return firstWithBMP ?? directory
     }
 
     /// Build a lookup table for case-insensitive file resolution inside a skin directory.

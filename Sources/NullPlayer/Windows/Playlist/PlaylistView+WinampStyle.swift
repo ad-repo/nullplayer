@@ -9,8 +9,18 @@ extension PlaylistView {
         !isEmbedded && WindowManager.shared.runningControllerFamily == .classic
     }
 
+    /// A skin without PLEDIT.BMP (the built-in default) has no editor art to draw or hit-test,
+    /// so it keeps the NullPlayer look whatever the choice.
     var isWinampStyle: Bool {
         canChooseStyle && ClassicPlaylistStyle.current == .winamp
+            && WindowManager.shared.currentSkin?.pledit != nil
+    }
+
+    /// A Playlist Style or skin change moves the list's bottom edge (the 38px bar against the 7px
+    /// border), so an offset that was valid can leave rows clipped above a list that now fits.
+    func fitScrollOffsetToStyle() {
+        guard canChooseStyle else { return }
+        scrollOffset = min(scrollOffset, maxScrollOffset)
     }
 
     /// Winamp rows: PLEDIT.TXT's font at the row size (`SkinLoader` falls back to the system font

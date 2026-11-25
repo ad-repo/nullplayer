@@ -27,7 +27,7 @@ class PlaylistView: NSView {
     private var rowDrag: PlaylistRowDrag?
 
     /// Scroll offset (in pixels)
-    private var scrollOffset: CGFloat = 0
+    var scrollOffset: CGFloat = 0
 
     /// Item height
     let itemHeight: CGFloat = 13
@@ -231,6 +231,7 @@ class PlaylistView: NSView {
     /// (an EQ marker, Show Artist / Show Album) without the queue changing.
     override func layout() {
         super.layout()
+        fitScrollOffsetToStyle()
         updateCurrentTrackTextWidth()
     }
 
@@ -1095,6 +1096,7 @@ class PlaylistView: NSView {
         // Pre-cache the TEXT.BMP CGImage for the new skin
         // This MUST happen outside of the draw cycle
         cacheTextBitmapCGImage()
+        fitScrollOffsetToStyle()
         updateCurrentTrackTextWidth()
         playlistMarqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
         needsDisplay = true
@@ -1331,11 +1333,16 @@ class PlaylistView: NSView {
 
     /// Scroll the list `delta` skin pixels down (negative: up), clamped to the rows.
     func scroll(by delta: CGFloat) {
-        let listHeight = effectiveWindowSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
-        let totalHeight = CGFloat(WindowManager.shared.audioEngine.playlist.count) * itemHeight
-        guard totalHeight > listHeight else { return }
-        scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset + delta))
+        let maxOffset = maxScrollOffset
+        guard maxOffset > 0 else { return }
+        scrollOffset = max(0, min(maxOffset, scrollOffset + delta))
         setNeedsDisplayForListArea()
+    }
+
+    /// The largest offset that keeps the list filled at the current chrome; zero when every row fits.
+    var maxScrollOffset: CGFloat {
+        let listHeight = effectiveWindowSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        return max(0, CGFloat(WindowManager.shared.audioEngine.playlist.count) * itemHeight - listHeight)
     }
 
     private func verticalScrollDelta(from event: NSEvent) -> CGFloat {
