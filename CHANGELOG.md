@@ -52,7 +52,7 @@
 
 ### Classic skins
 
-- **The Winamp Classic playlist editor.** Classic's playlist now draws as the standard Winamp 2
+- **The Winamp Classic playlist editor** (#816). Classic's playlist now draws as the standard Winamp 2
   playlist editor by default — ADD / REM / SEL / MISC / LIST OPTS, the mini transport, scrollbar,
   running and track time — with rows in the skin's own playlist font and Winamp's playlist hotkeys.
   Right-click → **Playlist Style ▸ NullPlayer** brings back the previous borderless look.
