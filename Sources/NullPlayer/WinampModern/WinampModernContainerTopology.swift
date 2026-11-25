@@ -9,7 +9,7 @@ struct WinampModernContainerInfo {
     /// True when the container declares a real visible window; false when it is an SUI-collapsed
     /// stub (e.g. neutralized by `window-overrides.xml` to a 1×1 invisible window because its
     /// surface is embedded in the main SUI via a `windowholder`).
-    let isVisibleWindow: Bool
+    let isWindow: Bool
     /// The default canvas size of the container's normal layout.
     let defaultSize: CGSize
     /// The normal layout's `minimum_w`/`minimum_h`, in skin pixels. A layout that declares none is
@@ -108,7 +108,7 @@ enum WinampModernContainerTopology {
                     // four corpus skins that write it (Wiimote, M3, Opulent_Records_Player,
                     // hm_Touch_m_1) each open it from a `TOGGLE` button of their own. Only a
                     // collapsed box is a stub.
-                    isVisibleWindow: isMain || !collapsed,
+                    isWindow: isMain || !collapsed,
                     defaultSize: declared,
                     minimumSize: CGSize(width: max(1, minimum.width), height: max(1, minimum.height)),
                     maximumSize: (maximum.width > 0 || maximum.height > 0)
@@ -313,11 +313,11 @@ enum WinampModernContainerTopology {
         return container.xmlID.flatMap { WinampModernComponentRegistry.kind(for: $0) }
     }
 
-    /// The containers that should each become a native window. The main player is always included;
-    /// additional visible containers are included only when the skin actually declares them (the
-    /// separate-windows arrangement). An all-collapsed skin yields just the main window.
+    /// The containers that should each become a native window, open or closed. The main player is
+    /// always included; every other container is, unless it is a collapsed stub. An all-collapsed
+    /// skin yields just the main window.
     static func windowContainers(graph: WasabiObjectGraph) -> [WinampModernContainerInfo] {
-        analyze(graph: graph).filter(\.isVisibleWindow)
+        analyze(graph: graph).filter(\.isWindow)
     }
 
     /// `keys` is `[widthKeysInPreferenceOrder, heightKeysInPreferenceOrder]`; an axis nothing answers

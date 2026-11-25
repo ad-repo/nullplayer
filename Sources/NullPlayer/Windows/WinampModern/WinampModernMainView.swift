@@ -2824,14 +2824,17 @@ final class WinampModernMainView: NSView {
     /// flashing `down` on a click that does nothing.
     private func presentSkinMenuBarEntry(_ menu: WasabiObject) {
         guard let identifier = WasabiMenuBar.hostMenuIdentifier(of: menu) else { return }
-        presentHostMenu(identifier, under: menu) { withMenuEntryPressed(menu, present: $0) }
+        presentHostMenu(identifier, under: menu, pressedEntry: menu)
     }
 
     /// The host menu a `WA5:` identifier names, dropped under `anchor` — a `<Menu>` entry, or a
     /// button whose `action="MENU:WA5:PE_File"` names the same menu (EPS_High-End_System's playlist
-    /// File button). `wrap` is the entry's pressed state; a button has none.
+    /// File button). Only a `<Menu>` entry has a pressed state to hold while the menu is up.
     private func presentHostMenu(_ identifier: String, under anchor: WasabiObject,
-                                 wrap: (() -> Void) -> Void = { $0() }) {
+                                 pressedEntry: WasabiObject? = nil) {
+        let wrap: (() -> Void) -> Void = { present in
+            if let pressedEntry { self.withMenuEntryPressed(pressedEntry, present: present) } else { present() }
+        }
         // A playlist-editor menu is one the app already builds for the `PE_*` toolbar buttons, and
         // the rule in `WinampModernHostActionMenus` is that three routes to a feature must not drift
         // apart — so a `<Menu menu="WA5:PE_File">` opens *that* menu rather than a second thinner one
@@ -3247,9 +3250,9 @@ final class WinampModernMainView: NSView {
             if parameter?.lowercased() == "presets" { showEqualizerPresetMenu() }
             // A bare `MENU` is the main menu, same as the button below.
             else if Self.opensMainMenu(action: action, parameter: parameter) { showMainMenu(from: object) }
-            else if let parameter, parameter.lowercased().hasPrefix("wa5:"), let object {
-                presentHostMenu(parameter, under: object)
-            }
+            // `MENU:WA5:PE_File`: the menu a `<Menu menu="WA5:PE_File">` entry opens. An identifier
+            // the host does not serve opens nothing there too.
+            else if let parameter, let object { presentHostMenu(parameter, under: object) }
         // Winamp's **main menu** — the "≡" at the top-left of a skin's title bar (`SYSMENU`) and the
         // same menu on a window's control button (`CONTROLMENU`). Measured demand: SYSMENU in
         // multipass, CornerAmp Redux, Overdrive_2, winampmodern566 and ZDL; CONTROLMENU in multipass,

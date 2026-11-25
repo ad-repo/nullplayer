@@ -34,8 +34,8 @@ enum WasabiClickAction {
     static func split(action: String, parameter: String?) -> (action: String, parameter: String?) {
         let trimmed = action.trimmingCharacters(in: .whitespaces)
         // `MENU:WA5:PE_File` names its menu after a colon (EPS_High-End_System's File buttons). Only
-        // after `MENU`: `WA5:Prefs` is one action whole.
-        let separator = trimmed.uppercased().hasPrefix("MENU:")
+        // that spelling: `WA5:Prefs` is one action whole, and no other `MENU:` form is measured.
+        let separator = trimmed.uppercased().hasPrefix("MENU:WA5:")
             ? trimmed.firstIndex(of: ":") : trimmed.firstIndex(of: ";")
         guard let separator else { return (trimmed, parameter) }
         let head = String(trimmed[trimmed.startIndex..<separator]).trimmingCharacters(in: .whitespaces)
