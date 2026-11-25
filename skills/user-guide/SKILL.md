@@ -14,6 +14,12 @@ A faithful recreation of Winamp 2.x for macOS with Plex/Jellyfin/Subsonic integr
 
 ## Core Features
 
+### Skins menu
+
+Every family's submenu (Classic, Original, Modern, Media Player, Audion Faces, Sonique) lists its
+installed skins, in A–Z submenus once a list passes 40. **Group Skins Alphabetically** in any family
+turns that off for all of them (on by default, remembered).
+
 ### Windows Media Player skins
 
 Fresh installs start in NullPlayer's app-authored Windows Media Player mode. Use **Import WMZ…** on
@@ -29,8 +35,7 @@ their saved Classic, Original, Original-Metal, or WMP choice after upgrading. Se
 
 **Skins > Audion Faces** wears Panic Audion faces (a folder of `index.json` + PNGs). **Get More
 Faces...** opens Panic's download page; **Load Face...** installs a face folder or a `.zip` of them
-(Panic's archive) and switches to it; installed faces are listed in the same menu (A–Z submenus past
-40). **Remove “name”...** deletes the installed copy. Every face button works: the menu button toggles
+(Panic's archive) and switches to it; installed faces are listed in the same menu. **Remove “name”...** deletes the installed copy. Every face button works: the menu button toggles
 the playlist, the mode button the Library Browser, eject is Open Files…, info shows track or face
 credits, volume and the clock open sliders. NullPlayer's windows take their colours from the face.
 See `skills/audion-face-guide/reference/user-guide.md`.
@@ -39,8 +44,7 @@ See `skills/audion-face-guide/reference/user-guide.md`.
 
 **Skins > Sonique** wears Sonique 1.x `.sgf` skins. **Get More Skins...** opens the Internet
 Archive's Sonique collection; **Load Skin...** installs an `.sgf` and switches to it; **Open Skins
-Folder...** shows the installed copies; installed skins are listed in the same menu (A–Z submenus
-past 40). **Remove “name”...** deletes the installed copy. With no skin installed, NullPlayer's own
+Folder...** shows the installed copies; installed skins are listed in the same menu. **Remove “name”...** deletes the installed copy. With no skin installed, NullPlayer's own
 built-in Sonique skin shows; it also supplies any part a skin omits. The window has Sonique's three
 modes — navigator, mid and small — switched by the skin's balls or **Skins > Sonique > Mode**. The
 navigator's menu screen opens the Playlist Editor, Library Browser and NullPlayer's windows; its

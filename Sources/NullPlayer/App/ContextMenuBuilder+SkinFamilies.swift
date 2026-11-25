@@ -6,9 +6,10 @@ import AppKit
 extension ContextMenuBuilder {
 
     /// One skin family's submenu, in the order every family uses: a "Switch to" row outside its own
-    /// mode, the family's options, then its skins after one divider.
+    /// mode, the family's options and the shared A–Z toggle, then its skins after one divider. Each
+    /// section of `skins` is grouped on its own, with a divider between sections.
     static func buildSkinFamilyMenu(switchItem: NSMenuItem?, options: [NSMenuItem],
-                                            skins: [NSMenuItem]) -> NSMenu {
+                                    skins: [[NSMenuItem]]) -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
         if let switchItem {
@@ -16,15 +17,30 @@ extension ContextMenuBuilder {
             menu.addItem(.separator())
         }
         options.forEach(menu.addItem)
+        menu.addItem(skinMenuItem("Group Skins Alphabetically",
+                                  #selector(MenuActions.toggleGroupSkinsAlphabetically),
+                                  isOn: groupsSkinsAlphabetically))
         menu.addItem(.separator())
-        if skins.isEmpty {
+        let sections = skins.filter { !$0.isEmpty }
+        if sections.isEmpty {
             let empty = NSMenuItem(title: "No skins installed", action: nil, keyEquivalent: "")
             empty.isEnabled = false
             menu.addItem(empty)
-        } else {
-            skins.forEach(menu.addItem)
+        }
+        for (index, section) in sections.enumerated() {
+            if index > 0 { menu.addItem(.separator()) }
+            let rows = groupsSkinsAlphabetically
+                ? groupedAlphabetically(section, over: groupedSkinsFlatListLimit) : section
+            rows.forEach(menu.addItem)
         }
         return menu
+    }
+
+    static let groupSkinsAlphabeticallyKey = "groupSkinsAlphabetically"
+
+    /// Whether a long skin list is shown as A–Z submenus; one setting for every family, on by default.
+    static var groupsSkinsAlphabetically: Bool {
+        UserDefaults.standard.object(forKey: groupSkinsAlphabeticallyKey) as? Bool ?? true
     }
 
     private static func skinMenuItem(_ title: String, _ action: Selector,
@@ -118,7 +134,7 @@ extension ContextMenuBuilder {
         ].compactMap { $0 }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .classic, skinName: lastSkinName, action: #selector(MenuActions.setClassicMode)),
-            options: options, skins: skinRows(for: .classic))
+            options: options, skins: [skinRows(for: .classic)])
     }
 
     // MARK: - Original and Original-Metal
@@ -171,10 +187,8 @@ extension ContextMenuBuilder {
             : switchItem(to: first.playerUIMode, skinName: UserDefaults.standard.string(forKey: first.skinNameKey),
                          action: #selector(MenuActions.setModernFamilyMode(_:)))
         switchRow?.representedObject = first
-        // Two families at most, so the one separator instance is inserted once.
-        let skins = Array(families.map(modernFamilyRows).filter { !$0.isEmpty }
-            .joined(separator: [NSMenuItem.separator()]))
-        let menu = buildSkinFamilyMenu(switchItem: switchRow, options: options, skins: skins)
+        let menu = buildSkinFamilyMenu(switchItem: switchRow, options: options,
+                                       skins: families.map(modernFamilyRows))
         return skinFamilyItem(title: families.count == 1 ? first.displayName : ModernSkinFamily.modern.displayName,
                               isOn: isOnScreen, menu: menu)
     }
@@ -319,7 +333,7 @@ extension ContextMenuBuilder {
 
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .winampModern, action: #selector(MenuActions.setWinampModernMode)),
-            options: options, skins: skinRows(for: .winampModern))
+            options: options, skins: [skinRows(for: .winampModern)])
     }
 
     // MARK: - Media Player (.wmz)
@@ -348,7 +362,7 @@ extension ContextMenuBuilder {
         }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .wmp, action: #selector(MenuActions.setWMPMode)),
-            options: options, skins: skinRows(for: .wmp))
+            options: options, skins: [skinRows(for: .wmp)])
     }
 
     // MARK: - Audion Faces
@@ -362,7 +376,7 @@ extension ContextMenuBuilder {
         ].compactMap { $0 }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .audion, action: #selector(MenuActions.setAudionMode)),
-            options: options, skins: groupedAlphabetically(skinRows(for: .audion), over: groupedSkinsFlatListLimit))
+            options: options, skins: [skinRows(for: .audion)])
     }
 
     // MARK: - Sonique skins
@@ -388,11 +402,11 @@ extension ContextMenuBuilder {
         }
         return buildSkinFamilyMenu(
             switchItem: switchItem(to: .sonique, action: #selector(MenuActions.setSoniqueMode)),
-            options: options, skins: groupedAlphabetically(skinRows(for: .sonique), over: groupedSkinsFlatListLimit))
+            options: options, skins: [skinRows(for: .sonique)])
     }
 
     /// Above this many skins a list is grouped into A–Z submenus: Panic's Audion archive alone is
-    /// 856 faces, the Sonique corpus 524 skins.
+    /// 856 faces, the Sonique corpus 524 skins, the `.wal` corpus 995.
     static let groupedSkinsFlatListLimit = 40
 
     /// `items` as one submenu per initial letter (`#` for the rest) once there are more than `limit`.
@@ -421,6 +435,11 @@ extension ContextMenuBuilder {
 // MARK: - Original and Original-Metal actions
 
 extension MenuActions {
+
+    @objc func toggleGroupSkinsAlphabetically() {
+        UserDefaults.standard.set(!ContextMenuBuilder.groupsSkinsAlphabetically,
+                                  forKey: ContextMenuBuilder.groupSkinsAlphabeticallyKey)
+    }
 
     /// A row in the Original or Original-Metal skin list.
     struct ModernFamilySkinChoice {

@@ -112,7 +112,7 @@ that skin decided.
 | Script | Role |
 |---|---|
 | `preflight.sh` | Blocks a sweep in a known-bad state; prints the four checks only a human can make |
-| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt`. So its `.wal` set is the user's installs in `WinampModernSkins/`, not the `.wal` test corpus (`WinampModernCorpus/`, see `winamp-modern-skin-guide/reference/harness.md`) |
+| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt`. So its `.wal` set is the user's installs in `WinampModernSkins/` (on the dev machine that includes a copy of corpus gold, 995 skins), not the `.wal` test corpus (`WinampModernCorpus/`, see `winamp-modern-skin-guide/reference/harness.md`) |
 | `capture.sh` | The sweep: mode switch, skin select, settle, capture, reframe, manifest |
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |
@@ -216,8 +216,9 @@ Classic → Original → Original-Metal → Modern → Media Player → Audion F
 ## Audion faces
 
 Panic's archive is 856 faces, so a whole-menu sweep is about two hours of Audion alone; pick a set
-with `--only` or `../exclude.txt`. Past 40 faces the menu is grouped into A–Z submenus, which
-`menu.applescript` `list`, `current` and `skin` read in place. Face names can start or end with a
+with `--only` or `../exclude.txt`. Past 40 skins any family's menu is grouped into A–Z submenus
+(while **Group Skins Alphabetically** is on, the default), which `menu.applescript` `list`, `current`
+and `skin` read in place. Face names can start or end with a
 space (five do), so `list` prints one name per line and `enumerate_skins.sh` never trims: trimming
 made those rows `MENU-FAIL`.
 

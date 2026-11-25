@@ -57,6 +57,12 @@
   running and track time — with rows in the skin's own playlist font and Winamp's playlist hotkeys.
   Right-click → **Playlist Style ▸ NullPlayer** brings back the previous borderless look.
 
+### Skin menus
+
+- **A–Z skin lists in every family.** Any family's skin list past 40 skins is grouped into A–Z
+  submenus, as Audion and Sonique already were. **Group Skins Alphabetically**, in every family's
+  submenu, turns it off for all of them.
+
 ### Fixes
 
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
