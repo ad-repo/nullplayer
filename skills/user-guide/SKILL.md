@@ -35,8 +35,9 @@ their saved Classic, Original, Original-Metal, or WMP choice after upgrading. Se
 
 **Skins > Audion Faces** wears Panic Audion faces (a folder of `index.json` + PNGs). **Get More
 Faces...** opens Panic's download page; **Load Face...** installs a face folder or a `.zip` of them
-(Panic's archive) and switches to it; installed faces are listed in the same menu. **Remove “name”...** deletes the installed copy. Every face button works: the menu button toggles
-the playlist, the mode button the Library Browser, eject is Open Files…, info shows track or face
+(Panic's archive) and switches to it; installed faces are listed in the same menu. **Remove
+“name”...** deletes the installed copy. Every face button works: the menu button toggles the
+playlist, the mode button the Library Browser, eject is Open Files…, info shows track or face
 credits, volume and the clock open sliders. NullPlayer's windows take their colours from the face.
 See `skills/audion-face-guide/reference/user-guide.md`.
 
@@ -44,9 +45,10 @@ See `skills/audion-face-guide/reference/user-guide.md`.
 
 **Skins > Sonique** wears Sonique 1.x `.sgf` skins. **Get More Skins...** opens the Internet
 Archive's Sonique collection; **Load Skin...** installs an `.sgf` and switches to it; **Open Skins
-Folder...** shows the installed copies; installed skins are listed in the same menu. **Remove “name”...** deletes the installed copy. With no skin installed, NullPlayer's own
-built-in Sonique skin shows; it also supplies any part a skin omits. The window has Sonique's three
-modes — navigator, mid and small — switched by the skin's balls or **Skins > Sonique > Mode**. The
+Folder...** shows the installed copies; installed skins are listed in the same menu. **Remove
+“name”...** deletes the installed copy. With no skin installed, NullPlayer's own built-in Sonique
+skin shows; it also supplies any part a skin omits. The window has Sonique's three modes —
+navigator, mid and small — switched by the skin's balls or **Skins > Sonique > Mode**. The
 navigator's menu screen opens the Playlist Editor, Library Browser and NullPlayer's windows; its
 visual mode screen hosts the effects (Spikes, Bars, Ambience, Cava, vis_classic), stepped by the
 up/down rocker, which elsewhere pages an open Playlist Editor; the drawer is the equalizer, and the

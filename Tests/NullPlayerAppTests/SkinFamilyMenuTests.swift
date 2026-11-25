@@ -42,17 +42,17 @@ final class SkinFamilyMenuTests: XCTestCase {
         let key = ContextMenuBuilder.groupSkinsAlphabeticallyKey
         let saved = UserDefaults.standard.object(forKey: key)
         defer { UserDefaults.standard.set(saved, forKey: key) }
-        let count = ContextMenuBuilder.groupedSkinsFlatListLimit + 1
+        let names = (0...ContextMenuBuilder.groupedSkinsFlatListLimit).map { "\($0 % 2 == 0 ? "A" : "B")\($0)" }
         func build() -> [String] {
-            let long = (0..<count).map { item("\($0 % 2 == 0 ? "A" : "B")\($0)") }
-            return ContextMenuBuilder.buildSkinFamilyMenu(switchItem: nil, options: [], skins: [long, [item("Metal")]])
+            ContextMenuBuilder.buildSkinFamilyMenu(switchItem: nil, options: [],
+                                                   skins: [names.map(item), [item("Metal")]])
                 .items.map { $0.isSeparatorItem ? "---" : $0.title }
         }
 
         UserDefaults.standard.set(true, forKey: key)
         XCTAssertEqual(build(), ["Group Skins Alphabetically", "---", "A", "B", "---", "Metal"])
         UserDefaults.standard.set(false, forKey: key)
-        XCTAssertEqual(build().count, 1 + 1 + count + 1 + 1, "flat: toggle, divider, skins, divider, Metal")
+        XCTAssertEqual(build(), ["Group Skins Alphabetically", "---"] + names + ["---", "Metal"])
     }
 
     // MARK: - Original and Original-Metal

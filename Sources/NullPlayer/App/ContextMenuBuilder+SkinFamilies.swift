@@ -405,8 +405,7 @@ extension ContextMenuBuilder {
             options: options, skins: [skinRows(for: .sonique)])
     }
 
-    /// Above this many skins a list is grouped into A–Z submenus: Panic's Audion archive alone is
-    /// 856 faces, the Sonique corpus 524 skins, the `.wal` corpus 995.
+    /// Above this many skins a list is grouped into A–Z submenus.
     static let groupedSkinsFlatListLimit = 40
 
     /// `items` as one submenu per initial letter (`#` for the rest) once there are more than `limit`.
