@@ -117,9 +117,14 @@ final class WinampModernPhase5Tests: XCTestCase {
         let grown = try XCTUnwrap(infos.first { $0.id.caseInsensitiveCompare("grown") == .orderedSame })
         XCTAssertTrue(grown.isVisibleWindow, "A 1×1 default_w/default_h is a starting size, not a stub")
 
+        // Wiimote's `SpaceCatSamba`: declared hidden, opened by the skin's own TOGGLE button (B481).
+        let site = try XCTUnwrap(infos.first { $0.id == "site" })
+        XCTAssertTrue(site.isVisibleWindow, "visible=\"0\" starts a window closed; it is still a window")
+        XCTAssertFalse(site.opensByDefault, "visible=\"0\" outranks default_visible")
+
         let windows = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
-        XCTAssertEqual(Set(windows.map(\.id)), ["main", "video", "grown"])
-        XCTAssertEqual(windows.filter { !$0.isMainPlayer }.count, 2, "Two auxiliary windows")
+        XCTAssertEqual(Set(windows.map(\.id)), ["main", "video", "grown", "site"])
+        XCTAssertEqual(windows.filter { !$0.isMainPlayer }.count, 3, "Three auxiliary windows")
     }
 
     func testSuiSkinCollapsesToSingleWindow() throws {
@@ -509,6 +514,7 @@ final class WinampModernPhase5Tests: XCTestCase {
       <container id="pl"><layout id="normal" w="1" h="1"/></container>
       <container id="video"><layout id="normal" w="200" h="150"/></container>
       <container id="grown"><layout id="normal" default_w="1" default_h="1"/></container>
+      <container id="site" visible="0" default_visible="1"><layout id="normal" w="900" h="700"/></container>
     </WasabiXML>
     """
 

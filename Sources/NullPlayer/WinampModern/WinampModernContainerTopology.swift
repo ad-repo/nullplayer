@@ -104,7 +104,11 @@ enum WinampModernContainerTopology {
                     object: container,
                     id: id,
                     isMainPlayer: isMain,
-                    isVisibleWindow: isMain || (!hidden && !collapsed),
+                    // A declared `visible="0"` starts the window closed; it is still a window. The
+                    // four corpus skins that write it (Wiimote, M3, Opulent_Records_Player,
+                    // hm_Touch_m_1) each open it from a `TOGGLE` button of their own. Only a
+                    // collapsed box is a stub.
+                    isVisibleWindow: isMain || !collapsed,
                     defaultSize: declared,
                     minimumSize: CGSize(width: max(1, minimum.width), height: max(1, minimum.height)),
                     maximumSize: (maximum.width > 0 || maximum.height > 0)
@@ -113,7 +117,7 @@ enum WinampModernContainerTopology {
                         : nil,
                     kind: kind(of: container),
                     isSynthesized: container.attributes[Self.synthesizedAttribute] == "1",
-                    opensByDefault: isMain || isTrue(container.attributes["default_visible"]),
+                    opensByDefault: isMain || (!hidden && isTrue(container.attributes["default_visible"])),
                     defaultOrigin: defaultOrigin(of: container)
                 )
             }
