@@ -49,6 +49,14 @@ extension PlaylistView {
         return true
     }
 
+    /// True over a bar control. The mini transport and the scroll arrows sit inside the window's
+    /// bottom and right resize bands, which would otherwise take the press for a resize.
+    func isOverWinampControl(windowPoint: NSPoint) -> Bool {
+        guard isWinampStyle else { return false }
+        let skinPoint = convertToSkinCoordinates(convert(windowPoint, from: nil))
+        return SkinElements.Playlist.Editor.control(at: skinPoint, size: effectiveWindowSize) != nil
+    }
+
     /// Winamp's playlist hotkeys; false for any other key.
     func performWinampHotkey(_ event: NSEvent) -> Bool {
         guard isWinampStyle, let hotkey = WinampPlaylistBar.Hotkey(event) else { return false }

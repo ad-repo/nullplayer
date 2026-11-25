@@ -543,7 +543,7 @@ class PlaylistView: NSView {
     }
 
     /// Convert a point from view coordinates to original (unscaled) skin coordinates
-    private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
+    func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         let scale = scaleFactor
         let effectiveSize = effectiveWindowSize
 
