@@ -1739,20 +1739,28 @@ final class WasabiSkinInitializer {
                        (try? self.resolveSkinResource(rawPath, source: source))
                            .flatMap { try? self.vfs.data(at: $0.logicalPath, location: source) }
                    }) {
-                // The frame's body colour, which a strip's flat inner rows repeat (the renderer's
-                // base-texture order, `WasabiRendererClipping.backing(of:)`).
-                let body = (resourceRegistry?.resolvedDefinition(identifier: "wasabi.frame.basetexture")
-                    ?? resourceRegistry?.resolvedDefinition(identifier: "component.basetexture"))
-                    .flatMap { WasabiResourceCache.cutImage(of: $0, in: vfs) }
+                var cuts: [String: CGImage?] = [:]
+                func cut(_ identifier: String) -> CGImage? {
+                    if let known = cuts[identifier] { return known }
+                    let image = resourceRegistry?.resolvedDefinition(identifier: identifier)
+                        .flatMap { WasabiResourceCache.cutImage(of: $0, in: vfs) }
+                    cuts[identifier] = image
+                    return image
+                }
                 let border = WasabiStandardFrames.measuredBorder(
                     in: definition.templateChildren,
                     group: { try? types.resolved(identifier: $0).templateChildren },
-                    bitmapOpaqueBounds: { [resourceRegistry, vfs] identifier, trimBody in
+                    // The frame's body colour, which a strip's flat inner rows repeat (the renderer's
+                    // base-texture order, `WasabiRendererClipping.backing(of:)`).
+                    frameBody: ["wasabi.frame.basetexture", "component.basetexture"]
+                        .first { resourceRegistry?.resolvedDefinition(identifier: $0) != nil },
+                    bitmapSize: { cut($0).map { CGSize(width: $0.width, height: $0.height) } },
+                    bitmapOpaqueBounds: { [resourceRegistry] identifier, body in
                         guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
                         else { return nil }
                         // A cut with nothing opaque in it is an empty box, not an unreadable one.
-                        if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
-                            return WasabiResourceCache.edgeBounds(of: cut, body: trimBody ? body : nil) ?? .zero
+                        if let image = cut(identifier) {
+                            return WasabiResourceCache.edgeBounds(of: image, body: body.flatMap(cut)) ?? .zero
                         }
                         // A generated (`$solid`) bitmap has no file: it is its declared size.
                         guard let width = resource.attributes["w"].flatMap(Double.init),

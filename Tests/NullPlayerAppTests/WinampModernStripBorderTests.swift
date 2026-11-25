@@ -80,6 +80,32 @@ final class WinampModernStripBorderTests: XCTestCase {
         XCTAssertEqual(border.bottom, 42)
     }
 
+    /// Center_Fresh's frame is one nine-slice `<grid>`: its edges are the strips, trimmed against the
+    /// grid's own flat `middle`, the far ones measured in from their cut's size (B465). Measured as
+    /// no strips at all, the border was zero and every hosted window opened bare.
+    func testAGridFrameIsMeasuredByItsEdges() {
+        let grid = WalXMLNode(name: "grid", attributes: [
+            "x": "0", "y": "0", "w": "0", "h": "0", "relatw": "1", "relath": "1",
+            "top": "t", "left": "l", "right": "r", "bottom": "b", "middle": "m",
+        ], location: WalSourceLocation(path: "/frame.xml"))
+        let group = WalXMLNode(name: "group", attributes: ["id": "frame.group"],
+                               location: WalSourceLocation(path: "/frame.xml"))
+        let sizes: [String: CGSize] = ["t": CGSize(width: 325, height: 50), "l": CGSize(width: 21, height: 133),
+                                       "r": CGSize(width: 20, height: 133), "b": CGSize(width: 325, height: 50)]
+        // Whole tiles, then trimmed of the black rows the panel shares with `m`.
+        let border = WasabiStandardFrames.measuredBorder(
+            in: [group], group: { $0 == "frame.group" ? [grid] : nil },
+            bitmapSize: { sizes[$0] },
+            bitmapOpaqueBounds: { id, body in
+                switch (id, body) {
+                case ("t", "m"): CGRect(x: 0, y: 0, width: 325, height: 40)
+                case ("b", "m"): CGRect(x: 0, y: 11, width: 325, height: 39)
+                default: sizes[id].map { CGRect(origin: .zero, size: $0) }
+                }
+            })
+        XCTAssertEqual(border, .init(left: 21, top: 40, right: 20, bottom: 39))
+    }
+
     /// Trance_Critic_v2_0's `frame-tm.png` is a short edge and then rows of its navy base texture
     /// (B464): only rows of the frame's flat body colour are trimmed, and a textured body trims none.
     func testRowsOfTheFlatBaseTextureAreBodyNotBorder() throws {
@@ -98,12 +124,12 @@ final class WinampModernStripBorderTests: XCTestCase {
         let location = WalSourceLocation(path: "/frame.xml")
         let top = WalXMLNode(name: "layer", attributes: ["x": "30", "y": "0", "image": "t", "resize": "top"],
                              location: location)
-        let bounds: (String, Bool) -> CGRect? = { _, trim in CGRect(x: 0, y: 0, width: 30, height: trim ? 8 : 30) }
+        let bounds: (String, String?) -> CGRect? = { _, body in CGRect(x: 0, y: 0, width: 30, height: body != nil ? 8 : 30) }
         func border(title: [String: String], text: [WalXMLNode] = []) -> Double {
             let node = WalXMLNode(name: "group", attributes: title.merging(["id": "wasabi.titlebar"]) { $1 },
                                   location: location)
             return WasabiStandardFrames.measuredBorder(in: [top, node], group: { $0 == "wasabi.titlebar" ? text : nil },
-                                                       bitmapOpaqueBounds: bounds).top
+                                                       frameBody: "body", bitmapOpaqueBounds: bounds).top
         }
         XCTAssertEqual(border(title: ["y": "0", "h": "18"]), 18)
         let titleText = WalXMLNode(name: "text", attributes: ["id": "window.titlebar.title", "y": "0", "h": "20"],

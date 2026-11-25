@@ -128,6 +128,9 @@
 - **Winamp Modern (`.wal`): playlists in skin frames show their whole Add/Rem/Sel/Misc/List bar.**
   In Blogz, HARMONIA, X_Sphere, Probe_V5, the iTunes Mini skins and about 20 others, the list
   covered the bar or cut it off. Framed windows now end above the frame's status bar.
+- **Winamp Modern (`.wal`): Center_Fresh's frame shows on every window.** Art, Cava, EQ Studio, Flow,
+  PeppyMeter, the analyzers, Waveform, Sonos Rooms and Stream Ripper opened with no frame, while the
+  Library and Playlist wore it.
 
 ## 0.35.2
 

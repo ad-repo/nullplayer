@@ -183,17 +183,24 @@ extension WasabiStandardFrames {
     /// cannot be read falls back to its declared size, and one that declares none contributes
     /// nothing rather than zero.
     ///
-    /// `bitmapOpaqueBounds(id, trimBody)` with `trimBody` also drops a strip's rows that repeat the
-    /// frame's flat base texture (B464, B475). Those rows are body, but a frame can draw its title
-    /// or status text over plain body-coloured strips (canum's title, AniTransformers' and Blogz's
-    /// command bars), so the trim never takes a side past the title bottom or the status top.
+    /// `bitmapOpaqueBounds(id, body)` with a `body` bitmap also drops a strip's rows that repeat that
+    /// body's flat colour (B464, B475): the frame's base texture (`frameBody`) for a strip, a grid's
+    /// own `middle` for a grid's edge. Those rows are body, but a frame can draw its title or status
+    /// text over plain body-coloured strips (canum's title, AniTransformers' and Blogz's command
+    /// bars), so the trim never takes a side past the title bottom or the status top. `bitmapSize`
+    /// is a bitmap's whole cut, which a grid's far edges are measured in from.
     static func measuredBorder(in children: [WalXMLNode],
                                group: (String) -> [WalXMLNode]?,
-                               bitmapOpaqueBounds: (String, _ trimBody: Bool) -> CGRect?) -> Border {
+                               frameBody: String? = nil,
+                               bitmapSize: (String) -> CGSize? = { _ in nil },
+                               bitmapOpaqueBounds: (String, _ body: String?) -> CGRect?) -> Border {
         func walk(trimBody: Bool) -> Measurement {
             var measurement = Measurement()
-            measure(children, into: &measurement, offset: .zero, margin: .zero,
-                    group: group, bitmapOpaqueBounds: { bitmapOpaqueBounds($0, trimBody) }, depth: 0, visited: [])
+            let edgeArt: EdgeArt = { image, gridMiddle in
+                bitmapOpaqueBounds(image, trimBody ? gridMiddle ?? frameBody : nil)
+            }
+            measure(children, into: &measurement, offset: .zero, margin: .zero, group: group,
+                    edgeArt: edgeArt, bitmapSize: bitmapSize, depth: 0, visited: [])
             return measurement
         }
         let whole = walk(trimBody: false), wholeBorder = whole.resolved
@@ -221,6 +228,9 @@ extension WasabiStandardFrames {
     // MARK: - Measurement
 
     private static let maximumFrameDepth = 16
+
+    /// An edge bitmap's drawn extent; the second argument is the grid's `middle`, nil for a strip.
+    private typealias EdgeArt = (_ image: String, _ gridMiddle: String?) -> CGRect?
 
     /// What one walk of a frame's markup finds: its strips, and where its title and status bar sit.
     private struct Measurement {
@@ -283,7 +293,7 @@ extension WasabiStandardFrames {
     private static func measure(_ children: [WalXMLNode], into measurement: inout Measurement,
                                 offset: CGPoint, margin: CGPoint,
                                 group: (String) -> [WalXMLNode]?,
-                                bitmapOpaqueBounds: (String) -> CGRect?,
+                                edgeArt: EdgeArt, bitmapSize: (String) -> CGSize?,
                                 depth: Int, visited: Set<String>) {
         guard depth <= maximumFrameDepth else { return }
         for node in children {
@@ -320,7 +330,7 @@ extension WasabiStandardFrames {
             // transparent draws no edge, so it is no border: LCDx's are 39x37 empty tiles, and
             // counted at their offsets its Thinger's client lost 39px on the right and 37px below.
             if let edges = WasabiResizeEdges(attribute: node.attribute("resize")),
-               case let opaque = node.attribute("image").flatMap(bitmapOpaqueBounds), opaque?.isEmpty != true {
+               case let opaque = node.attribute("image").flatMap({ edgeArt($0, nil) }), opaque?.isEmpty != true {
                 let width = opaque.map { Double($0.maxX) } ?? number("w")
                 let height = opaque.map { Double($0.maxY) } ?? number("h")
                 switch edges {
@@ -336,12 +346,38 @@ extension WasabiStandardFrames {
                 }
             }
 
-            measure(node.children, into: &measurement, offset: childOffset, margin: childMargin,
-                    group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1, visited: visited)
+            // A `<grid>` is the whole frame as one nine-slice, its edges the strips: Center_Fresh's
+            // frame is nothing else, and measured by strips alone its border was zero, so every
+            // hosted window's content covered the frame and opened bare (B465). Its edges sit at the
+            // grid's own sides, so the far ones are measured in from their cut's size.
+            if node.name.caseInsensitiveCompare("grid") == .orderedSame {
+                let middle = node.attribute("middle")
+                func art(_ side: String) -> (bounds: CGRect, size: CGSize?)? {
+                    guard let image = node.attribute(side), let bounds = edgeArt(image, middle),
+                          !bounds.isEmpty else { return nil }
+                    return (bounds, bitmapSize(image))
+                }
+                if let left = art("left") {
+                    measurement.border.left = max(measurement.border.left, childOffset.x + left.bounds.maxX)
+                }
+                if let top = art("top") {
+                    measurement.border.top = max(measurement.border.top, childOffset.y + top.bounds.maxY)
+                }
+                if let right = art("right"), let size = right.size {
+                    measurement.border.right = max(measurement.border.right,
+                                                   childMargin.x + size.width - right.bounds.minX)
+                }
+                if let bottom = art("bottom"), let size = bottom.size {
+                    measurement.border.bottom = max(measurement.border.bottom,
+                                                    childMargin.y + size.height - bottom.bounds.minY)
+                }
+            }
+
+            measure(node.children, into: &measurement, offset: childOffset, margin: childMargin, group: group,
+                    edgeArt: edgeArt, bitmapSize: bitmapSize, depth: depth + 1, visited: visited)
             if let nested = referencedGroup(node, group: group, visited: visited) {
-                measure(nested.children, into: &measurement, offset: childOffset, margin: childMargin,
-                        group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: depth + 1,
-                        visited: nested.visited)
+                measure(nested.children, into: &measurement, offset: childOffset, margin: childMargin, group: group,
+                        edgeArt: edgeArt, bitmapSize: bitmapSize, depth: depth + 1, visited: nested.visited)
             }
         }
     }

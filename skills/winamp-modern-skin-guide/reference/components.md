@@ -282,6 +282,20 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   ends where its `window.titlebar.title` text does (pumaSKIN's, `y=0 h=20`); that reading feeds only
   this bound, so frames the trim does not touch keep their measure. 60 gold skins changed, almost all
   a list now filling the panel the skin drew for it instead of leaving a margin of body colour.
+- **A `<grid>` frame is measured by its edges** (B465). Center_Fresh's frame is one nine-slice
+  `<grid>` (`component.top.middle`, `component.left`, …) with no `resize=` strips, no title group and
+  no `LayoutStatus`. Measured by strips alone, its border was zero, so every hosted window's content
+  covered the frame and opened bare: Art, Cava, EQ Studio, Flow and six more, while the skin's own
+  Library and Playlist, which place their content by hand, wore it. Now a grid's `top`/`left`/
+  `right`/`bottom` images count as the four strips, trimmed of rows matching the grid's own flat
+  `middle` (not the frame base texture), with the far edges measured in from their cut's size
+  (`bitmapSize`). Center_Fresh measures 21/40/20/39 against the 20/41/20/42 its own windows use. Of
+  the 132 gold skins whose standard frame reaches a grid, only Technicalium's and Electrolium's
+  modal windows changed in the render. The rest ship a content script or have strips that measure
+  wider. **A bare frame can be opaque:** the intake's transparency read missed Center_Fresh entirely
+  and called the defect intermittent. Judge frames by the census shots, not by alpha. EGG and
+  Anime_Shogo's one bare run (intake #14, 29–42% transparent, a different set each time) has not
+  reproduced in any census since (2026-11-17 and 2026-11-25), so it is noted here, not filed.
 - **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
   Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
   the title, and Celica's playlist covered its own title bar.
