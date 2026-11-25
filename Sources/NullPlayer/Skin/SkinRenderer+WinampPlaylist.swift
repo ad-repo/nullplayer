@@ -5,11 +5,11 @@ import AppKit
 extension SkinRenderer {
     func drawWinampPlaylistWindow(in context: CGContext, bounds: NSRect, isActive: Bool,
                                   closePressed: Bool, scrollPosition: CGFloat,
-                                  runningTime: String, trackTime: (minutes: String, seconds: String)?) {
+                                  runningTime: String, trackSeconds: Int?) {
         typealias PL = SkinElements.Playlist
         let titleHeight = PL.titleHeight
-        let bottomHeight = WinampPlaylistBar.bottomHeight
-        let rightBorder = WinampPlaylistBar.rightBorder
+        let bottomHeight = PL.Editor.barHeight
+        let rightBorder = PL.Editor.rightBorder
         let bottomY = bounds.height - bottomHeight
 
         skin.playlistColors.normalBackground.setFill()
@@ -33,7 +33,7 @@ extension SkinRenderer {
                    to: NSRect(x: bounds.width - 25, y: 0, width: 25, height: titleHeight), in: context)
         if closePressed {
             NSColor(calibratedWhite: 0.3, alpha: 0.5).setFill()
-            context.fill(NSRect(x: bounds.width - 11, y: 3, width: 9, height: 9))
+            context.fill(PL.Editor.closeGlyph(width: bounds.width))
         }
 
         // Side borders, tiled bottom-up so a partial tile lands under the title bar.
@@ -53,7 +53,7 @@ extension SkinRenderer {
         }
 
         // Bottom bar: left corner, tiles, right corner.
-        let rightCornerX = bounds.width - WinampPlaylistBar.rightCornerWidth
+        let rightCornerX = bounds.width - PL.Editor.rightCornerWidth
         var x: CGFloat = PL.bottomLeftCorner.width
         while x < rightCornerX {
             let w = min(PL.bottomTile.width, rightCornerX - x)
@@ -66,26 +66,25 @@ extension SkinRenderer {
                    to: NSRect(x: 0, y: bottomY, width: PL.bottomLeftCorner.width, height: bottomHeight),
                    in: context)
         drawSprite(from: pledit, sourceRect: PL.bottomRightCorner,
-                   to: NSRect(x: rightCornerX, y: bottomY, width: WinampPlaylistBar.rightCornerWidth,
+                   to: NSRect(x: rightCornerX, y: bottomY, width: PL.Editor.rightCornerWidth,
                               height: bottomHeight), in: context)
 
         // Scrollbar thumb.
-        let groove = WinampPlaylistBar.scrollbarRect(size: bounds.size, titleHeight: titleHeight)
+        let groove = PL.Editor.scrollbarRect(size: bounds.size)
         let thumbHeight = PL.scrollbarThumbNormal.height
         let thumbY = groove.minY + max(0, groove.height - thumbHeight) * max(0, min(1, scrollPosition))
         drawSprite(from: pledit, sourceRect: PL.scrollbarThumbNormal,
                    to: NSRect(x: groove.minX, y: thumbY, width: groove.width, height: thumbHeight), in: context)
 
         // Running time and the playing track's time, in the skin's TEXT.BMP font.
-        drawSkinText(runningTime, at: WinampPlaylistBar.runningTimeOrigin(size: bounds.size), in: context)
-        if let trackTime {
-            let charWidth = SkinElements.TextFont.charWidth
-            let colonX = WinampPlaylistBar.trackTimeColonX(size: bounds.size)
-            let timeY = WinampPlaylistBar.trackTimeY(size: bounds.size)
-            drawSkinText(trackTime.minutes,
-                         at: NSPoint(x: colonX - 1 - CGFloat(trackTime.minutes.count) * charWidth, y: timeY),
-                         in: context)
-            drawSkinText(trackTime.seconds, at: NSPoint(x: colonX + 3, y: timeY), in: context)
+        drawSkinText(runningTime, at: PL.Editor.runningTimeOrigin(size: bounds.size), in: context)
+        if let trackSeconds {
+            // Either side of the colon the art bakes in: minutes right-aligned to it, then seconds.
+            let minutes = String(trackSeconds / 60), seconds = String(format: "%02d", trackSeconds % 60)
+            let colon = PL.Editor.trackTimeColon(size: bounds.size)
+            let minutesX = colon.x - 1 - CGFloat(minutes.count) * SkinElements.TextFont.charWidth
+            drawSkinText(minutes, at: NSPoint(x: minutesX, y: colon.y), in: context)
+            drawSkinText(seconds, at: NSPoint(x: colon.x + 3, y: colon.y), in: context)
         }
     }
 }

@@ -1811,38 +1811,18 @@ class MainWindowView: NSView {
         
         switch button {
         case .previous:
-            if isVideoActive {
-                WindowManager.shared.skipVideoBackward(10)
-            } else {
-                engine.previous()
-            }
+            WindowManager.shared.perform(.previous)
         case .play:
             NSLog("MainWindowView: Play button pressed (isVideoActive=%d)", isVideoActive ? 1 : 0)
-            if isVideoActive {
-                WindowManager.shared.toggleVideoPlayPause()
-            } else {
-                engine.play()
-            }
+            WindowManager.shared.perform(.play)
         case .pause:
             NSLog("MainWindowView: Pause button pressed (isVideoActive=%d, isCastingLocalFile=%d)", isVideoActive ? 1 : 0, isCastingLocalFile ? 1 : 0)
-            if isVideoActive {
-                WindowManager.shared.toggleVideoPlayPause()
-            } else {
-                engine.pause()
-            }
+            WindowManager.shared.perform(.pause)
         case .stop:
             NSLog("MainWindowView: Stop button pressed (isVideoActive=%d)", isVideoActive ? 1 : 0)
-            if isVideoActive {
-                WindowManager.shared.stopVideo()
-            } else {
-                engine.stop()
-            }
+            WindowManager.shared.perform(.stop)
         case .next:
-            if isVideoActive {
-                WindowManager.shared.skipVideoForward(10)
-            } else {
-                engine.next()
-            }
+            WindowManager.shared.perform(.next)
         case .eject:
             openFile()
         case .shuffle:
