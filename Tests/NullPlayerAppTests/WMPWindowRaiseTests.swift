@@ -14,23 +14,6 @@ import XCTest
 /// verified live; `wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*.
 @MainActor
 final class WMPWindowRaiseTests: XCTestCase {
-    private func window() -> NSWindow {
-        NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless],
-                 backing: .buffered, defer: true)
-    }
-
-    /// The skin's windows follow the app's windows, in order; with none (every family but `.wmz`'s
-    /// and `.wal`'s, whose `skinOwnedWindowsProvider` is nil) the app's own windows are raised as they
-    /// were.
-    func testTheSkinsWindowsFollowTheAppsWindows() {
-        let player = window(), equalizer = window()
-        let appWindows: [NSWindow?] = [player, nil, equalizer]
-        let panels = [window(), window()]
-        let ids = { (windows: [NSWindow?]) in windows.map { $0.map(ObjectIdentifier.init) } }
-        XCTAssertEqual(ids(WindowManager.raiseOrder(appWindows, skinWindows: panels)), ids(appWindows + panels.map { $0 }))
-        XCTAssertEqual(ids(WindowManager.raiseOrder(appWindows, skinWindows: [])), ids(appWindows))
-    }
-
     /// Which families have skin-owned windows, and which controllers hand them over: no other family
     /// even looks for a skin's own windows (`skinOwnedWindowsProvider` asks the family first).
     func testOnlyWMPAndWinampModernHaveSkinOwnedWindows() {

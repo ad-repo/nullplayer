@@ -998,7 +998,7 @@ every skin-owned step has declined (B55, above).
   `WinampModernTooltipFrameTests`. The headless render dump draws the same rim (B274).
 - **Clicking any window raises all of them (2026-09-27)** — the `.wal` port of W273
   (`wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*). A skin's
-  containers and hosted windows are not controllers, so `WindowManager.raiseOrder` appends
+  containers and hosted windows are not controllers, so `WindowManager.bringAllWindowsToFront` appends
   the controller's `SkinOwnedWindowsProviding.managedSkinWindows`
   (`WinampModernMainWindowController+SkinOwnedWindows.swift`: auxiliary containers, then materialized
   hosted windows in `WinampModernHostedWindowID` order) in `.wal` as it does WMP's panels in `.wmz`, and the

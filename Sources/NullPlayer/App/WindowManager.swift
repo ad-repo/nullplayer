@@ -5493,8 +5493,10 @@ class WindowManager {
         // raised the equalizer above the playlist, and the video window above the visualizer and the
         // library, in Classic. The feature windows keep the case order of `CenterStackWindowKind`.
         //
-        // A skin's own windows are not controllers, so they are not in this list; `raiseOrder` appends
-        // them in a family that has them (`PlayerUIControllerFamily.hasSkinOwnedWindows`) only.
+        // A skin's own windows are not controllers, so they are not in this list; they are appended
+        // after it, in the order the controller lists them, in a family that has them
+        // (`PlayerUIControllerFamily.hasSkinOwnedWindows`) only: `skinOwnedWindowsProvider` is nil in
+        // every other family.
         let appWindows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -5512,7 +5514,8 @@ class WindowManager {
         // window (W273).
         let family = uiMode.controllerFamily
         let raisesSkinWindows = family.hasSkinOwnedWindows
-        let windows = Self.raiseOrder(appWindows, skinWindows: skinOwnedWindowsProvider?.managedSkinWindows.map(\.window) ?? [])
+        let skinWindows: [NSWindow?] = skinOwnedWindowsProvider?.managedSkinWindows.map { $0.window } ?? []
+        let windows = appWindows + skinWindows
 
         if isMinimizingAll { return }
 
@@ -5540,14 +5543,6 @@ class WindowManager {
         }
     }
     
-    /// The windows `bringAllWindowsToFront` orders front, bottom first: the app's windows, then the
-    /// skin's own (a `.wmz` skin's `theme.openView` panels, a `.wal` skin's container and hosted
-    /// windows). `skinWindows` is empty outside a family that has them: `skinOwnedWindowsProvider`
-    /// answers nil there.
-    static func raiseOrder(_ appWindows: [NSWindow?], skinWindows: [NSWindow]) -> [NSWindow?] {
-        appWindows + skinWindows.map { $0 }
-    }
-
     /// Find visible center-stack windows that are docked below the main window
     /// (directly or transitively), using the current dock threshold.
     private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {

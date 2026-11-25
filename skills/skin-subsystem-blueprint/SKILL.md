@@ -212,9 +212,9 @@ canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recip
   (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`). Persist the origin the user left and which
   windows were open, per skin, in `SkinWindowStore` (`App/Skinning/`) under your family's own
   `SkinWindowStore.Keys`; `.wmz` keeps its there (`.wmp`).
-- **Join docking and the raise through `SkinOwnedWindowsProviding`** (`App/WindowManager+SkinOwnedWindows.swift`),
+- **Join docking and the raise through `SkinOwnedWindowsProviding`** (`App/MainWindowProviding.swift`),
   not a branch of your own in `WindowManager`: add your family to
-  `PlayerUIControllerFamily.hasSkinOwnedWindows`, and have your controller list its windows as
+  `PlayerUIControllerFamily.hasSkinOwnedWindows` (`App/PlayerUIMode.swift`), and have your controller list its windows as
   `managedSkinWindows`, by default snap targets and **not** centre-stack members (a skin-authored
   canvas has no column to join). `managedWindowRecords` and `bringAllWindowsToFront` read it there;
   `.wmz` and `.wal` do.

@@ -113,7 +113,7 @@ driving the app.
 
 **Clicking any NullPlayer window raises every one of them, a skin's `theme.openView` panels
 included, with the clicked window on top.** `WindowManager.bringAllWindowsToFront` raises a fixed
-list of NullPlayer's controllers. The panels are not controllers, so `WindowManager.raiseOrder`
+list of NullPlayer's controllers. The panels are not controllers, so `bringAllWindowsToFront`
 appends them after that list, in the order the skin opened them, as the controller lists them
 (`SkinOwnedWindowsProviding.managedSkinWindows`, in a family whose `hasSkinOwnedWindows` is true). It does
 this in `.wmz` and, since 2026-09-27, `.wal` (a skin's containers and hosted windows —
