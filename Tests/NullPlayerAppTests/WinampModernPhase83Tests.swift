@@ -42,13 +42,15 @@ final class WinampModernPhase83Tests: XCTestCase {
                        "closing a window changes nothing about the window *list*")
     }
 
-    /// The other half: the check `isHidden` exists for still works. Nothing in the 36-skin corpus
-    /// declares a bare `visible=` on a container, so this case is guarded by test rather than by use.
-    func testDeclaredVisibleZeroStillExcludesTheContainer() throws {
+    /// The other half: a container the *markup* declares `visible="0"` starts closed, and is still
+    /// a window. Until B481 it was dropped as a stub, with no corpus skin behind that rule; the four
+    /// that write it (Wiimote, M3, Opulent_Records_Player, hm_Touch_m_1) each open the window from
+    /// a `TOGGLE` button of their own, which found nothing to open.
+    func testDeclaredVisibleZeroIsAClosedWindow() throws {
         let loaded = try makeSkin(xml: Self.declaredHidden)
         let windows = WinampModernContainerTopology.windowContainers(graph: loaded.runtime.graph)
-        XCTAssertFalse(windows.contains { $0.id == "stub" },
-                       "a container the *markup* declares invisible is a stub, as before")
+        let stub = try XCTUnwrap(windows.first { $0.id == "stub" })
+        XCTAssertFalse(stub.opensByDefault)
         XCTAssertTrue(windows.contains { $0.id == "main" })
     }
 

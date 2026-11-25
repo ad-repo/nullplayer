@@ -33,7 +33,11 @@ enum WasabiClickAction {
     /// none, and only the *first* `;` separates, so `SWITCHTO;group;subpage` keeps its second field.
     static func split(action: String, parameter: String?) -> (action: String, parameter: String?) {
         let trimmed = action.trimmingCharacters(in: .whitespaces)
-        guard let separator = trimmed.firstIndex(of: ";") else { return (trimmed, parameter) }
+        // `MENU:WA5:PE_File` names its menu after a colon (EPS_High-End_System's File buttons). Only
+        // that spelling: `WA5:Prefs` is one action whole, and no other `MENU:` form is measured.
+        let separator = trimmed.uppercased().hasPrefix("MENU:WA5:")
+            ? trimmed.firstIndex(of: ":") : trimmed.firstIndex(of: ";")
+        guard let separator else { return (trimmed, parameter) }
         let head = String(trimmed[trimmed.startIndex..<separator]).trimmingCharacters(in: .whitespaces)
         let tail = String(trimmed[trimmed.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
         if let parameter, !parameter.isEmpty { return (head, parameter) }

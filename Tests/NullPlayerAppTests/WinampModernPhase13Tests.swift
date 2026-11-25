@@ -476,7 +476,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         XCTAssertTrue(library.isSynthesized)
         XCTAssertEqual(library.kind, .library)
         XCTAssertEqual(library.defaultSize, CGSize(width: 640, height: 400))
-        XCTAssertTrue(library.isVisibleWindow)
+        XCTAssertTrue(library.isWindow)
 
         // The window is a real, renderable container whose frame points at a registered content
         // group. Instantiating that group is the frame script's job at runtime (the fixture's script
@@ -579,7 +579,7 @@ final class WinampModernPhase13Tests: XCTestCase {
         let containers = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
         let about = try XCTUnwrap(containers.first { $0.id == "nullplayer.about" })
         XCTAssertTrue(about.isSynthesized)
-        XCTAssertTrue(about.isVisibleWindow)
+        XCTAssertTrue(about.isWindow)
         XCTAssertNil(about.kind, "the About page is not a component surface")
         XCTAssertFalse(about.opensByDefault, "it opens on request, never with the skin")
         XCTAssertFalse(WinampModernContainerTopology.isListedInWindowMenu(about),

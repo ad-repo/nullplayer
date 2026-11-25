@@ -5,6 +5,7 @@ import ZIPFoundation
 /// Host actions on plain `<button>`s that had no handler. B299: Quadelic's `vol +`/`vol -`
 /// (`VOLUME_UP`/`VOLUME_DOWN`). B374: Vex's, Rammstein's and WinPlain's `REWIND_5S`/`FFWD_5S`.
 /// B376: WinPlain's mini layout returns with `SWITCH` to `default`, a layout it does not declare.
+/// B480: EPS_High-End_System's Open Directory (`EJECT_DIR`).
 final class WinampModernB299Tests: XCTestCase {
     func testVolumeButtonsStepTheHostBothWays() throws {
         let (view, host, loaded) = try makeView(buttons: """
@@ -32,6 +33,14 @@ final class WinampModernB299Tests: XCTestCase {
         host.currentTime = 3
         try click("back", in: view, loaded)
         XCTAssertEqual(host.seeks.last, 0, "held at the start")
+    }
+
+    func testOpenDirectoryButtonAsksForAFolder() throws {
+        let (view, host, loaded) = try makeView(buttons: """
+              <button id="dir" action="eject_dir" x="0" y="0" w="20" h="20"/>
+        """)
+        try click("dir", in: view, loaded)
+        XCTAssertEqual(host.folderRequests, 1)
     }
 
     func testSwitchToDefaultReturnsToTheFirstLayout() throws {
@@ -91,6 +100,8 @@ final class WinampModernB299Tests: XCTestCase {
         var trackInfo = ""
         var spectrumLevels: [Float] = []
         var seeks: [TimeInterval] = []
+        var folderRequests = 0
+        func openFolder() { folderRequests += 1 }
         func play() {}
         func pause() {}
         func stop() {}

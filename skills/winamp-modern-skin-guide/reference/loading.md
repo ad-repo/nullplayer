@@ -603,7 +603,7 @@ layout with no background at all falls through to the classic 275×116. ZDL's Re
 every one of its layouts that way — with the old unconditional fallback its 275×348 player got a
 275×116 canvas, everything below the reels landed outside it where `append` culls it, and what was
 left stacked on top of the reels. Same rule in the two collapsed-window checks
-(`WinampModernContainerTopology`, `WasabiSurfaceInventory.isVisibleWindow`): a window is collapsed
+(`WinampModernContainerTopology`, `WasabiSurfaceInventory.isWindow`): a window is collapsed
 only when it *declares* a ≤2px box, or a skin that sizes its equalizer from art looks like it has
 none and gets a synthesized one built over the top of it.
 

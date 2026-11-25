@@ -46,7 +46,7 @@ final class WinampModernDebugClickSweep {
                                  "eq", "layout", "windows", "main", "note", "changed"]
     /// The playhead's own drift over one click's settle time (`step`'s 1.2 s), which is not a seek.
     private static let positionDrift: ClosedRange<TimeInterval> = -0.5...2.5
-    private static let skippedActions: Set<String> = ["CLOSE", "MINIMIZE", "EXIT", "QUIT", "EJECT"]
+    private static let skippedActions: Set<String> = ["CLOSE", "MINIMIZE", "EXIT", "QUIT", "EJECT", "EJECT_DIR"]
     private static let probeVolume = 0.5
     /// The sweep keeps itself alive until `done`.
     private static var running: WinampModernDebugClickSweep?

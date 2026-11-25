@@ -2,6 +2,22 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B480 — EPS_High-End_System's Open Directory and playlist File buttons do nothing — closed 2026-11-24
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B480 | **EPS_High-End_System's Open Directory and playlist File buttons do nothing.** Found in intake #16's click smoke (2026-11-24, playing): `button#open_file_button` (`action="eject_dir"`) read `nochange`, and `RENDER_CLICK` decoded it to no host family; the Library's `button#FilePlMenu` (`action="MENU:WA5:ML_File"`) read `nochange`, and the playlist's twin (`MENU:WA5:PE_File`) is the same shape. `performAction` had no `EJECT_DIR` case, and `WasabiClickAction.split` splits only on `;`, so `MENU:WA5:PE_File` never reached `case "MENU"`. | EPS_High-End_System_v1_test | S | 2 |
+
+**Closed 2026-11-24.** `EJECT_DIR` calls the new `WinampModernHost.openFolder()`, which is the app's own Open Folder panel (`MenuActions.openFolder`); the click smoke skips it as it skips `EJECT`. `split` reads `MENU:WA5:<id>` with its menu after the first colon (only that spelling: `WA5:Prefs` stays whole), and a button's `MENU` with that parameter opens the menu a `<Menu menu=…>` entry with that identifier opens (`presentHostMenu`). Live on the debug build: Open Directory blocks in the folder panel, the playlist File button opens the `PE_LIST` menu. `WA5:ML_File` has no host menu, so the Library's File button still opens nothing. Tests: `WinampModernB299Tests.testOpenDirectoryButtonAsksForAFolder`, `WinampModernPhase36Tests.testAMenuActionNamesItsMenuAfterAColon`.
+
+## B481 — A container declared `visible="0"` is never a window, so the skin's own button to open it does nothing — closed 2026-11-24
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B481 | **A container declared `visible="0"` is never a window, so the skin's own button to open it does nothing.** Found in intake #16's click smoke (2026-11-24, playing): Wiimote's `togglebutton#op` (`action="TOGGLE" param="SpaceCatSamba"`) read `nochange`. `WinampModernContainerTopology.analyze` treated a declared `visible="0"` as a stub (`isVisibleWindow` false), a rule B16 kept with no corpus case behind it. The four skins in gold+silver that declare one each open it from a `TOGGLE` button: Wiimote `SpaceCatSamba`, M3 `downloads`, Opulent_Records_Player `Face Tomorrow Website`, hm_Touch_m_1 `winamp.albumart`. ClassicPro collapses its stubs with a 1×1 layout, not `visible="0"`. | Wiimote, M3, Opulent_Records_Player, hm_Touch_m_1 | S | 2 |
+
+**Closed 2026-11-24.** A declared `visible="0"` now starts the window closed (`opensByDefault` false even beside `default_visible="1"`) and leaves it a window; only a collapsed box is a stub. Live on the debug build: Wiimote's home button opens the 900×700 `SpaceCatSamba` window and a second press closes it. Tests: `WinampModernPhase5Tests.testContainerTopologyClassifiesVisibleAndCollapsedContainers`, `WinampModernPhase83Tests.testDeclaredVisibleZeroIsAClosedWindow` (was `testDeclaredVisibleZeroStillExcludesTheContainer`).
+
 ## B300 — cPro__Mecha's tab bar cuts its long labels — closed 2026-11-19
 
 | Id | Item | Reach | Effort | Tier |

@@ -137,7 +137,7 @@ bare `visible=` at all**, so the check only ever fired on a runtime hide; the co
 carried by the 1×1 size test beside it, which is what `window-overrides.xml` actually writes.
 
 That size test reads the fixed `w`/`h` only, in both `WinampModernContainerTopology.analyze` and
-`WinampModernSurfaceInventory.isVisibleWindow`. A tiny `default_w`/`default_h` is where a resizable
+`WinampModernSurfaceInventory.isWindow`. A tiny `default_w`/`default_h` is where a resizable
 window starts: Winampple's `PLEdit` starts at 1×1 and its `standardframePL.maki` resizes it over the
 player body every 10 ms. Every other ≤2px container in the corpus declares fixed `w`/`h` (B269).
 

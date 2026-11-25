@@ -1636,8 +1636,8 @@ final class WasabiSkinInitializer {
                 _ = object.setAttribute(Self.skinTabSheetAttribute, value: "1")
             }
             // A top-level container's *declared* visibility, snapshotted before anything can write
-            // over it. `visible` is one attribute serving two questions — "is this an SUI-collapsed
-            // stub the skin never means to show" (markup) and "is this window open right now"
+            // over it. `visible` is one attribute serving two questions — "does this window start
+            // closed" (markup) and "is this window open right now"
             // (`setVisible`) — and a script hiding its own window at startup is the ordinary case, so
             // the second answer buries the first. Defix hides `VISCON` from `CORE_SCRIPT.maki` and
             // every later reader then classified the window as a stub that does not exist (B16).

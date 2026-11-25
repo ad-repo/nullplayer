@@ -476,6 +476,25 @@ text box puts it; cPro_GUNS_N'_ROSES shows its promo picture until the player is
 Open, promoted with the skin: B475 (Official_Coldplay_skin's Thinger icons sit low under the status bar; the fix that
 works for it moves hundreds of gold frames, so it waits on a rule).
 
+### Done: intake #16, promoted to gold (2026-11-24)
+
+With bronze empty, `wal_intake_pick.sh` adopted the 34 skins left in silver: the 33 of the B167 seed set that no intake
+had taken, and Wurlitzer_v2, held back from #10. They were scanned live on `feat/wal-intake-16` (`wal_live_smoke.sh`
+with its Library pass over all 34, a headless `wal_dump.sh` with no `OVERFLOW` or `TEXT-CLIP`); `window-census.sh
+--shots` captured 12 and was stopped there, and no sheet was reviewed, because the user knows these skins. One fix pass
+ran. The user accepted the batch without a hand-over round, and all 34 were promoted to gold on 2026-11-24; the 33 keep
+their `skin-compatibility.md` grades and Wurlitzer_v2 joins as C. `wal_fix_check.sh` was not run, at the user's call:
+the B481 change reaches the four skins that declare a container `visible="0"`, unmeasured by a sweep. The per-skin
+record is `intakes/intake-16.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| EPS_High-End_System_v1_test | Open Directory and the playlist File button did nothing (B480) | `EJECT_DIR` opens the app's Open Folder panel; a button's `MENU:WA5:<id>` opens the menu a `<Menu>` entry with that id opens |
+| Wiimote (and M3, Opulent_Records_Player, hm_Touch_m_1) | The home button opened nothing (B481) | A container declared `visible="0"` starts closed but is still a window, so the skin's own `TOGGLE` opens it |
+
+Deferred to B403 (a video toggle with only audio playing opens nothing): The_Nokia_5220_XpressMusic, TomK, jvc.tape.v0.5,
+Wurlitzer_v2. Open, promoted with the skin: B422 (Wurlitzer_v2's skin frame draws short on NullPlayer's own windows).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
@@ -889,6 +908,10 @@ so a corpus run can't lose lines, not *what* is measured.
   crawl: every bronze left in `intake-6.ranking.tsv` (129; the ranking is now exhausted).
   **163 silver, 0 bronze, 0 quarantine.** Batch:
   Winamp3_Default_Skin, reflexion, GonchiSkin, amber, Zelda3-Ocarina-V1-02, Eve_01_Amp, Client_V3, Final_Fantasy_X-2_II_Skin, ABPlayer, Miley_Cyrus_Gray_line_1, Harmonized_Water_by_ROBODRON, Barracuda, Nitrous_Audio_CTI2, capsule, AntiqueRadio, SD777z, Official_Batman_Winamp5_Skin, ocrana, iTunes_Mini_LabelOS_by_newaveCR, -Flo-, Classic_Sara_Aspen, 1936_Zenith_Stratosphere, Matrix_Online, Azenis_mimi, Special_Clock, Noir_Kirika_Modern, Customize.RU_Skin, CLIENT, Official_Six_Flags_Theme_Parks_Skin, Xploit_2, Vista_Player, cindy1, Simpsons_Freeform_Skinfinal, Ludwig_Bemelmans_Madeline, Official_Coldplay_skin, CD_Amp, Nokia_5800_Xpress_Music, Ghost_Slate, WinAMPloid_01_Append_1, VANDREAD_WINAMP5_SKIN, Hardware, KMS_v104, Stone_Relic, The_HP_Winamp_Skin, cPro_smpldrk, funktion_v2, cpro__City_Night, cPro__MPxi_remix, Megan_Fox, SKooool, HARMONIA, lexicon2, White_Noise, Vision, cPro_GUNS_N'_ROSES, ASfx21Evo, Classic_Grafiti, Official_Smallville_Skin_-_The_WB, YANNI_English_version, Troy, Nike_total_90_aerow, Bigreds_IOLSC_Bjm_Unofficial_BetaVersion, cPromunchenbywilians, ZunAmp_1, cPro_Zen, Cruz_Azul, Official_Six_Feet_Under_Skin, The_Beerfest_Winamp_skin, cPro_Venus_Port_1, BlockedWIRE, Official_Charmed_TV_Series_WA_5_skin, Qwest_Amp, cPro_Erbium, CPro_Fluke_2, grafika, cPro_Anunaki, Mehmet_Akar, Cyanian_2010, SUPER_BLACK, Almin_Agic_Skin, Manutd, FIFA_WorldCup_Germany_2006, Street_Fighter_Modern_v2, Coca_Cola__My_Coke_Music, BumbleBee, Ichigo_And_Rukia_Modern_Skin, Cell, Airtel__Hello_Tunes, The_Official_Grind_Winamp_3_Skin, Gintama__Gintoki_&_Katsura, Mutant1, Batman_Arkham_Inspiration, Classix_10k_Modern, dark_peace_v3, Chevy_Number_8_Car, cPro__Winamp_Classic, Jeep_Wrangler_Winamp5_Skin, Nokia_X6_Winamp_Skin_by_Brump3.com, Red_Pearl, YounJin_Kwak_(dewytear), Official_MK_Deadly_Alliance_Amp, Massive_Attack_100th_Window, REVIVAL_1.0F, Samurai_Champloo_Modern, cPro_FR19, Sony_S2_Sports_Audio, ccpc, World_Cup_2010, Laboratory_Clinical_Art, cPro__Steam_1_1_1_1, 1933_Philco, Technicalium, Urban_Terror_2_6, Final-Fantasy_X2_Unofficial_Skin, Vodafone_Zoozoo, X-Slant, Two_sides, BIG_PROOF_2, Musique_Macabre, Darkside, Musica_by_pictoratus, ProjectDU_Fridge, Dragon_v3.0, Allsurf_-_Official_Skin, PlastAmp_2, Intensity_3, Ancient_Powers_by_Robodron_1, Shara_Aryo_in_Red, WMP_Aero (`.wal` each); copied into `WinampModernSkins/`.
+- **Intake #16 picked 2026-11-24** (`feat/wal-intake-16`, rev `faf75bae`) by `wal_intake_pick.sh 50`, no
+  crawl: with bronze empty, the pick adopts every skin already in silver: the 33 of the B167 seed set that no
+  intake ever took, and Wurlitzer_v2, held back from #10 (B422 open). **34 silver, 0 bronze, 0 quarantine.** Batch:
+  211786-Cpro_Winamp_Modern, 221721-cPro_MMD, 221955-cPro__Winamp_Media_Player_12, Anaheim_Player_01, Cpro__Ayon_Port_1, Diablo IV Skills V2, EPS_High-End_System_v1_test, Firefox, Hatsune Miku x Megurine Luka, Love Is War Miku V2, MMD3-4-5, Megurine Luka, PaddPreview, PionNer_AMP2, PokemonDS, SingItKitty, Study Skinning, TOX Milla, Tekken Lili, The_Nokia_5220_XpressMusic, TomK, Wiimote, Wurlitzer_v2, XENERGY1, cpro_interface_by_jinghis_d301whe, dewytears_v2_5_by_dewytear_d2yn025_BlackGlass, dewytears_v2_5_by_dewytear_d2yn025_PinkGlass, hatsune_miku_5_winamp_by_kaza_sou_d6izotp, jvc.tape.v0.5, k_jr_winamp_skin_by_marisa85_d329ymw, micro, motorhead_by_remib, nullsoft_media_player_10_forked_by_hb860-d7h03zd, pure_inspired_for_winamp_by_marisa85_d35ix2r (`.wal` each); copied into `WinampModernSkins/`.
 
 ### Decisions (fixed — re-open only with a measurement)
 

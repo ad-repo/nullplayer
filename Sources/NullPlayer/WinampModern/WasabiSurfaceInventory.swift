@@ -24,7 +24,7 @@ struct WinampModernSurfaceInventory {
         let isMainPlayer: Bool
         /// False for an SUI-collapsed stub (`window-overrides.xml` shrinks cPro's standalone windows
         /// to 1×1 invisible because their surfaces are embedded in the main window).
-        let isVisibleWindow: Bool
+        let isWindow: Bool
         /// Surfaces reachable *inside* this container's layouts.
         let reachableKinds: Set<WinampModernComponentKind>
         /// The subset reachable from the container's first layout, the one it opens on.
@@ -267,7 +267,7 @@ struct WinampModernSurfaceInventory {
                 id: id,
                 kind: declaredKind,
                 isMainPlayer: id.caseInsensitiveCompare("main") == .orderedSame,
-                isVisibleWindow: isVisibleWindow(container),
+                isWindow: isWindow(container),
                 reachableKinds: found,
                 defaultLayoutKinds: defaultLayoutKinds ?? [],
                 hasEqualizerControls: equalizerControls,
@@ -281,7 +281,7 @@ struct WinampModernSurfaceInventory {
         embedded.formIntersection(Set(managedKinds))
 
         var declared: [WinampModernComponentKind: String] = [:]
-        for container in containers where !container.isMainPlayer && container.isVisibleWindow {
+        for container in containers where !container.isMainPlayer && container.isWindow {
             // The container's declared kind first; failing that, a container that reaches exactly one
             // managed surface *is* that surface's window (mmd3's `Pledit` would qualify either way).
             // What the window **holds** outranks a `component=` it contradicts: Symplicipod's
@@ -422,12 +422,10 @@ struct WinampModernSurfaceInventory {
         return container.attribute("id").flatMap { WinampModernComponentRegistry.kind(for: $0) }
     }
 
-    private static func isVisibleWindow(_ container: WalXMLNode) -> Bool {
+    /// The same rule as `WinampModernContainerTopology.analyze`: a declared `visible="0"` starts a
+    /// window closed and leaves it a window (B481); only a collapsed box is a stub.
+    private static func isWindow(_ container: WalXMLNode) -> Bool {
         if container.attribute("id")?.caseInsensitiveCompare("main") == .orderedSame { return true }
-        switch container.attribute("visible")?.lowercased() {
-        case "0", "false", "no": return false
-        default: break
-        }
         // A container whose normal layout is at most 2px on a side has been neutralized by a
         // `window-overrides.xml`, the way cPro collapses the standalone windows it embeds instead.
         let layouts = container.children.filter { $0.name.caseInsensitiveCompare("layout") == .orderedSame }

@@ -27,6 +27,13 @@ final class WinampModernPhase36Tests: XCTestCase {
         XCTAssertEqual(resolved.parameter, "42")
     }
 
+    func testAMenuActionNamesItsMenuAfterAColon() {
+        // EPS_High-End_System: `action="MENU:WA5:PE_File"`.
+        let resolved = WasabiClickAction.split(action: "MENU:WA5:PE_File", parameter: nil)
+        XCTAssertEqual(resolved.action, "MENU")
+        XCTAssertEqual(resolved.parameter, "WA5:PE_File")
+    }
+
     func testExplicitParameterWinsOverATail() {
         XCTAssertEqual(WasabiClickAction.split(action: "SWITCH;shade", parameter: "normal").parameter,
                        "normal", "a declared param= is what Wasabi passes")

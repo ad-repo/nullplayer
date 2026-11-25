@@ -150,6 +150,8 @@ protocol WinampModernHost: AnyObject {
     /// `seconds` back (negative) or on from the playhead, held inside the track.
     func seek(by seconds: TimeInterval)
     func openFiles()
+    /// `EJECT_DIR`: Winamp's Open Folder. The skin never sees the path — the app's own panel picks it.
+    func openFolder()
     func beginVisualizationConsumption()
     func endVisualizationConsumption()
 
@@ -167,6 +169,8 @@ protocol WinampModernHost: AnyObject {
 }
 
 extension WinampModernHost {
+    // A host with no panel to show (the render harness, a test double) swallows it.
+    func openFolder() {}
     /// A host with only an absolute seek (the render harness, a test double) seeks to the clamped
     /// target.
     func seek(by seconds: TimeInterval) {
@@ -876,6 +880,7 @@ final class WinampModernAudioEngineHost: WinampModernHost {
         if let transport = videoTransport() { transport.skip(seconds) } else { engine.seekBy(seconds: seconds) }
     }
     func openFiles() { MenuActions.shared.openFile() }
+    func openFolder() { MenuActions.shared.openFolder() }
 
     func revealInFinder(_ path: String) {
         guard let url = Self.existingFileURL(for: path) else { return }
