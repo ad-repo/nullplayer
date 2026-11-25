@@ -564,6 +564,16 @@ also the nearer answer.
 - `WINAMP_MODERN_PIXEL_SNAP=0` turns it off; `WINAMP_MODERN_RENDER_SEAMS=1` counts what is left
   (`reference/harness.md`).
 
+#### A `<bitmap>`'s negative offset: padding, or from the far edge (B422, 2026-11-25)
+
+`WasabiResourceCache.cut` reads a `<bitmap>`'s `x`/`y` two ways. A plain negative offset reaches
+**before** the file, into transparent space (hm_Touch's one-row timer digits, `y="-30" h="60"`).
+With `relatx="1"`/`relaty="1"` a negative offset counts **in from the far edge**: Wurlitzer_v2 cuts
+its right-hand frame pieces `x="-66" relatx="1"` from a 197px sheet, and read as 0 the right corner
+drew the left one, mirrored on every framed window. A positive offset stays absolute either way:
+CardiumII's `x="104" w="5" relatx="1"` is the last 5px of its 109px shadow. Those two are the only
+gold skins with a relative `<bitmap>` offset (2026-11-25).
+
 #### Bitmap interpolation follows UI Size × backing scale, not the asset's stretch
 
 Ordinary `.wal` artwork uses nearest-neighbour filtering only when the scene's effective device

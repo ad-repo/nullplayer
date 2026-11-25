@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B422 — Wurlitzer_v2's skin frame draws its right-hand corner reversed — closed 2026-11-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B422 | **Wurlitzer_v2's skin frame draws broken on every window of ours that wears it: the top bar and the right column with its cap stop about 50 pt short of the window's right edge, and the content's rounded corner overlaps the frame.** Found in the intake #10 fix pass (2026-11-11, reported by the user on the Visualizations window, then reproduced on the EQ Studio, Visualizations window 596x615 and a synthesized Library): the frame is `wasabi.standardframe.*` from `XML/standardframe.xml`, whose `component.top.right`/`component.right` pieces are placed by `relatx`. Not caused by this pass: `WINAMP_MODERN_STATIC_FRAME_ANY_WINDOW=1` gives the same frame pixels. Done when the frame's right column and cap meet the window's right edge on the Visualizations window and the EQ Studio | Wurlitzer_v2 | ? | 1 |
+
+**Closed 2026-11-25.** Not a short frame: the right corner drew reversed (the user, live). `component.top.right` and `component.right` are cut `x="-66" relatx="1"` / `x="-20" relatx="1"` from the 197px `standardframe/window.png`, and `WasabiResourceCache.cut` skipped padding for a relative offset but then clamped it to 0, cutting the left corner. A negative offset with `relatx`/`relaty` now counts in from the far edge; a positive one stays absolute (CardiumII's `x="104" w="5" relatx="1"`, the only other gold skin with a relative `<bitmap>` offset, renders identically). Render check of both skins: only Wurlitzer_v2's framed windows' right edge moved. Live (`window-census.sh --shots`): the Library and Visualizations windows wear the corner the right way round; the user confirmed. Doc: `reference/rendering.md` → *A `<bitmap>`'s negative offset*. Test: `WinampModernStripBorderTests.testARelativeNegativeOffsetCutsFromTheFarEdge`.
+
 ## B464 — Trance_Critic_v2_0's skin frame paints an opaque blue band over the content of every framed window — closed 2026-11-25
 
 | Id | Item | Reach | Effort | Tier |

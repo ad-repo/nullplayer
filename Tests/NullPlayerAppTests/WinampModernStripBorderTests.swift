@@ -21,6 +21,16 @@ final class WinampModernStripBorderTests: XCTestCase {
         XCTAssertEqual(WasabiResourceCache.opaqueBounds(of: cut), CGRect(x: 0, y: 5, width: 10, height: 2))
     }
 
+    /// With `relatx` a negative offset counts in from the far edge (Wurlitzer_v2's right corner,
+    /// B422); a positive one stays absolute (CardiumII's shadow).
+    func testARelativeNegativeOffsetCutsFromTheFarEdge() throws {
+        let sheet = try Self.image(width: 10, height: 4, opaque: CGRect(x: 6, y: 0, width: 4, height: 4))
+        let right = try XCTUnwrap(WasabiResourceCache.cut(sheet, attributes: ["x": "-4", "relatx": "1", "w": "4"]))
+        XCTAssertEqual(WasabiResourceCache.opaqueBounds(of: right), CGRect(x: 0, y: 0, width: 4, height: 4))
+        let absolute = try XCTUnwrap(WasabiResourceCache.cut(sheet, attributes: ["x": "6", "relatx": "1", "w": "4"]))
+        XCTAssertEqual(WasabiResourceCache.opaqueBounds(of: absolute), CGRect(x: 0, y: 0, width: 4, height: 4))
+    }
+
     /// Geometry is the skin's to write: a value `Int(_:)` traps on, or a negative offset whose padding
     /// would outgrow the pixel budget, is ignored rather than crashing or allocating it.
     func testTheCutSurvivesHostileGeometry() throws {

@@ -118,6 +118,9 @@
   solid blue band, and Official_Coldplay_skin's Thinger icons were cut off by its status bar. Lists
   and panels in about 60 other skins now fill the space their frame leaves for them, instead of
   stopping short of it.
+- **Winamp Modern (`.wal`): Wurlitzer_v2's frame draws its right-hand corner the right way round.**
+  The Library, Visualizations, EQ Studio and other framed windows showed the left corner piece at
+  the top right, with a gap in the rail beneath it.
 
 ## 0.35.2
 

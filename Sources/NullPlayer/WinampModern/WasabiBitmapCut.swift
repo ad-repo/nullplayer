@@ -30,8 +30,16 @@ extension WasabiResourceCache {
         if let padded = padForNegativeOffset(fullImage, attributes: attributes) {
             fullImage = padded
         }
-        let x = max(0, pixels(attributes["x"]) ?? 0)
-        let topY = max(0, pixels(attributes["y"]) ?? 0)
+        // With `relatx`/`relaty` a negative offset counts in from the far edge: Wurlitzer_v2 cuts its
+        // right-hand frame pieces `x="-66" relatx="1"` from a 197px sheet, and clamped to 0 the right
+        // corner drew the left one (B422). A positive one stays absolute: CardiumII's
+        // `x="104" w="5" relatx="1"` is the last 5px of its 109px shadow.
+        func offset(_ axis: String, _ relat: String, extent: Int) -> Int {
+            let value = pixels(attributes[axis]) ?? 0
+            return max(0, attributes[relat] == "1" && value < 0 ? extent + value : value)
+        }
+        let x = offset("x", "relatx", extent: fullImage.width)
+        let topY = offset("y", "relaty", extent: fullImage.height)
         let width = max(1, min(fullImage.width - x,
                                declaredSize(attributes["w"], zeroIsWhole: zeroIsWhole) ?? fullImage.width - x))
         let height = max(1, min(fullImage.height - topY,
