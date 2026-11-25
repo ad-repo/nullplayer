@@ -59,9 +59,9 @@
 
 ### Skin menus
 
-- **A–Z skin lists in every family** (#820). A skin list past 40 skins is grouped into A–Z submenus, as
-  Audion and Sonique already were; Original and Metal each count on their own. **Group Skins Alphabetically**, in every family's
-  submenu, turns it off for all of them.
+- **A–Z skin lists in every family** (#820). A skin list past 40 skins is grouped into A–Z
+  submenus, as Audion and Sonique already were; Original and Metal each count on their own. **Group
+  Skins Alphabetically**, in every family's submenu, turns it off for all of them.
 
 ### Fixes
 
