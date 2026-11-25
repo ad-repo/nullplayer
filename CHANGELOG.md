@@ -105,6 +105,8 @@
 - **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it** (#814).
   Wiimote's home button opens its SpaceCatSamba window, and the same fix reaches M3's downloads
   window, Opulent Records Player's website window and hm_Touch's album art window.
+- **Classic: a skin that keeps its bitmaps several folders deep loads.** MERYXMS1 (Merry Christmas
+  Amp) fell back to the unskinned look because only the first folder level was searched.
 
 ## 0.35.2
 
