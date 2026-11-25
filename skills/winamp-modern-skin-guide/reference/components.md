@@ -269,8 +269,19 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
 - **A side strip's flat band is not its edge** (2026-10-25, `WasabiResourceCache.edgeBounds`): a run of
   identical columns covering half the tile or more is body fill. Circlo_T_roniC's `frame-l`/`frame-r`
   are fully opaque 44px tiles around an 8px edge, and measured whole the browser's buttons overlapped
-  and hid `Stop`. Columns only: a top or bottom band's flat part holds the title or status bar, and
-  trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+  and hid `Stop`. Rows are not trimmed by flatness alone: a top or bottom band's flat part holds the
+  title or status bar, and trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+- **A top or bottom strip's rows of the frame's own body colour are body** (B464, B475, 2026-11-25):
+  when `wasabi.frame.basetexture` (else `component.basetexture`) is one flat colour, a strip's rows
+  of exactly that colour are trimmed. Trance_Critic_v2_0's `frame-tm.png` is a 27-row edge over 51
+  rows of its navy base texture, and measured whole a blue band covered every hosted window;
+  Official_Coldplay_skin's 30-row tiles end in its grey one, and the Thinger's icons sat under the
+  status bar. **The trim never passes the title bottom or the status top**: canum, blackwhite and
+  pumaSKIN write their titles over plain body-coloured strips, and AniTransformers, Blogz and
+  BumbleBee their command bars, so unbounded it covered them. A title group that states no height
+  ends where its `window.titlebar.title` text does (pumaSKIN's, `y=0 h=20`); that reading feeds only
+  this bound, so frames the trim does not touch keep their measure. 60 gold skins changed, almost all
+  a list now filling the panel the skin drew for it instead of leaving a margin of body colour.
 - **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
   Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
   the title, and Celica's playlist covered its own title bar.

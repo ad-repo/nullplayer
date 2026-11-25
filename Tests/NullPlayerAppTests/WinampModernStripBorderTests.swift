@@ -39,13 +39,13 @@ final class WinampModernStripBorderTests: XCTestCase {
             "b": CGRect(x: 0, y: 33, width: 39, height: 4),
         ]
         let border = WasabiStandardFrames.measuredBorder(in: Self.strips, group: { _ in nil },
-                                                         bitmapOpaqueBounds: { art[$0] })
+                                                         bitmapOpaqueBounds: { id, _ in art[id] })
         XCTAssertEqual(border, .init(left: 4, top: 5, right: 4, bottom: 4))
     }
 
     func testAnUnreadableStripFallsBackToItsDeclaredSize() {
         let border = WasabiStandardFrames.measuredBorder(in: Self.strips, group: { _ in nil },
-                                                         bitmapOpaqueBounds: { _ in nil })
+                                                         bitmapOpaqueBounds: { _, _ in nil })
         XCTAssertEqual(border, .init(left: 39, top: 0, right: 39, bottom: 37))
     }
 
@@ -55,11 +55,58 @@ final class WinampModernStripBorderTests: XCTestCase {
         let status = WalXMLNode(name: "LayoutStatus", attributes: ["x": "10", "y": "-17", "relaty": "1", "h": "15"],
                                 location: WalSourceLocation(path: "/frame.xml"))
         let border = WasabiStandardFrames.measuredBorder(in: Self.strips + [status], group: { _ in nil },
-                                                         bitmapOpaqueBounds: { _ in .zero })
+                                                         bitmapOpaqueBounds: { _, _ in .zero })
         XCTAssertEqual(border, .init(left: 0, top: 0, right: 0, bottom: 17))
     }
 
+    /// Trance_Critic_v2_0's `frame-tm.png` is a short edge and then rows of its navy base texture
+    /// (B464): only rows of the frame's flat body colour are trimmed, and a textured body trims none.
+    func testRowsOfTheFlatBaseTextureAreBodyNotBorder() throws {
+        let edge = (r: 0.8, g: 0.8, b: 1.0), navy = (r: 0.0, g: 0.2, b: 0.4)
+        let strip = try Self.bands(width: 10, rows: [(8, edge), (22, navy)])
+        let body = try Self.bands(width: 4, rows: [(4, navy)])
+        XCTAssertEqual(WasabiResourceCache.edgeBounds(of: strip), CGRect(x: 0, y: 0, width: 10, height: 30))
+        XCTAssertEqual(WasabiResourceCache.edgeBounds(of: strip, body: body), CGRect(x: 0, y: 0, width: 10, height: 8))
+        let texture = try Self.bands(width: 4, rows: [(2, navy), (2, edge)])
+        XCTAssertEqual(WasabiResourceCache.edgeBounds(of: strip, body: texture), CGRect(x: 0, y: 0, width: 10, height: 30))
+    }
+
+    /// The trim never takes the top past the title: canum draws its title over a plain body-coloured
+    /// strip, and pumaSKIN's title group states no height, so its title text (`y=0 h=20`) decides.
+    func testTheBodyTrimStopsAtTheTitle() {
+        let location = WalSourceLocation(path: "/frame.xml")
+        let top = WalXMLNode(name: "layer", attributes: ["x": "30", "y": "0", "image": "t", "resize": "top"],
+                             location: location)
+        let bounds: (String, Bool) -> CGRect? = { _, trim in CGRect(x: 0, y: 0, width: 30, height: trim ? 8 : 30) }
+        func border(title: [String: String], text: [WalXMLNode] = []) -> Double {
+            let node = WalXMLNode(name: "group", attributes: title.merging(["id": "wasabi.titlebar"]) { $1 },
+                                  location: location)
+            return WasabiStandardFrames.measuredBorder(in: [top, node], group: { $0 == "wasabi.titlebar" ? text : nil },
+                                                       bitmapOpaqueBounds: bounds).top
+        }
+        XCTAssertEqual(border(title: ["y": "0", "h": "18"]), 18)
+        let titleText = WalXMLNode(name: "text", attributes: ["id": "window.titlebar.title", "y": "0", "h": "20"],
+                                   location: location)
+        XCTAssertEqual(border(title: ["y": "5"], text: [titleText]), 25)
+        XCTAssertEqual(border(title: ["y": "5"]), 8, "no title height anywhere: the trim stands")
+    }
+
     // MARK: - Fixture
+
+    /// An opaque image of horizontal colour bands, top first.
+    private static func bands(width: Int, rows: [(Int, (r: Double, g: Double, b: Double))]) throws -> CGImage {
+        let height = rows.reduce(0) { $0 + $1.0 }
+        let context = try XCTUnwrap(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                              bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        var top = 0
+        for (count, colour) in rows {
+            context.setFillColor(red: colour.r, green: colour.g, blue: colour.b, alpha: 1)
+            context.fill(CGRect(x: 0, y: height - top - count, width: width, height: count))
+            top += count
+        }
+        return try XCTUnwrap(context.makeImage())
+    }
 
     /// Mad Magazine's four strips, as `component.*` declares them.
     private static let strips: [WalXMLNode] = [

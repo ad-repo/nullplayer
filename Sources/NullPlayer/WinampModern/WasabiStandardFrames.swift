@@ -182,13 +182,25 @@ extension WasabiStandardFrames {
     /// extent of the bitmap's opaque pixels (a sprite cut's, or the whole file's); a bitmap that
     /// cannot be read falls back to its declared size, and one that declares none contributes
     /// nothing rather than zero.
+    ///
+    /// `bitmapOpaqueBounds(id, trimBody)` with `trimBody` also drops a strip's rows that repeat the
+    /// frame's flat base texture (B464, B475). Those rows are body, but a frame can draw its title
+    /// or status text over plain body-coloured strips (canum's title, AniTransformers' and Blogz's
+    /// command bars), so the trim never takes a side past the title bottom or the status top.
     static func measuredBorder(in children: [WalXMLNode],
                                group: (String) -> [WalXMLNode]?,
-                               bitmapOpaqueBounds: (String) -> CGRect?) -> Border {
-        var measurement = Measurement()
-        measure(children, into: &measurement, offset: .zero, margin: .zero,
-                group: group, bitmapOpaqueBounds: bitmapOpaqueBounds, depth: 0, visited: [])
-        return measurement.resolved
+                               bitmapOpaqueBounds: (String, _ trimBody: Bool) -> CGRect?) -> Border {
+        func walk(trimBody: Bool) -> Measurement {
+            var measurement = Measurement()
+            measure(children, into: &measurement, offset: .zero, margin: .zero,
+                    group: group, bitmapOpaqueBounds: { bitmapOpaqueBounds($0, trimBody) }, depth: 0, visited: [])
+            return measurement
+        }
+        let whole = walk(trimBody: false), wholeBorder = whole.resolved
+        var border = walk(trimBody: true).resolved
+        border.top = max(border.top, min(wholeBorder.top, max(whole.titleBottom, whole.titleTextBottom)))
+        border.bottom = max(border.bottom, min(wholeBorder.bottom, whole.statusTop))
+        return border
     }
 
     /// The client area of such a frame, as the `<group>` the frame's missing script would have made.
@@ -211,6 +223,9 @@ extension WasabiStandardFrames {
     private struct Measurement {
         var border = Border()
         var titleBottom = 0.0
+        /// Where a title group with no stated height ends by its title text; only the body-row
+        /// trim's limit reads it, so frames the trim does not touch keep their measure.
+        var titleTextBottom = 0.0
         var statusTop = 0.0
 
         /// The strips, with the title and status bar standing in for a strip the frame lacks.
@@ -253,6 +268,17 @@ extension WasabiStandardFrames {
         return (children, visited.union([identifier]))
     }
 
+    /// A title group that states no height ends where its title text does: pumaSKIN's
+    /// `<group id="wasabi.titlebar" y="5">` holds `window.titlebar.title` at `y="0" h="20"`.
+    private static func titleTextBottom(in titleGroup: WalXMLNode, group: (String) -> [WalXMLNode]?,
+                                        visited: Set<String>) -> Double? {
+        guard let title = referencedGroup(titleGroup, group: group, visited: visited)?.children.first(where: {
+            $0.attribute("id")?.caseInsensitiveCompare("window.titlebar.title") == .orderedSame
+                && $0.attribute("relath") != "1"
+        }), let height = title.attribute("h").flatMap(Double.init) else { return nil }
+        return (title.attribute("y").flatMap(Double.init) ?? 0) + height
+    }
+
     private static func measure(_ children: [WalXMLNode], into measurement: inout Measurement,
                                 offset: CGPoint, margin: CGPoint,
                                 group: (String) -> [WalXMLNode]?,
@@ -275,8 +301,12 @@ extension WasabiStandardFrames {
 
             if node.name.caseInsensitiveCompare("group") == .orderedSame,
                node.attribute("id")?.caseInsensitiveCompare("wasabi.titlebar") == .orderedSame,
-               !isRelative("relaty"), let height = number("h") {
-                measurement.titleBottom = max(measurement.titleBottom, offset.y + y + height)
+               !isRelative("relaty") {
+                if let height = number("h") {
+                    measurement.titleBottom = max(measurement.titleBottom, offset.y + y + height)
+                } else if let height = titleTextBottom(in: node, group: group, visited: visited) {
+                    measurement.titleTextBottom = max(measurement.titleTextBottom, offset.y + y + height)
+                }
             }
             if node.name.caseInsensitiveCompare("LayoutStatus") == .orderedSame, isRelative("relaty") {
                 measurement.statusTop = max(measurement.statusTop, margin.y - y)

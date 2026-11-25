@@ -113,6 +113,11 @@
   window, Opulent Records Player's website window and hm_Touch's album art window.
 - **Classic: a skin that keeps its bitmaps several folders deep loads** (#819). MERYXMS1 (Merry Christmas
   Amp) fell back to the unskinned look because only the first folder level was searched.
+- **Winamp Modern (`.wal`): windows wearing the skin's frame show all of their content.** In
+  Trance_Critic, Cava, Flow, Spectrum Analyzer, Audio Analyzer and Waveform were mostly hidden under a
+  solid blue band, and Official_Coldplay_skin's Thinger icons were cut off by its status bar. Lists
+  and panels in about 60 other skins now fill the space their frame leaves for them, instead of
+  stopping short of it.
 
 ## 0.35.2
 
