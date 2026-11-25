@@ -399,8 +399,8 @@ scripts/wal_skin_census.sh <outdir> --corpus <dir>  # one skin alone
 **The corpus is `~/Library/Application Support/NullPlayer/WinampModernCorpus/{gold,silver,bronze,quarantine}/`**
 (B167), tiered by the committed `docs/winamp-modern/corpus-manifest.tsv`, and never the app's own
 `WinampModernSkins/` — that is the importer's install folder, so whatever sits there is in the user's
-skin menu; a corpus script reads the corpus folder, never a copy installed there. Every corpus
-script defaults to gold+silver (`scripts/lib/wal_corpus.sh`). `--corpus` and
+skin menu. Every corpus script defaults to gold+silver (`scripts/lib/wal_corpus.sh`); only a bare
+skin name that matches no tier falls back to the installed copy (`wal_resolve_skin`). `--corpus` and
 the harness variables `WINAMP_MODERN_WAL`, `WINAMP_MODERN_DRAG_PROBE` and `WINAMP_MODERN_DRAG_HOSTED`
 all take one archive, one directory, or a `:`-separated list of directories walked as one corpus
 (`WinampModernCorpusPaths`); a file name is unique across tiers, so per-skin logs and PNG folders
