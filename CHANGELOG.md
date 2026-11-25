@@ -92,10 +92,10 @@
   Both used to be refused, and a video opened together with music files was dropped. NullPlayer can
   now also be made the default app for `.cue` and `.alac` files. Opening a file while the player
   window is closed brings the player back, as clicking the Dock icon does.
-- **Winamp Modern (`.wal`): EPS High-End System's Open Directory and playlist File buttons work.**
+- **Winamp Modern (`.wal`): EPS High-End System's Open Directory and playlist File buttons work** (#814).
   Open Directory opens the folder picker and File opens the playlist's New / Load / Save menu; both
   did nothing.
-- **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it.**
+- **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it** (#814).
   Wiimote's home button opens its SpaceCatSamba window, and the same fix reaches M3's downloads
   window, Opulent Records Player's website window and hm_Touch's album art window.
 
