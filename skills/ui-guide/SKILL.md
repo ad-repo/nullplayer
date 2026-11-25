@@ -213,6 +213,10 @@ Valid widths: 275, 300, 425, 450, 475, 500, 550px
 
 **Pixel snapping**: Both helpers snap tile destinations with `.rounded(.down)` to avoid sub-pixel rendering that bleeds the default Winamp skin's blue-tinted edge pixels between adjacent tiles. See non-retina-fixes skill for the underlying issue.
 
+### Winamp Classic playlist style
+
+Under Classic (`runningControllerFamily == .classic`, not embedded) with `ClassicPlaylistStyle.current == .winamp`, `PlaylistView` switches to `PlaylistChrome.winamp` (right 20, bottom 38) and `SkinRenderer.drawWinampPlaylistWindow` (`Skin/SkinRenderer+WinampPlaylist.swift`) instead of the U-shape above: it draws the skin's ORIGINAL title-bar `rightCorner` (it abuts the 20px `rightSideTile` scrollbar border it was drawn for), the bottom bar as `bottomLeftCorner` + `bottomTile` repeats + the 150-wide `bottomRightCorner`, the scrollbar thumb, and the running / track times in TEXT.BMP. `WinampPlaylistBar` owns every bar control rect, measured from base-2.91's PLEDIT.BMP art (skin coordinates, top-left, the right-hand ones relative to `width − 150`), the press handling and the hotkey table; `WinampPlaylistBarTests` pins them. The close hit area is 12px wide here so the shade glyph doesn't close the window. `isWinampStyle` is the one seam — every other family's playlist is unchanged.
+
 ## Menu Bar Integration (AppKit)
 
 When adding or refactoring top menu bar content:

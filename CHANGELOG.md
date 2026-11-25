@@ -50,6 +50,13 @@
   for Winamp, Sing it, Kitty, Study Skinning, Tekken Lili, Tom, TOX Milla, Wiimote, Winamp5 Base
   Skin, Wurlitzer One More Time, XENERGY1.
 
+### Classic skins
+
+- **The Winamp Classic playlist editor.** Classic's playlist now draws as the standard Winamp 2
+  playlist editor by default — ADD / REM / SEL / MISC / LIST OPTS, the mini transport, scrollbar,
+  running and track time — with rows in the skin's own playlist font and Winamp's playlist hotkeys.
+  Right-click → **Playlist Style ▸ NullPlayer** brings back the previous borderless look.
+
 ### Fixes
 
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
