@@ -289,10 +289,15 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   Library and Playlist, which place their content by hand, wore it. Now a grid's `top`/`left`/
   `right`/`bottom` images count as the four strips, trimmed of rows matching the grid's own flat
   `middle` (not the frame base texture), with the far edges measured in from their cut's size
-  (`bitmapSize`). Center_Fresh measures 21/40/20/39 against the 20/41/20/42 its own windows use. Of
-  the 132 gold skins whose standard frame reaches a grid, only Technicalium's and Electrolium's
-  modal windows changed in the render. The rest ship a content script or have strips that measure
-  wider. **A bare frame can be opaque:** the intake's transparency read missed Center_Fresh entirely
+  (`bitmapSize`). **An edge counts only where the grid lies on that side of the window**: a grid
+  inset from the edge is a panel inside the client. Morlock's modal frame holds the engine's own
+  `wasabi.panel` grid (`wasabiStandardLibraryGroups`, as are `wasabi.objectframe` and
+  `wasabi.window.embedded`) 35–50px in, and counted as border it left ten skins' modal windows no
+  client at all. A scan for grids in the skin's own groupdefs misses these, so a corpus check must
+  follow the engine's groups too. Center_Fresh measures 21/40/20/39 against the 20/41/20/42 its own
+  windows use. Of the 132 gold skins whose standard frame reaches a grid of their own, only
+  Technicalium's modal window changed in the render (its 1px side edges). Only i-Skin, iCandy and
+  iCandy-2 place an engine panel flush, and they rendered unchanged. **A bare frame can be opaque:** the intake's transparency read missed Center_Fresh entirely
   and called the defect intermittent. Judge frames by the census shots, not by alpha. EGG and
   Anime_Shogo's one bare run (intake #14, 29–42% transparent, a different set each time) has not
   reproduced in any census since (2026-11-17 and 2026-11-25), so it is noted here, not filed.

@@ -1739,34 +1739,10 @@ final class WasabiSkinInitializer {
                        (try? self.resolveSkinResource(rawPath, source: source))
                            .flatMap { try? self.vfs.data(at: $0.logicalPath, location: source) }
                    }) {
-                var cuts: [String: CGImage?] = [:]
-                func cut(_ identifier: String) -> CGImage? {
-                    if let known = cuts[identifier] { return known }
-                    let image = resourceRegistry?.resolvedDefinition(identifier: identifier)
-                        .flatMap { WasabiResourceCache.cutImage(of: $0, in: vfs) }
-                    cuts[identifier] = image
-                    return image
-                }
                 let border = WasabiStandardFrames.measuredBorder(
                     in: definition.templateChildren,
                     group: { try? types.resolved(identifier: $0).templateChildren },
-                    // The frame's body colour, which a strip's flat inner rows repeat (the renderer's
-                    // base-texture order, `WasabiRendererClipping.backing(of:)`).
-                    frameBody: ["wasabi.frame.basetexture", "component.basetexture"]
-                        .first { resourceRegistry?.resolvedDefinition(identifier: $0) != nil },
-                    bitmapSize: { cut($0).map { CGSize(width: $0.width, height: $0.height) } },
-                    bitmapOpaqueBounds: { [resourceRegistry] identifier, body in
-                        guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
-                        else { return nil }
-                        // A cut with nothing opaque in it is an empty box, not an unreadable one.
-                        if let image = cut(identifier) {
-                            return WasabiResourceCache.edgeBounds(of: image, body: body.flatMap(cut)) ?? .zero
-                        }
-                        // A generated (`$solid`) bitmap has no file: it is its declared size.
-                        guard let width = resource.attributes["w"].flatMap(Double.init),
-                              let height = resource.attributes["h"].flatMap(Double.init) else { return nil }
-                        return CGRect(x: 0, y: 0, width: width, height: height)
-                    })
+                    resources: resourceRegistry, vfs: vfs)
                 let content = WasabiStandardFrames.measuredContentGroupNode(
                     identifier: contentID, border: border, location: node.location)
                 try createObjects(from: [content], parent: object, graph: graph, types: types,

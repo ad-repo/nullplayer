@@ -104,6 +104,25 @@ final class WinampModernStripBorderTests: XCTestCase {
                 }
             })
         XCTAssertEqual(border, .init(left: 21, top: 40, right: 20, bottom: 39))
+
+        // A grid that does not span the window draws its far edges inside it: they are no border.
+        var inset = grid.attributes
+        inset["relatw"] = nil; inset["relath"] = nil; inset["w"] = "100"; inset["h"] = "80"
+        let short = WalXMLNode(name: "grid", attributes: inset, location: grid.location)
+        let shortBorder = WasabiStandardFrames.measuredBorder(
+            in: [short], group: { _ in nil }, bitmapSize: { sizes[$0] },
+            bitmapOpaqueBounds: { id, _ in sizes[id].map { CGRect(origin: .zero, size: $0) } })
+        XCTAssertEqual(shortBorder, .init(left: 21, top: 50, right: 0, bottom: 0))
+
+        // A grid inset from the window's edges is a panel inside the client (Morlock's modal frame
+        // holds the engine's `wasabi.panel` 35-50px in): it is no border at all.
+        let panel = WalXMLNode(name: "group", attributes: ["id": "wasabi.panel", "x": "35", "y": "50",
+                                                           "w": "-70", "h": "-80", "relatw": "1", "relath": "1"],
+                               location: grid.location)
+        let panelBorder = WasabiStandardFrames.measuredBorder(
+            in: [panel], group: { $0 == "wasabi.panel" ? [grid] : nil }, bitmapSize: { sizes[$0] },
+            bitmapOpaqueBounds: { id, _ in sizes[id].map { CGRect(origin: .zero, size: $0) } })
+        XCTAssertEqual(panelBorder, .init())
     }
 
     /// Trance_Critic_v2_0's `frame-tm.png` is a short edge and then rows of its navy base texture

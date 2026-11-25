@@ -142,7 +142,7 @@ extension WasabiResourceCache {
     /// band's other flat rows are where the title or the status bar sits, and trimming those put
     /// YoYoBoy's playlist over its Add/Rem/Sel bar. Trance_Critic_v2_0's `frame-tm.png` is 78 rows,
     /// a 27-row edge and then its navy base texture; Official_Coldplay_skin's 30-row tiles end in its
-    /// grey one (B464, B475).
+    /// grey one (B464, B475). Nil when the image draws no edge: nothing opaque, or nothing but body.
     static func edgeBounds(of image: CGImage, body: CGImage? = nil) -> CGRect? {
         guard let rgba = premultipliedPixels(of: image) else { return opaqueBounds(of: image) }
         let width = image.width, height = image.height

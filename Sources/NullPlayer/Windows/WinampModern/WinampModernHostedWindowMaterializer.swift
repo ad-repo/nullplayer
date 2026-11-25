@@ -139,14 +139,8 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             instance.view.skinScale = scale
             // A smaller UI Size shrinks the chrome, not the view inside it: Simple_Amp_'s Studio at
             // 50% was squeezed into half its design size (B427).
-            let renderer = instance.view.renderer, canvas = renderer.canvasSize
-            if let needed = floorCanvas(for: instance.id, scale: scale),
-               needed.width > canvas.width || needed.height > canvas.height {
-                renderer.resize(to: CGSize(width: max(canvas.width, needed.width),
-                                           height: max(canvas.height, needed.height)))
-                instance.view.dispatchResizeIfChanged()
-            }
-            applyResizeLimits(of: renderer, to: instance.window, id: instance.id, scale: scale)
+            growCanvasToFloor(of: instance.view, id: instance.id, scale: scale)
+            applyResizeLimits(of: instance.view.renderer, to: instance.window, id: instance.id, scale: scale)
             let size = instance.view.scaledCanvasSize
             instance.window.setContentSize(size)
             instance.window.setFrameTopLeftPoint(topLeft)
@@ -174,6 +168,21 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         window.contentMinSize = minimum
         window.contentMaxSize = NSSize(width: max(points(limits.maximum.width), minimum.width),
                                        height: max(points(limits.maximum.height), minimum.height))
+    }
+
+    /// Grows `id`'s canvas to `floorCanvas`, telling the frame's scripts; false when it already fits.
+    /// The renderer resizes before the window, so the window's resize sees no change to report: frame
+    /// scripts hear the new geometry here.
+    @discardableResult
+    private func growCanvasToFloor(of view: WinampModernMainView, id: WinampModernHostedWindowID,
+                                   scale: CGFloat) -> Bool {
+        let renderer = view.renderer, canvas = renderer.canvasSize
+        guard let floor = floorCanvas(for: id, scale: scale) else { return false }
+        let grown = CGSize(width: max(canvas.width, floor.width), height: max(canvas.height, floor.height))
+        guard grown != canvas else { return false }
+        renderer.resize(to: grown)
+        view.dispatchResizeIfChanged()
+        return true
     }
 
     /// The smallest canvas, in skin pixels, that leaves `id`'s view its whole floor at this UI Size:
@@ -317,23 +326,17 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                                    renderer: WasabiSceneRenderer, view: WinampModernMainView,
                                    window: NSWindow, id: WinampModernHostedWindowID) {
         guard ProcessInfo.processInfo.environment["WINAMP_MODERN_CLIENT_FLOOR"] != "0",
-              let floor = definition.clientFloor,
+              definition.clientFloor != nil,
               let client = renderer.componentHolders().first(where: { $0.hostedWindowID == id })?.frame.size
         else { return }
-        // The floor is the view's points; the holder is skin pixels, drawn at the UI Size.
+        // The chrome is what the frame keeps of the canvas, in skin pixels at every UI Size.
         let scale = max(skinScale(), 0.01), canvas = renderer.canvasSize
-        let chrome = CGSize(width: canvas.width - client.width, height: canvas.height - client.height)
-        clientChrome[id] = chrome
-        let needed = CGSize(width: chrome.width + floor.width / scale, height: chrome.height + floor.height / scale)
-        let grown = CGSize(width: max(canvas.width, needed.width), height: max(canvas.height, needed.height))
-        guard grown != canvas else {
-            applyResizeLimits(of: renderer, to: window, id: id, scale: scale)
-            return
-        }
-        growCanvas(of: renderer, view: view, window: window, id: id, to: grown)
-        // The renderer resized before the window, so the window's resize sees no change to report:
-        // frame scripts hear the new geometry here.
-        view.dispatchResizeIfChanged()
+        clientChrome[id] = CGSize(width: canvas.width - client.width, height: canvas.height - client.height)
+        let grew = growCanvasToFloor(of: view, id: id, scale: scale)
+        applyResizeLimits(of: renderer, to: window, id: id, scale: scale)
+        guard grew else { return }
+        window.setContentSize(view.scaledCanvasSize)
+        view.setFrameSize(view.scaledCanvasSize)
         view.needsLayout = true
         view.layoutSubtreeIfNeeded()
     }

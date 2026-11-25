@@ -256,23 +256,24 @@ final class WinampModernHostedWindowTests: XCTestCase {
 
     /// The EQ Studio's client floor holds after it opens (B427): the window cannot be made smaller
     /// than the floor, and a smaller UI Size grows the canvas rather than squeezing the Studio.
-    /// The frame's chrome is skin pixels at every UI Size, so the client is the canvas less the
-    /// chrome it had at 100%, where the floor was just met.
+    /// The fixture's holder has no geometry, so the chrome is read from the canvas the window opened
+    /// on, at 125%, where the open grew it to just meet the floor; every UI Size after that has to
+    /// grow it again on its own.
     func testTheClientFloorHoldsAfterOpenAndAcrossUISizes() throws {
         let parts = try makeMaterializer()
         XCTAssertTrue(parts.materializer.show(.equalizerStudio))
         let instance = try XCTUnwrap(parts.materializer.materializedWindows.first)
         let floor = try XCTUnwrap(WinampModernHostedWindowID.equalizerStudio.definition.clientFloor)
-        var chrome: CGSize?
+        let opened = instance.view.renderer.canvasSize
+        let chrome = CGSize(width: opened.width - floor.width / skinScale,
+                            height: opened.height - floor.height / skinScale)
         for level in [UIScaleLevel.p100, .p50, .p200, .p100] {
             let scale = level.scaleFactor
             skinScale = scale
             parts.materializer.applySkinScale(scale)
             let canvas = instance.view.renderer.canvasSize
-            let fixed = chrome ?? CGSize(width: canvas.width - floor.width, height: canvas.height - floor.height)
-            chrome = fixed
-            XCTAssertGreaterThanOrEqual((canvas.width - fixed.width) * scale, floor.width - 1, level.menuTitle)
-            XCTAssertGreaterThanOrEqual((canvas.height - fixed.height) * scale, floor.height - 1, level.menuTitle)
+            XCTAssertGreaterThanOrEqual((canvas.width - chrome.width) * scale, floor.width - 1, level.menuTitle)
+            XCTAssertGreaterThanOrEqual((canvas.height - chrome.height) * scale, floor.height - 1, level.menuTitle)
             XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.width, floor.width, level.menuTitle)
             XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.height, floor.height, level.menuTitle)
         }

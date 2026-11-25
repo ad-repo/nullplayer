@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// The Wasabi standard window frames, and the conventional tag ↔ groupdef pairing real skins rely on.
 ///
@@ -205,12 +206,45 @@ extension WasabiStandardFrames {
         }
         let whole = walk(trimBody: false), wholeBorder = whole.resolved
         var border = walk(trimBody: true).resolved
-        border.top = max(border.top, min(wholeBorder.top, max(whole.titleBottom, whole.titleTextBottom)))
-        // The client always ends above the status slot, strip or not. LCDx has no bottom strip and
+        // Two limits, applied to every measured frame: the trim never takes the top past the title...
+        let titleLimit = max(whole.titleBottom, whole.titleTextBottom)
+        border.top = max(border.top, min(wholeBorder.top, titleLimit))
+        // ...and the client always ends above the status slot, strip or not. LCDx has no bottom strip and
         // its `LayoutStatus` sits 17px up; Blogz's sits 42px up over a 28px strip, and its playlist
         // covered the Add/Rem/Sel bar drawn there (B482).
         border.bottom = max(border.bottom, whole.statusTop)
         return border
+    }
+
+    /// `measuredBorder` over the skin's own bitmaps: each edge's drawn extent from its cut, and the
+    /// frame's body colour from its base texture (the renderer's order,
+    /// `WasabiRendererClipping.backing(of:)`).
+    static func measuredBorder(in children: [WalXMLNode], group: (String) -> [WalXMLNode]?,
+                               resources: WalResourceRegistry?, vfs: WalVirtualFileSystem) -> Border {
+        var cuts: [String: CGImage?] = [:]
+        func cut(_ identifier: String) -> CGImage? {
+            if let known = cuts[identifier] { return known }
+            let image = resources?.resolvedDefinition(identifier: identifier)
+                .flatMap { WasabiResourceCache.cutImage(of: $0, in: vfs) }
+            cuts[identifier] = image
+            return image
+        }
+        return measuredBorder(
+            in: children, group: group,
+            frameBody: ["wasabi.frame.basetexture", "component.basetexture"]
+                .first { resources?.resolvedDefinition(identifier: $0) != nil },
+            bitmapSize: { cut($0).map { CGSize(width: $0.width, height: $0.height) } },
+            bitmapOpaqueBounds: { identifier, body in
+                guard let resource = resources?.resolvedDefinition(identifier: identifier) else { return nil }
+                // A cut with nothing opaque in it, or nothing but body, is an empty box: it draws no edge.
+                if let image = cut(identifier) {
+                    return WasabiResourceCache.edgeBounds(of: image, body: body.flatMap(cut)) ?? .zero
+                }
+                // A generated (`$solid`) bitmap has no file: it is its declared size.
+                guard let width = resource.attributes["w"].flatMap(Double.init),
+                      let height = resource.attributes["h"].flatMap(Double.init) else { return nil }
+                return CGRect(x: 0, y: 0, width: width, height: height)
+            })
     }
 
     /// The client area of such a frame, as the `<group>` the frame's missing script would have made.
@@ -281,13 +315,44 @@ extension WasabiStandardFrames {
 
     /// A title group that states no height ends where its title text does: pumaSKIN's
     /// `<group id="wasabi.titlebar" y="5">` holds `window.titlebar.title` at `y="0" h="20"`.
-    private static func titleTextBottom(in titleGroup: WalXMLNode, group: (String) -> [WalXMLNode]?,
+    private static func titleTextEnd(in titleGroup: WalXMLNode, group: (String) -> [WalXMLNode]?,
                                         visited: Set<String>) -> Double? {
         guard let title = referencedGroup(titleGroup, group: group, visited: visited)?.children.first(where: {
             $0.attribute("id")?.caseInsensitiveCompare("window.titlebar.title") == .orderedSame
                 && $0.attribute("relath") != "1"
         }), let height = title.attribute("h").flatMap(Double.init) else { return nil }
         return (title.attribute("y").flatMap(Double.init) ?? 0) + height
+    }
+
+    /// A `<grid>` is the whole frame as one nine-slice, its edges the strips: Center_Fresh's frame is
+    /// nothing else, and measured by strips alone its border was zero, so every hosted window's content
+    /// covered the frame and opened bare (B465). An edge is border only where the grid lies on that
+    /// side of the window, the far sides measured in from their cut's size. A grid inset from the
+    /// edge is a panel inside the client, not its border: Morlock's modal frame holds the engine's
+    /// `wasabi.panel` grid 35-50px in, and counted as border it left the modal window no client.
+    private static func measureGrid(_ grid: WalXMLNode, into measurement: inout Measurement,
+                                    offset: CGPoint, margin: CGPoint,
+                                    edgeArt: EdgeArt, bitmapSize: (String) -> CGSize?) {
+        let middle = grid.attribute("middle")
+        func art(_ side: String) -> (image: String, bounds: CGRect)? {
+            guard let image = grid.attribute(side), let bounds = edgeArt(image, middle), !bounds.isEmpty
+            else { return nil }
+            return (image, bounds)
+        }
+        if grid.attribute("relatx") != "1", offset.x == 0, let left = art("left") {
+            measurement.border.left = max(measurement.border.left, left.bounds.maxX)
+        }
+        if grid.attribute("relaty") != "1", offset.y == 0, let top = art("top") {
+            measurement.border.top = max(measurement.border.top, top.bounds.maxY)
+        }
+        if grid.attribute("relatw") == "1", margin.x == 0, let right = art("right"),
+           let size = bitmapSize(right.image) {
+            measurement.border.right = max(measurement.border.right, size.width - right.bounds.minX)
+        }
+        if grid.attribute("relath") == "1", margin.y == 0, let bottom = art("bottom"),
+           let size = bitmapSize(bottom.image) {
+            measurement.border.bottom = max(measurement.border.bottom, size.height - bottom.bounds.minY)
+        }
     }
 
     private static func measure(_ children: [WalXMLNode], into measurement: inout Measurement,
@@ -315,7 +380,7 @@ extension WasabiStandardFrames {
                !isRelative("relaty") {
                 if let height = number("h") {
                     measurement.titleBottom = max(measurement.titleBottom, offset.y + y + height)
-                } else if let height = titleTextBottom(in: node, group: group, visited: visited) {
+                } else if let height = titleTextEnd(in: node, group: group, visited: visited) {
                     measurement.titleTextBottom = max(measurement.titleTextBottom, offset.y + y + height)
                 }
             }
@@ -346,31 +411,9 @@ extension WasabiStandardFrames {
                 }
             }
 
-            // A `<grid>` is the whole frame as one nine-slice, its edges the strips: Center_Fresh's
-            // frame is nothing else, and measured by strips alone its border was zero, so every
-            // hosted window's content covered the frame and opened bare (B465). Its edges sit at the
-            // grid's own sides, so the far ones are measured in from their cut's size.
             if node.name.caseInsensitiveCompare("grid") == .orderedSame {
-                let middle = node.attribute("middle")
-                func art(_ side: String) -> (bounds: CGRect, size: CGSize?)? {
-                    guard let image = node.attribute(side), let bounds = edgeArt(image, middle),
-                          !bounds.isEmpty else { return nil }
-                    return (bounds, bitmapSize(image))
-                }
-                if let left = art("left") {
-                    measurement.border.left = max(measurement.border.left, childOffset.x + left.bounds.maxX)
-                }
-                if let top = art("top") {
-                    measurement.border.top = max(measurement.border.top, childOffset.y + top.bounds.maxY)
-                }
-                if let right = art("right"), let size = right.size {
-                    measurement.border.right = max(measurement.border.right,
-                                                   childMargin.x + size.width - right.bounds.minX)
-                }
-                if let bottom = art("bottom"), let size = bottom.size {
-                    measurement.border.bottom = max(measurement.border.bottom,
-                                                    childMargin.y + size.height - bottom.bounds.minY)
-                }
+                measureGrid(node, into: &measurement, offset: childOffset, margin: childMargin,
+                            edgeArt: edgeArt, bitmapSize: bitmapSize)
             }
 
             measure(node.children, into: &measurement, offset: childOffset, margin: childMargin, group: group,
