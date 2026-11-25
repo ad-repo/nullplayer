@@ -199,7 +199,10 @@ extension WasabiStandardFrames {
         let whole = walk(trimBody: false), wholeBorder = whole.resolved
         var border = walk(trimBody: true).resolved
         border.top = max(border.top, min(wholeBorder.top, max(whole.titleBottom, whole.titleTextBottom)))
-        border.bottom = max(border.bottom, min(wholeBorder.bottom, whole.statusTop))
+        // The client always ends above the status slot, strip or not. LCDx has no bottom strip and
+        // its `LayoutStatus` sits 17px up; Blogz's sits 42px up over a 28px strip, and its playlist
+        // covered the Add/Rem/Sel bar drawn there (B482).
+        border.bottom = max(border.bottom, whole.statusTop)
         return border
     }
 
@@ -235,9 +238,7 @@ extension WasabiStandardFrames {
             // top band is a `move` tile and two corners, and measured as 0 its Color Themes list sat
             // under the title text.
             if border.top == 0 { border.top = titleBottom }
-            // And one with no bottom strip still has its status bar, and the client ends above it.
-            // LCDx's strips are a fully transparent `frame.png`, and its `LayoutStatus` sits 17px up.
-            if border.bottom == 0 { border.bottom = statusTop }
+            // The client ends above the status bar; `measuredBorder` applies that to every frame.
             return border
         }
     }

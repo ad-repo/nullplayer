@@ -69,6 +69,17 @@ final class WinampModernStripBorderTests: XCTestCase {
         XCTAssertEqual(border, .init(left: 0, top: 0, right: 0, bottom: 17))
     }
 
+    /// Blogz's status slot sits 42px up over a 28px bottom strip: the client ends above the slot, not
+    /// at the strip, or its playlist covers the Add/Rem/Sel bar drawn there (B482).
+    func testTheStatusSlotBoundsTheBottomOverAThinnerStrip() {
+        let status = WalXMLNode(name: "LayoutStatus", attributes: ["x": "10", "y": "-42", "relaty": "1", "h": "17"],
+                                location: WalSourceLocation(path: "/frame.xml"))
+        let art: [String: CGRect] = ["b": CGRect(x: 0, y: 9, width: 39, height: 28)]
+        let border = WasabiStandardFrames.measuredBorder(in: Self.strips + [status], group: { _ in nil },
+                                                         bitmapOpaqueBounds: { id, _ in art[id] ?? .zero })
+        XCTAssertEqual(border.bottom, 42)
+    }
+
     /// Trance_Critic_v2_0's `frame-tm.png` is a short edge and then rows of its navy base texture
     /// (B464): only rows of the frame's flat body colour are trimmed, and a textured body trims none.
     func testRowsOfTheFlatBaseTextureAreBodyNotBorder() throws {

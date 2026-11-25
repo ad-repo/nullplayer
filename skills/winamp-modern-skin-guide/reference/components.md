@@ -289,9 +289,16 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   opaque in it is an empty box, not an unreadable one, so it neither counts nor falls back to its
   declared size. LCDx's strips are all one empty 39x37 `frame.png`; counted at their offsets, every
   framed window lost 39px on the right and 37px below, clipping the Thinger's icons to 21 rows.
-- **No bottom strip, the client ends above the status slot** — the frame's relative `LayoutStatus`
-  top. With LCDx's strips gone it would otherwise run under its own status bar; Celica's playlist
-  had been covering its command bar, and Circlo's client now stops above its status text.
+- **The client always ends above the status slot** — the frame's relative `LayoutStatus` top, with
+  a bottom strip or without one (B482). With LCDx's strips gone it would otherwise run under its own
+  status bar; Celica's playlist had been covering its command bar, and Circlo's client now stops
+  above its status text. It applied only to a frame with no bottom strip until B482: Blogz's slot is
+  42px up over a 28px strip, so its playlist ended at the strip and covered the Add/Rem/Sel bar.
+  Over the 61 gold skins whose slot sits above their strip, 35 changed: about 25 playlists show their
+  command bar whole, and library, Pledit, Video and component windows end above an empty status band.
+  Two follow from rules elsewhere: Star_Wars_Player's component window, whose holder drops to 23px,
+  opens at the component-room size (B136), and Bubble_Tea's tiny default Pledit keeps a 3px list
+  above a slot 68px up. 3IO's diff is only its CD `AnimatedLayer` caught on another frame.
 
 **The synthesizer takes these frames as a last resort (B366, 2026-11-10).** `usableFrames` still
 prefers a frame whose script builds its client, then the skin's own exemplar layout; only with

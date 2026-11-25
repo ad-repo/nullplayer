@@ -125,6 +125,9 @@
   thick frame, such as Simple_Amp_, dragging the Studio smaller or switching to a smaller UI Size
   squeezed its panels over each other. It now stops at the size its panels need, and grows to make
   room for them when you change UI Size.
+- **Winamp Modern (`.wal`): playlists in skin frames show their whole Add/Rem/Sel/Misc/List bar.**
+  In Blogz, HARMONIA, X_Sphere, Probe_V5, the iTunes Mini skins and about 20 others, the list
+  covered the bar or cut it off. Framed windows now end above the frame's status bar.
 
 ## 0.35.2
 
