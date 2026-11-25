@@ -1271,6 +1271,14 @@ skin's script does the pairing. What it needs from the engine is that a window c
 window's position and that `onMove()` reaches a script at all; both are in
 [scripting.md](scripting.md) → *Writing back the position a window just read* (B69).
 
+**The census reads such a pair as a hollow frame and a duplicate window, and both are by design**
+(B446). `windows.tsv` lists two windows at one rect, and the frame window, captured on its own, is a
+`HOLES` hit: its centre is where the content shows through. Settle it on screen, not from the census.
+`winhelper windows` gives the z-order (the frame must be listed in front of its content),
+`capture-region` shows what is drawn, and a drag on the frame's title must move both. YST (Library,
+Playlist, EQ Studio), WM_Player and Azenis_2 (every hosted window) all passed that check on
+2026-11-25.
+
 #### A NullPlayer-owned hosted window is one of those windows too (B110, 2026-09-03)
 
 Ebonite frames **everything**, including the windows NullPlayer synthesizes — Flow, Cava, PeppyMeter,
