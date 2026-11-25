@@ -76,6 +76,9 @@ class PlaylistWindowController: NSWindowController, PlaylistWindowProviding {
         playlistView.controller = self
         playlistView.autoresizingMask = [.width, .height]
         window?.contentView = playlistView
+        (window as? ResizableWindow)?.excludesResize = { [weak playlistView] point in
+            playlistView?.isOverWinampControl(windowPoint: point) ?? false
+        }
     }
     
     // MARK: - Public Methods

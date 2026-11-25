@@ -51,6 +51,11 @@ class ResizableWindow: NSWindow {
     
     /// Default size for double-click restore (set from minSize)
     private var defaultSize: NSSize?
+
+    /// A window point the content keeps for its own press though it lies in a resize band — the
+    /// Winamp playlist editor's bar controls (`PlaylistView.isOverWinampControl`). Nil for every
+    /// other window, whose edges are unchanged.
+    var excludesResize: ((NSPoint) -> Bool)?
     
     // MARK: - Initialization
     
@@ -104,6 +109,7 @@ class ResizableWindow: NSWindow {
         let size = frame.size
         // A key window keeps getting mouse-moved events outside its frame; none of those is an edge (#779).
         guard NSRect(origin: .zero, size: size).contains(windowPoint) else { return .none }
+        if excludesResize?(windowPoint) == true { return .none }
 
         // The title bar drags the window, and holds the menu button on the left and the window
         // buttons on the right. Only its top frame band resizes, and never over a button.

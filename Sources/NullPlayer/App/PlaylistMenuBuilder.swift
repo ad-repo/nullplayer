@@ -22,6 +22,8 @@ import AppKit
     func showFileInfo(_ sender: Any?)
     /// Make `row` the whole selection, before a menu opened on it.
     func selectForMenu(_ row: Int)
+    /// A **Playlist Style ▸** row: its `representedObject` is the `ClassicPlaylistStyle` raw value.
+    @objc optional func choosePlaylistStyle(_ sender: NSMenuItem)
 }
 
 /// The old ADD / LIST bar's commands, for a playlist that owns them. A conformer's context menu gains
@@ -47,6 +49,8 @@ enum PlaylistMenuBuilder {
         /// False while the view shows something other than the live queue (a `.wmz` library
         /// preview), so every row that edits the queue is disabled and nothing is assigned.
         var canEdit = true
+        /// The Classic playlist's current style, which adds **Playlist Style ▸**; nil elsewhere.
+        var playlistStyle: ClassicPlaylistStyle?
         var selectionCount: Int { selectedRows.count }
         var hasSelection: Bool { selectionCount > 0 }
     }
@@ -74,17 +78,11 @@ enum PlaylistMenuBuilder {
         func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
             Self.submenu(title, autoenablesItems: autoenablesItems, items)
         }
-        let fileCommands = target is PlaylistFileCommands
+        let fileCommands = target as? PlaylistFileCommands
 
         menu.addItem(item("Play", #selector(PlaylistMenuTarget.playSelected(_:)), enabled: hasSelection))
         menu.addItem(NSMenuItem.separator())
-        if fileCommands {
-            menu.addItem(submenu("Add", [
-                item("Add URL...", #selector(PlaylistFileCommands.addURL(_:)), enabled: true),
-                item("Add Directory...", #selector(PlaylistFileCommands.addDirectory(_:)), enabled: true),
-                item("Add Files...", #selector(PlaylistFileCommands.addFiles(_:)), enabled: true)
-            ]))
-        }
+        if let fileCommands { menu.addItem(submenu("Add", addItems(target: fileCommands))) }
         menu.addItem(item("Remove Selected", #selector(PlaylistMenuTarget.removeSelected(_:)),
                           enabled: hasSelection && canEdit))
         menu.addItem(item("Clear Playlist", #selector(PlaylistMenuTarget.removeAll(_:)),
@@ -114,23 +112,48 @@ enum PlaylistMenuBuilder {
             item("Reverse", #selector(PlaylistMenuTarget.reverse(_:)), enabled: canSort),
             item("Randomize", #selector(PlaylistMenuTarget.randomize(_:)), enabled: canSort)
         ]))
-        if fileCommands {
-            menu.addItem(submenu("Playlist", [
-                item("New Playlist", #selector(PlaylistMenuTarget.removeAll(_:)), enabled: true),
-                item("Save Playlist...", #selector(PlaylistFileCommands.savePlaylist(_:)), enabled: true),
-                item("Load Playlist...", #selector(PlaylistFileCommands.loadPlaylist(_:)), enabled: true)
-            ]))
-        }
+        if let fileCommands { menu.addItem(submenu("Playlist", playlistItems(target: fileCommands))) }
 
         menu.addItem(NSMenuItem.separator())
         menu.addItem(item("File Info...", #selector(PlaylistMenuTarget.showFileInfo(_:)),
                           enabled: state.selectionCount == 1 && canEdit))
         if canEdit { EQProfileMenu.addAssignItem(to: menu, queueRows: state.selectedRows) }
         PlaylistRowFields.addItems(to: menu)
+        if let current = state.playlistStyle {
+            menu.addItem(NSMenuItem.separator())
+            menu.addItem(submenu("Playlist Style", ClassicPlaylistStyle.allCases.map { style in
+                let row = item(style.title, #selector(PlaylistMenuTarget.choosePlaylistStyle(_:)), enabled: true)
+                row.representedObject = style.rawValue
+                row.state = style == current ? .on : .off
+                return row
+            }))
+        }
         return menu
     }
 
-    // MARK: - A skin's REM, SEL and MISC buttons
+    // MARK: - A skin's ADD, REM, SEL, MISC and LIST OPTS buttons
+
+    /// Winamp's ADD button, and the context menu's **Add ▸**.
+    static func addMenu(target: PlaylistFileCommands) -> NSMenu {
+        section("Add", addItems(target: target))
+    }
+
+    /// Winamp's LIST OPTS button, and the context menu's **Playlist ▸**.
+    static func playlistMenu(target: PlaylistFileCommands) -> NSMenu {
+        section("Playlist", playlistItems(target: target))
+    }
+
+    private static func addItems(target: PlaylistFileCommands) -> [NSMenuItem] {
+        [item("Add URL...", #selector(PlaylistFileCommands.addURL(_:)), target: target, enabled: true),
+         item("Add Directory...", #selector(PlaylistFileCommands.addDirectory(_:)), target: target, enabled: true),
+         item("Add Files...", #selector(PlaylistFileCommands.addFiles(_:)), target: target, enabled: true)]
+    }
+
+    private static func playlistItems(target: PlaylistFileCommands) -> [NSMenuItem] {
+        [item("New Playlist", #selector(PlaylistMenuTarget.removeAll(_:)), target: target, enabled: true),
+         item("Save Playlist...", #selector(PlaylistFileCommands.savePlaylist(_:)), target: target, enabled: true),
+         item("Load Playlist...", #selector(PlaylistFileCommands.loadPlaylist(_:)), target: target, enabled: true)]
+    }
 
     /// Winamp's `PE_REM`, for a skin that draws the playlist editor's buttons itself. "Selected" and
     /// "Crop" are disabled with nothing selected rather than hidden — a greyed item says *why* it did

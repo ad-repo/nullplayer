@@ -18,20 +18,21 @@ class PlaylistView: NSView {
     weak var controller: PlaylistWindowController?
 
     /// Selected track indices
-    private var selectedIndices: Set<Int> = []
+    var selectedIndices: Set<Int> = []
 
     /// The anchor index for shift-selection (where shift-click range starts from)
-    private var selectionAnchor: Int?
+    var selectionAnchor: Int?
 
     /// A press on a row, which dragging turns into moving the selection.
     private var rowDrag: PlaylistRowDrag?
 
     /// Scroll offset (in pixels)
-    private var scrollOffset: CGFloat = 0
+    var scrollOffset: CGFloat = 0
 
     /// Item height
-    private let itemHeight: CGFloat = 13
-    private let playlistFontSize: CGFloat = 9
+    let itemHeight: CGFloat = 13
+    static let rowFontSize: CGFloat = 9
+    private let playlistFontSize = PlaylistView.rowFontSize
 
     /// Region manager
     private let regionManager = RegionManager.shared
@@ -98,10 +99,54 @@ class PlaylistView: NSView {
         let bottomBarHeight: CGFloat
         let leftBorder: CGFloat
         let rightBorder: CGFloat
+        /// The close button's hit width at the title bar's right end, in our own chrome.
+        var closeWidth: CGFloat = 20
+        /// A draggable scrollbar groove (`SkinElements.Playlist.Editor.scrollbarRect`).
+        var hasScrollbar = false
+        /// The bottom bar shows live times, so it repaints with the list.
+        var repaintsBottomBar = false
 
         static let classic = PlaylistChrome(titleBarHeight: 20,
                                             bottomBarHeight: SkinElements.Playlist.bottomHeight,
                                             leftBorder: 12, rightBorder: 12)
+        /// The Winamp Classic style (`PlaylistView+WinampStyle.swift`).
+        static let winamp = PlaylistChrome(titleBarHeight: 20,
+                                           bottomBarHeight: SkinElements.Playlist.Editor.barHeight,
+                                           leftBorder: 12, rightBorder: SkinElements.Playlist.Editor.rightBorder,
+                                           closeWidth: SkinElements.Playlist.Editor.closeWidth,
+                                           hasScrollbar: true, repaintsBottomBar: true)
+    }
+
+    /// How rows draw: NullPlayer's (system font, white selected text, a marquee on the playing
+    /// title) or the Winamp style's (`winampRowStyle`).
+    struct RowStyle {
+        let font: NSFont
+        let selectionFill: NSColor?
+        /// Nil: a selected row keeps its own text colour.
+        let selectedText: NSColor?
+        let playingText: NSColor
+        let normalText: NSColor
+        let scrollsTitle: Bool
+
+        func textColor(selected: Bool, playing: Bool) -> NSColor {
+            if selected, let selectedText { return selectedText }
+            return playing ? playingText : normalText
+        }
+    }
+
+    /// Read once per draw or measure.
+    private var rowStyle: RowStyle {
+        let host = WindowManager.shared.hostedSurfaceStyle
+        let colors = host?.playlistColors ?? WindowManager.shared.currentSkin?.playlistColors ?? .default
+        if isWinampStyle { return Self.winampRowStyle(colors, fontSize: playlistFontSize) }
+        // Selected rows are white, the classic idiom, with no selection fill under them; beside a
+        // hosted skin or face whose ground is light, white is corrected against that ground, and a
+        // family may pick its own against its row colour, for the playing row too
+        // (`SkinnedSurfaceStyle.playlistSelectedText`, `playlistPlayingText`).
+        return RowStyle(font: Self.systemRowFont, selectionFill: nil,
+                        selectedText: host?.playlistSelectedText ?? .white,
+                        playingText: host?.playlistPlayingText ?? colors.currentText,
+                        normalText: colors.normalText, scrollsTitle: true)
     }
 
     /// The window frame the hosting skin lends this playlist, when it lends one — a `.wmz` skin that
@@ -114,6 +159,7 @@ class PlaylistView: NSView {
     /// Where the chrome ends and the track list begins. The borrowed frame's own client hole
     /// wherever there is one, so the list, its hit testing and its scrolling all move together.
     private var Layout: PlaylistChrome {
+        if isWinampStyle { return .winamp }
         guard let metrics = hostedFrame?.metrics else {
             // A `.wmz` or `.wal` session draws the unskinned playlist without its title bar: the top edge is
             // a border as thin as the bottom one (`SkinnedSurfaceChrome.hidesPaletteTitleBar`).
@@ -185,6 +231,7 @@ class PlaylistView: NSView {
     /// (an EQ marker, Show Artist / Show Album) without the queue changing.
     override func layout() {
         super.layout()
+        fitScrollOffsetToStyle()
         updateCurrentTrackTextWidth()
     }
 
@@ -335,8 +382,8 @@ class PlaylistView: NSView {
 
     // MARK: - Marquee Layer Management
 
-    /// Calculate current track text width for marquee scrolling. Track rows always draw in the
-    /// system font (`drawTrackText`), so that is what it measures.
+    /// Calculate current track text width for marquee scrolling, in the row font; zero when the
+    /// row style never scrolls a title, so the marquee stands still.
     private func updateCurrentTrackTextWidth() {
         let engine = WindowManager.shared.audioEngine
         let currentIndex = engine.currentIndex
@@ -346,10 +393,15 @@ class PlaylistView: NSView {
             return
         }
 
+        let rows = rowStyle
+        guard rows.scrollsTitle else {
+            currentTrackTextWidth = 0
+            return
+        }
         let track = engine.playlist[currentIndex]
         let titleText = "\(currentIndex + 1). \(EQProfileResolver.shared.queueTitle(for: track))"
 
-        currentTrackTextWidth = systemFontTextWidth(titleText)
+        currentTrackTextWidth = rowTextWidth(titleText, font: rows.font)
     }
 
     private func setupPlaylistMarqueeLayer() {
@@ -439,7 +491,8 @@ class PlaylistView: NSView {
         let effectiveSize = effectiveWindowSize
         let hiddenTitleOffset = WindowManager.shared.hideTitleBars ? Layout.titleBarHeight : 0
         let listTop = max(0, Layout.titleBarHeight - hiddenTitleOffset)
-        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        let listHeight = effectiveSize.height - Layout.titleBarHeight
+            - (Layout.repaintsBottomBar ? 0 : Layout.bottomBarHeight)
         let listRect = NSRect(
             x: 0,
             y: bounds.height - ((listTop + listHeight) * scale),
@@ -481,7 +534,7 @@ class PlaylistView: NSView {
 
     /// Get the effective window size in unscaled skin coordinates.
     /// Width/height can expand to fill stretched window dimensions.
-    private var effectiveWindowSize: NSSize {
+    var effectiveWindowSize: NSSize {
         let scale = scaleFactor
         let originalSize = originalWindowSize
         let effectiveWidth = bounds.width / scale
@@ -490,7 +543,7 @@ class PlaylistView: NSView {
     }
 
     /// Convert a point from view coordinates to original (unscaled) skin coordinates
-    private func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
+    func convertToSkinCoordinates(_ point: NSPoint) -> NSPoint {
         let scale = scaleFactor
         let effectiveSize = effectiveWindowSize
 
@@ -552,20 +605,19 @@ class PlaylistView: NSView {
                                bounds: drawBounds, isActive: isActive)
         } else if let style {
             drawWinampModernChrome(style: style, context: context, bounds: drawBounds, isActive: isActive)
+        } else if isWinampStyle {
+            renderer.drawWinampPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
+                                              closePressed: pressedButton == .close,
+                                              scrollPosition: scrollPosition,
+                                              runningTime: WinampPlaylistBar.runningTime(selectedRows: selectedIndices),
+                                              trackSeconds: WinampPlaylistBar.trackSeconds())
         } else {
             renderer.drawPlaylistWindow(in: context, bounds: drawBounds, isActive: isActive,
                                         pressedButton: pressedButton, scrollPosition: scrollPosition)
         }
 
         // Draw track list in the content area
-        let colors = style?.playlistColors ?? skin?.playlistColors ?? .default
-        // Selected rows are white, the classic idiom, with no selection fill under them; beside a
-        // hosted skin or face whose ground is light, white is corrected against that ground, and a
-        // family may pick its own against its row colour, for the playing row too
-        // (`SkinnedSurfaceStyle.playlistSelectedText`, `playlistPlayingText`).
-        let selectedText = style?.playlistSelectedText ?? .white
-        drawTrackList(in: context, colors: colors, selectedText: selectedText,
-                      playingText: style?.playlistPlayingText ?? colors.currentText, drawBounds: drawBounds)
+        drawTrackList(in: context, rows: rowStyle, drawBounds: drawBounds)
 
         // Bottom bar removed - no track info or playback time rendering needed
 
@@ -722,8 +774,7 @@ class PlaylistView: NSView {
     }
 
     /// Draw the track list
-    private func drawTrackList(in context: CGContext, colors: PlaylistColors, selectedText: NSColor,
-                               playingText: NSColor, drawBounds: NSRect) {
+    private func drawTrackList(in context: CGContext, rows: RowStyle, drawBounds: NSRect) {
         let titleHeight = Layout.titleBarHeight
         let bottomHeight = Layout.bottomBarHeight
 
@@ -765,11 +816,16 @@ class PlaylistView: NSView {
             // Draw track info
             let track = tracks[index]
             let isCurrentTrack = index == currentIndex
-            let textColor = selectedIndices.contains(index) ? selectedText
-                : isCurrentTrack ? playingText : colors.normalText
+            let isSelected = selectedIndices.contains(index)
+            if isSelected, let fill = rows.selectionFill {
+                context.setFillColor(fill.cgColor)
+                context.fill(itemRect)
+            }
 
             // Draw track text with clipping and marquee for current track
-            drawTrackText(in: context, track: track, index: index, rect: itemRect, color: textColor, font: colors.font, isCurrentTrack: isCurrentTrack)
+            drawTrackText(in: context, track: track, index: index, rect: itemRect,
+                          color: rows.textColor(selected: isSelected, playing: isCurrentTrack),
+                          font: rows.font, isCurrentTrack: isCurrentTrack && rows.scrollsTitle)
         }
 
         context.restoreGState()
@@ -779,26 +835,25 @@ class PlaylistView: NSView {
     /// Current track uses marquee scrolling for long titles
     /// Falls back to system font for non-Latin characters (Japanese, Chinese, Cyrillic, etc.)
     private func drawTrackText(in context: CGContext, track: Track, index: Int, rect: NSRect, color: NSColor, font: NSFont, isCurrentTrack: Bool = false) {
-        let duration = track.duration ?? 0
-        let durationStr = String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
+        let durationStr = Self.clock(Int(track.duration ?? 0), hours: false)
         let titleX = rect.minX + 2
 
         let titleText = "\(index + 1). \(EQProfileResolver.shared.queueTitle(for: track))"
 
-        let durationWidth = systemFontTextWidth(durationStr)
+        let durationWidth = rowTextWidth(durationStr, font: font)
         let durationX = rect.maxX - durationWidth - 4
         let titleMaxWidth = durationX - titleX - 6
 
         // Vertical centering using system font size
         let textY = rect.minY + (rect.height - playlistFontSize) / 2
 
-        drawSystemFontText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, color: color)
+        drawRowText(durationStr, at: NSPoint(x: durationX, y: textY), in: context, color: color, font: font)
 
         // Draw title (clipped to available width)
         context.saveGState()
         context.clip(to: NSRect(x: titleX, y: rect.minY, width: titleMaxWidth, height: rect.height))
 
-        let titleWidth = systemFontTextWidth(titleText)
+        let titleWidth = rowTextWidth(titleText, font: font)
 
         if isCurrentTrack && titleWidth > titleMaxWidth && configurePlaylistMarqueeLayer(text: titleText, titleX: titleX, titleMaxWidth: titleMaxWidth, rowRect: rect, color: color) {
             // The layer-backed marquee draws this title smoothly; duration stays in CGContext.
@@ -807,14 +862,14 @@ class PlaylistView: NSView {
             let cycleWidth = titleWidth + marqueeSeparatorWidth
 
             let xOffset1 = titleX - marqueeOffset
-            drawSystemFontText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, color: color)
+            drawRowText(titleText, at: NSPoint(x: xOffset1, y: textY), in: context, color: color, font: font)
 
             let xOffset2 = xOffset1 + cycleWidth
             if xOffset2 < titleX + titleMaxWidth {
-                drawSystemFontText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, color: color)
+                drawRowText(titleText, at: NSPoint(x: xOffset2, y: textY), in: context, color: color, font: font)
             }
         } else {
-            drawSystemFontText(titleText, at: NSPoint(x: titleX, y: textY), in: context, color: color)
+            drawRowText(titleText, at: NSPoint(x: titleX, y: textY), in: context, color: color, font: font)
         }
 
         context.restoreGState()
@@ -938,13 +993,23 @@ class PlaylistView: NSView {
         return offscreenContext.makeImage()
     }
 
-    /// Draw text using system font (fallback for non-Latin characters).
-    /// Context is already flipped to skin coordinates (Y=0 at top), so we need to unflip
-    /// temporarily for NSAttributedString.draw() to render correctly.
-    private func drawSystemFontText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor) {
+    /// NullPlayer's row font (`RowStyle.font`).
+    private static let systemRowFont = NSFont.systemFont(ofSize: rowFontSize, weight: .regular)
+
+    /// `M:SS`, or with `hours` `H:MM:SS` past an hour: row durations count minutes past 60.
+    static func clock(_ seconds: Int, hours: Bool) -> String {
+        let s = max(0, seconds)
+        return hours && s >= 3600 ? String(format: "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60)
+                                  : String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    /// Draw row text. Context is already flipped to skin coordinates (Y=0 at top), so we need to
+    /// unflip temporarily for NSAttributedString.draw() to render correctly.
+    private func drawRowText(_ text: String, at position: NSPoint, in context: CGContext, color: NSColor,
+                             font: NSFont = PlaylistView.systemRowFont) {
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: color,
-            .font: NSFont.systemFont(ofSize: playlistFontSize, weight: .regular)
+            .font: font
         ]
 
         // Context is flipped for skin rendering - need to unflip for NSAttributedString
@@ -961,11 +1026,8 @@ class PlaylistView: NSView {
         context.restoreGState()
     }
 
-    private func systemFontTextWidth(_ text: String) -> CGFloat {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: playlistFontSize, weight: .regular)
-        ]
-        return text.size(withAttributes: attrs).width
+    private func rowTextWidth(_ text: String, font: NSFont = PlaylistView.systemRowFont) -> CGFloat {
+        text.size(withAttributes: [.font: font]).width
     }
 
     /// Draw time/info display at the bottom of the track list area (just above the bottom bar)
@@ -1034,6 +1096,7 @@ class PlaylistView: NSView {
         // Pre-cache the TEXT.BMP CGImage for the new skin
         // This MUST happen outside of the draw cycle
         cacheTextBitmapCGImage()
+        fitScrollOffsetToStyle()
         updateCurrentTrackTextWidth()
         playlistMarqueeLayer?.skinTextImage = WindowManager.shared.currentSkin?.text
         needsDisplay = true
@@ -1061,17 +1124,18 @@ class PlaylistView: NSView {
         // 20x14 in our own chrome; under a borrowed ring the column spans the skin's caption band
         // and sits inside its right border, which is where the shared painter draws it (W178).
         let bounds = NSRect(origin: .zero, size: effectiveSize)
+        let closeWidth = Layout.closeWidth
         let closeRect = WindowManager.shared.hostedSurfaceFrameArtwork(for: effectiveSize) == nil
             && !SkinnedSurfaceChrome.hidesPaletteTitleBar
-            ? NSRect(x: effectiveSize.width - 20, y: 0, width: 20, height: 14)
+            ? NSRect(x: effectiveSize.width - closeWidth, y: 0, width: closeWidth, height: 14)
             : SkinnedSurfaceChrome.closeButtonRect(in: bounds, captionHeight: Layout.titleBarHeight,
                                                    width: 20)
         return closeRect.contains(skinPoint)
     }
 
-    /// Check if point hits the scrollbar (disabled - no scrollbar widget)
+    /// The Winamp style's scrollbar groove; NullPlayer's playlist has no scrollbar.
     private func hitTestScrollbar(at skinPoint: NSPoint) -> Bool {
-        return false
+        Layout.hasScrollbar && SkinElements.Playlist.Editor.scrollbarRect(size: effectiveWindowSize).contains(skinPoint)
     }
 
     /// Check if point hits the track list
@@ -1117,6 +1181,8 @@ class PlaylistView: NSView {
             needsDisplay = true
             return
         }
+
+        if pressWinampBar(at: skinPoint, viewPoint: point) { return }
 
         // Check scrollbar
         if hitTestScrollbar(at: skinPoint) {
@@ -1262,15 +1328,21 @@ class PlaylistView: NSView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        let tracks = WindowManager.shared.audioEngine.playlist
-        let effectiveSize = effectiveWindowSize
-        let listHeight = effectiveSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
-        let totalHeight = CGFloat(tracks.count) * itemHeight
+        scroll(by: -verticalScrollDelta(from: event))
+    }
 
-        if totalHeight > listHeight {
-            scrollOffset = max(0, min(totalHeight - listHeight, scrollOffset - verticalScrollDelta(from: event)))
-            setNeedsDisplayForListArea()
-        }
+    /// Scroll the list `delta` skin pixels down (negative: up), clamped to the rows.
+    func scroll(by delta: CGFloat) {
+        let maxOffset = maxScrollOffset
+        guard maxOffset > 0 else { return }
+        scrollOffset = max(0, min(maxOffset, scrollOffset + delta))
+        setNeedsDisplayForListArea()
+    }
+
+    /// The largest offset that keeps the list filled at the current chrome; zero when every row fits.
+    var maxScrollOffset: CGFloat {
+        let listHeight = effectiveWindowSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
+        return max(0, CGFloat(WindowManager.shared.audioEngine.playlist.count) * itemHeight - listHeight)
     }
 
     private func verticalScrollDelta(from event: NSEvent) -> CGFloat {
@@ -1408,6 +1480,8 @@ class PlaylistView: NSView {
         let tracks = engine.playlist
         let hasShift = event.modifierFlags.contains(.shift)
 
+        if performWinampHotkey(event) { return }
+
         switch event.keyCode {
         case 51: // Delete - remove selected
             removeSelected(nil)
@@ -1513,7 +1587,7 @@ class PlaylistView: NSView {
     }
 
     /// Scroll the current selection on screen.
-    private func scrollToSelection(_ placement: PlayingRowPlacement = .edge) {
+    func scrollToSelection(_ placement: PlayingRowPlacement = .edge) {
         guard let focusIndex = selectionAnchor ?? selectedIndices.min() else { return }
         let listHeight = effectiveWindowSize.height - Layout.titleBarHeight - Layout.bottomBarHeight
         let rowCount = WindowManager.shared.audioEngine.playlist.count
@@ -1547,7 +1621,8 @@ class PlaylistView: NSView {
             target: self,
             clickedRow: hitTestTrackList(at: convertToSkinCoordinates(convert(event.locationInWindow, from: nil))),
             state: .init(selectedRows: selectedIndices,
-                         hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty))
+                         hasTracks: !WindowManager.shared.audioEngine.playlist.isEmpty,
+                         playlistStyle: canChooseStyle ? ClassicPlaylistStyle.current : nil))
     }
 
     @objc func selectForMenu(_ row: Int) {

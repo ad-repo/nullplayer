@@ -117,41 +117,28 @@ class SkinLoader {
         )
     }
     
-    /// Find the actual directory containing skin files
-    /// Some skins extract directly, others extract to a subdirectory
+    /// Find the actual directory containing skin files.
+    /// Some skins extract directly, others into one or more nested folders
+    /// (MERYXMS1.wsz: meryxmas/Merry Christmas Amp/main.bmp). Search breadth-first for the
+    /// shallowest folder with main.bmp; failing that, the shallowest folder holding any BMP.
     private func findSkinDirectory(in directory: URL) -> URL {
-        // First check if there are BMP files directly in the directory
-        if let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) {
-            let hasBMPFiles = contents.contains { url in
-                url.pathExtension.lowercased() == "bmp"
+        let fm = FileManager.default
+        var level = [directory]
+        var firstWithBMP: URL?
+        while !level.isEmpty {
+            var next: [URL] = []
+            for dir in level {
+                guard let contents = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.isDirectoryKey]) else { continue }
+                let bmps = contents.filter { $0.pathExtension.lowercased() == "bmp" }
+                if bmps.contains(where: { $0.lastPathComponent.lowercased() == "main.bmp" }) { return dir }
+                if !bmps.isEmpty, firstWithBMP == nil { firstWithBMP = dir }
+                next += contents.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true && $0.lastPathComponent != "__MACOSX" }
             }
-            
-            if hasBMPFiles {
-                return directory
-            }
-            
-            // No BMP files at root - look for a subdirectory containing them
-            for item in contents {
-                var isDirectory: ObjCBool = false
-                if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDirectory),
-                   isDirectory.boolValue {
-                    // Check if this subdirectory contains BMP files
-                    if let subContents = try? FileManager.default.contentsOfDirectory(at: item, includingPropertiesForKeys: nil) {
-                        let subHasBMP = subContents.contains { url in
-                            url.pathExtension.lowercased() == "bmp"
-                        }
-                        if subHasBMP {
-                            return item
-                        }
-                    }
-                }
-            }
+            level = next
         }
-        
-        // Fallback to original directory
-        return directory
+        return firstWithBMP ?? directory
     }
-    
+
     /// Build a lookup table for case-insensitive file resolution inside a skin directory.
     private func buildCaseInsensitiveFileIndex(in directory: URL) -> [String: URL] {
         guard let contents = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {

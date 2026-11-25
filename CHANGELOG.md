@@ -50,6 +50,13 @@
   for Winamp, Sing it, Kitty, Study Skinning, Tekken Lili, Tom, TOX Milla, Wiimote, Winamp5 Base
   Skin, Wurlitzer One More Time, XENERGY1.
 
+### Classic skins
+
+- **The Winamp Classic playlist editor** (#816). Classic's playlist now draws as the standard Winamp 2
+  playlist editor by default — ADD / REM / SEL / MISC / LIST OPTS, the mini transport, scrollbar,
+  running and track time — with rows in the skin's own playlist font and Winamp's playlist hotkeys.
+  Right-click → **Playlist Style ▸ NullPlayer** brings back the previous borderless look.
+
 ### Fixes
 
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit
@@ -98,6 +105,8 @@
 - **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it** (#814).
   Wiimote's home button opens its SpaceCatSamba window, and the same fix reaches M3's downloads
   window, Opulent Records Player's website window and hm_Touch's album art window.
+- **Classic: a skin that keeps its bitmaps several folders deep loads** (#819). MERYXMS1 (Merry Christmas
+  Amp) fell back to the unskinned look because only the first folder level was searched.
 
 ## 0.35.2
 
