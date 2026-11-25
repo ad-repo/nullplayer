@@ -9,22 +9,23 @@ final class SkinFamilyMenuTests: XCTestCase {
         NSMenuItem(title: title, action: nil, keyEquivalent: "")
     }
 
-    /// Every family reads the same way: "Switch to" outside its own mode, the options, one divider,
-    /// then the skins.
+    /// Every family reads the same way: "Switch to" outside its own mode, the options and the A–Z
+    /// toggle, one divider, then the skins.
     func testAFamilyMenuPutsItsOptionsAboveOneDividerAndItsSkinsBelow() {
         let menu = ContextMenuBuilder.buildSkinFamilyMenu(
             switchItem: item("Switch to X"),
             options: [item("Load Skin..."), item("Open Skins Folder...")],
-            skins: [item("A"), item("B")])
+            skins: [[item("A"), item("B")]])
         XCTAssertEqual(menu.items.map { $0.isSeparatorItem ? "---" : $0.title },
-                       ["Switch to X", "---", "Load Skin...", "Open Skins Folder...", "---", "A", "B"])
+                       ["Switch to X", "---", "Load Skin...", "Open Skins Folder...", "Group Skins Alphabetically",
+                        "---", "A", "B"])
     }
 
     func testTheFamilyOnScreenHasNoSwitchRow() {
         let menu = ContextMenuBuilder.buildSkinFamilyMenu(
-            switchItem: nil, options: [item("Load Skin...")], skins: [item("A")])
+            switchItem: nil, options: [item("Load Skin...")], skins: [[item("A")]])
         XCTAssertEqual(menu.items.map { $0.isSeparatorItem ? "---" : $0.title },
-                       ["Load Skin...", "---", "A"])
+                       ["Load Skin...", "Group Skins Alphabetically", "---", "A"])
     }
 
     func testAnEmptyLibrarySaysSoInsteadOfEndingOnADivider() throws {
@@ -33,6 +34,25 @@ final class SkinFamilyMenuTests: XCTestCase {
         let last = try XCTUnwrap(menu.items.last)
         XCTAssertEqual(last.title, "No skins installed")
         XCTAssertFalse(last.isEnabled)
+    }
+
+    /// One setting groups every family: a section past the limit becomes A–Z submenus, each section
+    /// on its own with a divider between, and switching it off lists every skin flat.
+    func testTheSharedSettingGroupsEachLongSectionAndOffListsThemFlat() {
+        let key = ContextMenuBuilder.groupSkinsAlphabeticallyKey
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer { UserDefaults.standard.set(saved, forKey: key) }
+        let names = (0...ContextMenuBuilder.groupedSkinsFlatListLimit).map { "\($0 % 2 == 0 ? "A" : "B")\($0)" }
+        func build() -> [String] {
+            ContextMenuBuilder.buildSkinFamilyMenu(switchItem: nil, options: [],
+                                                   skins: [names.map(item), [item("Metal")]])
+                .items.map { $0.isSeparatorItem ? "---" : $0.title }
+        }
+
+        UserDefaults.standard.set(true, forKey: key)
+        XCTAssertEqual(build(), ["Group Skins Alphabetically", "---", "A", "B", "---", "Metal"])
+        UserDefaults.standard.set(false, forKey: key)
+        XCTAssertEqual(build(), ["Group Skins Alphabetically", "---"] + names + ["---", "Metal"])
     }
 
     // MARK: - Original and Original-Metal

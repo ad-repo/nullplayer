@@ -112,7 +112,7 @@ that skin decided.
 | Script | Role |
 |---|---|
 | `preflight.sh` | Blocks a sweep in a known-bad state; prints the four checks only a human can make |
-| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt`. So its `.wal` set is the user's installs in `WinampModernSkins/`, not the `.wal` test corpus (`WinampModernCorpus/`, see `winamp-modern-skin-guide/reference/harness.md`) |
+| `enumerate_skins.sh` | Reads the live Skins menu → `system / submenu / item / label` TSV, minus `../exclude.txt`. So its `.wal` set is the user's installs in `WinampModernSkins/`, not the `.wal` test corpus (`WinampModernCorpus/`, see `winamp-modern-skin-guide/reference/harness.md`). Past 40 skins a list is grouped into A–Z submenus (while **Group Skins Alphabetically** is on, the default), which `menu.applescript` `list`, `current` and `skin` read in place |
 | `capture.sh` | The sweep: mode switch, skin select, settle, capture, reframe, manifest |
 | `reframe.sh` | Centres the visible artwork on the white frame; owns the two framing rules |
 | `makegif.sh` | Assembles the GIF at an exact cycle length |
@@ -216,17 +216,15 @@ Classic → Original → Original-Metal → Modern → Media Player → Audion F
 ## Audion faces
 
 Panic's archive is 856 faces, so a whole-menu sweep is about two hours of Audion alone; pick a set
-with `--only` or `../exclude.txt`. Past 40 faces the menu is grouped into A–Z submenus, which
-`menu.applescript` `list`, `current` and `skin` read in place. Face names can start or end with a
-space (five do), so `list` prints one name per line and `enumerate_skins.sh` never trims: trimming
-made those rows `MENU-FAIL`.
+with `--only` or `../exclude.txt`. Face names can start or end with a space (five do), so `list`
+prints one name per line and `enumerate_skins.sh` never trims: trimming made those rows `MENU-FAIL`.
 
 ## Sonique skins
 
 Each skin is shot in the mode the window is in — navigator, mid or small — so pick it before the
 sweep with **Skins ▸ Sonique ▸ Mode**, or launch with `launch.sh sonique:<skin> -- -soniqueSkinMode
 mid|small`; navigator is the default. `enumerate_skins.sh` drops the `Mode` submenu, and the corpus's
-524 skins sit in A–Z submenus that `menu.applescript` reads in place, as for Audion. The menu ticks
+524 skins sit in A–Z submenus. The menu ticks
 before an `.sgf` has loaded, so `capture.sh` waits for the log's next `SoniqueSkin:` line. A skin
 that fails logs its error there and the default skin stands in, so any line but `loaded` is
 recorded as `load-failed` and not shot under that skin's name. A whole-corpus sweep is about an
