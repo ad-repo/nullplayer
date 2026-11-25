@@ -42,6 +42,13 @@
   Skin, Urban Terror 2.6, VANDREAD WINAMP5 SKIN, Vision, Vista_Player, Vocaloid Miku Hatsune 2.0
   Append, White Noise, Winamp3 Base Skin, WMP_Aero, World Cup 2010, X-Slant, Xploit, YANNI, English
   Ver. by ramin mousavi (raminmousavi.com), Zelda.
+- **34 more skins checked** (corpus intake sixteen), the last of the original test set: Anaheim
+  Player 01, cPro - Bento, cPro - MMD, cPro - WMP12, ::cPro_Ayon Port ::, cPro_Winamp Modern,
+  DewyTears (two versions), Diablo 4 Skills V2, EPS (Egor Petrov Systems), Firefox, Hatsune Miku 5
+  Winamp Skin, Hatsune Miku x Megurine Luka, JVC Tape, K-jr, Love Is War Miku V2, Megurine Luka,
+  micro, MMD3, ..::Motorhead::.., Nokia_5220, PaddPreview, PiOnNeR_AMP2, Pokemon DS, Pure Inspired
+  for Winamp, Sing it, Kitty, Study Skinning, Tekken Lili, Tom, TOX Milla, Wiimote, Winamp5 Base
+  Skin, Wurlitzer One More Time, XENERGY1.
 
 ### Fixes
 
@@ -85,6 +92,12 @@
   Both used to be refused, and a video opened together with music files was dropped. NullPlayer can
   now also be made the default app for `.cue` and `.alac` files. Opening a file while the player
   window is closed brings the player back, as clicking the Dock icon does.
+- **Winamp Modern (`.wal`): EPS High-End System's Open Directory and playlist File buttons work.**
+  Open Directory opens the folder picker and File opens the playlist's New / Load / Save menu; both
+  did nothing.
+- **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it.**
+  Wiimote's home button opens its SpaceCatSamba window, and the same fix reaches M3's downloads
+  window, Opulent Records Player's website window and hm_Touch's album art window.
 
 ## 0.35.2
 
