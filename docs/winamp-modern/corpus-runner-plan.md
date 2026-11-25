@@ -476,6 +476,25 @@ text box puts it; cPro_GUNS_N'_ROSES shows its promo picture until the player is
 Open, promoted with the skin: B475 (Official_Coldplay_skin's Thinger icons sit low under the status bar; the fix that
 works for it moves hundreds of gold frames, so it waits on a rule).
 
+### Done: intake #16, promoted to gold (2026-11-24)
+
+With bronze empty, `wal_intake_pick.sh` adopted the 34 skins left in silver: the 33 of the B167 seed set that no intake
+had taken, and Wurlitzer_v2, held back from #10. They were scanned live on `feat/wal-intake-16` (`wal_live_smoke.sh`
+with its Library pass over all 34, a headless `wal_dump.sh` with no `OVERFLOW` or `TEXT-CLIP`); `window-census.sh
+--shots` captured 12 and was stopped there, and no sheet was reviewed, because the user knows these skins. One fix pass
+ran. The user accepted the batch without a hand-over round, and all 34 were promoted to gold on 2026-11-24; the 33 keep
+their `skin-compatibility.md` grades and Wurlitzer_v2 joins as C. `wal_fix_check.sh` was not run, at the user's call:
+the B481 change reaches the four skins that declare a container `visible="0"`, unmeasured by a sweep. The per-skin
+record is `intakes/intake-16.tsv`; the row ids are in `backlog-archive.md`.
+
+| Skin | What was wrong | Fix |
+|---|---|---|
+| EPS_High-End_System_v1_test | Open Directory and the playlist File button did nothing (B480) | `EJECT_DIR` opens the app's Open Folder panel; a button's `MENU:WA5:<id>` opens the menu a `<Menu>` entry with that id opens |
+| Wiimote (and M3, Opulent_Records_Player, hm_Touch_m_1) | The home button opened nothing (B481) | A container declared `visible="0"` starts closed but is still a window, so the skin's own `TOGGLE` opens it |
+
+Deferred to B403 (a video toggle with only audio playing opens nothing): The_Nokia_5220_XpressMusic, TomK, jvc.tape.v0.5,
+Wurlitzer_v2. Open, promoted with the skin: B422 (Wurlitzer_v2's skin frame draws short on NullPlayer's own windows).
+
 ### Intakes (2026-10-22)
 
 The lifecycle, branch rules and progress ledger are `skills/skin-intake`. One intake of 25 took
