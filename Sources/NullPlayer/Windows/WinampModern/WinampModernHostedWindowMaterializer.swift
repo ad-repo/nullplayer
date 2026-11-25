@@ -430,8 +430,11 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         let key = ObjectIdentifier(window)
         guard !programmaticResizeWindows.contains(key) else { return }
         let scale = max(skinScale(), 0.01)
-        let proposed = CGSize(width: window.contentLayoutRect.width / scale,
-                              height: window.contentLayoutRect.height / scale)
+        // AppKit stops a drag at `contentMinSize`; a size set any other way (a restored frame saved at
+        // another UI Size) is held to the client floor here (B427).
+        let floor = floorCanvas(for: instance.id, scale: scale) ?? .zero
+        let proposed = CGSize(width: max(window.contentLayoutRect.width / scale, floor.width),
+                              height: max(window.contentLayoutRect.height / scale, floor.height))
         instance.view.hostWindowDidResize(toCanvas: proposed, live: window.inLiveResize) { target in
             guard target != window.contentLayoutRect.size else { return }
             programmaticResizeWindows.insert(key)

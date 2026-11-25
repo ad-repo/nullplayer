@@ -979,7 +979,9 @@ every skin-owned step has declined (B55, above).
   it (`canvas − holder`, in skin pixels), and keeps it (`clientChrome`). From then on
   `floorCanvas` = chrome + floor ÷ UI Size is folded into the window's `contentMinSize`, so a drag
   stops there, and `applySkinScale` grows the canvas to it, so a smaller UI Size widens the canvas
-  rather than squeezing the view. Opening the window once was where the floor used to apply, and
+  rather than squeezing the view. `windowDidResize` holds a proposed canvas to it as well: AppKit
+  stops a drag at `contentMinSize`, but a size set any other way, such as a restored frame saved at
+  another UI Size, reaches the delegate unclamped. Opening the window once was where the floor used to apply, and
   then never again: Simple_Amp_'s Studio, opened at 100% and switched to 50%, came out 394x326 pt
   with its panels overlapping. The chrome stays in skin pixels and the floor in points. That is why
   the floor canvas depends on UI Size.

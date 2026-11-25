@@ -229,21 +229,26 @@ extension WasabiStandardFrames {
             cuts[identifier] = image
             return image
         }
+        // A generated (`$solid`) bitmap has no file: it is its declared size.
+        func declaredSize(_ identifier: String) -> CGSize? {
+            guard let attributes = resources?.resolvedDefinition(identifier: identifier)?.attributes,
+                  let width = attributes["w"].flatMap(Double.init),
+                  let height = attributes["h"].flatMap(Double.init) else { return nil }
+            return CGSize(width: width, height: height)
+        }
         return measuredBorder(
             in: children, group: group,
             frameBody: ["wasabi.frame.basetexture", "component.basetexture"]
                 .first { resources?.resolvedDefinition(identifier: $0) != nil },
-            bitmapSize: { cut($0).map { CGSize(width: $0.width, height: $0.height) } },
+            bitmapSize: { identifier in
+                cut(identifier).map { CGSize(width: $0.width, height: $0.height) } ?? declaredSize(identifier)
+            },
             bitmapOpaqueBounds: { identifier, body in
-                guard let resource = resources?.resolvedDefinition(identifier: identifier) else { return nil }
                 // A cut with nothing opaque in it, or nothing but body, is an empty box: it draws no edge.
                 if let image = cut(identifier) {
                     return WasabiResourceCache.edgeBounds(of: image, body: body.flatMap(cut)) ?? .zero
                 }
-                // A generated (`$solid`) bitmap has no file: it is its declared size.
-                guard let width = resource.attributes["w"].flatMap(Double.init),
-                      let height = resource.attributes["h"].flatMap(Double.init) else { return nil }
-                return CGRect(x: 0, y: 0, width: width, height: height)
+                return declaredSize(identifier).map { CGRect(origin: .zero, size: $0) }
             })
     }
 

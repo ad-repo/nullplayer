@@ -277,6 +277,17 @@ final class WinampModernHostedWindowTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.width, floor.width, level.menuTitle)
             XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.height, floor.height, level.menuTitle)
         }
+
+        // A drag below the floor lands on it, and a repeated resize report leaves it there.
+        let minimum = instance.window.contentMinSize
+        instance.window.setContentSize(NSSize(width: minimum.width - 120, height: minimum.height - 90))
+        let note = Notification(name: NSWindow.didResizeNotification, object: instance.window)
+        parts.materializer.windowDidResize(note)
+        let landed = instance.window.contentLayoutRect.size
+        XCTAssertGreaterThanOrEqual(landed.width, minimum.width)
+        XCTAssertGreaterThanOrEqual(landed.height, minimum.height)
+        parts.materializer.windowDidResize(note)
+        XCTAssertEqual(instance.window.contentLayoutRect.size, landed)
     }
 
     private struct MaterializerParts {
