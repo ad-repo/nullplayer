@@ -121,6 +121,10 @@
 - **Winamp Modern (`.wal`): Wurlitzer_v2's frame draws its right-hand corner the right way round.**
   The Library, Visualizations, EQ Studio and other framed windows showed the left corner piece at
   the top right, with a gap in the rail beneath it.
+- **Winamp Modern (`.wal`): the EQ Studio keeps its panels apart at every size.** In skins with a
+  thick frame, such as Simple_Amp_, dragging the Studio smaller or switching to a smaller UI Size
+  squeezed its panels over each other. It now stops at the size its panels need, and grows to make
+  room for them when you change UI Size.
 
 ## 0.35.2
 

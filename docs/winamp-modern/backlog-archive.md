@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B427 — EQ Studio's client floor holds only at first open — closed 2026-11-25
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B427 | **EQ Studio's client floor holds only at first open: a later resize can shrink the client area under it again.** Found reviewing PR #748 (CodeRabbit, 2026-11-11). `growToClientFloor` (`WinampModernHostedWindowMaterializer.swift`, B415) grows the canvas by the shortfall once, but the window's minimum still comes from `renderer.userResizeLimits`, which knows nothing of the floor. In a frame whose chrome is thicker than its markup declares (Simple_Amp_) and that declares no content-group minimum, dragging the window down to its minimum makes the Studio's panels overlap again. A UI Size change does the same: measured live 2026-11-11, Simple_Amp_'s Studio opened at 100% (788x651 pt) then shown at 50% is 394x326 pt with its 688x518 pt content squeezed, where opened at 50% it is 738x585 pt and fits — the floor is applied only when the window is created. Done when Simple_Amp_'s EQ Studio cannot be resized below its floor, and switching UI Size with it open keeps it at or above the floor | Simple_Amp_ | M | 2 |
+
+**Closed 2026-11-25.** `growToClientFloor` now keeps the chrome it measures (`clientChrome`: canvas − holder, skin pixels), and `floorCanvas` = chrome + floor ÷ UI Size becomes a standing minimum: `applyResizeLimits` folds it into `contentMinSize`, and `applySkinScale` grows the canvas to it. Live on Simple_Amp_ at 100%: the Studio opens 788x651 pt, grows to 846x695, and a drag from its grip stops at 788x651. The UI Size half is pinned by `testTheClientFloorHoldsAfterOpenAndAcrossUISizes` (100 → 50 → 200 → 100%): with the `applySkinScale` growth disabled the client is 344x259 pt at 50%, and with it the floor holds. The user confirmed the build. Owning doc: `components.md` → *A view's client floor is a standing minimum*.
+
 ## B422 — Wurlitzer_v2's skin frame draws its right-hand corner reversed — closed 2026-11-25
 
 | Id | Item | Reach | Effort | Tier |

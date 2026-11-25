@@ -30,6 +30,9 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
     private var instances: [WinampModernHostedWindowID: MaterializedWindow] = [:]
     private var failedIDs: Set<WinampModernHostedWindowID> = []
     private var programmaticResizeWindows: Set<ObjectIdentifier> = []
+    /// Skin pixels a frame's chrome takes around a view with a rigid floor (canvas less client),
+    /// measured once the frame script has laid it out (`growToClientFloor`).
+    private var clientChrome: [WinampModernHostedWindowID: CGSize] = [:]
     private var isTornDown = false
 
     init(loadedSkin: WinampModernLoadedSkin,
@@ -134,7 +137,16 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
         for instance in materializedWindows {
             let topLeft = NSPoint(x: instance.window.frame.minX, y: instance.window.frame.maxY)
             instance.view.skinScale = scale
-            applyResizeLimits(of: instance.view.renderer, to: instance.window, scale: scale)
+            // A smaller UI Size shrinks the chrome, not the view inside it: Simple_Amp_'s Studio at
+            // 50% was squeezed into half its design size (B427).
+            let renderer = instance.view.renderer, canvas = renderer.canvasSize
+            if let needed = floorCanvas(for: instance.id, scale: scale),
+               needed.width > canvas.width || needed.height > canvas.height {
+                renderer.resize(to: CGSize(width: max(canvas.width, needed.width),
+                                           height: max(canvas.height, needed.height)))
+                instance.view.dispatchResizeIfChanged()
+            }
+            applyResizeLimits(of: renderer, to: instance.window, id: instance.id, scale: scale)
             let size = instance.view.scaledCanvasSize
             instance.window.setContentSize(size)
             instance.window.setFrameTopLeftPoint(topLeft)
@@ -149,15 +161,26 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
     /// `windowDidResize` puts the window on. Left fractional — 343 skin pixels is 360.15 points at
     /// 105% — the floor sat above the size the window was then corrected to, and AppKit and the
     /// delegate disagreed about the minimum on every step of a drag against it.
-    private func applyResizeLimits(of renderer: WasabiSceneRenderer, to window: NSWindow, scale: CGFloat) {
+    /// A view with a client floor raises the minimum to it, so no drag squeezes it again (B427).
+    private func applyResizeLimits(of renderer: WasabiSceneRenderer, to window: NSWindow,
+                                   id: WinampModernHostedWindowID, scale: CGFloat) {
         let limits = renderer.userResizeLimits
+        let floor = floorCanvas(for: id, scale: scale) ?? .zero
         func points(_ pixels: CGFloat) -> CGFloat {
             pixels.isFinite ? (pixels * scale).rounded() : CGFloat.greatestFiniteMagnitude
         }
-        window.contentMinSize = NSSize(width: points(limits.minimum.width),
-                                       height: points(limits.minimum.height))
-        window.contentMaxSize = NSSize(width: points(limits.maximum.width),
-                                       height: points(limits.maximum.height))
+        let minimum = NSSize(width: points(max(limits.minimum.width, floor.width)),
+                             height: points(max(limits.minimum.height, floor.height)))
+        window.contentMinSize = minimum
+        window.contentMaxSize = NSSize(width: max(points(limits.maximum.width), minimum.width),
+                                       height: max(points(limits.maximum.height), minimum.height))
+    }
+
+    /// The smallest canvas, in skin pixels, that leaves `id`'s view its whole floor at this UI Size:
+    /// the frame's chrome stays skin pixels, the view's floor is points.
+    private func floorCanvas(for id: WinampModernHostedWindowID, scale: CGFloat) -> CGSize? {
+        guard let chrome = clientChrome[id], let floor = id.definition.clientFloor else { return nil }
+        return CGSize(width: chrome.width + floor.width / scale, height: chrome.height + floor.height / scale)
     }
 
     func teardown() {
@@ -214,7 +237,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
             window.hasShadow = false
             window.contentView = createdView
             window.delegate = self
-            applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
+            applyResizeLimits(of: renderer, to: window, id: id, scale: max(skinScale(), 0.01))
             window.setAccessibilityIdentifier("WinampModernHostedWindow_\(id.rawValue)")
             window.setAccessibilityLabel(definition.title)
             window.orderOut(nil)
@@ -251,7 +274,7 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
                 if lift > 0 { renderer.layoutBoundsDidChange() }
                 let grown = CGSize(width: max(canvas.width, floor.width),
                                    height: max(canvas.height - lift, floor.height))
-                if grown != canvas { growCanvas(of: renderer, view: createdView, window: window, to: grown) }
+                if grown != canvas { growCanvas(of: renderer, view: createdView, window: window, id: id, to: grown) }
             }
             try testContentInstaller?(createdRoot, id)
             createdView.scriptsDidStart()
@@ -298,13 +321,16 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
               let client = renderer.componentHolders().first(where: { $0.hostedWindowID == id })?.frame.size
         else { return }
         // The floor is the view's points; the holder is skin pixels, drawn at the UI Size.
-        let scale = max(skinScale(), 0.01)
-        let shortfall = CGSize(width: max(0, floor.width / scale - client.width),
-                               height: max(0, floor.height / scale - client.height))
-        guard shortfall != .zero else { return }
-        let canvas = renderer.canvasSize
-        growCanvas(of: renderer, view: view, window: window,
-                   to: CGSize(width: canvas.width + shortfall.width, height: canvas.height + shortfall.height))
+        let scale = max(skinScale(), 0.01), canvas = renderer.canvasSize
+        let chrome = CGSize(width: canvas.width - client.width, height: canvas.height - client.height)
+        clientChrome[id] = chrome
+        let needed = CGSize(width: chrome.width + floor.width / scale, height: chrome.height + floor.height / scale)
+        let grown = CGSize(width: max(canvas.width, needed.width), height: max(canvas.height, needed.height))
+        guard grown != canvas else {
+            applyResizeLimits(of: renderer, to: window, id: id, scale: scale)
+            return
+        }
+        growCanvas(of: renderer, view: view, window: window, id: id, to: grown)
         // The renderer resized before the window, so the window's resize sees no change to report:
         // frame scripts hear the new geometry here.
         view.dispatchResizeIfChanged()
@@ -314,9 +340,9 @@ final class WinampModernHostedWindowMaterializer: NSObject, NSWindowDelegate {
 
     /// Resizes a hosted window's canvas and brings its resize limits, window and view along.
     private func growCanvas(of renderer: WasabiSceneRenderer, view: WinampModernMainView,
-                            window: NSWindow, to size: CGSize) {
+                            window: NSWindow, id: WinampModernHostedWindowID, to size: CGSize) {
         renderer.resize(to: size)
-        applyResizeLimits(of: renderer, to: window, scale: max(skinScale(), 0.01))
+        applyResizeLimits(of: renderer, to: window, id: id, scale: max(skinScale(), 0.01))
         window.setContentSize(view.scaledCanvasSize)
         view.setFrameSize(view.scaledCanvasSize)
     }

@@ -947,6 +947,16 @@ every skin-owned step has declined (B55, above).
 - Close hides and retains the instance. Reopen reuses it; UI Size changes resize only materialized
   instances; skin/mode teardown destroys them once. If request-time construction fails, the partial
   graph/window is rolled back and the existing standalone controller opens immediately.
+- **A view's client floor is a standing minimum, not a one-off grow** (B415, B427). A registry entry
+  with `clientFloor` (the Equalizer Studio, 688x518 pt) needs that whole area inside whatever chrome
+  the frame's script draws. `growToClientFloor` measures the chrome once, after the scripts build
+  it (`canvas − holder`, in skin pixels), and keeps it (`clientChrome`). From then on
+  `floorCanvas` = chrome + floor ÷ UI Size is folded into the window's `contentMinSize`, so a drag
+  stops there, and `applySkinScale` grows the canvas to it, so a smaller UI Size widens the canvas
+  rather than squeezing the view. Opening the window once was where the floor used to apply, and
+  then never again: Simple_Amp_'s Studio, opened at 100% and switched to 50%, came out 394x326 pt
+  with its panels overlapping. The chrome stays in skin pixels and the floor in points. That is why
+  the floor canvas depends on UI Size.
 - **Fullscreen moves the view, never the window.** A skin window is borderless, so
   `NSWindow.toggleFullScreen` does nothing on it — the dead path every hosted window's F and
   Fullscreen menu item took until 2026-11. Every `.wal` fullscreen — a hosted window's
