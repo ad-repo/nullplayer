@@ -767,31 +767,10 @@ class WindowManager {
         add(equalizerStudioWindow, snapTarget: true, modeDependent: false)
         add(videoPlayerWindowController?.window, modeDependent: false)
 
-        if uiMode.controllerFamily == .wmp,
-           let controller = mainWindowController as? WMPMainWindowController {
-            // `.wmz`-only, and gated on the WMP controller exactly as the `.wal` branch below is
-            // gated on its own. A skin's `theme.openView` panel is a real top-level window now, so
-            // it joins the app's magnetic docking — as a **snap target only**. It is never a
-            // centre-stack member: a `.wmz` view is an arbitrary authored canvas (Halo 2's panels
-            // are 406x209 against a 327x294 player), so there is no column for it to join, which is
-            // the same reasoning the `.wal` containers are admitted under.
-            for window in controller.materializedAuxiliaryWindows {
-                add(window, snapTarget: true)
-            }
-        }
-
-        if let controller = winampModernHostedController {
-            // `.wal`-only: this whole branch is gated on the Winamp Modern controller existing, so no
-            // other UI mode reaches it. A `newDynamicContainer` copy (B110) is still managed — levels,
-            // minimize — but is not a snap target: it is a frame glued to another window's rect.
-            let instances = Set(controller.dynamicInstanceAuxiliaryWindows.map(ObjectIdentifier.init))
-            for window in controller.materializedAuxiliaryWindows {
-                add(window, snapTarget: !instances.contains(ObjectIdentifier(window)))
-            }
-            for hosted in controller.materializedHostedWindows {
-                let stack = hosted.id.definition.stackPolicy.participatesInCenterStack
-                add(hosted.window, centerStack: stack, snapTarget: true)
-            }
+        // A skin's own windows, in a family that has them (`SkinOwnedWindowsProviding`): each as its
+        // family manages it, so no other UI mode reaches this.
+        for managed in skinOwnedWindowsProvider?.managedSkinWindows ?? [] {
+            add(managed.window, centerStack: managed.centerStack, snapTarget: managed.snapTarget)
         }
         return records
     }
@@ -1239,6 +1218,13 @@ class WindowManager {
     /// of what happens when these corrections reach families whose window positions people have laid
     /// their desktops out around.
     var appliesPlacementRecovery: Bool { uiMode.controllerFamily.hostsForeignSkin }
+
+    /// The main window, in a family whose skins open windows of their own
+    /// (`PlayerUIControllerFamily.hasSkinOwnedWindows`); nil in every other, whatever the controller.
+    var skinOwnedWindowsProvider: SkinOwnedWindowsProviding? {
+        guard uiMode.controllerFamily.hasSkinOwnedWindows else { return nil }
+        return mainWindowController as? SkinOwnedWindowsProviding
+    }
 
     var winampModernHostedController: WinampModernMainWindowController? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
@@ -5507,8 +5493,10 @@ class WindowManager {
         // raised the equalizer above the playlist, and the video window above the visualizer and the
         // library, in Classic. The feature windows keep the case order of `CenterStackWindowKind`.
         //
-        // A `.wmz` or `.wal` skin's own windows are not controllers, so they are not in this list;
-        // `raiseOrder` appends them in those two modes only.
+        // A skin's own windows are not controllers, so they are not in this list; they are appended
+        // after it, in the order the controller lists them, in a family that has them
+        // (`PlayerUIControllerFamily.hasSkinOwnedWindows`) only: `skinOwnedWindowsProvider` is nil in
+        // every other family.
         let appWindows: [NSWindow?] = [
             mainWindowController?.window,
             equalizerWindowController?.window,
@@ -5520,21 +5508,14 @@ class WindowManager {
             equalizerStudioWindow
         ]
 
-        // `.wmz`/`.wal`-only: ordered front regardless of activation. A click from another app starts
-        // this raise while the activation is still settling, and a plain `orderFront` then left some
-        // of a skin's panels behind the other app's window (W273).
+        // In a family with skin-owned windows (`hasSkinOwnedWindows`) only: ordered front regardless
+        // of activation. A click from another app starts this raise while the activation is still
+        // settling, and a plain `orderFront` then left some of a skin's panels behind the other app's
+        // window (W273).
         let family = uiMode.controllerFamily
-        let raisesSkinWindows = family == .wmp || family == .winampModern
-        let windows = Self.raiseOrder(appWindows, family: family, skinWindows: {
-            switch family {
-            case .wmp:
-                return (self.mainWindowController as? WMPMainWindowController)?.materializedAuxiliaryWindows ?? []
-            case .winampModern:
-                return (self.mainWindowController as? WinampModernMainWindowController)?.skinOwnedWindows ?? []
-            default:
-                return []
-            }
-        })
+        let raisesSkinWindows = family.hasSkinOwnedWindows
+        let skinWindows: [NSWindow?] = skinOwnedWindowsProvider?.managedSkinWindows.map { $0.window } ?? []
+        let windows = appWindows + skinWindows
 
         if isMinimizingAll { return }
 
@@ -5562,16 +5543,6 @@ class WindowManager {
         }
     }
     
-    /// The windows `bringAllWindowsToFront` orders front, bottom first. A `.wmz` skin's
-    /// `theme.openView` panels and a `.wal` skin's container and hosted windows are windows of their
-    /// own, so in those two modes they follow the app's windows; every other mode raises
-    /// `appWindows` unchanged.
-    static func raiseOrder(_ appWindows: [NSWindow?], family: PlayerUIControllerFamily,
-                           skinWindows: () -> [NSWindow]) -> [NSWindow?] {
-        guard family == .wmp || family == .winampModern else { return appWindows }
-        return appWindows + skinWindows().map { $0 }
-    }
-
     /// Find visible center-stack windows that are docked below the main window
     /// (directly or transitively), using the current dock threshold.
     private func dockedCenterStackWindowsBelowMain(mainFrame: NSRect) -> [NSWindow] {

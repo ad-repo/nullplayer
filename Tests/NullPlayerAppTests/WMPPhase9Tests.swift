@@ -125,6 +125,12 @@ final class WMPPhase9Tests: XCTestCase {
         XCTAssertEqual(controller.materializedAuxiliaryWindows.count, 1)
         XCTAssertEqual(controller.materializedAuxiliaryWindows.first?.frame.size,
                        NSSize(width: 100, height: 60))
+        // WindowManager manages the panel through `SkinOwnedWindowsProviding`: a snap target, never a
+        // centre-stack member.
+        let managed = controller.managedSkinWindows
+        XCTAssertEqual(managed.map { ObjectIdentifier($0.window) }, controller.materializedAuxiliaryWindows.map(ObjectIdentifier.init))
+        XCTAssertEqual(managed.map(\.snapTarget), [true])
+        XCTAssertEqual(managed.map(\.centerStack), [false])
         XCTAssertEqual(defaults.string(forKey: WMPSkinImporter.selectedViewIDKey), "main",
                        "a panel in its own window is not the session's view (W96)")
         controller.prepareForUITeardown()

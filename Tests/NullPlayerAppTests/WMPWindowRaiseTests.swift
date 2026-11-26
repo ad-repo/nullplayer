@@ -14,33 +14,16 @@ import XCTest
 /// verified live; `wmp-skin-guide/reference/windows/placement.md` § *Raising the skin's windows together*.
 @MainActor
 final class WMPWindowRaiseTests: XCTestCase {
-    private func window() -> NSWindow {
-        NSWindow(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless],
-                 backing: .buffered, defer: true)
-    }
-
-    func testOnlyWMPAndWinampModernAppendTheSkinsWindows() {
-        let player = window(), equalizer = window()
-        let appWindows: [NSWindow?] = [player, nil, equalizer]
-        let panels = [window(), window()]
-
-        let families: [PlayerUIControllerFamily] = [.classic, .nullPlayerModern, .winampModern, .wmp]
-        for family in families {
-            var asked = false
-            let order = WindowManager.raiseOrder(appWindows, family: family, skinWindows: {
-                asked = true
-                return panels
-            })
-            if family == .wmp || family == .winampModern {
-                XCTAssertEqual(order.map { $0.map(ObjectIdentifier.init) },
-                               (appWindows + panels.map { $0 }).map { $0.map(ObjectIdentifier.init) },
-                               "\(family): the skin's windows follow the app's windows, in order")
-            } else {
-                XCTAssertEqual(order.map { $0.map(ObjectIdentifier.init) },
-                               appWindows.map { $0.map(ObjectIdentifier.init) },
-                               "\(family) must raise exactly the app's own windows")
-                XCTAssertFalse(asked, "\(family) must not even look for a skin's own windows")
-            }
+    /// Which families have skin-owned windows, and which controllers hand them over: no other family
+    /// even looks for a skin's own windows (`skinOwnedWindowsProvider` asks the family first).
+    func testOnlyWMPAndWinampModernHaveSkinOwnedWindows() {
+        let families: [PlayerUIControllerFamily] = [.classic, .nullPlayerModern, .winampModern, .wmp, .audion, .sonique]
+        XCTAssertEqual(families.filter(\.hasSkinOwnedWindows), [.winampModern, .wmp])
+        let controllers: [(AnyClass, Bool)] = [(WMPMainWindowController.self, true), (WinampModernMainWindowController.self, true),
+                                               (MainWindowController.self, false), (ModernMainWindowController.self, false),
+                                               (AudionFaceMainWindowController.self, false), (SoniqueSkinMainWindowController.self, false)]
+        for (type, provides) in controllers {
+            XCTAssertEqual(type is SkinOwnedWindowsProviding.Type, provides, "\(type)")
         }
     }
 }

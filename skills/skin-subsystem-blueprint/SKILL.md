@@ -212,8 +212,12 @@ canvas needs (`Halo 2`'s panels are 406x209 against a 327x294 player). The recip
   (`WINAMP_MODERN_PLACE_TRACE`, `WMP_PLACE_TRACE`). Persist the origin the user left and which
   windows were open, per skin, in `SkinWindowStore` (`App/Skinning/`) under your family's own
   `SkinWindowStore.Keys`; `.wmz` keeps its there (`.wmp`).
-- **Join docking through your own gated branch of `managedWindowRecords`**, as a snap target and
-  **not** a centre-stack member: a skin-authored canvas has no column to join.
+- **Join docking and the raise through `SkinOwnedWindowsProviding`** (`App/MainWindowProviding.swift`),
+  not a branch of your own in `WindowManager`: add your family to
+  `PlayerUIControllerFamily.hasSkinOwnedWindows` (`App/PlayerUIMode.swift`), and have your controller list its windows as
+  `managedSkinWindows`, by default snap targets and **not** centre-stack members (a skin-authored
+  canvas has no column to join). `managedWindowRecords` and `bringAllWindowsToFront` read it there;
+  `.wmz` and `.wal` do.
 - **Per-window state has to actually be per window.** Whatever the controller holds that is really
   the presented view's — scene, overrides, timers, animation clock, interaction state, pending host
   events — moves onto one reference type per window (`WMPViewPresentation`), and the *script runtime*
