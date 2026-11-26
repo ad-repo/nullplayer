@@ -52,6 +52,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var boundTextTimer: Timer?
     /// The host-shown track-change toast's dismissal; see `+Notifier.swift`.
     var notifierDismissTimer: Timer?
+    /// The film's re-host after a skin load, still waiting out its delay; see `+Video.swift`.
+    var pendingVideoRehost: DispatchWorkItem?
 
     /// A separate visible container (the "separate windows" arrangement) rendered in its own native
     /// window with the shared script runtime + component host. cPro-Bento is a single-window SUI so

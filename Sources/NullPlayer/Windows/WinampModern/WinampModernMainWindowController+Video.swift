@@ -64,18 +64,26 @@ extension WinampModernMainWindowController {
     /// `hostVideoOutput()` already forks `.embedded` / `.declaredContainer` / neither, so a skin that
     /// declares no video surface answers false and NullPlayer's window keeps the picture — the
     /// correct outcome, not a fallback for a failure.
+    ///
+    /// A later load replaces the wait, so an earlier load's re-host never lands inside the new skin's
+    /// own race; `toggleVideo()` drops it, so a film the user hid meanwhile stays hidden.
     func rehostVideoOutputIfPlaying() {
+        pendingVideoRehost?.cancel()
+        pendingVideoRehost = nil
         guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
-        // Late enough for the skin's own `onScriptLoaded` resizes and layout cascade to have settled,
-        // the reason `hostVideoOutputInPlayer` re-places asynchronously, and for the race above.
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rehostVideoDelay) { [weak self] in
+        let rehost = DispatchWorkItem { [weak self] in
             guard let self,
                   WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+            self.pendingVideoRehost = nil
             let hosted = self.hostVideoOutput()
             #if DEBUG
             NSLog("WinampModern: re-hosting film after skin load hosted=%@", hosted ? "1" : "0")
             #endif
         }
+        pendingVideoRehost = rehost
+        // Late enough for the skin's own `onScriptLoaded` resizes and layout cascade to have settled,
+        // the reason `hostVideoOutputInPlayer` re-places asynchronously, and for the race above.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rehostVideoDelay, execute: rehost)
     }
 
     /// The other shape of a skin's video surface: a **tab of the player window** (B23).
@@ -192,6 +200,9 @@ extension WinampModernMainWindowController {
     /// Windows → Video Player. False when the skin has no surface for the film, which leaves
     /// NullPlayer's own video window in charge.
     func toggleVideo() -> Bool {
+        // The user has decided where the film is; a skin load's re-host must not undo it.
+        pendingVideoRehost?.cancel()
+        pendingVideoRehost = nil
         guard let video = WindowManager.shared.currentVideoPlayerController else { return false }
         // A hosted picture lives in the skin's window, so that is what this shows and hides —
         // ordering out the controller's own window would do nothing visible at all (B20).

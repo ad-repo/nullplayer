@@ -43,12 +43,27 @@ final class WinampModernVideoDetachTests: XCTestCase {
     @MainActor
     func testASkinLoadReHostsTheFilmOnlyAfterTheDelay() throws {
         let (controller, video) = try makeLoadedSession()
+        // Fixed, not derived from the delay, so a shorter delay fails here: a one-turn re-host, or
+        // one 0.05 s late, drew the blank window, and both are long done after 0.1 s.
+        spinRunLoop(for: 0.1)
         XCTAssertFalse(video.isVideoOutputHosted, "not parked during the load's aftermath")
 
-        RunLoop.main.run(until: Date().addingTimeInterval(
-            WinampModernMainWindowController.rehostVideoDelay + 0.2))
+        spinRunLoop(for: 2) { video.isVideoOutputHosted }
         XCTAssertTrue(video.isVideoOutputHosted, "parked once the delay has passed")
         XCTAssertEqual(controller.auxiliaryContainer(id: "Video")?.window.isVisible, true)
+    }
+
+    /// Windows → Video Player during the wait is the user's word on the film: the re-host is dropped.
+    @MainActor
+    func testTheMenuToggleDuringTheWaitDropsTheReHost() throws {
+        let (controller, video) = try makeLoadedSession()
+        // The outgoing skin's teardown left the film in NullPlayer's own window.
+        video.window?.orderFront(nil)
+        XCTAssertFalse(controller.toggleVideo(), "the skin hands the hide to NullPlayer's window")
+
+        spinRunLoop(for: 1)
+        XCTAssertFalse(video.isVideoOutputHosted)
+        XCTAssertNotEqual(controller.auxiliaryContainer(id: "Video")?.window.isVisible, true)
     }
 
     // MARK: - Fixtures
@@ -116,6 +131,14 @@ final class WinampModernVideoDetachTests: XCTestCase {
       </container>
     </WasabiXML>
     """
+
+    /// Runs the main run loop for `seconds`, or until `done` holds.
+    private func spinRunLoop(for seconds: TimeInterval, until done: () -> Bool = { false }) {
+        let deadline = Date().addingTimeInterval(seconds)
+        while !done(), Date() < deadline {
+            RunLoop.main.run(until: min(deadline, Date().addingTimeInterval(0.02)))
+        }
+    }
 
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
