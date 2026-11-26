@@ -30,8 +30,16 @@ extension WasabiResourceCache {
         if let padded = padForNegativeOffset(fullImage, attributes: attributes) {
             fullImage = padded
         }
-        let x = max(0, pixels(attributes["x"]) ?? 0)
-        let topY = max(0, pixels(attributes["y"]) ?? 0)
+        // With `relatx`/`relaty` a negative offset counts in from the far edge: Wurlitzer_v2 cuts its
+        // right-hand frame pieces `x="-66" relatx="1"` from a 197px sheet, and clamped to 0 the right
+        // corner drew the left one (B422). A positive one stays absolute: CardiumII's
+        // `x="104" w="5" relatx="1"` is the last 5px of its 109px shadow.
+        func offset(_ axis: String, _ relat: String, extent: Int) -> Int {
+            let value = pixels(attributes[axis]) ?? 0
+            return max(0, attributes[relat] == "1" && value < 0 ? extent + value : value)
+        }
+        let x = offset("x", "relatx", extent: fullImage.width)
+        let topY = offset("y", "relaty", extent: fullImage.height)
         let width = max(1, min(fullImage.width - x,
                                declaredSize(attributes["w"], zeroIsWhole: zeroIsWhole) ?? fullImage.width - x))
         let height = max(1, min(fullImage.height - topY,
@@ -129,23 +137,25 @@ extension WasabiResourceCache {
     /// `opaqueBounds` less a flat band at its left or right: a run of identical columns covering at
     /// least half the box is fill, not edge. Circlo_T_roniC's `frame-l.png` is a 44px opaque tile whose
     /// edge is its first 8 columns and the rest the body colour; read whole, its windows' contents
-    /// sat 44px in and the browser's buttons ran into each other. **Columns only**: a top or bottom
-    /// band's flat part is where the title or the status bar sits, and trimming rows put
-    /// YoYoBoy's playlist over its Add/Rem/Sel bar.
-    static func edgeBounds(of image: CGImage) -> CGRect? {
+    /// sat 44px in and the browser's buttons ran into each other. A flat band of **rows** is trimmed
+    /// only when it is the frame's own body colour (`body`, a flat base texture): a top or bottom
+    /// band's other flat rows are where the title or the status bar sits, and trimming those put
+    /// YoYoBoy's playlist over its Add/Rem/Sel bar. Trance_Critic_v2_0's `frame-tm.png` is 78 rows,
+    /// a 27-row edge and then its navy base texture; Official_Coldplay_skin's 30-row tiles end in its
+    /// grey one (B464, B475). Nil when the image draws no edge: nothing opaque, or nothing but body.
+    static func edgeBounds(of image: CGImage, body: CGImage? = nil) -> CGRect? {
+        guard let rgba = premultipliedPixels(of: image) else { return opaqueBounds(of: image) }
         let width = image.width, height = image.height
-        var rgba = [UInt32](repeating: 0, count: width * height)
-        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
-            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
-                                          bitsPerComponent: 8, bytesPerRow: width * 4,
-                                          space: CGColorSpaceCreateDeviceRGB(),
-                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return true
-        }
-        guard drawn else { return opaqueBounds(of: image) }
         // Premultiplied RGBA read as one little-endian word: alpha is the top byte.
-        guard let box = Self.box(width: width, height: height, isOpaque: { rgba[$0] >> 24 > 0 }) else { return nil }
+        guard var box = Self.box(width: width, height: height, isOpaque: { rgba[$0] >> 24 > 0 }) else { return nil }
+        if let fill = body.flatMap(flatColour) {
+            let xs = Int(box.minX)..<Int(box.maxX)
+            func isBody(_ y: Int) -> Bool { xs.allSatisfy { rgba[y * width + $0] == fill } }
+            let ys = Int(box.minY)..<Int(box.maxY)
+            guard let top = ys.first(where: { !isBody($0) }),
+                  let bottom = ys.last(where: { !isBody($0) }) else { return nil }
+            box = CGRect(x: box.minX, y: CGFloat(top), width: box.width, height: CGFloat(bottom - top + 1))
+        }
         let rows = Int(box.minY)..<Int(box.maxY), columns = Array(Int(box.minX)..<Int(box.maxX))
         func column(_ x: Int) -> [UInt32] { rows.map { rgba[$0 * width + x] } }
         // How many columns from one end repeat the end column, stepping inward; 0 under half.
@@ -160,5 +170,27 @@ extension WasabiResourceCache {
         guard left + right < columns.count else { return box }
         return CGRect(x: box.minX + CGFloat(left), y: box.minY,
                       width: box.width - CGFloat(left + right), height: box.height)
+    }
+
+    /// The image's pixels as premultiplied RGBA words, top row first; nil when it cannot be drawn.
+    private static func premultipliedPixels(of image: CGImage) -> [UInt32]? {
+        let width = image.width, height = image.height
+        var rgba = [UInt32](repeating: 0, count: width * height)
+        let drawn = rgba.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                          bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        return drawn ? rgba : nil
+    }
+
+    /// The one opaque colour every pixel of `image` has, or nil for a texture, a gradient or alpha.
+    private static func flatColour(of image: CGImage) -> UInt32? {
+        guard let rgba = premultipliedPixels(of: image), let first = rgba.first,
+              first >> 24 == 0xFF, rgba.allSatisfy({ $0 == first }) else { return nil }
+        return first
     }
 }

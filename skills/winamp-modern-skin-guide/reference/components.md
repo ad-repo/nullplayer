@@ -269,8 +269,38 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
 - **A side strip's flat band is not its edge** (2026-10-25, `WasabiResourceCache.edgeBounds`): a run of
   identical columns covering half the tile or more is body fill. Circlo_T_roniC's `frame-l`/`frame-r`
   are fully opaque 44px tiles around an 8px edge, and measured whole the browser's buttons overlapped
-  and hid `Stop`. Columns only: a top or bottom band's flat part holds the title or status bar, and
-  trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+  and hid `Stop`. Rows are not trimmed by flatness alone: a top or bottom band's flat part holds the
+  title or status bar, and trimming rows put YoYoBoy's playlist over its Add/Rem/Sel bar.
+- **A top or bottom strip's rows of the frame's own body colour are body** (B464, B475, 2026-11-25):
+  when `wasabi.frame.basetexture` (else `component.basetexture`) is one flat colour, a strip's rows
+  of exactly that colour are trimmed. Trance_Critic_v2_0's `frame-tm.png` is a 27-row edge over 51
+  rows of its navy base texture, and measured whole a blue band covered every hosted window;
+  Official_Coldplay_skin's 30-row tiles end in its grey one, and the Thinger's icons sat under the
+  status bar. **The trim never passes the title bottom or the status top**: canum, blackwhite and
+  pumaSKIN write their titles over plain body-coloured strips, and AniTransformers, Blogz and
+  BumbleBee their command bars, so unbounded it covered them. A title group that states no height
+  ends where its `window.titlebar.title` text does (pumaSKIN's, `y=0 h=20`); that reading feeds only
+  this bound, so frames the trim does not touch keep their measure. 60 gold skins changed, almost all
+  a list now filling the panel the skin drew for it instead of leaving a margin of body colour.
+- **A `<grid>` frame is measured by its edges** (B465). Center_Fresh's frame is one nine-slice
+  `<grid>` (`component.top.middle`, `component.left`, …) with no `resize=` strips, no title group and
+  no `LayoutStatus`. Measured by strips alone, its border was zero, so every hosted window's content
+  covered the frame and opened bare: Art, Cava, EQ Studio, Flow and six more, while the skin's own
+  Library and Playlist, which place their content by hand, wore it. Now a grid's `top`/`left`/
+  `right`/`bottom` images count as the four strips, trimmed of rows matching the grid's own flat
+  `middle` (not the frame base texture), with the far edges measured in from their cut's size
+  (`bitmapSize`). **An edge counts only where the grid lies on that side of the window**: a grid
+  inset from the edge is a panel inside the client. Morlock's modal frame holds the engine's own
+  `wasabi.panel` grid (`wasabiStandardLibraryGroups`, as are `wasabi.objectframe` and
+  `wasabi.window.embedded`) 35–50px in, and counted as border it left ten skins' modal windows no
+  client at all. A scan for grids in the skin's own groupdefs misses these, so a corpus check must
+  follow the engine's groups too. Center_Fresh measures 21/40/20/39 against the 20/41/20/42 its own
+  windows use. Of the 132 gold skins whose standard frame reaches a grid of their own, only
+  Technicalium's modal window changed in the render (its 1px side edges). Only i-Skin, iCandy and
+  iCandy-2 place an engine panel flush, and they rendered unchanged. **A bare frame can be opaque:** the intake's transparency read missed Center_Fresh entirely
+  and called the defect intermittent. Judge frames by the census shots, not by alpha. EGG and
+  Anime_Shogo's one bare run (intake #14, 29–42% transparent, a different set each time) has not
+  reproduced in any census since (2026-11-17 and 2026-11-25), so it is noted here, not filed.
 - **No top strip, the client starts below the title** — the frame's `wasabi.titlebar` group's bottom.
   Circlo's top band is a `move` tile and two corners; measured as 0, its Color Themes list ran under
   the title, and Celica's playlist covered its own title bar.
@@ -278,9 +308,16 @@ content="pledit.content.group">`), **Sony Walkman** and **canum**. Four things c
   opaque in it is an empty box, not an unreadable one, so it neither counts nor falls back to its
   declared size. LCDx's strips are all one empty 39x37 `frame.png`; counted at their offsets, every
   framed window lost 39px on the right and 37px below, clipping the Thinger's icons to 21 rows.
-- **No bottom strip, the client ends above the status slot** — the frame's relative `LayoutStatus`
-  top. With LCDx's strips gone it would otherwise run under its own status bar; Celica's playlist
-  had been covering its command bar, and Circlo's client now stops above its status text.
+- **The client always ends above the status slot** — the frame's relative `LayoutStatus` top, with
+  a bottom strip or without one (B482). With LCDx's strips gone it would otherwise run under its own
+  status bar; Celica's playlist had been covering its command bar, and Circlo's client now stops
+  above its status text. It applied only to a frame with no bottom strip until B482: Blogz's slot is
+  42px up over a 28px strip, so its playlist ended at the strip and covered the Add/Rem/Sel bar.
+  Over the 61 gold skins whose slot sits above their strip, 35 changed: about 25 playlists show their
+  command bar whole, and library, Pledit, Video and component windows end above an empty status band.
+  Two follow from rules elsewhere: Star_Wars_Player's component window, whose holder drops to 23px,
+  opens at the component-room size (B136), and Bubble_Tea's tiny default Pledit keeps a 3px list
+  above a slot 68px up. 3IO's diff is only its CD `AnimatedLayer` caught on another frame.
 
 **The synthesizer takes these frames as a last resort (B366, 2026-11-10).** `usableFrames` still
 prefers a frame whose script builds its client, then the skin's own exemplar layout; only with
@@ -936,6 +973,18 @@ every skin-owned step has declined (B55, above).
 - Close hides and retains the instance. Reopen reuses it; UI Size changes resize only materialized
   instances; skin/mode teardown destroys them once. If request-time construction fails, the partial
   graph/window is rolled back and the existing standalone controller opens immediately.
+- **A view's client floor is a standing minimum, not a one-off grow** (B415, B427). A registry entry
+  with `clientFloor` (the Equalizer Studio, 688x518 pt) needs that whole area inside whatever chrome
+  the frame's script draws. `growToClientFloor` measures the chrome once, after the scripts build
+  it (`canvas − holder`, in skin pixels), and keeps it (`clientChrome`). From then on
+  `floorCanvas` = chrome + floor ÷ UI Size is folded into the window's `contentMinSize`, so a drag
+  stops there, and `applySkinScale` grows the canvas to it, so a smaller UI Size widens the canvas
+  rather than squeezing the view. `windowDidResize` holds a proposed canvas to it as well: AppKit
+  stops a drag at `contentMinSize`, but a size set any other way, such as a restored frame saved at
+  another UI Size, reaches the delegate unclamped. Opening the window once was where the floor used to apply, and
+  then never again: Simple_Amp_'s Studio, opened at 100% and switched to 50%, came out 394x326 pt
+  with its panels overlapping. The chrome stays in skin pixels and the floor in points. That is why
+  the floor canvas depends on UI Size.
 - **Fullscreen moves the view, never the window.** A skin window is borderless, so
   `NSWindow.toggleFullScreen` does nothing on it — the dead path every hosted window's F and
   Fullscreen menu item took until 2026-11. Every `.wal` fullscreen — a hosted window's
@@ -1242,6 +1291,14 @@ exactly over it. Nothing in the hosting model needs to know — both are ordinar
 skin's script does the pairing. What it needs from the engine is that a window can be moved to another
 window's position and that `onMove()` reaches a script at all; both are in
 [scripting.md](scripting.md) → *Writing back the position a window just read* (B69).
+
+**The census reads such a pair as a hollow frame and a duplicate window, and both are by design**
+(B446). `windows.tsv` lists two windows at one rect, and the frame window, captured on its own, is a
+`HOLES` hit: its centre is where the content shows through. Settle it on screen, not from the census.
+`winhelper windows` gives the z-order (the frame must be listed in front of its content),
+`capture-region` shows what is drawn, and a drag on the frame's title must move both. YST (Library,
+Playlist, EQ Studio), WM_Player and Azenis_2 (every hosted window) all passed that check on
+2026-11-25.
 
 #### A NullPlayer-owned hosted window is one of those windows too (B110, 2026-09-03)
 

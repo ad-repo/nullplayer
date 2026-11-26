@@ -1742,18 +1742,7 @@ final class WasabiSkinInitializer {
                 let border = WasabiStandardFrames.measuredBorder(
                     in: definition.templateChildren,
                     group: { try? types.resolved(identifier: $0).templateChildren },
-                    bitmapOpaqueBounds: { [resourceRegistry, vfs] identifier in
-                        guard let resource = resourceRegistry?.resolvedDefinition(identifier: identifier)
-                        else { return nil }
-                        // A cut with nothing opaque in it is an empty box, not an unreadable one.
-                        if let cut = WasabiResourceCache.cutImage(of: resource, in: vfs) {
-                            return WasabiResourceCache.edgeBounds(of: cut) ?? .zero
-                        }
-                        // A generated (`$solid`) bitmap has no file: it is its declared size.
-                        guard let width = resource.attributes["w"].flatMap(Double.init),
-                              let height = resource.attributes["h"].flatMap(Double.init) else { return nil }
-                        return CGRect(x: 0, y: 0, width: width, height: height)
-                    })
+                    resources: resourceRegistry, vfs: vfs)
                 let content = WasabiStandardFrames.measuredContentGroupNode(
                     identifier: contentID, border: border, location: node.location)
                 try createObjects(from: [content], parent: object, graph: graph, types: types,

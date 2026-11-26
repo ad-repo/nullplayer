@@ -254,6 +254,42 @@ final class WinampModernHostedWindowTests: XCTestCase {
         XCTAssertEqual(instance.view.renderer.canvasSize, asked)
     }
 
+    /// The EQ Studio's client floor holds after it opens (B427): the window cannot be made smaller
+    /// than the floor, and a smaller UI Size grows the canvas rather than squeezing the Studio.
+    /// The fixture's holder has no geometry, so the chrome is read from the canvas the window opened
+    /// on, at 125%, where the open grew it to just meet the floor; every UI Size after that has to
+    /// grow it again on its own.
+    func testTheClientFloorHoldsAfterOpenAndAcrossUISizes() throws {
+        let parts = try makeMaterializer()
+        XCTAssertTrue(parts.materializer.show(.equalizerStudio))
+        let instance = try XCTUnwrap(parts.materializer.materializedWindows.first)
+        let floor = try XCTUnwrap(WinampModernHostedWindowID.equalizerStudio.definition.clientFloor)
+        let opened = instance.view.renderer.canvasSize
+        let chrome = CGSize(width: opened.width - floor.width / skinScale,
+                            height: opened.height - floor.height / skinScale)
+        for level in [UIScaleLevel.p100, .p50, .p200, .p100] {
+            let scale = level.scaleFactor
+            skinScale = scale
+            parts.materializer.applySkinScale(scale)
+            let canvas = instance.view.renderer.canvasSize
+            XCTAssertGreaterThanOrEqual((canvas.width - chrome.width) * scale, floor.width - 1, level.menuTitle)
+            XCTAssertGreaterThanOrEqual((canvas.height - chrome.height) * scale, floor.height - 1, level.menuTitle)
+            XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.width, floor.width, level.menuTitle)
+            XCTAssertGreaterThanOrEqual(instance.window.contentMinSize.height, floor.height, level.menuTitle)
+        }
+
+        // A drag below the floor lands on it, and a repeated resize report leaves it there.
+        let minimum = instance.window.contentMinSize
+        instance.window.setContentSize(NSSize(width: minimum.width - 120, height: minimum.height - 90))
+        let note = Notification(name: NSWindow.didResizeNotification, object: instance.window)
+        parts.materializer.windowDidResize(note)
+        let landed = instance.window.contentLayoutRect.size
+        XCTAssertGreaterThanOrEqual(landed.width, minimum.width)
+        XCTAssertGreaterThanOrEqual(landed.height, minimum.height)
+        parts.materializer.windowDidResize(note)
+        XCTAssertEqual(instance.window.contentLayoutRect.size, landed)
+    }
+
     private struct MaterializerParts {
         let loaded: WinampModernLoadedSkin
         let scripts: WinampModernScriptRuntime
