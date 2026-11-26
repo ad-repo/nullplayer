@@ -403,9 +403,12 @@ final class WinampModernComponentBridge: WinampModernComponentHost {
         // The skin declares no visualization window of its own: NullPlayer's is the fallback, the
         // same window the Visualizations menu opens.
         case .visualization: WindowManager.shared.toggleProjectM()
+        // The skin declares no video surface: NullPlayer's video window, as Windows → Video Player
+        // toggles it — inert until a film has been opened, where Winamp shows its empty window (B403).
+        case .video: WindowManager.shared.toggleVideoPlayer()
         // No standalone window to fall back to: the seeker exists only as a strip inside a
         // skin's own layout.
-        case .video, .waveformSeeker, .other: break
+        case .waveformSeeker, .other: break
         }
     }
 }

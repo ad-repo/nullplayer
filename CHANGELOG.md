@@ -131,6 +131,14 @@
 - **Winamp Modern (`.wal`): Center_Fresh's frame shows on every window.** Art, Cava, EQ Studio, Flow,
   PeppyMeter, the analyzers, Waveform, Sonos Rooms and Stream Ripper opened with no frame, while the
   Library and Playlist wore it.
+- **Winamp Modern (`.wal`): Winamp Single GUI's separate Video window behaves.** Windows → Video
+  Player and Escape now hide a film playing there, its close button no longer reopens it, and a new
+  film or leaving fullscreen keeps the film in that window. In skins with no video window of their
+  own (Nokia 7210, Dawson's Creek, jvc.tape and others), the skin's video button now shows and hides
+  NullPlayer's video window.
+- **Winamp Modern (`.wal`): switching skins with a film playing draws the new skin's Video window.**
+  Going from cPro-Bento or a Classic skin to Holiday left an empty grey box around the film that
+  clicks went through.
 
 ## 0.35.2
 

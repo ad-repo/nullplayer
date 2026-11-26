@@ -81,12 +81,19 @@ on run argv
     error "menu.applescript: a target pid is required (app-control Rule zero: drive the debug build you launched, never `process \"NullPlayer\"` by name)" number 1
   end if
   set targetPid to (item 2 of argv) as integer
-  try
-    return drive(argv, targetPid)
-  on error msg number n
-    closeMenus(targetPid)
-    error msg number n
-  end try
+  -- A busy main thread (an app painting every window, a hang) answers no Accessibility call, and
+  -- each one otherwise waits AppleScript's default 120 s — the script sat silent for minutes. Ten
+  -- seconds per call fails it with -1712 instead.
+  with timeout of 10 seconds
+    try
+      return drive(argv, targetPid)
+    on error msg number n
+      try
+        closeMenus(targetPid)
+      end try
+      error msg number n
+    end try
+  end timeout
 end run
 
 on drive(argv, targetPid)
