@@ -52,6 +52,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
     private var boundTextTimer: Timer?
     /// The host-shown track-change toast's dismissal; see `+Notifier.swift`.
     var notifierDismissTimer: Timer?
+    /// The film's re-host after a skin load, still waiting out its delay; see `+Video.swift`.
+    var pendingVideoRehost: DispatchWorkItem?
 
     /// A separate visible container (the "separate windows" arrangement) rendered in its own native
     /// window with the shared script runtime + component host. cPro-Bento is a single-window SUI so
@@ -518,35 +520,6 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         // `rehostVideoOutputIfPlaying()`. Also on the failure path: the placeholder declares no video,
         // so the answer there is "NullPlayer's own window keeps it", which is what that call arrives at.
         rehostVideoOutputIfPlaying()
-    }
-
-    /// Re-offer a still-loaded film's picture to the skin that has just been put up.
-    ///
-    /// The only two routes that park a picture are a **play** call and a video holder *reappearing*
-    /// (`WinampModernMainView.reconcileHostedSurfaces`, which is the tab-switch case). A skin switch
-    /// is neither, so without this a film that is already running finds no one to ask for the
-    /// picture: it stays in NullPlayer's own free-floating window while the new skin's video window
-    /// sits empty beside it. The embedded case happened to work only because a cPro tab strip
-    /// re-creates its holder; a `declaredContainer` skin has no holder until its window opens.
-    ///
-    /// The film is re-*parented*, never re-opened — `VideoPlayerWindowController` and its VLC
-    /// pipeline survive the switch untouched, so playback and position carry straight on. Guarded on
-    /// `currentTitle`, deliberately not on "is playing": a **paused** film re-hosts on the same terms.
-    /// `hostVideoOutput()` already forks `.embedded` / `.declaredContainer` / neither, so a skin that
-    /// declares no video surface answers false and NullPlayer's window keeps the picture — the
-    /// correct outcome, not a fallback for a failure.
-    func rehostVideoOutputIfPlaying() {
-        guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
-        // One runloop turn after the load, so the skin's own `onScriptLoaded` resizes and layout
-        // cascade have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
-            let hosted = self.hostVideoOutput()
-            #if DEBUG
-            NSLog("WinampModern: re-hosting film after skin load hosted=%@", hosted ? "1" : "0")
-            #endif
-        }
     }
 
     /// Create one native window per visible non-main container. The main window owns the scripted
@@ -1109,8 +1082,9 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             case .equalizer: return WindowManager.shared.isEqualizerVisible
             case .library: return WindowManager.shared.isPlexBrowserVisible
             case .visualization: return WindowManager.shared.isProjectMVisible
+            case .video: return WindowManager.shared.isVideoPlayerVisible
             // `toggleClassicWindow` does nothing for these, so there is nothing to report.
-            case .video, .waveformSeeker, .other: return nil
+            case .waveformSeeker, .other: return nil
             }
         }
         let containerVisible: (String) -> Bool? = { [weak self] id in
@@ -1726,10 +1700,8 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
             }
         } else {
             container.window.orderOut(nil)
-            // Closing the detached window is the reattach: the film goes back into the player.
-            if videoDetachContainerID == id, WindowManager.shared.currentVideoPlayerController?.currentTitle != nil {
-                _ = hostVideoOutputInPlayer()
-            }
+            // After the order-out: reattaching relies on this window being off screen already.
+            if videoDetachContainerID == id { reattachVideoOutput(closing: container) }
         }
         container.view.setSceneVisible(visible)
         // A window that just opened is above (or below) whatever it is glued to; put the pair back in

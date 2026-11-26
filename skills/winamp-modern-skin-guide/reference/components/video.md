@@ -199,8 +199,8 @@ and touching `.window` forces the load whether or not the window is revealed.
 **Do not add a second call from `WindowManager`.** One was written and removed on 2026-09-03. Inside
 `recreateModeDependentLayout` everything below runs in a single runloop turn:
 
-1. `showMainWindow(reveal:)` — the fresh controller loads its skin, which schedules the re-host **one
-   turn later**;
+1. `showMainWindow(reveal:)` — the fresh controller loads its skin, which schedules the re-host
+   **`rehostVideoDelay` later**;
 2. the main window's `setFrame` for the incoming mode;
 3. the sub-windows are restored;
 4. `pushCurrentPresentationStateToRecreatedWindows()`;
@@ -219,8 +219,35 @@ Three rules it obeys:
   unparked state a mode switch leaves behind.
 - **Re-parented, never re-opened.** `VideoPlayerWindowController` and its VLC pipeline survive the
   switch untouched, so the film keeps playing and the clock the skin reads carries straight on.
-- **One runloop turn after the load**, so the skin's own `onScriptLoaded` resizes and layout cascade
-  have settled — the same reason `hostVideoOutputInPlayer` re-places asynchronously.
+- **`rehostVideoDelay` (0.3 s) after the load**, so the skin's own `onScriptLoaded` resizes and
+  layout cascade have settled (the same reason `hostVideoOutputInPlayer` re-places asynchronously),
+  and for the race below. Re-hosted one turn after the load instead, a switch into Winamp Modern
+  Holiday with a film playing (from cPro-Bento, Big Bento or a Classic skin) nearly always showed
+  only the Video window's skin shadow, a grey rounded box, with the film over it, and clicks went
+  through. `screencapture -l` drew the framed window, and every
+  window-server query had it ordered in, frontmost, at alpha 1 with an identity transform, so no
+  probe shows the defect. Only order-out/in repaired it. Redrawing, a resize, an alpha or level
+  change, order-back-then-front, a new content view and a rebuilt layer did not.
+
+  What is known, each by changing one thing:
+  - The trigger is `addChildWindow` of the film onto the Video window. Not parking the film, or
+    placing it over the box as a free window, drew every time.
+  - It is a race in real time with the skin load's aftermath. The film parked 0.05 s after the
+    window opened was still blank on the Bento path; from 0.1 s it drew; at 0.3 s it drew 12 of 12
+    on both paths. Delaying the whole re-host by 0.3 s instead, as shipped, drew 6 of 6. Holiday drew without the delay once its library, or its vis and about containers, were
+    removed from the archive, with the window at the same spot. That is likely why 6 other
+    declared-window skins (mmd3, BLAKK, Center_Fresh, Winamp3_Default, Ebonite_2_1, hatsune_miku_5)
+    drew without it.
+  - Ruled out: the loading overlay, the appear animation, the skin shadow, Holiday's notifier,
+    `sysregion`, the Video container's own contents and scripts, and the window's position.
+  - AppKit holds the window server's order-in until the next Core Animation commit; the parent was
+    measured not yet ordered in at the attach. Flushing so that it was ordered in first still failed,
+    so that is not the whole cause either.
+
+  Neither of two other candidates holds. Gating the attach on the window's occlusion turning
+  `.visible` failed (that notice arrives too early). A `CATransaction.flush()` before the re-host
+  failed 2 of 3 on the Classic path. A play call hosts at once, because a launch straight onto the
+  skin never shows the defect.
 
 Switching *out* needs nothing: `tearDownSkin()` → `tearDownVideoSurface()` → `prepareForUITeardown()`
 already unparks and reveals a still-running film, which is what makes the round trip through a
@@ -277,6 +304,15 @@ is shown again through the skin, not in NullPlayer's own window. The skin's *Rea
 and its detach buttons are inert in Winamp too: `video.maki` and `videoavs.maki` (which includes
 `drawer.m`) are commented out in `video-normal.xml` and `player-normal-group.xml`.
 
+The pane the player shows decides it, not only the shade: Single GUI's Library pane has no video
+holder either, so a film started there (at launch, say) opens straight into `Video`. While that
+window is open it **is** where the film lives (B247): `hostVideoOutput()` answers with it rather
+than asking the player, so a new film and the return from fullscreen both land there, and
+`VideoPlayerWindowController` keeps no memory of where it was parked. Putting the film away — the
+menu toggle, Escape, the close box — closes that window (B265), and closing reattaches only when
+the player can take the film; with no holder the film is unparked and stays hidden, never reopened
+in the window being closed (B266). `WinampModernVideoDetachTests` pins both.
+
 ### The rest of the shape
 
 - **Routing.** `.video` is a **routed** surface but not a **managed** one
@@ -293,7 +329,12 @@ and its detach buttons are inert in Winamp too: `video.maki` and `videoavs.maki`
   video controller when a cast device is active, so the skin path is never entered.
 - **Fullscreen** unparks first (a child window cannot go fullscreen), and re-parks **one runloop turn
   after** `windowDidExitFullScreen` — AppKit is still restoring the window's own frame as the
-  notification lands, and re-parenting inside that leaves it parked at the fullscreen size.
+  notification lands, and re-parenting inside that leaves it parked at the fullscreen size. The
+  re-park asks `hostVideoOutput()`, the same route a play call takes.
+- **A skin with no video surface** (`video=classic`): a `TOGGLE guid:{F0816D7B-…}` button toggles
+  NullPlayer's video window as Windows → Video Player does, and its lamp reads that window (B403).
+  Like the menu it is inert until a film has been opened, where Winamp shows an empty video window:
+  NullPlayer has no empty video window to show.
 - **The box carries no autoresizing mask** and reports its own geometry (`setFrameSize`,
   `setFrameOrigin`, `viewDidMoveToWindow`) so the parked window follows whatever moves it. Pushing
   placement from the layout pass alone leaves the picture behind on every path that moves the box

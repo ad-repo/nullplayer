@@ -12,7 +12,12 @@ extension WinampModernMainWindowController {
     @discardableResult
     func hostVideoOutput() -> Bool {
         guard let coordinator = surfaceCoordinator else { return false }
-        if case .embedded = coordinator.catalog.video { return hostVideoOutputInPlayer() }
+        if case .embedded = coordinator.catalog.video {
+            // A film in the component's own window stays there while it is open — a new film, and
+            // the return from fullscreen (B247) — as Winamp keeps a detached video detached.
+            if openVideoWindowID != nil { return openOwnVideoWindow() }
+            return hostVideoOutputInPlayer()
+        }
         guard case .declaredContainer(let id) = coordinator.catalog.video,
               let container = auxiliaryContainer(id: id)
         else { return false }
@@ -30,6 +35,57 @@ extension WinampModernMainWindowController {
         return true
     }
 
+    /// How long after a skin load the film is re-offered to the new skin.
+    ///
+    /// Re-hosted one turn after the load, the film's child window could drop the window it was parked
+    /// in out of the screen composite. With a film playing, cPro-Bento → Holiday and Classic →
+    /// Holiday then showed only the Video window's drop shadow with the film over it, and clicks went
+    /// through, nearly every time. By every window-server query the window was frontmost at alpha 1.
+    /// Only ordering it out and back in repaired it. It is a race with the skin load's aftermath.
+    /// Parking the film 0.05 s after the window opened was still blank; from 0.1 s it drew. Waiting
+    /// this long before the whole re-host drew 6 of 6 across both paths. A launch straight onto the
+    /// skin never shows it, which is why only the re-host waits.
+    /// ponytail: a measured delay, not a signal; the window server's "visible" arrives too early to
+    /// gate on. A heavier load could need more. Gate on a real signal if one turns up.
+    static let rehostVideoDelay: TimeInterval = 0.3
+
+    /// Re-offer a still-loaded film's picture to the skin that has just been put up.
+    ///
+    /// The only two routes that park a picture are a **play** call and a video holder *reappearing*
+    /// (`WinampModernMainView.reconcileHostedSurfaces`, which is the tab-switch case). A skin switch
+    /// is neither, so without this a film that is already running finds no one to ask for the
+    /// picture: it stays in NullPlayer's own free-floating window while the new skin's video window
+    /// sits empty beside it. The embedded case happened to work only because a cPro tab strip
+    /// re-creates its holder; a `declaredContainer` skin has no holder until its window opens.
+    ///
+    /// The film is re-*parented*, never re-opened — `VideoPlayerWindowController` and its VLC
+    /// pipeline survive the switch untouched, so playback and position carry straight on. Guarded on
+    /// `currentTitle`, deliberately not on "is playing": a **paused** film re-hosts on the same terms.
+    /// `hostVideoOutput()` already forks `.embedded` / `.declaredContainer` / neither, so a skin that
+    /// declares no video surface answers false and NullPlayer's window keeps the picture — the
+    /// correct outcome, not a fallback for a failure.
+    ///
+    /// A later load replaces the wait, so an earlier load's re-host never lands inside the new skin's
+    /// own race; `toggleVideo()` drops it, so a film the user hid meanwhile stays hidden.
+    func rehostVideoOutputIfPlaying() {
+        pendingVideoRehost?.cancel()
+        pendingVideoRehost = nil
+        guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+        let rehost = DispatchWorkItem { [weak self] in
+            guard let self,
+                  WindowManager.shared.currentVideoPlayerController?.currentTitle != nil else { return }
+            self.pendingVideoRehost = nil
+            let hosted = self.hostVideoOutput()
+            #if DEBUG
+            NSLog("WinampModern: re-hosting film after skin load hosted=%@", hosted ? "1" : "0")
+            #endif
+        }
+        pendingVideoRehost = rehost
+        // Late enough for the skin's own `onScriptLoaded` resizes and layout cascade to have settled,
+        // the reason `hostVideoOutputInPlayer` re-places asynchronously, and for the race above.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.rehostVideoDelay, execute: rehost)
+    }
+
     /// The other shape of a skin's video surface: a **tab of the player window** (B23).
     ///
     /// cPro-Bento hosts the video component in its SUI's Video tab and collapses its standalone
@@ -39,11 +95,17 @@ extension WinampModernMainWindowController {
     /// no live holder, which is what leaves NullPlayer's own video window in charge rather than
     /// swallowing the picture into a surface that does not exist.
     func hostVideoOutputInPlayer() -> Bool {
+        moveVideoOutputIntoPlayer() || openOwnVideoWindow()
+    }
+
+    /// Reveal the player's video holder and park the picture in it. False when the player offers
+    /// no holder, leaving the film where it was.
+    private func moveVideoOutputIntoPlayer() -> Bool {
         guard let view = skinView, let coordinator = surfaceCoordinator else { return false }
         coordinator.showSurface(.video)
         // The surface is made by the view's own layout pass, and revealing the tab has only changed
         // the graph so far: without this the first film of a session finds no box to fill.
-        guard view.claimVideoSurface() != nil else { return openOwnVideoWindow() }
+        guard view.claimVideoSurface() != nil else { return false }
         // Key focus goes with the picture: off an embedded Library Browser that started the film,
         // where Return replays the row (M5), to the skin view, which hands the film its keys (M18).
         view.window?.makeFirstResponder(view)
@@ -61,36 +123,55 @@ extension WinampModernMainWindowController {
     }
 
     /// Put the skin's video window away — the `autoclose="1"` every measured holder declares. The
-    /// picture stays lent, so the next play reopens rather than re-attaching.
+    /// picture stays lent, so the next play reopens rather than re-attaching. The component's own
+    /// window beside a player is the exception: closing it reattaches the film to the player when the
+    /// player has a holder for it (`reattachVideoOutput`).
     ///
     /// For an embedded surface there is no window to put away — hiding the player window is not what
     /// "close the video" means — so the picture is simply unparked and the tab left as it is, for the
     /// user or the skin to switch away from.
     @discardableResult
     func hideVideoSurfaceWindow() -> Bool {
-        guard let coordinator = surfaceCoordinator else { return false }
-        if case .embedded = coordinator.catalog.video {
-            guard let surface = skinView?.hostedVideoSurface,
-                  WindowManager.shared.currentVideoPlayerController?.isVideoOutputHosted == true
-            else { return false }
-            surface.hideVideoOutput()
-            return true
-        }
-        return closeVideoSurfaceWindow()
+        // A film in a window of its own — the declared one, or the component's detached window
+        // beside a player (B265) — is put away with that window.
+        if closeVideoSurfaceWindow() { return true }
+        guard case .embedded = surfaceCoordinator?.catalog.video,
+              let surface = skinView?.hostedVideoSurface,
+              WindowManager.shared.currentVideoPlayerController?.isVideoOutputHosted == true
+        else { return false }
+        surface.hideVideoOutput()
+        return true
     }
 
-    /// Shut the skin's own video window, and nothing else — what Escape means. A video tab has no
-    /// window of its own, so this leaves it alone: unparking there leaves the tab black while the
-    /// film plays on, and selecting the tab again does not refill it.
+    /// Shut the skin's own video window — what Escape means — and leave a video tab alone. A tab has
+    /// no window of its own: unparking there leaves the tab black while the film plays on, and
+    /// selecting the tab again does not refill it. Shutting the component's own window beside a
+    /// player reattaches the film when the player can take it (`reattachVideoOutput`).
     @discardableResult
     func closeVideoSurfaceWindow() -> Bool {
-        guard case .declaredContainer(let id) = surfaceCoordinator?.catalog.video,
-              let container = auxiliaryContainer(id: id),
-              container.window.isVisible
-        else { return false }
+        guard let id = openVideoWindowID else { return false }
         // The `autoclose` counterpart of `hostVideoOutput`, and unrecorded for the same reason.
         setAuxiliaryWindow(id: id, visible: false)
         return true
+    }
+
+    /// The skin's video window, while it is on screen: the window the catalog routes video to, or
+    /// the component's own window beside a player that holds the film (Winamp Single GUI's `Video`).
+    private var openVideoWindowID: String? {
+        let id: String?
+        if case .declaredContainer(let declared) = surfaceCoordinator?.catalog.video { id = declared }
+        else { id = videoDetachContainerID }
+        guard let id, auxiliaryContainer(id: id)?.window.isVisible == true else { return nil }
+        return id
+    }
+
+    /// Closing the component's own window is the reattach: the film goes back into the player. A
+    /// player with no holder for it leaves the film put away, not reopened in the window being
+    /// closed (B266). `container`'s window is already off screen.
+    func reattachVideoOutput(closing container: AuxiliaryContainer) {
+        guard WindowManager.shared.currentVideoPlayerController?.currentTitle != nil,
+              !moveVideoOutputIntoPlayer() else { return }
+        container.view.hostedVideoSurface?.hideVideoOutput()
     }
 
     /// Unpark the picture from the skin's box, leaving the window it came from alone.
@@ -119,6 +200,9 @@ extension WinampModernMainWindowController {
     /// Windows → Video Player. False when the skin has no surface for the film, which leaves
     /// NullPlayer's own video window in charge.
     func toggleVideo() -> Bool {
+        // The user has decided where the film is; a skin load's re-host must not undo it.
+        pendingVideoRehost?.cancel()
+        pendingVideoRehost = nil
         guard let video = WindowManager.shared.currentVideoPlayerController else { return false }
         // A hosted picture lives in the skin's window, so that is what this shows and hides —
         // ordering out the controller's own window would do nothing visible at all (B20).
