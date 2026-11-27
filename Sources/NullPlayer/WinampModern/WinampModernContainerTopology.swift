@@ -194,6 +194,22 @@ enum WinampModernContainerTopology {
         return id == "notifier" || id.hasPrefix("notifier.")
     }
 
+    /// A window that floats on the desktop by itself: a notifier by id, or a container whose opening
+    /// layout is both `noparent="1"` and `nodock="1"`. Not part of the startup arrangement — Pixelated's
+    /// `pixelatednotifier` (`default_visible="1"`, its script parks it in the screen corner) took the
+    /// slot under the player and pushed the playlist 27 px down (B398). The tiler asks this only of
+    /// windows already open, which at startup means `default_visible` ones; across the gold corpus the
+    /// pair matches only toasts among those — Pixelated's, Copter's, No-Vita's, Ryoko's `notifier` —
+    /// and Official Tristania's `update` popup.
+    ///
+    /// Corner placement stays on `isNotifier`: the host places only the toast it shows itself, and a
+    /// `noparent`+`nodock` toast is placed by its own script.
+    static func isDesktopToast(_ info: WinampModernContainerInfo) -> Bool {
+        if isNotifier(id: info.id) { return true }
+        guard let layout = WasabiSceneRenderer.primaryLayout(of: info.object) else { return false }
+        return layout.attributes["noparent"] == "1" && layout.attributes["nodock"] == "1"
+    }
+
     /// Whether the container's opening layout is fully transparent **now**. Asked when the skin's
     /// default windows open, after its scripts have started, so a script that raises the alpha at load
     /// wins: LayerONE's `colorthemes` (`default_visible="1"`, layout `alpha="0"`, nothing raises it)

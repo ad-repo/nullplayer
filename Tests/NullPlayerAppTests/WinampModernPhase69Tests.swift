@@ -247,6 +247,81 @@ final class WinampModernPhase69Tests: XCTestCase {
         }
     }
 
+    /// A notifier a script took with `newDynamicContainer` is the script's to fill, place and show:
+    /// shown by the host as well, stock Winamp Modern's toast slid in from the host's corner (B479).
+    func testANotifierAScriptTookAsADynamicContainerShowsItself() throws {
+        let runtime = try makeToastRuntime()
+        _ = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                               arguments: [.string("notifier")], program: Self.syntheticProgram)
+        let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+        XCTAssertTrue(runtime.notifierShowsItself(notifier))
+        XCTAssertNil(runtime.announceNotification(title: "Song", artist: "", album: ""))
+    }
+
+    /// A track change sends no `onShowNotification`. Every corpus script that handles it also shows
+    /// its toast from `onTitleChange` (59 of 59 in gold), and sent on top, GlassAMPfinal's and
+    /// ipamp14's toast showed twice and the second show pulled the cover out of its frame (B309).
+    func testATrackChangeSendsNoShowNotification() throws {
+        let runtime = try makeToastRuntime()
+        runtime.recordsDispatchedEventsForTesting = true
+        _ = runtime.announceNotification(title: "Song", artist: "Artist", album: "Album")
+        XCTAssertFalse(runtime.dispatchedSystemEventsForTesting.contains { $0.event == "onshownotification" })
+    }
+
+    /// A natural advance passes through `.stopped` for ~15 ms: no `onStop`/`onPlay` pair for it
+    /// (B309). A stop that holds is reported once, however often the host repeats it.
+    func testOnlyAStopThatHoldsIsReported() throws {
+        let runtime = try makeToastRuntime()
+        runtime.recordsDispatchedEventsForTesting = true
+        func events() -> [String] { runtime.dispatchedSystemEventsForTesting.map(\.event) }
+
+        runtime.playbackStateDidChange(to: .playing)
+        runtime.playbackStateDidChange(to: .stopped)
+        runtime.playbackStateDidChange(to: .playing)
+        RunLoop.main.run(until: Date().addingTimeInterval(WinampModernScriptRuntime.stopGracePeriod + 0.1))
+        XCTAssertEqual(events(), ["onplay"])
+
+        for _ in 0..<3 { runtime.playbackStateDidChange(to: .stopped) }
+        RunLoop.main.run(until: Date().addingTimeInterval(WinampModernScriptRuntime.stopGracePeriod + 0.1))
+        XCTAssertEqual(events(), ["onplay", "onstop"])
+    }
+
+    /// Stock Winamp Modern and Love is War Miku build and show their toast only from
+    /// `AlbumArt.onAlbumArtLoaded(boolean success)` (B479): a loaded cover sends it to every
+    /// `<AlbumArt>`, with the one argument every corpus declaration takes.
+    func testALoadedCoverTellsEveryAlbumArt() throws {
+        let runtime = try makeRuntime(loaded: makeSkin(xml: """
+        <WasabiXML>
+          <container id="main">
+            <layout id="normal" w="300" h="200">
+              <AlbumArt id="cover" x="0" y="0" w="80" h="80"/>
+            </layout>
+          </container>
+        </WasabiXML>
+        """))
+        runtime.recordsDispatchedEventsForTesting = true
+        runtime.announceAlbumArtLoaded()
+        XCTAssertTrue(runtime.dispatchedEventsForTesting.contains { $0 == ("cover", "onalbumartloaded") })
+        XCTAssertEqual(runtime.signature(for: "onAlbumArtLoaded", classGUID: nil)?.argumentCount, 1)
+    }
+
+    /// The startup tiler skips a desktop toast: a `notifier` id, or a layout that is both `noparent`
+    /// and `nodock`, Pixelated's `pixelatednotifier` (B398). Either alone is an ordinary window.
+    func testADesktopToastIsANotifierOrANoparentNodockLayout() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="300" h="200"/></container>
+          <container id="notifier"><layout id="normal" w="300" h="80"/></container>
+          <container id="pixelatednotifier"><layout id="normal" w="129" h="27" noparent="1" nodock="1"/></container>
+          <container id="floating"><layout id="normal" w="129" h="27" noparent="1"/></container>
+          <container id="pl"><layout id="normal" w="275" h="300" nodock="1"/></container>
+        </WasabiXML>
+        """)
+        let toasts = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .filter(WinampModernContainerTopology.isDesktopToast).map(\.id).sorted()
+        XCTAssertEqual(toasts, ["notifier", "pixelatednotifier"])
+    }
+
     /// The host's toast is the plain `notifier`, wherever it is declared. A `notifier.*` sibling is
     /// never shown in its place: Rectangular's `notifier.preferences` is a settings window, and it
     /// popped up at the screen corner on every track change (#810).

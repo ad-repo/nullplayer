@@ -150,7 +150,11 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// id and then by the calling program. Per program because that is the grain Winamp instances at:
     /// one included copy of a frame script is one window's frame, and asking twice from the same
     /// script means "the one I already have", not "another window".
-    var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
+    var dynamicContainerInstances: [String: [ObjectIdentifier: HeldDynamicContainer]] = [:]
+    /// The playback state the scripts were last told, and a stop waiting out its grace period — see
+    /// `playbackStateDidChange(to:)`.
+    var reportedPlaybackState: PlaybackState = .stopped
+    var pendingStop: DispatchWorkItem?
     /// Per hosted window, the floor its borrowed chrome imposes — see `adoptChromeForHostedWindow`.
     var hostedChromeFloors: [WasabiObjectID: CGSize] = [:]
     /// Per hosted window, the height its borrowed chrome gave back — see `liftHostedClient`.
@@ -1164,6 +1168,8 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
         dispatchObserver = nil
         geometryDidSettle = nil
         activeTargetAnimations.removeAll()
+        pendingStop?.cancel()
+        pendingStop = nil
         timers.teardown()
         interpreter.teardown()
         host.endVisualizationConsumption()

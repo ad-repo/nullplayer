@@ -127,7 +127,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
                 // A turn later: the host drops its per-track artwork cache from its own observer of
                 // this same notification, and observers run in no promised order — asked first, the
                 // cache still says "no cover" and the cover-seeking scripts are never asked again.
-                DispatchQueue.main.async { self?.skinView?.scripts.redeliverTitleToCoverSeekers() }
+                DispatchQueue.main.async {
+                    self?.skinView?.scripts.redeliverTitleToCoverSeekers()
+                    self?.skinView?.scripts.announceAlbumArtLoaded()
+                }
                 self?.skinView?.needsDisplay = true
                 self?.auxiliaryContainers.forEach { $0.view.needsDisplay = true }
             }
@@ -1856,9 +1859,10 @@ final class WinampModernMainWindowController: NSWindowController, MainWindowProv
         guard var tiler = manager.winampModernTiler() else { return }
         let trace = ProcessInfo.processInfo.environment["WINAMP_MODERN_PLACE_TRACE"] == "1"
         for container in auxiliaryContainers where container.window.isVisible {
-            // A notifier is a corner toast, host-driven and transient. It is not part of the
-            // arrangement and keeps the corner it was given.
-            guard !container.isNotifier, !isDynamicWindow(container) else { continue }
+            // A desktop toast is transient and keeps the corner it was given (or that its script
+            // gives it). It is not part of the arrangement.
+            guard !WinampModernContainerTopology.isDesktopToast(container.info),
+                  !isDynamicWindow(container) else { continue }
             let slot = tiler.nextSlot(for: container.window.frame.size)
             if trace {
                 NSLog("[place/tile] %@ %@ -> %@", container.containerID,

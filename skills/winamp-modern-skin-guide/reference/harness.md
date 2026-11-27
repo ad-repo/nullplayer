@@ -378,7 +378,8 @@ host's `setNotifierText` widening (to max(declared, 350)) never reach the canvas
 text in a batch dump is therefore not a finding until it survives the toast's real size: drive
 `RENDER_EVENTS=notifier/normal@onshownotification` with `CALL_TRACE=1` to read the `resize(…)` the
 script asks for, then dump again at that size with `RENDER_SIZE` (350 wide for a ClassicPro notifier,
-whose own fill waits on `onAlbumArtLoaded`, an event NullPlayer never sends).
+whose own fill waits on `onAlbumArtLoaded`, which the live app sends when a cover loads and the
+harness does not).
 
 ### The corpus census — one structural row per corpus skin
 

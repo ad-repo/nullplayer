@@ -22,10 +22,10 @@ scripts handle fade animation but do not reliably set text (the bytecode's condi
    a non-nil track is passed. This is the same path that fires `ontitlechange` to MAKI scripts (via
    `skinView?.updateTrackInfo()`), so the notifier appears on every track change.
 
-4. **Text setting.** `showNotifier` dispatches `onshownotification` to MAKI **first** (so the skin's
-   scripts run their setup/animation), then calls `scripts.setNotifierText(title:artist:album:)` to
-   **override** the text with the actual track info. The override-after-dispatch order ensures the
-   host's values win over anything the MAKI scripts set (or fail to set).
+4. **Text setting.** `showNotifier` asks `announceNotification`, which calls
+   `scripts.setNotifierText(title:artist:album:)` to **override** the text with the actual track
+   info, unless the toast shows itself (below). No `onshownotification` goes with it (B309, see
+   *`onshownotification` system event*).
 
 5. **`setNotifierText` internals.** This method on `WinampModernScriptRuntime`:
    - Finds the `<container id="notifier">` root in the object graph.
@@ -44,6 +44,14 @@ scripts handle fade animation but do not reliably set text (the bytecode's condi
 
 7. **Positioning.** The notifier is placed at the bottom-right of the screen with a 12pt margin
    (in `place()`, gated on `container.isNotifier`), unless the skin specifies `default_x`/`default_y`.
+   The startup tiler (`arrangeWindows`) skips every **desktop toast**
+   (`WinampModernContainerTopology.isDesktopToast`): a `notifier` id, or a container whose primary
+   layout is both `noparent="1"` and `nodock="1"`. Pixelated's `pixelatednotifier` is the second
+   kind; tiled, it took the slot under the player and pushed the playlist down 27 px until its
+   script moved it to the corner (B398). In the gold corpus the `noparent`+`nodock` rule on a
+   `default_visible` container matches only Pixelated's, Copter's, No-Vita's and Ryoko's toasts and
+   Official Tristania's `update` popup. A `newDynamicContainer` window is skipped too: its script
+   places it.
 
 8. **Auto-dismiss.** A 5-second `Timer` hides the notifier. On a new track change, the timer is
    invalidated and restarted — so rapid track changes keep the notifier visible with the latest info.
@@ -139,13 +147,13 @@ hopped the last 49 px.
 
 `WinampModernScriptRuntime.notifierShowsItself(_:)` is the test: a notifier container with a
 program **owned by it or by something inside it** that binds `System.onTitleChange` or
-`onShowNotification` (found through `programsBinding`). When it holds, `announceNotification` only
-dispatches `onshownotification` and tells `showNotifier` not to show, fill or dismiss the toast, and
+`onShowNotification` (found through `programsBinding`). When it holds, `announceNotification`
+answers nil and `showNotifier` does not show, fill or dismiss the toast, and
 `applyContainerGeometry` sends that container's moves as **pins**, which `moveContainerWindow`
 does not clamp. Ownership is the line because stock Winamp Modern's,
 Love is War Miku's and Big Bento's notifier scripts are **skin-level** (`owner=-#-` in
 `RENDER_SCRIPTS`) and Big Bento's in-container groups bind only `onPlay`/`onPause`: all three keep
-the host's show. Measured reach (static scan of gold+silver, then `RENDER_EVENTS=ontitlechange` +
+the host's show, unless their script takes the container with `newDynamicContainer` (next section). Measured reach (static scan of gold+silver, then `RENDER_EVENTS=ontitlechange` +
 `CALL_TRACE` on each): Jpod, CNYforWinamp, WTM, YST and Symplicipod — one script family, and every
 one `show()`s and places its own layout. A static scan sees only `<script>`s written directly in the
 container, so it is a lower bound.
@@ -163,6 +171,48 @@ Two things that look like defects and are the skin's: its **first** toast after 
 (the hide timer `onScriptLoaded` starts is still running, so `ShowNotifier` keeps the `ANIM_STYLE_NONE`
 it was born with), and the slide starts about 39 px visible, because the skin takes the viewport's
 height as its bottom edge and ignores `getViewportTop()` (the menu bar).
+
+### A notifier a script takes with `newDynamicContainer` (B479, B309, 2026-11-27)
+
+Stock Winamp Modern's `notifier.m` is the other way a skin owns its toast, and it is copied widely:
+44 gold skins ship it as source (GlassAMPfinal, ipamp14, Ebonite, Resurgence, …), and 127 ship a
+`notifier.maki`. Its script is skin-level, so the ownership test above misses it. Instead, on each
+track change it calls `newDynamicContainer("notifier")`, fills and sizes the layout, places it in
+the corner and shows it, then on dismiss `hide()`s it and drops the reference. **`notifierShowsItself`
+also holds for a container `isDynamicallyClaimed`**, so the host stands down for it. Shown by the
+host as well, stock's script found the layout already visible and slid it from wherever the host had
+left it, across the whole screen, opening at x=0 (B479).
+
+Three engine pieces have to be present for that script's toast to appear right:
+
+- **`AlbumArt.onAlbumArtLoaded(boolean success)`.** Stock's and Love is War Miku's scripts build,
+  place and show the toast only from this event. `announceAlbumArtLoaded()`
+  (`WinampModernTrackFolderImage.swift`) sends it to every `<AlbumArt>` when the cover finishes
+  loading (`NowPlayingManager.artworkDidLoadNotification`), with `success` = a cover was found.
+  All ten corpus declarations take the one boolean.
+- **A closed container comes back as first handed out.** Winamp builds a fresh instance on every
+  `newDynamicContainer` call; ours hands the same program the same container. Once it is off screen
+  (`effectiveVisibility`), asking again restores every object under a `dynamic="1"` container to the
+  attributes it had when first handed out, except `visible`, and cancels any target animation
+  (`reclaim` in `WinampModernScriptRuntimeDynamicContainers.swift`; the attributes are kept in the
+  program's `HeldDynamicContainer`). Without it, GlassAMPfinal's `coverandbutton.resize(0,0,85,92)`
+  from one show stayed on the next, the cover and text 11 px out of the frame (B309). A copy per call
+  was tried and dropped: GlassAMP's notifier carries its own `<covern>` script, and a discarded
+  copy's timers would leak on every track. A container still on screen, and a `dynamic="0"`
+  singleton, are handed back as they are.
+- **No `onStop` between tracks.** A natural advance passes through `.stopped` for about 15 ms.
+  `WinampModernScriptRuntime.playbackStateDidChange(to:)` reports a stop only after it has lasted
+  `stopGracePeriod` (0.25 s), so a
+  skin sees no `onStop`/`onPlay` pair between tracks (GlassAMP printed "Stopped" and showed its toast
+  twice more). A load slower than that, such as a stream, still reports the stop (`ponytail:` in the
+  code).
+
+**Stock ships its notifier set to "Never show"** (`newattribute(Never show,1)`), and its script
+then never claims the container, so with default settings the toast is the host's, placed by
+`place()` 12 pt in from the bottom-right (measured at 1438,1077 on an 1800×1169 visible frame).
+
+GlassAMPfinal's first one or two toasts after launch still take its script's "already visible"
+branch, because the startup toast is still up when the next track starts. That is the skin's logic.
 
 ### `getPlayItemMetaDataString` — per-field metadata
 
@@ -187,10 +237,12 @@ times per repaint.
 
 ### `onshownotification` system event
 
-Registered in `dispatchableEventArity` with arity 0. Dispatched to all MAKI programs via
-`.system` target. The skin's notifier script typically uses this to start a fade-in animation
-timer. The host dispatches it, but the text is set by the host *after* the dispatch, so the MAKI
-handler's text-setting (which doesn't work anyway) is overridden.
+Registered in `dispatchableEventArity` with arity 0. **The host does not send it on a track
+change** (B309). It is Winamp's *show the notification now* request, not a track change, and every
+corpus script that handles it also shows its toast from the `onTitleChange` the same track change
+sends. Sent as well, GlassAMPfinal's and ipamp14's toast showed twice per track, and the second
+show's `coverandbutton.resize(0,0,…)` pulled the cover and text out of their frame. A skin can still
+call it on itself (GlassAMP's `timerShow` does).
 
 ### Files
 
@@ -201,6 +253,10 @@ handler's text-setting (which doesn't work anyway) is overridden.
 - `WinampModernScriptRuntimeText.swift` — `announceNotification(title:artist:album:)`,
   `notifierShowsItself(_:)`, `setNotifierText(title:artist:album:)`, `setTextInSubtree(_:id:text:)`
 - `WinampModernScriptRuntimeTimer.swift` — `applyContainerGeometry(_:)`
+- `WinampModernScriptRuntimeDynamicContainers.swift` — `dynamicContainer(named:for:)`, `reclaim`,
+  `isDynamicallyClaimed(_:)`
+- `WinampModernScriptRuntimePlayback.swift` — `playbackStateDidChange(to:)`, `stopGracePeriod`
+- `WinampModernTrackFolderImage.swift` — `announceAlbumArtLoaded()`
 - `WinampModernScriptRuntime.swift` — `containerAlphaChanged` and `containerMoveRequested`
   callbacks, `isdesktopalphaavailable`, `onshownotification` in `dispatchableEventArity`,
   `refresh` no-op
@@ -209,6 +265,7 @@ handler's text-setting (which doesn't work anyway) is overridden.
   and the engine host's `libraryRow(for:)` / `ratingCache` / `currentTrackRatingChanged`
 - `TrackRatingService.swift` (`Data/Models/`) — the one owner of the 0–5 star ↔ 0–10 internal ↔
   per-server rating conversions, shared with the Library Browser's ART-mode star row
-- `WinampModernContainerTopology.swift` — `.hostManagedTransient` suppression for notifier containers
+- `WinampModernContainerTopology.swift` — `.hostManagedTransient` suppression for notifier
+  containers, `isDesktopToast(_:)`
 - `WasabiTextMetrics.swift` — `content(of:host:)` resolves `text ?? default` for text elements
 

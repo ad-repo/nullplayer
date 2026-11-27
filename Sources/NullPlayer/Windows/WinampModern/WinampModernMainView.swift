@@ -95,6 +95,8 @@ final class WinampModernMainView: NSView {
     private var resizeStartFrame: NSRect = .zero
     private var resizeStartMouse: NSPoint = .zero
     private var resizeCursor = ResizeCursorTracker()
+    /// The host state this view last handed to the scripts, so the clock tick does so only on a
+    /// change. What the scripts were *told* is the runtime's (`playbackStateDidChange(to:)`).
     private var lastPlaybackState: PlaybackState = .stopped
 
     /// Last value sent to `onPostedPosition`, so the post happens on change rather than ten times a
@@ -2474,21 +2476,8 @@ final class WinampModernMainView: NSView {
         // Play/pause/stop artwork and the shuffle/repeat/EQ toggles are read from the *host*, not
         // from the graph, so the renderer's memoized scene cannot see them change on its own.
         renderer.invalidateSceneCache()
-        if state != lastPlaybackState {
-            // Winamp reports the *transition*, not the level, and a skin acts differently on each:
-            // ClassicPro's `beat.m` restarts its VU timer with a fresh running maximum on `onPlay` but
-            // resumes the existing one on `onResume`, and stops it on `onPause`. Sending `onPlay` for a
-            // resume (the previous behaviour) rescaled the animation every time the user unpaused, and
-            // a pause was reported as nothing at all.
-            switch (lastPlaybackState, state) {
-            case (.paused, .playing): _ = try? scripts.dispatchSystem(event: "onresume")
-            case (_, .playing): _ = try? scripts.dispatchSystem(event: "onplay")
-            case (.playing, .paused): _ = try? scripts.dispatchSystem(event: "onpause")
-            case (_, .stopped): _ = try? scripts.dispatchSystem(event: "onstop")
-            default: break
-            }
-            lastPlaybackState = state
-        }
+        lastPlaybackState = state
+        scripts.playbackStateDidChange(to: state)
         scripts.announceVolumeIfChanged()
         // An equalizer change made outside the skin — a preset, the menu bar, the classic EQ window,
         // a restored session — reaches the scripts on the same beat, and only when it moved.
