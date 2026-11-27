@@ -429,6 +429,13 @@ class ModernLibraryBrowserView: NSView {
         compactPlaylistView?.reloadData()
     }
 
+    /// The window's key state changed: the embedded queue is a layer-backed subview this view's own
+    /// redraw does not reach, and it dims its selection by that state (M54).
+    func windowKeyStateDidChange() {
+        needsDisplay = true
+        compactPlaylistView?.needsDisplay = true
+    }
+
     /// Seed the bar with the engine's current state so it isn't blank until the next update tick.
     private func seedCompactPlayerBar(_ bar: CompactPlayerBarView) {
         let engine = WindowManager.shared.audioEngine

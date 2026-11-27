@@ -189,12 +189,12 @@ extension ModernLibraryBrowserWindowController: NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        browserView.needsDisplay = true
+        browserView.windowKeyStateDidChange()
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
     
     func windowDidResignKey(_ notification: Notification) {
-        browserView.needsDisplay = true
+        browserView.windowKeyStateDidChange()
     }
     
     func windowWillClose(_ notification: Notification) {
