@@ -41,7 +41,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 - `window-census`: every sub-window's default size and position, per skin or across the corpus
 - `thermo-nuclear-code-quality-review`: the strict maintainability lens every code review uses
-- `pre-pr-review`: the procedure before every PR — the fresh-agent review, who decides the findings, testing the fixes, the PR's Code quality review section — and the CodeRabbit round after it opens
+- `pre-pr-review`: the procedure before every PR — the fresh-agent review, who decides the findings, testing the fixes, the PR's Code quality review section — then the CodeRabbit round and the merge
 
 ## Logging Issues
 

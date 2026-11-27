@@ -1,13 +1,13 @@
 ---
 name: pre-pr-review
-description: The procedure every PR goes through before it opens, and its CodeRabbit round after. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; the PR description records every finding; then CodeRabbit's comments go through the same decide-and-test loop with a new implementer agent, and every thread is answered and resolved. Use before opening any PR, after opening one, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
+description: The procedure every PR goes through before it opens, and its CodeRabbit round after. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; the PR description records every finding; then CodeRabbit's comments go through the same decide-and-test loop with a new implementer agent, and every thread is answered and resolved; then the author agent merges it. Use before opening any PR, after opening one, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
 ---
 
 # Pre-PR Review
 
 Every PR is preceded by a code-quality review of the whole branch, and a PR whose description lacks
 the **Code quality review** section below is not ready to open. Once it is open, CodeRabbit's review
-goes through the same loop (§ 5) before the PR is ready to merge. The review's lens is the
+goes through the same loop (§ 5), and then the author agent merges it (§ 6). The review's lens is the
 `thermo-nuclear-code-quality-review` skill; this skill is the process around it. The rest of the PR
 description (issue, evidence, proof of testing, a How to test comment) is
 `CONTRIBUTING.md` § *Required PR Description*.
@@ -106,3 +106,21 @@ PR merges. They go through the same loop:
 
 The push in step 4 triggers another CodeRabbit pass. Repeat from step 1 until a pass raises nothing
 new.
+
+## 6. Merge
+
+The author agent merges the PR itself once all of these hold. A PR this process opened needs no
+further go-ahead, because the user's request to land it covers the merge.
+
+- The last CodeRabbit pass raised nothing new, and every review thread (CodeRabbit's and any
+  human's) is answered and resolved.
+- `gh pr checks <N>` shows no failing or pending check.
+- The PR description has its *Code quality review* and *CodeRabbit review* sections, and the How to
+  test comment is posted.
+- `gh pr view <N> --json mergeable,mergeStateStatus` reports it mergeable. If `main` moved and the
+  branch conflicts, merge `origin/main` in, re-run § 3's suite, push, and go back to § 5 for the
+  new CodeRabbit pass.
+
+Merge with a merge commit, as the repo's history does: `gh pr merge <N> --merge`. Leave the branch in
+place; deleting remote branches is the user's call. Report the merge commit. A human review that
+asks for changes, or an unresolved disagreement with the user, stops the merge until the user says.
