@@ -111,6 +111,9 @@ enum WinampModernScriptSignatures {
         "onenterarea": 0,
         "onleavearea": 0,
         "onshownotification": 0,
+        // `AlbumArt.onAlbumArtLoaded(boolean success)` — one argument, as all ten declarations in the
+        // corpus's shipped `.m` sources spell it (B479).
+        "onalbumartloaded": 1,
         // `System.onScriptLoaded()` called as a method — a script re-running its **own** startup body.
         // Ebonite's standard frame is built around it: it closes its frame container on every hide and
         // rebuilds it on the next show with

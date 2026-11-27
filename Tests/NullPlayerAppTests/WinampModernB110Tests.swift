@@ -148,6 +148,30 @@ final class WinampModernB110Tests: XCTestCase {
         }.count, 2, "one declared container and one copy, however many times it is asked for")
     }
 
+    /// A program that closed its container and asks again gets it back as first handed out, not with
+    /// the moves an earlier show left on it: GlassAMPfinal's next toast kept a `resize(0,0,…)` from the
+    /// last one, its cover 11 px out of the frame (B309). Still open, the container is left as it is.
+    func testAClosedContainerComesBackAsFirstHandedOut() throws {
+        for reopened in [false, true] {
+            let (runtime, program) = try makeRuntime()
+            let first = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                                           arguments: [.string("frame")], program: program)
+            let container = try XCTUnwrap(guiID(of: first))
+            let top = try object(runtime, "window.top")
+            _ = try runtime.invoke(method: "resize", on: reference(top),
+                                   arguments: [.integer(0), .integer(0), .integer(85), .integer(92)],
+                                   program: program)
+            _ = try runtime.invoke(method: reopened ? "show" : "hide", on: MakiObjectReference(.gui(container)),
+                                   arguments: [], program: program)
+
+            let again = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                                           arguments: [.string("frame")], program: program)
+
+            XCTAssertEqual(guiID(of: again), container)
+            XCTAssertEqual(top.attributes["w"], reopened ? "85" : "200")
+        }
+    }
+
     /// A container the skin did *not* declare `dynamic="1"` is a singleton and is never copied: a copy
     /// of it would be a window nothing can address.
     func testASingletonContainerIsNeverCopied() throws {

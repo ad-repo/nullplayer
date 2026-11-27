@@ -247,6 +247,41 @@ final class WinampModernPhase69Tests: XCTestCase {
         }
     }
 
+    /// A notifier a script took with `newDynamicContainer` is the script's to fill, place and show:
+    /// shown by the host as well, stock Winamp Modern's toast slid in from the host's corner (B479).
+    func testANotifierAScriptTookAsADynamicContainerShowsItself() throws {
+        let runtime = try makeToastRuntime()
+        _ = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                               arguments: [.string("notifier")], program: Self.syntheticProgram)
+        let notifier = try XCTUnwrap(object(runtime, type: "container", id: "notifier"))
+        XCTAssertTrue(runtime.notifierShowsItself(notifier))
+        XCTAssertNil(runtime.announceNotification(title: "Song", artist: "", album: ""))
+    }
+
+    /// Stock Winamp Modern and Love is War Miku build and show their toast only from
+    /// `AlbumArt.onAlbumArtLoaded(boolean success)`; every corpus declaration takes the one argument.
+    func testOnAlbumArtLoadedTakesOneArgument() throws {
+        let runtime = try makeToastRuntime()
+        XCTAssertEqual(runtime.signature(for: "onAlbumArtLoaded", classGUID: nil)?.argumentCount, 1)
+    }
+
+    /// The startup tiler skips a desktop toast: a `notifier` id, or a layout that is both `noparent`
+    /// and `nodock`, Pixelated's `pixelatednotifier` (B398). Either alone is an ordinary window.
+    func testADesktopToastIsANotifierOrANoparentNodockLayout() throws {
+        let loaded = try makeSkin(xml: """
+        <WasabiXML>
+          <container id="main"><layout id="normal" w="300" h="200"/></container>
+          <container id="notifier"><layout id="normal" w="300" h="80"/></container>
+          <container id="pixelatednotifier"><layout id="normal" w="129" h="27" noparent="1" nodock="1"/></container>
+          <container id="floating"><layout id="normal" w="129" h="27" noparent="1"/></container>
+          <container id="pl"><layout id="normal" w="275" h="300" nodock="1"/></container>
+        </WasabiXML>
+        """)
+        let toasts = WinampModernContainerTopology.analyze(graph: loaded.runtime.graph)
+            .filter(WinampModernContainerTopology.isDesktopToast).map(\.id).sorted()
+        XCTAssertEqual(toasts, ["notifier", "pixelatednotifier"])
+    }
+
     /// The host's toast is the plain `notifier`, wherever it is declared. A `notifier.*` sibling is
     /// never shown in its place: Rectangular's `notifier.preferences` is a settings window, and it
     /// popped up at the screen corner on every track change (#810).

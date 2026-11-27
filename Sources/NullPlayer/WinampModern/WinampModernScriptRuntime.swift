@@ -151,6 +151,9 @@ final class WinampModernScriptRuntime: MakiMethodDispatching {
     /// one included copy of a frame script is one window's frame, and asking twice from the same
     /// script means "the one I already have", not "another window".
     var dynamicContainerInstances: [String: [ObjectIdentifier: WasabiObjectID]] = [:]
+    /// Each handed-out container's subtree attributes as they stood when it was first handed out —
+    /// what `newDynamicContainer` restores when a program asks again for one it closed (B309).
+    var dynamicContainerSnapshots: [WasabiObjectID: [WasabiObjectID: [String: String]]] = [:]
     /// Per hosted window, the floor its borrowed chrome imposes — see `adoptChromeForHostedWindow`.
     var hostedChromeFloors: [WasabiObjectID: CGSize] = [:]
     /// Per hosted window, the height its borrowed chrome gave back — see `liftHostedClient`.

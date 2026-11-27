@@ -480,7 +480,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **Ghost Slate**<br>`Ghost_Slate.wal` | — | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `wasabi.frame.basetexture` |
 | **Gintama  Gintoki & Katsura**<br>`Gintama__Gintoki_&_Katsura.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **GlassAMP**<br>`GlassAMP2.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **GlassAMP**<br>`GlassAMPfinal.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `displayBGWHITE`, `eq.normal.Balance.Label`; open: B309 (the notifier's cover and text sit 11 px up-left of the panel) |
+| **GlassAMP**<br>`GlassAMPfinal.wal` | jeree01@gmail.com | B<br><sub>provisional</sub> | Fully skinned | 2 bitmap id(s) it references do not resolve, leaving a visible gap: `displayBGWHITE`, `eq.normal.Balance.Label` |
 | **Go Army**<br>`Official_Go_Army_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Godsend_Winamp5_Skin**<br>`Godsend_Winamp5_Skin.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Godsmack**<br>`Godsmack_-_Faceless.wal` | Petrol Designs | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
@@ -544,7 +544,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **iNTELLIdesign**<br>`intellidesign.wal` | SarKnagel (Design) and Deimos, SLoB (Advanced coding) | B<br><sub>provisional</sub> | Fully skinned | 1 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture` |
 | **iNTELLIdesign**<br>`iNTELLI_design.wal` | SarKnagel (Design) and Deimos, SLoB (Advanced coding) | B<br><sub>provisional</sub> | Fully skinned | 6 bitmap id(s) it references do not resolve, leaving a visible gap: `component.basetexture`, `wasabi.panel.bottom`, `wasabi.panel.bottom.left`, `wasabi.panel.bottom.right`, `wasabi.panel.left`, `wasabi.panel.right` |
 | **Intensity 3**<br>`Intensity_3.wal` | Carlos Hdz. | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **Inter-Pol.info AMP**<br>`ipamp14.wal` | Guljay Sergey Viktorovich aka Serg from Belarus, Mozur | B<br><sub>provisional</sub> | Fully skinned | its now-playing notifier draws its title, artist and album text out of place (open B309) |
+| **Inter-Pol.info AMP**<br>`ipamp14.wal` | Guljay Sergey Viktorovich aka Serg from Belarus, Mozur | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Intruder**<br>`Intruder.wal` | Quadhelix | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Invicta**<br>`Invicta.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **iPhone**<br>`iPhone.wal` | Michael Keiller | B<br><sub>provisional</sub> | Fully skinned | 5 bitmap id(s) it references do not resolve, leaving a visible gap: `player.glass`, `player.jeepbt`, `player.linksbt`, `player.picsbt`, `player.ws.jeepbt`. Its markup lays the spectrum box (x 73–243) over the middle of the vertical seek bar (x 75–89), so a press there toggles the vis instead of seeking; seek works above and below it |
@@ -779,7 +779,7 @@ this skin at all — usually because the skin predates the feature, not because 
 | **PiOnNeR_AMP2**<br>`PionNer_AMP2.wal` | Marcelo Caetano Martins Muniz | B<br><sub>provisional</sub> | Fully skinned | 1 object(s) a script hooks the mouse on that markup hit-testing rejects — they may not respond to a click; its synthesized playlist and library windows may draw plain (synthesis reads its standard frame as artwork-less) |
 | **PiOnNeR_AMP2**<br>`Pioneer_Stereo_V1.wal` | Marcelo Caetano Martins Muniz | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **PiOnNeR_AMP3**<br>`PioNner3.wal` | Marcelo Caetano Martins Muniz | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
-| **Pixelated**<br>`Pixelated.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | the startup arrangement tiles its notifier, so the playlist opens 27px lower: open B398 |
+| **Pixelated**<br>`Pixelated.wal` | UUL | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **PlastAmp**<br>`PlastAmp_2.wal` | Hamid Reza Mohammadi | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Point Blank**<br>`Point_Blank.wal` | — | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |
 | **Pokemon DS**<br>`PokemonDS.wal` | SpaceKitty | B<br><sub>provisional</sub> | Fully skinned | nothing outstanding that a headless pass can see |

@@ -2474,7 +2474,20 @@ final class WinampModernMainView: NSView {
         // Play/pause/stop artwork and the shuffle/repeat/EQ toggles are read from the *host*, not
         // from the graph, so the renderer's memoized scene cannot see them change on its own.
         renderer.invalidateSceneCache()
-        if state != lastPlaybackState {
+        if state == .stopped, lastPlaybackState == .playing {
+            // A natural advance passes through `.stopped` for the ~15 ms the next track takes to
+            // load, and Winamp reports no stop between tracks: sent, GlassAMPfinal's notifier
+            // printed "Stopped" and showed twice more per track (B309). So the stop is reported
+            // only if it held — and a stop that did not hold is no transition at all, so no
+            // `onPlay` follows either.
+            // ponytail: a fixed grace period; a load slower than it (a stream) still reports the
+            // stop. Key on the engine's own "advancing" state if that ever matters.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                guard let self, host.playbackState == .stopped, lastPlaybackState == .playing else { return }
+                _ = try? scripts.dispatchSystem(event: "onstop")
+                lastPlaybackState = .stopped
+            }
+        } else if state != lastPlaybackState {
             // Winamp reports the *transition*, not the level, and a skin acts differently on each:
             // ClassicPro's `beat.m` restarts its VU timer with a fresh running maximum on `onPlay` but
             // resumes the existing one on `onResume`, and stops it on `onPause`. Sending `onPlay` for a

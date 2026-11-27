@@ -36,16 +36,20 @@ extension WinampModernScriptRuntime {
         notifyGraphDidMutate()
     }
 
-    /// The host's half of a track-change toast: `onShowNotification` to the skin, then the host's
-    /// text in `<container id="notifier">` — unless that toast shows itself. Answers the container
-    /// the host should show, or nil.
+    /// The host's half of a track-change toast: the host's text in `<container id="notifier">` —
+    /// unless that toast shows itself. Answers the container the host should show, or nil.
+    ///
+    /// No `onShowNotification` goes with it. That event is Winamp's *show the notification now*
+    /// request, not a track change, and every corpus script that handles it also shows its toast from
+    /// the `onTitleChange` the same track change already sent: sent here too, GlassAMPfinal's and
+    /// ipamp14's toast showed twice per track, and the second show's `coverandbutton.resize(0,0,…)`
+    /// pulled the cover and text out of their frame (B309).
     ///
     /// Only the plain `notifier` id is the host's to show. A `notifier.*` sibling is not a toast it
     /// can stand in for: Rectangular's are `notifier.preferences`, a settings window that popped up
     /// at the screen corner on every track change, and `notifier.popup`, which its own script
     /// shows (#810).
     func announceNotification(title: String, artist: String, album: String) -> WasabiObject? {
-        _ = try? dispatchSystem(event: "onshownotification")
         guard let toast = findRoot(type: .container, xmlID: "notifier"),
               !notifierShowsItself(toast) else { return nil }
         setNotifierText(title: title, artist: artist, album: album)
@@ -64,6 +68,11 @@ extension WinampModernScriptRuntime {
     func notifierShowsItself(_ container: WasabiObject) -> Bool {
         guard container.tag.is(.container),
               WinampModernContainerTopology.isNotifier(id: container.xmlID ?? "") else { return false }
+        // A script that took the toast as a `newDynamicContainer` builds, fills, places and dismisses
+        // it itself, as Winamp's own notifier always did — stock Winamp Modern's, Love is War Miku's,
+        // GlassAMPfinal's. Shown by the host as well, stock's script found its layout already
+        // visible and slid it in from wherever the host had left it, across the whole screen (B479).
+        if isDynamicallyClaimed(container.stableID) { return true }
         return programsBinding(MakiObjectReference(.system)) { Self.notifierTriggers.contains($0) }
             .contains { program in
                 guard let ownerID = program.ownerID,

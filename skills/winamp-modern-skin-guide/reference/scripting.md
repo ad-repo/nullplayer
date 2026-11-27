@@ -236,7 +236,8 @@ tabI.init(tabHolder);              // moved where it actually belongs
   `hasStartedScripts` is set. Never skin-wide: `beat.m` resets its VU maximum on every title it hears.
   The measured case is ClassicPro's Now Playing widget, rebuilt on every NOW-tab click
   (`CustomObject` `groupid`), whose three `SC:FadeText` lines are filled only from `onTitleChange`.
-  `onAlbumArtLoaded` is not seeded because the app dispatches it nowhere yet.
+  `onAlbumArtLoaded` is not seeded: it is sent when a cover finishes loading
+  (`announceAlbumArtLoaded`, B479), not per track.
 
 #### `GroupList.instantiate` — the list that builds its own entries
 

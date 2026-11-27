@@ -118,4 +118,16 @@ extension WinampModernScriptRuntime {
                           arguments: [.string(host.trackDisplayTitle)],
                           in: Array(coverSeekers.programs.values))
     }
+
+    /// `AlbumArt.onAlbumArtLoaded(boolean success)` to every `<AlbumArt>`, once the playing track's
+    /// cover fetch has settled. Stock Winamp Modern's and Love is War Miku's notifier scripts
+    /// `refresh()` the toast's cover while it is loading and size, place and show the toast only from
+    /// this event; never sent, their toast stayed wherever its window was created, at x=0 (B479).
+    func announceAlbumArtLoaded() {
+        guard !host.isArtworkLoading else { return }
+        let success = host.albumArtwork != nil
+        for object in loadedSkin.runtime.graph.allObjectsUnordered where object.tag.isStandard(.albumArt) {
+            _ = try? dispatch(object: object, event: "onalbumartloaded", arguments: [.boolean(success)])
+        }
+    }
 }

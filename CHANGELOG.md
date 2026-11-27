@@ -139,6 +139,14 @@
 - **Winamp Modern (`.wal`): switching skins with a film playing draws the new skin's Video window.**
   Going from cPro-Bento or a Classic skin to Holiday left an empty grey box around the film that
   clicks went through.
+- **Winamp Modern (`.wal`): the stock skin's track-change toast opens in the bottom-right corner.**
+  It opened at the bottom-left. Skins that build their own toast the stock way now get the cover
+  art signal they wait for, and NullPlayer no longer shows that toast on top of theirs.
+- **Winamp Modern (`.wal`): GlassAMPfinal's track-change toast keeps its cover and text inside the
+  frame.** After the first few tracks they sat up and to the left of the box. Skins also no longer
+  see a brief stop between tracks, so GlassAMP stops flashing "Stopped" on every track change.
+- **Winamp Modern (`.wal`): Pixelated's playlist opens directly under the player.** Its toast took
+  that slot at startup and pushed the playlist down.
 
 ## 0.35.2
 

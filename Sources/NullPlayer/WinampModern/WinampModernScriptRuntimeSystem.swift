@@ -71,12 +71,21 @@ extension WinampModernScriptRuntime {
     ///
     /// A container the skin did not declare `dynamic="1"` is never copied: `dynamic="0"` is the skin
     /// saying this window is a singleton, and a copy of it would be a window nothing can address.
+    ///
+    /// **A container the program closed comes back as it was first handed out** (B309). Winamp
+    /// builds a fresh instance on every call. GlassAMPfinal's `reset()` hides its notifier and drops
+    /// the reference, and the next track's `createNotifier()` asks again expecting the window its XML
+    /// declares. Handed the old one back unchanged, the `coverandbutton.resize(0,0,…)` an earlier show
+    /// left on it stayed for the rest of the session, 11 px up and left of the frame. Restoring the
+    /// held container's attributes gives that fresh state without a second window, and the programs
+    /// started inside it (GlassAMP's `<covern>`) keep running against the same objects.
     private func dynamicContainer(named id: String, for program: MakiProgram) -> WasabiObject? {
         let key = id.lowercased()
         let owner = ObjectIdentifier(program)
-        if let held = dynamicContainerInstances[key]?[owner],
-           let object = loadedSkin.runtime.graph.object(withID: held), !object.isTornDown {
-            return object
+        if let held = dynamicContainerInstances[key]?[owner].flatMap(loadedSkin.runtime.graph.object(withID:)),
+           !held.isTornDown {
+            if !isVisible(held) && !effectiveVisibility(of: held) { restoreFirstHandedOutState(of: held) }
+            return held
         }
         guard let declared = findRoot(type: .container, xmlID: id) else { return nil }
         var takenIDs = Set(dynamicContainerInstances[key]?.values ?? [:].values)
@@ -110,7 +119,36 @@ extension WinampModernScriptRuntime {
             root = declared
         }
         dynamicContainerInstances[key, default: [:]][owner] = root.stableID
+        if dynamicContainerSnapshots[root.stableID] == nil {
+            var snapshot: [WasabiObjectID: [String: String]] = [:]
+            func record(_ object: WasabiObject) {
+                snapshot[object.stableID] = object.attributes
+                object.children.forEach(record)
+            }
+            record(root)
+            dynamicContainerSnapshots[root.stableID] = snapshot
+        }
         return root
+    }
+
+    /// Put every object under `container` back to the attributes it had when the container was first
+    /// handed out, and stop any target animation still moving one. An object a script added since
+    /// has no entry and is left alone.
+    private func restoreFirstHandedOutState(of container: WasabiObject) {
+        guard let snapshot = dynamicContainerSnapshots[container.stableID] else { return }
+        func restore(_ object: WasabiObject) {
+            if let attributes = snapshot[object.stableID] {
+                cancelTargetAnimation(objectID: object.stableID)
+                for key in Set(object.attributes.keys).union(attributes.keys) {
+                    object.forgetDeclaredXMLParam(key)
+                    object.setAttribute(key, value: attributes[key])
+                }
+            }
+            object.children.forEach(restore)
+        }
+        restore(container)
+        noteGeometryChange()
+        notifyGraphDidMutate()
     }
 
     /// Whether this `newDynamicContainer` call is coming from the frame script of one of NullPlayer's
