@@ -46,7 +46,7 @@ These services have restrictive APIs and licensing terms that are incompatible w
 2. Confirm there is a GitHub issue for the bug, feature, or refactor before writing the PR
 3. Make your changes following the code style below
 4. Test your changes thoroughly
-5. Have a fresh agent run the code quality review (see [Code Quality Review](#code-quality-review)), accept or reject each of its findings yourself, and fix the accepted ones
+5. Follow the [pre-pr-review skill](skills/pre-pr-review/SKILL.md) before opening the PR
 6. Collect proof of the issue and proof of testing for the PR description
 7. Add a PR comment with reviewer-facing step-by-step "How to test" instructions
 8. Commit with clear, descriptive messages
@@ -171,7 +171,7 @@ Include a checklist in the PR description and mark every backend or integration 
 - [ ] PR links to an issue
 - [ ] PR includes proof of the issue
 - [ ] PR includes proof of testing
-- [ ] Code quality review run by a fresh agent, every finding listed with the user's decision in the PR description
+- [ ] Code quality review run per the [pre-pr-review skill](skills/pre-pr-review/SKILL.md)
 - [ ] PR includes a reviewer-facing comment with "How to test"
 
 ### Comment Resolution

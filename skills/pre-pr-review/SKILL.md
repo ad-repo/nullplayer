@@ -1,6 +1,6 @@
 ---
 name: pre-pr-review
-description: The procedure every PR goes through before it opens. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; and the PR description records every finding. Use before opening any PR, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
+description: Fresh-agent pre-PR code-quality review. Use before opening any PR, when asked to "land the plane", or when asked to have a fresh agent review, triage or implement review findings.
 ---
 
 # Pre-PR Review
@@ -50,8 +50,9 @@ address and implement the fixes"). The author agent never takes this route on it
    accepted ones, and form a view on each rejection: agree, or disagree and why. Tell the user,
    **before opening the PR**, which rejections you disagree with. A disagreement goes back to the
    user; the author agent does not overrule the implementer by quietly fixing it. Loose ends the
-   implementer found but left alone (a stale cross-reference, say) count as findings of yours, so
-   fix or raise them.
+   implementer found but left alone (a stale cross-reference, say) go to the user too, in the same
+   decision list, each marked author-raised. The author agent fixes none of them without the user's
+   accept.
 3. **The author agent tests the result** (§ 3).
 
 ## 3. Test the fixes
@@ -60,8 +61,9 @@ Whoever implemented them, the author agent tests the fixed branch before it is c
 
 - Review the fix diff line by line.
 - Run the full suite.
-- Re-run the live checks the original change was verified with, in the debug build, and compare
-  against the numbers measured before the fixes.
+- Re-run the live checks the original change was verified with, in the debug build (`app-control`;
+  `live-ui-testing` for screen-only defects), and compare against the numbers measured before the
+  fixes.
 - Verify on screen, not by reasoning, any accepted finding that changes drawing, compositing or
   behaviour.
 
