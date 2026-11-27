@@ -763,6 +763,13 @@ drawing a 275×116 skin scaled down inside a 197×297 window at 100% — and the
 `AppStateManager.mainFrameForRestore` applies at launch (see the `winamp-modern-skin-guide`
 rendering reference, BB2c); a test asserts the two agree.
 
+**Sub-windows keep only their position across a family switch.** `recreateModeDependentLayout`
+passes a sub-window's snapshot frame through `carried(_:)`, which is nil when the switch crosses
+families, so the window opens at the incoming family's own default size and placement; a detached
+one gets its top-left back from `restoreDetachedWindowFrames`. The Equalizer
+follows this rule (M94: Classic and Audion kept a Sonique-era 320-wide Equalizer). The Playlist
+still carries its whole frame (M96, `tasks/MISC_TASKS.md`).
+
 **Audio-consumer ordering safety**: consumer sets in `AudioEngine` (spectrum/waveform/
 stereo/magnitudes) are **ref-counted** (`[String: Int]`), so a late `remove` from an old
 view's deferred `deinit` cannot wipe a same-id registration the replacement already made.

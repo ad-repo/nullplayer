@@ -109,7 +109,22 @@ final class AudionFaceMainWindowController: NSWindowController, MainWindowProvid
         // from what it draws.
         window.hasSkinShadow = shown == nil
         fitWindow()
+        if shown != nil { fitEqualizerWidth() }
         refreshHostState()
+    }
+
+    /// The Equalizer opens at the player's width (`EQWindowController`). A switch into Audion opens
+    /// it while the face is still loading, at the unskinned player's 320, so it takes the face's
+    /// width when a face arrives — the width a fresh open gives (M94). Only an Equalizer still at
+    /// that placeholder width: any other width is the user's or a restored session's (the
+    /// Equalizer is resizable, and a Remember State launch can restore it before the face loads).
+    private func fitEqualizerWidth() {
+        guard let width = window?.frame.width,
+              let equalizer = WindowManager.shared.equalizerWindow, equalizer.isVisible,
+              equalizer.frame.width == Self.unskinnedSize.width, width != Self.unskinnedSize.width else { return }
+        var frame = equalizer.frame
+        frame.size.width = width
+        WindowManager.shared.withProgrammaticWindowFrameChange { equalizer.setFrame(frame, display: true) }
     }
 
     func applyUIScale(_ scale: CGFloat) {

@@ -129,6 +129,11 @@ wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § 
 - **Playlist width is free:** no 25px PLEDIT step and no 275px minimum, so it can match any face's
   width (AppleClassic is 368 pt). `PlaylistWindowController.isWidthStepped` and
   `hasFreeMinimumWidth` gate it, shared with `.wmz`; its floor, `freeMinimumWidth`, must stay at or below the narrowest face.
+- **Equalizer width is the face's:** `EQWindowController` opens it at the player's width. A family
+  switch into Audion opens it while the face is still loading, at the unskinned player's 320, so
+  `AudionFaceMainWindowController.present` refits a visible Equalizer still at that placeholder
+  width to the face's (`fitEqualizerWidth`, M94). Any other width is the user's (it is resizable)
+  or a restored session's — a Remember State launch can restore it before the face loads.
 - **Route to a track:** the face's menu button toggles the playlist, its mode button the Library
   Browser, and eject is Open Files….
 - **Checked live** (A7, debug build, user confirmed): playlist, EQ, Library Browser and Spectrum

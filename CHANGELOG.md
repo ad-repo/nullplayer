@@ -151,6 +151,9 @@
   sheets.** A second rip in another format (FLAC, then AAC) replaced the first rip's cue, so the
   first file no longer split into tracks. The second rip is now saved under a numbered name with
   its own cue.
+- **The Equalizer opens at each skin family's own size after a family switch.** It kept the
+  previous family's size: for example 320 wide in Classic and Audion after a Sonique skin, or
+  Classic's width in Audion.
 
 ## 0.35.2
 
