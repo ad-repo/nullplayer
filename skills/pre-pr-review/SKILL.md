@@ -1,6 +1,6 @@
 ---
 name: pre-pr-review
-description: Fresh-agent pre-PR code-quality review. Use before opening any PR, when asked to "land the plane", or when asked to have a fresh agent review, triage or implement review findings.
+description: The procedure every PR goes through before it opens. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; and the PR description records every finding. Use before opening any PR, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
 ---
 
 # Pre-PR Review
