@@ -303,7 +303,7 @@ class ClassicLibraryBrowserView: NSView {
         if isEmbeddedInSkin { return embeddedWinampModernStyle }
         let isKey = window?.isKeyWindow ?? true
         if windowWinampModernStyleIsKey != isKey {
-            cachedWindowWinampModernStyle = WindowManager.shared.hostedSurfaceStyle(isKey: isKey)
+            cachedWindowWinampModernStyle = UnfocusedSelection.hostedStyle(in: window)
             windowWinampModernStyleIsKey = isKey
         }
         return cachedWindowWinampModernStyle
@@ -1307,7 +1307,7 @@ class ClassicLibraryBrowserView: NSView {
             alphabetFill: colors.normalBackground.withAlphaComponent(0.3),
             letterWithRows: colors.currentText,
             letterWithoutRows: colors.normalText.withAlphaComponent(0.3))
-        let dims = WindowManager.shared.dimsSelection(isKey: window?.isKeyWindow ?? true)
+        let dims = UnfocusedSelection.dims(in: window)
         return LibraryBrowserListPainter(context: context, layout: layout, style: dims ? style.unfocused() : style,
                                          model: model, list: list,
                                          art: art, youtubeVideos: actions.youtubeVideos, isEQMarked: actions.isEQMarked,

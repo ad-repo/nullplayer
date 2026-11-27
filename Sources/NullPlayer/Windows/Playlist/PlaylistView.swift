@@ -143,8 +143,7 @@ class PlaylistView: NSView {
 
     /// Read once per draw or measure.
     private var rowStyle: RowStyle {
-        let isKey = window?.isKeyWindow ?? true
-        let host = WindowManager.shared.hostedSurfaceStyle(isKey: isKey)
+        let host = UnfocusedSelection.hostedStyle(in: window)
         let colors = host?.playlistColors ?? WindowManager.shared.currentSkin?.playlistColors ?? .default
         // Selected rows are white, the classic idiom, with no selection fill under them; beside a
         // hosted skin or face whose ground is light, white is corrected against that ground, and a
@@ -155,7 +154,7 @@ class PlaylistView: NSView {
                        selectedText: host?.playlistSelectedText ?? .white,
                        playingText: host?.playlistPlayingText ?? colors.currentText,
                        normalText: colors.normalText, scrollsTitle: true)
-        return WindowManager.shared.dimsSelection(isKey: isKey) ? rows.unfocused() : rows
+        return UnfocusedSelection.dims(in: window) ? rows.unfocused() : rows
     }
 
     /// The window frame the hosting skin lends this playlist, when it lends one — a `.wmz` skin that

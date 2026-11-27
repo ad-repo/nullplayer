@@ -363,7 +363,7 @@ and the renderer's own rows (playlist panel, colour-theme picker, `<list>`) read
 current-row colour all see one bar. The main view's embedded AppKit surfaces (library, video,
 visualization, hosted windows) draw with `rowPalette` too: the key/resign observer sets
 `isWindowActive` and `applySurfacePalette` pushes it, only when it changed (B267). A *fallback*
-window's library and playlist read `WindowManager.hostedSurfaceStyle(isKey:)`, which builds the style
+window's library and playlist read `UnfocusedSelection.hostedStyle(in:)`, which builds the style
 from `palette.unfocused()` while that window is not key (M54); `.wal` never takes the derived dim the
 other families get (`ui-guide` § *Unfocused selection*). The swap is all-or-nothing and
 is skipped when the user overrode **either** selection role (B146). `RENDER_PALETTE` prints both ids

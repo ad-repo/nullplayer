@@ -1245,7 +1245,7 @@ class WindowManager {
         winampModernPalette.map { WinampModernSurfaceStyle(palette: $0) }
     }
 
-    private var winampModernPalette: WasabiPalette? {
+    var winampModernPalette: WasabiPalette? {
         guard uiMode.controllerFamily == .winampModern else { return nil }
         return (mainWindowController as? WinampModernMainWindowController)?.currentPalette
     }
@@ -1277,24 +1277,6 @@ class WindowManager {
         case .wmp: return wmpSurfaceStyle
         case .audion: return singleCanvasSurfaceStyle(AudionFaceMainWindowController.self)
         case .sonique: return singleCanvasSurfaceStyle(SoniqueSkinMainWindowController.self)
-        }
-    }
-
-    /// `hostedSurfaceStyle` for a surface whose window is or is not key (M54). An unfocused `.wal`
-    /// fallback window takes the skin's own inactive selection pair (`WasabiPalette.unfocused()`), as
-    /// the skin's embedded surfaces do through `rowPalette`; every other answer is unchanged.
-    func hostedSurfaceStyle(isKey: Bool) -> SkinnedSurfaceStyle? {
-        guard !isKey, let palette = winampModernPalette else { return hostedSurfaceStyle }
-        return WinampModernSurfaceStyle(palette: palette.unfocused())
-    }
-
-    /// Whether a NullPlayer-drawn list dims its own selection (`UnfocusedSelection`) while its window
-    /// is not key (M54). Never in `.wal`: it has the skin's pair from `hostedSurfaceStyle(isKey:)`, and
-    /// a skin declaring none keeps its selection, as its embedded surfaces do.
-    func dimsSelection(isKey: Bool) -> Bool {
-        switch uiMode.controllerFamily {
-        case .winampModern: return false
-        case .classic, .nullPlayerModern, .wmp, .audion, .sonique: return !isKey
         }
     }
 

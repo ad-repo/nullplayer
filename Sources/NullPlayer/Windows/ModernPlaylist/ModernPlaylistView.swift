@@ -425,7 +425,7 @@ class ModernPlaylistView: NSView {
         let skin = renderer.skin
         
         let font = skin.playlistFont()
-        let dimsSelection = WindowManager.shared.dimsSelection(isKey: window?.isKeyWindow ?? true)
+        let dimsSelection = UnfocusedSelection.dims(in: window)
         let rowText = skin.elementColor(for: "playlist_text", fallback: skin.textDimColor)
 
         guard !tracks.isEmpty else {

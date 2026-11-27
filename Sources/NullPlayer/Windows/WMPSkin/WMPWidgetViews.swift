@@ -171,7 +171,7 @@ final class WMPPlaylistSurfaceView: NSView {
         let truncating = NSMutableParagraphStyle()
         truncating.lineBreakMode = .byTruncatingTail
         let fields = PlaylistRowFields.current
-        let dimsSelection = WindowManager.shared.dimsSelection(isKey: window?.isKeyWindow ?? true)
+        let dimsSelection = UnfocusedSelection.dims(in: window)
         let selectionFill = dimsSelection ? UnfocusedSelection.fill(style.selectionBackground) : style.selectionBackground
         let selectionText = dimsSelection ? UnfocusedSelection.text(style.selectionText, toward: style.text) : style.selectionText
         var scrolling: (text: String, rect: NSRect, color: NSColor)?
@@ -181,7 +181,7 @@ final class WMPPlaylistSurfaceView: NSView {
             let selected = selectedRows.contains(index)
             if selected {
                 selectionFill.setFill()
-                rect.fill(using: .sourceOver)
+                rect.fill()
             }
             // NullPlayer's own playlist row: `N. Artist - Title`, the duration right-aligned.
             let item = rows[index]

@@ -451,9 +451,9 @@ private func convertToWhite(_ charImage: CGImage, charWidth: Int, charHeight: In
 While its window is not key, a list's selection dims (M54), the way a macOS list greys an unfocused
 one, in the skin's own colours: `UnfocusedSelection` (`App/Skinning/`) draws the fill at half alpha
 (so it composites halfway to whatever is behind it — list colour, art or Cava) and moves selected
-text halfway to the plain row's colour. Whether a list dims is `WindowManager.dimsSelection(isKey:)`,
+text halfway to the plain row's colour. Whether a list dims is `UnfocusedSelection.dims(in:)`,
 the one family seam: every family but `.wal`, which instead takes the skin's
-`wasabi.list.text.selected{,.background}.inactive` pair through `hostedSurfaceStyle(isKey:)` and
+`wasabi.list.text.selected{,.background}.inactive` pair through `UnfocusedSelection.hostedStyle(in:)` and
 keeps its selection when the skin declares neither (`winamp-modern-skin-guide`,
 `reference/rendering/colour.md`). The draw sites are `PlaylistView.RowStyle.unfocused()`,
 `LibraryBrowserListPainter.Style.unfocused()` (both library browsers), `ModernPlaylistView`'s row

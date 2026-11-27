@@ -35,4 +35,22 @@ final class UnfocusedSelectionTests: XCTestCase {
         XCTAssertNil(unfilled.unfocused().selectionFill)
         XCTAssertNil(unfilled.unfocused().selectedText)
     }
+
+    /// The family seam: every family dims its selection while its window is not key, except `.wal`,
+    /// which takes the skin's own pair instead. A key window never dims.
+    func testOnlyWinampModernKeepsItsSelectionWhenUnfocused() {
+        let windowManager = WindowManager.shared
+        let originalMode = windowManager.uiMode
+        defer { windowManager.uiMode = originalMode }
+        let unfocused = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100),
+                                 styleMask: .borderless, backing: .buffered, defer: true)
+        XCTAssertFalse(unfocused.isKeyWindow)
+
+        for mode in PlayerUIMode.allCases {
+            windowManager.uiMode = mode
+            let expected = mode.controllerFamily != .winampModern
+            XCTAssertEqual(UnfocusedSelection.dims(in: unfocused), expected, "\(mode)")
+            XCTAssertFalse(UnfocusedSelection.dims(in: nil), "\(mode): no window is focused by default")
+        }
+    }
 }
