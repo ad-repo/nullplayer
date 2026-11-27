@@ -320,8 +320,9 @@ enum StreamRipper {
         defer { close(input) }
         let output = open(destination.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
         guard output >= 0 else { throw lastError() }
-        let copyError = fcopyfile(input, output, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 ? nil : lastError()
-        close(output)
+        var copyError = fcopyfile(input, output, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 ? nil : lastError()
+        // A network volume can report a failed write only here (`EIO` from `close`).
+        if close(output) != 0, copyError == nil { copyError = lastError() }
         if let copyError {
             try? FileManager.default.removeItem(at: destination)
             throw copyError
