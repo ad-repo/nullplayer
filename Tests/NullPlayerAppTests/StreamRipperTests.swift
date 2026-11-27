@@ -41,11 +41,7 @@ final class StreamRipperTests: XCTestCase {
         try Data("new".utf8).write(to: source)
         try Data("old".utf8).write(to: destination)
 
-        let result = try StreamRipper.transferStagedFile(
-            from: source,
-            to: destination,
-            replaceExisting: false
-        )
+        let result = try StreamRipper.transferStagedFile(from: source, to: destination)
 
         XCTAssertEqual(result, tempDirectory.appendingPathComponent("Track 1.flac"))
         XCTAssertEqual(try Data(contentsOf: destination), Data("old".utf8))
@@ -53,20 +49,45 @@ final class StreamRipperTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
     }
 
-    func testTransferFailureLeavesExistingDestinationUntouched() throws {
-        let missingSource = tempDirectory.appendingPathComponent("missing.cue")
-        let destination = tempDirectory.appendingPathComponent("Track.cue")
-        try Data("existing cue".utf8).write(to: destination)
+    /// M93's done criterion at the commit: a FLAC rip, then an AAC rip of the same chaptered video
+    /// into one folder, leave two cues, each naming its own audio file.
+    func testTwoRipsOfOneTitleKeepACueEach() throws {
+        let destination = tempDirectory.appendingPathComponent("dest", isDirectory: true)
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let chapters = [StreamRipper.Chapter(start: 0, title: "One"), StreamRipper.Chapter(start: 5, title: "Two")]
+        var saved: [URL] = []
+        func rip(_ name: String) throws -> String {
+            let staged = tempDirectory.appendingPathComponent(name)
+            try Data(name.utf8).write(to: staged)
+            return try StreamRipper.commitRip(staged.path, toFolder: destination.path, chapters: chapters,
+                                              stagingFolder: tempDirectory, saved: &saved).get()
+        }
 
-        XCTAssertThrowsError(
-            try StreamRipper.transferStagedFile(
-                from: missingSource,
-                to: destination,
-                replaceExisting: true
-            )
-        )
+        XCTAssertEqual(try rip("Me at the zoo.flac"), destination.appendingPathComponent("Me at the zoo.flac").path)
+        XCTAssertEqual(try rip("Me at the zoo.m4a"), destination.appendingPathComponent("Me at the zoo 1.m4a").path)
 
-        XCTAssertEqual(try Data(contentsOf: destination), Data("existing cue".utf8))
+        func fileLine(_ cue: String) throws -> String? {
+            try String(contentsOf: destination.appendingPathComponent(cue), encoding: .utf8)
+                .split(separator: "\n").first { $0.hasPrefix("FILE") }.map(String.init)
+        }
+        XCTAssertEqual(try fileLine("Me at the zoo.cue"), "FILE \"Me at the zoo.flac\" WAVE")
+        XCTAssertEqual(try fileLine("Me at the zoo 1.cue"), "FILE \"Me at the zoo 1.m4a\" WAVE")
+        XCTAssertEqual(saved.map(\.lastPathComponent),
+                       ["Me at the zoo.flac", "Me at the zoo.cue", "Me at the zoo 1.m4a", "Me at the zoo 1.cue"])
+    }
+
+    /// A file that appears at the chosen name after it was picked (another process, past the
+    /// transfer lock) is neither overwritten nor removed by the failed commit.
+    func testCommitToATakenNameLeavesThatFileAlone() throws {
+        let source = tempDirectory.appendingPathComponent("staged.flac")
+        let destination = tempDirectory.appendingPathComponent("Track.flac")
+        try Data("new".utf8).write(to: source)
+        try Data("someone else's".utf8).write(to: destination)
+
+        XCTAssertThrowsError(try StreamRipper.commitStagedCopy(from: source, to: destination))
+
+        XCTAssertEqual(try Data(contentsOf: destination), Data("someone else's".utf8))
+        XCTAssertEqual(try Data(contentsOf: source), Data("new".utf8))
     }
 
     func testTransferFailurePreservesCompletedStagingFile() throws {
@@ -77,11 +98,7 @@ final class StreamRipperTests: XCTestCase {
         try Data("completed download".utf8).write(to: source)
 
         XCTAssertThrowsError(
-            try StreamRipper.transferStagedFile(
-                from: source,
-                to: unavailableDestination,
-                replaceExisting: false
-            )
+            try StreamRipper.transferStagedFile(from: source, to: unavailableDestination)
         )
 
         XCTAssertEqual(try Data(contentsOf: source), Data("completed download".utf8))
@@ -133,23 +150,6 @@ final class StreamRipperTests: XCTestCase {
             try Data(contentsOf: recovery.appendingPathComponent("Track 1.flac")),
             Data("recovered".utf8)
         )
-    }
-
-    func testTransferReplacesExistingOnlyAfterCopyCompletes() throws {
-        let source = tempDirectory.appendingPathComponent("staged.cue")
-        let destination = tempDirectory.appendingPathComponent("Track.cue")
-        try Data("new cue".utf8).write(to: source)
-        try Data("old cue".utf8).write(to: destination)
-
-        let result = try StreamRipper.transferStagedFile(
-            from: source,
-            to: destination,
-            replaceExisting: true
-        )
-
-        XCTAssertEqual(result, destination)
-        XCTAssertEqual(try Data(contentsOf: destination), Data("new cue".utf8))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
     }
 
     func testReapOrphanedTempItemsRemovesOnlyOldMatchingFilesAndDirectories() throws {

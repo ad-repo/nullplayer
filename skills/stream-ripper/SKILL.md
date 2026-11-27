@@ -132,6 +132,14 @@ With ≥ 2 chapters, `writeCueFile` writes `<name>.cue` beside the audio: top-le
 from the `Artist - Title` filename, one `TRACK` per chapter, `INDEX 01 MM:SS:FF` at 75 fps
 (`cueTimestamp`, the inverse of `CueSheet.parseCueTimestamp`). See **cue-sheets**.
 
+The cue always shares its audio file's base name — `CueSheet.siblingCue` and the tag editor find it
+only that way. `commitRip` commits both under one hold of the transfer lock (`withTransferLock`):
+it picks a name whose `.cue` is free too, copies the audio, then writes the cue for that final
+name. A second rip of the same video in another format becomes `<name> 1.m4a` + `<name> 1.cue`
+instead of replacing the first rip's cue (M93). Every destination file is created by
+`commitStagedCopy` with `O_EXCL`, so no transfer replaces or removes a file it did not create —
+not even one another process put at the name after it was picked.
+
 ## Audio follow-ups (`RipFollowUp`)
 
 Chosen per job from the two checkboxes, carried on `RipJob.followUp` (Retry keeps them; history

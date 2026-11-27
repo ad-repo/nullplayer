@@ -286,72 +286,51 @@ enum StreamRipper {
     private static func moveDownloaded(stagedPath: String, toDir destinationDir: String) throws -> URL {
         let desiredURL = URL(fileURLWithPath: destinationDir)
             .appendingPathComponent(URL(fileURLWithPath: stagedPath).lastPathComponent)
-        return try transferStagedFile(
-            from: URL(fileURLWithPath: stagedPath),
-            to: desiredURL,
-            replaceExisting: false
-        )
+        return try transferStagedFile(from: URL(fileURLWithPath: stagedPath), to: desiredURL)
     }
 
-    /// Copy a completed local staging file directly to the destination. Normal
-    /// media transfers choose a collision-free final filename, so existing files
-    /// remain untouched and SMB/AFP sees one sequential copy with no destination
-    /// rename. Replacement is reserved for the small CUE sidecar; its temporary
-    /// sibling uses a normal visible filename for NAS compatibility.
-    ///
-    /// Transfers run one at a time: two jobs saving the same name must not both pick it, or the
-    /// one whose copy fails would delete the other's finished file as its own partial copy.
+    /// Copy a completed local staging file directly to a collision-free final
+    /// filename at the destination, so existing files remain untouched and SMB/AFP
+    /// sees one sequential copy with no destination rename.
+    @discardableResult
+    static func transferStagedFile(from sourceURL: URL, to desiredURL: URL) throws -> URL {
+        try withTransferLock {
+            let finalURL = URL(fileURLWithPath: availableFilePath(for: desiredURL.path))
+            try commitStagedCopy(from: sourceURL, to: finalURL)
+            return finalURL
+        }
+    }
+
+    /// Transfers run one at a time: two jobs saving the same name must not both pick it. A caller
+    /// committing several files under one name (a rip and its `.cue`) holds it across all of them.
     /// ponytail: one lock for every destination, so a slow NAS copy holds up a local one; lock
     /// per destination folder if that is ever felt.
-    @discardableResult
-    static func transferStagedFile(
-        from sourceURL: URL,
-        to desiredURL: URL,
-        replaceExisting: Bool
-    ) throws -> URL {
-        try transferLock.withLock { try transfer(from: sourceURL, to: desiredURL, replaceExisting: replaceExisting) }
+    static func withTransferLock<T>(_ body: () throws -> T) rethrows -> T {
+        try transferLock.withLock(body)
+    }
+
+    /// Copy a staged file to `destination`, then remove the staged copy. The destination is
+    /// created here with `O_EXCL` or not at all, so a file anyone else put at that name — another
+    /// process, past the transfer lock — is never written or removed; a failed copy removes only
+    /// the partial file this call created.
+    static func commitStagedCopy(from source: URL, to destination: URL) throws {
+        func lastError() -> POSIXError { POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        let input = open(source.path, O_RDONLY)
+        guard input >= 0 else { throw lastError() }
+        defer { close(input) }
+        let output = open(destination.path, O_WRONLY | O_CREAT | O_EXCL, 0o644)
+        guard output >= 0 else { throw lastError() }
+        var copyError = fcopyfile(input, output, nil, copyfile_flags_t(COPYFILE_ALL)) == 0 ? nil : lastError()
+        // A network volume can report a failed write only here (`EIO` from `close`).
+        if close(output) != 0, copyError == nil { copyError = lastError() }
+        if let copyError {
+            try? FileManager.default.removeItem(at: destination)
+            throw copyError
+        }
+        try? FileManager.default.removeItem(at: source)
     }
 
     private static let transferLock = NSLock()
-
-    private static func transfer(from sourceURL: URL, to desiredURL: URL, replaceExisting: Bool) throws -> URL {
-        let fm = FileManager.default
-        let destinationExists = fm.fileExists(atPath: desiredURL.path)
-        let copyURL: URL
-        let finalURL: URL
-
-        if replaceExisting, destinationExists {
-            copyURL = desiredURL.deletingLastPathComponent()
-                .appendingPathComponent(
-                    "\(desiredURL.lastPathComponent).nullplayer-transfer-\(UUID().uuidString)"
-                )
-            finalURL = desiredURL
-        } else {
-            let finalPath = replaceExisting
-                ? desiredURL.path
-                : availableFilePath(for: desiredURL.path)
-            finalURL = URL(fileURLWithPath: finalPath)
-            copyURL = finalURL
-        }
-
-        do {
-            try fm.copyItem(at: sourceURL, to: copyURL)
-            if copyURL != finalURL {
-                _ = try fm.replaceItemAt(finalURL, withItemAt: copyURL)
-            }
-
-            // The destination copy is complete; staging can now be removed.
-            try? fm.removeItem(at: sourceURL)
-            return finalURL
-        } catch {
-            // Remove only the new partial/temporary copy. Existing destinations
-            // are never used as the direct copy target.
-            if copyURL != desiredURL || !destinationExists {
-                try? fm.removeItem(at: copyURL)
-            }
-            throw error
-        }
-    }
 
     struct StagingRecoveryResult {
         let recoveryDirectory: URL
@@ -512,9 +491,19 @@ enum StreamRipper {
         }
     }
 
-    static func availableFilePath(for desiredPath: String, excluding excludedPath: String? = nil) -> String {
+    static func availableFilePath(
+        for desiredPath: String,
+        excluding excludedPath: String? = nil,
+        reservingSiblingExtension siblingExtension: String? = nil
+    ) -> String {
         let fm = FileManager.default
-        guard desiredPath != excludedPath, fm.fileExists(atPath: desiredPath) else {
+        func isTaken(_ path: String) -> Bool {
+            if fm.fileExists(atPath: path) { return true }
+            guard let siblingExtension else { return false }
+            let sibling = URL(fileURLWithPath: path).deletingPathExtension().appendingPathExtension(siblingExtension)
+            return fm.fileExists(atPath: sibling.path)
+        }
+        guard desiredPath != excludedPath, isTaken(desiredPath) else {
             return desiredPath
         }
 
@@ -528,7 +517,7 @@ enum StreamRipper {
                 .appendingPathComponent("\(baseName) \(index)")
                 .appendingPathExtension(ext)
             let candidate = candidateURL.path
-            if candidate != excludedPath, !fm.fileExists(atPath: candidate) {
+            if candidate != excludedPath, !isTaken(candidate) {
                 return candidate
             }
         }
