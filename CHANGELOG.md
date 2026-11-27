@@ -147,6 +147,9 @@
   see a brief stop between tracks, so GlassAMP stops flashing "Stopped" on every track change.
 - **Winamp Modern (`.wal`): Pixelated's playlist opens directly under the player.** Its toast took
   that slot at startup and pushed the playlist down.
+- **The Equalizer opens at each skin family's own size after a family switch.** It kept the
+  previous family's size: for example 320 wide in Classic and Audion after a Sonique skin, or
+  Classic's width in Audion.
 
 ## 0.35.2
 
