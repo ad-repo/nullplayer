@@ -142,10 +142,9 @@ extension StreamRipper {
         // the download itself performs.
         handle.report(.phase(.moving))
         if let staged = outputPath {
-            switch moveRippedFile(from: staged, toFolder: folder) {
-            case .success(let moved):
-                outputPath = moved
-                saved.append(URL(fileURLWithPath: moved))
+            let chapters = chaptersFile.map { readChapters(from: $0) } ?? []
+            switch commitRip(staged, toFolder: folder, chapters: chapters, stagingFolder: stagingFolder, saved: &saved) {
+            case .success(let committed): outputPath = committed
             case .failure(let error): return handle.isCancelled ? cancelled() : fail(error.message)
             }
         } else {
@@ -159,21 +158,6 @@ extension StreamRipper {
             }
         }
 
-        // Build the .cue locally, then transfer it through the same safe
-        // destination-volume commit used by the media file.
-        if let path = outputPath, let cf = chaptersFile {
-            let chapters = readChapters(from: cf)
-            if chapters.count >= 2 {
-                do {
-                    saved.append(try writeCueFile(audioPath: path, chapters: chapters, stagingFolder: stagingFolder))
-                } catch {
-                    if handle.isCancelled { return cancelled() }
-                    return fail("The media file was saved to \(path), but its .cue sheet could not be saved: "
-                        + error.localizedDescription)
-                }
-            }
-        }
-
         // A cancel during the copy wins: the rip keeps nothing at the destination. Past this check
         // the rip is done, and `RipJob.finish` keeps it done over a later cancel.
         if handle.isCancelled { return cancelled() }
@@ -183,20 +167,35 @@ extension StreamRipper {
 
     // MARK: - Staging → destination move
 
-    /// Copy a single finished file from local staging directly to a
-    /// collision-free final filename in `folder`.
-    private static func moveRippedFile(from stagingPath: String, toFolder folder: String) -> Result<String, TranscodeError> {
-        let fileName = URL(fileURLWithPath: stagingPath).lastPathComponent
-        let desiredURL = URL(fileURLWithPath: folder).appendingPathComponent(fileName)
-        do {
-            let finalURL = try transferStagedFile(
-                from: URL(fileURLWithPath: stagingPath),
-                to: desiredURL,
-                replaceExisting: false
-            )
-            return .success(finalURL.path)
-        } catch {
-            return .failure(TranscodeError(message: "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)"))
+    /// Copy the finished file from local staging to a collision-free name in `folder` and, with at
+    /// least two chapters, its `.cue` beside it under the same base name — the name every cue
+    /// lookup uses (`CueSheet.siblingCue`, the tag editor, Add to Library). Both are committed in
+    /// one transfer, so no other rip can take the cue's name between them (M93). Each file that
+    /// arrives joins `saved`. Returns the audio file's path.
+    static func commitRip(
+        _ stagingPath: String, toFolder folder: String, chapters: [Chapter], stagingFolder: URL, saved: inout [URL]
+    ) -> Result<String, TranscodeError> {
+        let staged = URL(fileURLWithPath: stagingPath)
+        let desired = URL(fileURLWithPath: folder).appendingPathComponent(staged.lastPathComponent)
+        let writesCue = chapters.count >= 2
+        return withTransferLock {
+            let audio = URL(fileURLWithPath: availableFilePath(
+                for: desired.path, reservingSiblingExtension: writesCue ? "cue" : nil))
+            do {
+                try commitStagedCopy(from: staged, to: audio)
+            } catch {
+                return .failure(TranscodeError(message: "Downloaded to a temporary folder but could not be moved to the destination: \(error.localizedDescription)"))
+            }
+            saved.append(audio)
+            guard writesCue else { return .success(audio.path) }
+            let cue = audio.deletingPathExtension().appendingPathExtension("cue")
+            do {
+                try commitStagedCopy(from: try stagedCueFile(for: audio, chapters: chapters, in: stagingFolder), to: cue)
+            } catch {
+                return .failure(TranscodeError(message: "The media file was saved to \(audio.path), but its .cue sheet could not be saved: " + error.localizedDescription))
+            }
+            saved.append(cue)
+            return .success(audio.path)
         }
     }
 
@@ -212,17 +211,13 @@ extension StreamRipper {
         for item in items {
             let desiredURL = URL(fileURLWithPath: folder)
                 .appendingPathComponent(item.lastPathComponent)
-            saved.append(try transferStagedFile(
-                from: item,
-                to: desiredURL,
-                replaceExisting: false
-            ))
+            saved.append(try transferStagedFile(from: item, to: desiredURL))
         }
     }
 
     // MARK: - Cue sheet
 
-    private struct Chapter {
+    struct Chapter {
         let start: Double
         let title: String
     }
@@ -243,13 +238,8 @@ extension StreamRipper {
         }
     }
 
-    /// Build a CUE sheet in local staging, then commit it next to the audio file.
-    private static func writeCueFile(
-        audioPath: String,
-        chapters: [Chapter],
-        stagingFolder: URL
-    ) throws -> URL {
-        let audioURL = URL(fileURLWithPath: audioPath)
+    /// Write the CUE sheet for `audioURL`, the audio file's final destination, into local staging.
+    private static func stagedCueFile(for audioURL: URL, chapters: [Chapter], in stagingFolder: URL) throws -> URL {
         let fileName = audioURL.lastPathComponent
         let base = audioURL.deletingPathExtension().lastPathComponent
 
@@ -277,17 +267,12 @@ extension StreamRipper {
             lines.append("    INDEX 01 \(cueTimestamp(chapter.start))")
         }
 
-        let destinationCueURL = audioURL.deletingPathExtension().appendingPathExtension("cue")
         let stagedCueURL = stagingFolder
-            .appendingPathComponent(destinationCueURL.lastPathComponent)
+            .appendingPathComponent(audioURL.deletingPathExtension().lastPathComponent)
+            .appendingPathExtension("cue")
         try (lines.joined(separator: "\n") + "\n")
             .write(to: stagedCueURL, atomically: true, encoding: .utf8)
-
-        return try transferStagedFile(
-            from: stagedCueURL,
-            to: destinationCueURL,
-            replaceExisting: true
-        )
+        return stagedCueURL
     }
 
     /// Format seconds as a CUE MM:SS:FF timestamp (75 frames per second).
@@ -302,7 +287,7 @@ extension StreamRipper {
 
     private static let videoSourceSuffix = " [source]"
 
-    private struct TranscodeError: Error {
+    struct TranscodeError: Error {
         let message: String
     }
 

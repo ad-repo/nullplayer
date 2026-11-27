@@ -290,7 +290,7 @@ final class RipJobCenterTests: XCTestCase {
         let desired = folder.appendingPathComponent("Album.opus")
         let errors = OrderRecorder()
         DispatchQueue.concurrentPerform(iterations: count) { index in
-            do { try StreamRipper.transferStagedFile(from: staged[index], to: desired, replaceExisting: false) }
+            do { try StreamRipper.transferStagedFile(from: staged[index], to: desired) }
             catch { errors.append("\(error)") }
         }
         XCTAssertEqual(errors.ids, [])
