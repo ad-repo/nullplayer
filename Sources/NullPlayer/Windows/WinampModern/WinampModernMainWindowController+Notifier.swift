@@ -17,7 +17,9 @@ extension WinampModernMainWindowController {
         notifierDismissTimer?.invalidate()
         notifierDismissTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) {
             [weak self] _ in
-            guard let self else { return }
+            // A script that claimed the toast since (B479) dismisses it itself.
+            guard let self, self.skinView?.scripts.notifierShowsItself(container.info.object) == false
+            else { return }
             self.setAuxiliaryWindow(id: container.containerID, visible: false, activate: false)
         }
     }
