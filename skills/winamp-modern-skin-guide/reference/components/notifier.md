@@ -191,15 +191,18 @@ Three engine pieces have to be present for that script's toast to appear right:
   loading (`NowPlayingManager.artworkDidLoadNotification`), with `success` = a cover was found.
   All ten corpus declarations take the one boolean.
 - **A closed container comes back as first handed out.** Winamp builds a fresh instance on every
-  `newDynamicContainer` call; ours hands the same program the same container. Once the program has
-  hidden it, asking again restores every object under it to the attributes it had when it was first
-  handed out (`restoreFirstHandedOutState`, snapshots in `dynamicContainerSnapshots`) and cancels
-  any target animation. Without it, GlassAMPfinal's `coverandbutton.resize(0,0,85,92)` from one show
-  stayed on the next, the cover and text 11 px out of the frame (B309). A copy per call was tried
-  and dropped: GlassAMP's notifier carries its own `<covern>` script, and a discarded copy's timers
-  would leak on every track. A container still visible when asked again is left as it is.
+  `newDynamicContainer` call; ours hands the same program the same container. Once it is off screen
+  (`effectiveVisibility`), asking again restores every object under a `dynamic="1"` container to the
+  attributes it had when first handed out, except `visible`, and cancels any target animation
+  (`reclaim` in `WinampModernScriptRuntimeDynamicContainers.swift`; the attributes are kept in the
+  program's `HeldDynamicContainer`). Without it, GlassAMPfinal's `coverandbutton.resize(0,0,85,92)`
+  from one show stayed on the next, the cover and text 11 px out of the frame (B309). A copy per call
+  was tried and dropped: GlassAMP's notifier carries its own `<covern>` script, and a discarded
+  copy's timers would leak on every track. A container still on screen, and a `dynamic="0"`
+  singleton, are handed back as they are.
 - **No `onStop` between tracks.** A natural advance passes through `.stopped` for about 15 ms.
-  `WinampModernMainView.updatePlaybackState` reports a stop only after it has lasted 0.25 s, so a
+  `WinampModernScriptRuntime.playbackStateDidChange(to:)` reports a stop only after it has lasted
+  `stopGracePeriod` (0.25 s), so a
   skin sees no `onStop`/`onPlay` pair between tracks (GlassAMP printed "Stopped" and showed its toast
   twice more). A load slower than that, such as a stream, still reports the stop (`ponytail:` in the
   code).
@@ -250,8 +253,9 @@ call it on itself (GlassAMP's `timerShow` does).
 - `WinampModernScriptRuntimeText.swift` — `announceNotification(title:artist:album:)`,
   `notifierShowsItself(_:)`, `setNotifierText(title:artist:album:)`, `setTextInSubtree(_:id:text:)`
 - `WinampModernScriptRuntimeTimer.swift` — `applyContainerGeometry(_:)`
-- `WinampModernScriptRuntimeSystem.swift` — `dynamicContainer(named:for:)`,
-  `restoreFirstHandedOutState(of:)`
+- `WinampModernScriptRuntimeDynamicContainers.swift` — `dynamicContainer(named:for:)`, `reclaim`,
+  `isDynamicallyClaimed(_:)`
+- `WinampModernScriptRuntimePlayback.swift` — `playbackStateDidChange(to:)`, `stopGracePeriod`
 - `WinampModernTrackFolderImage.swift` — `announceAlbumArtLoaded()`
 - `WinampModernScriptRuntime.swift` — `containerAlphaChanged` and `containerMoveRequested`
   callbacks, `isdesktopalphaavailable`, `onshownotification` in `dispatchableEventArity`,

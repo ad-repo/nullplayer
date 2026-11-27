@@ -169,7 +169,29 @@ final class WinampModernB110Tests: XCTestCase {
 
             XCTAssertEqual(guiID(of: again), container)
             XCTAssertEqual(top.attributes["w"], reopened ? "85" : "200")
+            let held = try XCTUnwrap(runtime.loadedSkin.runtime.graph.object(withID: container))
+            XCTAssertEqual(held.attributes["visible"], reopened ? "1" : "0",
+                           "a re-ask never shows the window; the program does")
         }
+    }
+
+    /// A `dynamic="0"` container is a singleton, not an instance, so asking again never resets it.
+    func testASingletonIsNotResetWhenAskedAgain() throws {
+        let (runtime, program) = try makeRuntime()
+        let first = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                                       arguments: [.string("still")], program: program)
+        let container = try XCTUnwrap(guiID(of: first))
+        let layout = try XCTUnwrap(object(runtime, "still").children.first)
+        _ = try runtime.invoke(method: "resize", on: reference(layout),
+                               arguments: [.integer(0), .integer(0), .integer(60), .integer(40)],
+                               program: program)
+        _ = try runtime.invoke(method: "hide", on: MakiObjectReference(.gui(container)),
+                               arguments: [], program: program)
+
+        _ = try runtime.invoke(method: "newDynamicContainer", on: MakiObjectReference(.system),
+                               arguments: [.string("still")], program: program)
+
+        XCTAssertEqual(layout.attributes["w"], "60")
     }
 
     /// A container the skin did *not* declare `dynamic="1"` is a singleton and is never copied: a copy
