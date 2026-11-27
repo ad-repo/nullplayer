@@ -7653,10 +7653,10 @@ class WindowManager {
         func carried(_ frame: NSRect?) -> NSRect? { crossesFamily ? nil : frame }
 
         if let playlist = snapshot.playlist, playlist.visible {
-            showPlaylist(at: playlist.frame)
+            showPlaylist(at: playlist.frame)  // whole frame even across families: M96
         }
         if let equalizer = snapshot.equalizer, equalizer.visible {
-            showEqualizer(at: equalizer.frame)
+            showEqualizer(at: carried(equalizer.frame))
         }
         if let library = snapshot.library, library.visible {
             let normalFrame = library.normalFrame ?? library.frame
@@ -7987,24 +7987,26 @@ class WindowManager {
         )
     }
 
-    /// `crossesFamily`: the frames were taken in another family. A NullPlayer-native window then
-    /// keeps only its position — its size belongs to the family that drew it, and the rebuild has
-    /// already opened it at this family's default. A `.wmz`-grown analyser is never docked, so
-    /// without this its 498x278 came back in Classic (measured 2026-09-27).
+    /// `crossesFamily`: the frames were taken in another family. A window then keeps only its
+    /// position — its size belongs to the family that drew it, and the rebuild has already opened
+    /// it at this family's default. A `.wmz`-grown analyser is never docked, so without this its
+    /// 498x278 came back in Classic (measured 2026-09-27). The Playlist is the one exception: it
+    /// still carries its whole frame (M96, `tasks/MISC_TASKS.md`).
     private func restoreDetachedWindowFrames(_ frames: DetachedWindowFrames, crossesFamily: Bool = false) {
-        let restorations: [(NSRect?, NSWindow?, native: Bool)] = [
-            (frames.equalizer, equalizerWindow, false),
-            (frames.playlist, playlistWindowController?.window, false),
+        let playlistWindow = playlistWindowController?.window
+        let restorations: [(NSRect?, NSWindow?)] = [
+            (frames.equalizer, equalizerWindow),
+            (frames.playlist, playlistWindow),
         ] + CenterStackFeature.stackOrder.map {
-            (frames.centerStack[$0], centerStackWindow($0), true)
+            (frames.centerStack[$0], centerStackWindow($0))
         } + [
-            (frames.library, plexBrowserWindowController?.window, true),
-            (frames.projectM, projectMWindowController?.window, true),
+            (frames.library, plexBrowserWindowController?.window),
+            (frames.projectM, projectMWindowController?.window),
         ]
         withProgrammaticWindowFrameChange {
-            for (frame, window, native) in restorations {
+            for (frame, window) in restorations {
                 guard var frame, let window, window.isVisible else { continue }
-                if crossesFamily && native {
+                if crossesFamily && window !== playlistWindow {
                     let size = window.frame.size
                     frame = NSRect(x: frame.minX, y: frame.maxY - size.height, width: size.width, height: size.height)
                 }
