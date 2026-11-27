@@ -2,6 +2,14 @@
 
 Closed backlog history moved from `WINAMP5_TASKS.md` and `BENTO_TASKS.md`. Entries below preserve the original text verbatim except for relative link targets adjusted to this directory; the added archive heading records the id, title, and close date. The live, reach-ranked backlog is [`WINAMP5_TASKS.md`](../../tasks/WINAMP5_TASKS.md).
 
+## B485 — Switching skins with a film playing leaves the new skin's Video window an empty box — closed 2026-11-26
+
+| Id | Item | Reach | Effort | Tier |
+|---|---|---:|:---:|---|
+| B485 | **Switching skins with a film playing leaves the new skin's Video window an empty box that clicks go through.** Reported by the user (2026-11-26): from 2222-cPro__Bento, Big Bento Modern or a Classic skin, with a film playing, picking Winamp_Modern_Holiday_-_2005 showed a plain light-grey rounded box with a shadow where the Video window belongs, the film over it, and clicks going through. Toggling Windows → Video Player, or switching skins again, repaired it. A launch straight onto Holiday with the film never showed it. Done when the switch draws Holiday's framed Video window every time and the cause is written in `video.md` | live: Winamp_Modern_Holiday_-_2005 (6 other declared-window skins did not reproduce: mmd3, BLAKK, Center_Fresh, Winamp3_Default_Skin, Ebonite_2_1, hatsune_miku_5) | ? | 1 |
+
+**Closed 2026-11-26 (PR #826): the re-host waits `rehostVideoDelay` (0.3 s).** The grey box is the window's `SkinShadowWindow`: the Video window itself was missing from the screen composite. By every window-server query it was ordered in, frontmost, at alpha 1, and `screencapture -l` drew it correctly; only an order-out/in repaired it. The trigger is `addChildWindow` of the film onto a window first ordered in during the skin load's aftermath, and it is a real-time race. Parked one turn after the load it was blank 7/7. Parked 0.05 s after the window opened it was still blank, and from 0.1 s it drew. With the whole re-host delayed 0.3 s it drew 6/6 across the Bento and Classic paths. The loading overlay, the appear animation, the notifier, `sysregion`, the container's contents and scripts, the window position, an occlusion gate and a `CATransaction.flush()` were ruled out (`video.md` § *A skin switch has to re-offer the picture*). The wait is a cancellable work item: a later load replaces it, and Windows → Video Player drops it. Pinned by `WinampModernVideoDetachTests.testASkinLoadReHostsTheFilmOnlyAfterTheDelay` and `testTheMenuToggleDuringTheWaitDropsTheReHost`. The delay is measured, not signalled: B486.
+
 ## B247 — Routing a film to a `.wal` skin does not know about a detached video window — closed 2026-11-25
 
 | Id | Item | Reach | Effort | Tier |
