@@ -66,8 +66,10 @@ Whoever implemented them, the author agent tests the fixed branch before it is c
 - Re-run the live checks the original change was verified with, in the debug build (`app-control`;
   `live-ui-testing` for screen-only defects), and compare against the numbers measured before the
   fixes.
-- Verify on screen, not by reasoning, any accepted finding that changes drawing, compositing or
-  behaviour.
+- Verify on screen, not by reasoning, any accepted finding that changes visible drawing, compositing
+  or visible behaviour. A finding that changes only headless behaviour has no visible effect for a
+  screen check to show: the author agent instead runs the non-screen check that exercises it (the
+  targeted test, or a CLI run through `cli`), and names it in the PR.
 
 Then commit, with the review fixes in their own commit.
 
