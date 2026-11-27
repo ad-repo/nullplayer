@@ -181,6 +181,7 @@ All PR comments must be resolved before a PR can be merged.
 - This includes comments from human reviewers
 - This includes automated review comments, including CodeRabbit comments
 - Authors are responsible for either fixing the issue or responding clearly with evidence for why no code change is needed
+- CodeRabbit's comments are decided, tested and answered as `pre-pr-review` § *CodeRabbit's review, after the PR opens* describes
 - A PR is not ready to merge while review comments remain unresolved
 
 ### Reviewer Notes

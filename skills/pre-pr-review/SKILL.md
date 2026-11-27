@@ -1,12 +1,13 @@
 ---
 name: pre-pr-review
-description: The procedure every PR goes through before it opens. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; and the PR description records every finding. Use before opening any PR, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
+description: The procedure every PR goes through before it opens, and its CodeRabbit round after. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; the PR description records every finding; then CodeRabbit's comments go through the same decide-and-test loop with a new implementer agent, and every thread is answered and resolved. Use before opening any PR, after opening one, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
 ---
 
 # Pre-PR Review
 
 Every PR is preceded by a code-quality review of the whole branch, and a PR whose description lacks
-the **Code quality review** section below is not ready to open. The review's lens is the
+the **Code quality review** section below is not ready to open. Once it is open, CodeRabbit's review
+goes through the same loop (§ 5) before the PR is ready to merge. The review's lens is the
 `thermo-nuclear-code-quality-review` skill; this skill is the process around it. The rest of the PR
 description (issue, evidence, proof of testing, a How to test comment) is
 `CONTRIBUTING.md` § *Required PR Description*.
@@ -48,7 +49,8 @@ address and implement the fixes"). The author agent never takes this route on it
    ACCEPTED or REJECTED, the reason, and the files changed.
 2. **The author agent judges the decisions.** Read every decision against the code, including the
    accepted ones, and form a view on each rejection: agree, or disagree and why. Tell the user,
-   **before opening the PR**, which rejections you disagree with. A disagreement goes back to the
+   **before the fixes leave the machine** (before the PR opens, or before the push in § 5), which
+   rejections you disagree with. A disagreement goes back to the
    user; the author agent does not overrule the implementer by quietly fixing it. Loose ends the
    implementer found but left alone (a stale cross-reference, say) go to the user too, in the same
    decision list, each marked author-raised. The author agent fixes none of them without the user's
@@ -76,3 +78,31 @@ Then commit, with the review fixes in their own commit.
   and why.
 - On the delegated route: that the decisions were delegated, each decision as the implementer gave
   it, and any the author agent disagreed with and what the user did about it.
+
+## 5. CodeRabbit's review, after the PR opens
+
+CodeRabbit reviews every PR once it opens and again on each push. Its comments are findings like
+the reviewer's, and `CONTRIBUTING.md` § *Comment Resolution* requires every one answered before the
+PR merges. They go through the same loop:
+
+1. **Wait for the review.** Poll `gh pr checks <N>` until the `CodeRabbit` check leaves `pending`.
+   `Review completed` means it is in. `Review rate limited` means nothing was reviewed: wait and
+   comment `@coderabbitai review` to ask again, rather than treating silence as approval. Wait with
+   a long interval (minutes), not a tight loop.
+2. **Collect every comment, verbatim:** the inline review threads (`gh api
+   repos/<owner>/<repo>/pulls/<N>/comments`, author `coderabbitai[bot]`, unresolved), plus the
+   nitpicks and "outside diff range" comments CodeRabbit puts in its review body (`gh api
+   repos/<owner>/<repo>/pulls/<N>/reviews`). Skip its walkthrough summary, which asks for nothing.
+3. **Decide** (§ 2), the same route the user chose for the pre-PR review unless they say otherwise.
+   On the delegated route the implementer is a **new** fresh agent, not the one that handled the
+   pre-PR findings: it gets CodeRabbit's comments verbatim with the § 2 brief, and the author agent
+   judges its decisions the same way.
+4. **Test** (§ 3), then commit the fixes in their own commit and push.
+5. **Answer every thread.** Reply to each CodeRabbit comment with its decision: fixed in `<sha>`
+   with what changed, or not changed and why, with the evidence. Then resolve the thread. A
+   rejection the author agent disagreed with says so in the reply.
+6. **Record it in the PR description:** a **CodeRabbit review** section after *Code quality review*,
+   listing every comment with its decision, in the § 4 format.
+
+The push in step 4 triggers another CodeRabbit pass. Repeat from step 1 until a pass raises nothing
+new.
