@@ -58,7 +58,7 @@ A stage moves only on its evidence, in the commit that carries it; it moves back
 | `admitted` | **The scan** (below), by the orchestrator, no worker | clean → `live`, the rest → `filed` |
 | `filed` | **One fix pass** (below), one worker | → `live` |
 | `live` | **Hand over** (below) | → `accepted` on the user's go |
-| `accepted` | **Promote** every skin in one commit, then the pre-PR code-quality review (CLAUDE.md) and the PR | → `promoted` |
+| `accepted` | **Promote** every skin in one commit, then the `pre-pr-review` skill and the PR | → `promoted` |
 | `promoted` | **Close** once the PR is merged: `rm -rf WinampModernCorpus/runs`, then pick batch n+1 | — |
 
 `wal_intake_pick.sh [count]` takes the next 25 (or `count`, at most 200) still-bronze skins in the newest `intakes/*.ranking.tsv`'s

@@ -112,14 +112,10 @@ AI-assisted work is allowed, but the author is fully responsible for correctness
 
 ### Code Quality Review
 
-Before opening a PR, run the strict maintainability review in
-[skills/thermo-nuclear-code-quality-review/SKILL.md](skills/thermo-nuclear-code-quality-review/SKILL.md)
-over your whole branch (diff against `origin/main`, plus any uncommitted changes). Claude Code runs
-it as the `thermo-nuclear-code-quality-review` skill; with any other agent, have it follow that file.
-
-Run it in a fresh agent (a new subagent or session, never a fork), never the author agent — the
-agent that wrote the change. The user, the person opening the PR, accepts or rejects each finding
-before any is fixed. The skill's *Invoking the Pre-PR Review* section has the procedure.
+Before opening a PR, follow [skills/pre-pr-review/SKILL.md](skills/pre-pr-review/SKILL.md): a
+strict maintainability review of your whole branch by a fresh agent, never the agent that wrote the
+change, and what happens to its findings. Claude Code runs it as the `pre-pr-review` skill; with any
+other agent, have it follow that file.
 
 ### Required PR Description
 
@@ -129,7 +125,7 @@ Every PR must include all of the following:
 - **Problem evidence:** reproduction steps, logs, screenshots, crash details, or a clear explanation of the real user impact
 - **What changed:** short summary of the implementation
 - **Proof of testing:** build results, test results, and manual verification notes
-- **Code quality review:** a statement that `thermo-nuclear-code-quality-review` was run on this branch by a fresh agent, not the author agent, listing every finding it returned with the user's decision: accepted and fixed, or rejected and why
+- **Code quality review:** the section `pre-pr-review` § *The PR description's Code quality review section* specifies
 - **How to test:** a comment on the PR with step-by-step instructions another reviewer can follow
 
 PRs without an issue, without proof of testing, or without a reviewer-facing how to test comment may be closed.
