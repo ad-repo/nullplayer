@@ -446,6 +446,22 @@ private func convertToWhite(_ charImage: CGImage, charWidth: Int, charHeight: In
 }
 ```
 
+### Unfocused selection
+
+While its window is not key, a list's selection dims (M54), the way a macOS list greys an unfocused
+one, in the skin's own colours: `UnfocusedSelection` (`App/Skinning/`) draws the fill at half alpha
+(so it composites halfway to whatever is behind it — list colour, art or Cava) and moves selected
+text halfway to the plain row's colour. Whether a list dims is `WindowManager.dimsSelection(isKey:)`,
+the one family seam: every family but `.wal`, which instead takes the skin's
+`wasabi.list.text.selected{,.background}.inactive` pair through `hostedSurfaceStyle(isKey:)` and
+keeps its selection when the skin declares neither (`winamp-modern-skin-guide`,
+`reference/rendering/colour.md`). The draw sites are `PlaylistView.RowStyle.unfocused()`,
+`LibraryBrowserListPainter.Style.unfocused()` (both library browsers), `ModernPlaylistView`'s row
+loop and `WMPPlaylistSurfaceView` (a `.wmz` `<PLAYLIST>` pane, which observes its own window's key
+changes). Each window controller redraws its view on `windowDidBecomeKey` *and*
+`windowDidResignKey`; a window that only redraws on the first keeps the focused look after it
+loses focus. `ClassicLibraryBrowserView` caches its hosted style per key state.
+
 ### Auto-Selection
 
 When the playlist opens while music is playing, the current track is auto-selected:

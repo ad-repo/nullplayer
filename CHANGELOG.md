@@ -63,6 +63,12 @@
   submenus, as Audion and Sonique already were; Original and Metal each count on their own. **Group
   Skins Alphabetically**, in every family's submenu, turns it off for all of them.
 
+### Playlist and library
+
+- **The selection dims when its window is not focused**, in the Playlist and the Library Browser of
+  every skin family, as a Mac list does, and comes back when you click into the window. A Winamp
+  Modern (`.wal`) skin uses its own inactive selection colours where it has them.
+
 ### Fixes
 
 - **Copy, paste, cut, select all and undo work from the keyboard** (#801) in every text field (an Edit

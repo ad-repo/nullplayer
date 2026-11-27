@@ -1124,7 +1124,9 @@ class ModernLibraryBrowserView: NSView {
             alphabetFill: contentFill(metal ? .clear : skin.surfaceColor.withAlphaComponent(0.3)),
             letterWithRows: selected,
             letterWithoutRows: skin.applyTextOpacity(to: skin.textDimColor.withAlphaComponent(0.3)))
-        return LibraryBrowserListPainter(context: context, layout: layout, style: style, model: model, list: list,
+        let dims = WindowManager.shared.dimsSelection(isKey: window?.isKeyWindow ?? true)
+        return LibraryBrowserListPainter(context: context, layout: layout, style: dims ? style.unfocused() : style,
+                                         model: model, list: list,
                                          art: art, youtubeVideos: actions.youtubeVideos, isEQMarked: actions.isEQMarked,
                                          thumbnails: rowThumbnails,
                                          spinnerStep: coordinator.spinnerStep)
