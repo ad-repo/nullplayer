@@ -131,9 +131,9 @@ wear the titleless gloss rim. Corpus contrasts and the goldens: `harness.md` § 
   `hasFreeMinimumWidth` gate it, shared with `.wmz`; its floor, `freeMinimumWidth`, must stay at or below the narrowest face.
 - **Equalizer width is the face's:** `EQWindowController` opens it at the player's width. A family
   switch into Audion opens it while the face is still loading, at the unskinned player's 320, so
-  `AudionFaceMainWindowController.present` refits a visible Equalizer to the first face's width
-  (`fitEqualizerWidth`, M94). Only the first face per controller: a family switch rebuilds the
-  controller, and after that the (resizable) Equalizer's width is the user's.
+  `AudionFaceMainWindowController.present` refits a visible Equalizer still at that placeholder
+  width to the face's (`fitEqualizerWidth`, M94). Any other width is the user's (it is resizable)
+  or a restored session's — a Remember State launch can restore it before the face loads.
 - **Route to a track:** the face's menu button toggles the playlist, its mode button the Library
   Browser, and eject is Open Files….
 - **Checked live** (A7, debug build, user confirmed): playlist, EQ, Library Browser and Spectrum
