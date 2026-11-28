@@ -67,7 +67,8 @@
 
 - **The selection dims when its window is not focused**, in the Playlist and the Library Browser of
   every skin family, as a Mac list does, and comes back when you click into the window. A Winamp
-  Modern (`.wal`) skin uses its own inactive selection colours where it has them.
+  Modern (`.wal`) skin uses its own inactive selection colours where it has them, in its library and
+  playlist panels; its fallback Playlist keeps the same look in both focus states.
 
 ### Fixes
 
