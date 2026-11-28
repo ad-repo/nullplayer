@@ -41,6 +41,7 @@ Technical documentation lives in `skills/`. Read the owning skill before changin
 - `skin-screenshots`: per-skin main-window captures across all skin systems, and slideshow GIFs
 - `window-census`: every sub-window's default size and position, per skin or across the corpus
 - `thermo-nuclear-code-quality-review`: the strict maintainability lens every code review uses
+- `pre-pr-review`: the procedure before every PR — the fresh-agent review, who decides the findings, testing the fixes, the PR's Code quality review section — then the CodeRabbit round and the merge
 
 ## Logging Issues
 
@@ -96,12 +97,8 @@ Settle the structure before writing; it is cheap now and expensive once review f
 
 ## Before a PR
 
-Every PR is preceded by a `thermo-nuclear-code-quality-review` of the whole branch (against
-`origin/main`, plus uncommitted changes), run by a fresh agent (new subagent or session, never a
-fork), never the author agent; the user accepts or rejects each finding before any is fixed. The
-skill's *Invoking the Pre-PR Review* has the procedure and what the PR description's **Code quality
-review** section lists. A PR without that section is not ready to open; `CONTRIBUTING.md` carries
-the same requirement for outside contributors.
+Every PR goes through the `pre-pr-review` skill first. A PR whose description lacks its **Code
+quality review** section is not ready to open.
 
 ## Testing
 
