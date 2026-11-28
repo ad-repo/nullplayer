@@ -17,38 +17,105 @@
 - **Stream Ripper: Edit tags when done and Add to Library** (#799). Tick them for an audio rip to edit
   its tags in a window that saves them into the file, and to add it to the local library — split
   into tracks first when the video has chapters.
+- **The progress bar no longer jumps to 95 %** (#799) the moment a download starts.
+- **Ripping one chaptered video twice into the same folder keeps both `.cue` sheets.** A second
+  rip in another format (FLAC, then AAC) replaced the first rip's cue, so the first file no longer
+  split into tracks. The second rip is now saved under a numbered name with its own cue.
 
 ### Winamp Modern (`.wal`) skins
 
-- **129 more skins checked** (corpus intake fifteen): 1933 Philco Cathedral, 1936 Zenith
-  Stratosphere, _SD777_, ABPlayer, Airtel, Allsurf.fr, Almin Agic Skin, Amber, analogaudio, Ancient
-  Powers, AntiqueRadio, AS Fx21 EVO, Azenis_mimi, Barracuda, Batman, Batman_Arkham_Inspiration, Beer
-  Fest, BIG PROOF skin, BlockedWIRE 1.0, BumbleBee, capsule, CCPC, CELL, Charmed, Chevy - Red, CindY
-  v 1.0, Classic_Grafiti, Classic_Sara_Aspen, Classix 10k, CLIENT V3 Winamp5 audio player skin.,
-  CLIENT Winamp5 audio player skin., Coca Cola, Coldplay - A Rush of Blood to the Head, cPro -
-  Anunaki, cPro - Erbium, cPro - FR-19, cPro - MPxi remix, cPro - Steam, cPro - Super Black, cPro -
-  Venus Port v1.3, cPro - Winamp Classic, cPro Zen, cPro_Cyanian2010, cPro_Fluke, cPro_GUNS N'
-  ROSES, cPro_Munchen, cPro_smpldrk, cPro_ZunAmp, Cruz Azul, CTI 2, Customize.RU AMP, dark peace
-  skin, DewyTears V4, Dragon Skin v2.0, Electric Guitar Skin, Eve, FIFA World Cup Germany 2006,
-  Final-Fantasy X-2 (two versions), Flo, Funktion, Ghost Slate, Gintama__Gintoki_&_Katsura, Gonchi
-  Skin, Grafika, Grind, Hardware, Harmoniagh, Harmonized Water, HP, Ichigo And Rukia Modern 1.0,
-  Intensity 3, iTunes Mini LabelOS, Jeep, Jelly Fingers (two versions), KMS, Laboratory Clinical
-  Art, Ludwig_Bemelmans_Madeline, Manutd, Massive Attack, Matrix Online Winamp5 Skin, Megan_Fox,
-  Miley_Cyrus_Gray_line_1, Mortal Kombat Deadly Alliance Amp, Musica, Musique Macabre, My Skin Name,
-  Neon, NIKE TOTAL 90 AEROW, Noir's Kirika, Nokia, Nokia X6 Winamp Skin, ocrana skin, PDU Fridge,
-  PlastAmp, Qwest, reflexion.mini, Reliance, REVIVAL, S, Samurai Champloo Modern, sh\*t the fuu,
-  Shara Aryo, Six Feet Under (two versions), Six Flags, Smallville, Sony S2 Sports Audio MZ-S2,
-  SpecialClock, Sreet Fighter v2, Te iubesc (two versions), Technicalium, Troy, Tutorial Simple
-  Skin, Urban Terror 2.6, VANDREAD WINAMP5 SKIN, Vision, Vista_Player, Vocaloid Miku Hatsune 2.0
-  Append, White Noise, Winamp3 Base Skin, WMP_Aero, World Cup 2010, X-Slant, Xploit, YANNI, English
-  Ver. by ramin mousavi (raminmousavi.com), Zelda.
-- **34 more skins checked** (corpus intake sixteen), the last of the original test set: Anaheim
-  Player 01, cPro - Bento, cPro - MMD, cPro - WMP12, ::cPro_Ayon Port ::, cPro_Winamp Modern,
-  DewyTears (two versions), Diablo 4 Skills V2, EPS (Egor Petrov Systems), Firefox, Hatsune Miku 5
-  Winamp Skin, Hatsune Miku x Megurine Luka, JVC Tape, K-jr, Love Is War Miku V2, Megurine Luka,
-  micro, MMD3, ..::Motorhead::.., Nokia_5220, PaddPreview, PiOnNeR_AMP2, Pokemon DS, Pure Inspired
-  for Winamp, Sing it, Kitty, Study Skinning, Tekken Lili, Tom, TOX Milla, Wiimote, Winamp5 Base
-  Skin, Wurlitzer One More Time, XENERGY1.
+- **163 more skins checked** (corpus intakes fifteen and sixteen, which finish the original test
+  set): 1933 Philco Cathedral, 1936 Zenith Stratosphere, _SD777_, ABPlayer, Airtel, Allsurf.fr,
+  Almin Agic Skin, Amber, Anaheim Player 01, analogaudio, Ancient Powers, AntiqueRadio, AS Fx21 EVO,
+  Azenis_mimi, Barracuda, Batman, Batman_Arkham_Inspiration, Beer Fest, BIG PROOF skin, BlockedWIRE
+  1.0, BumbleBee, capsule, CCPC, CELL, Charmed, Chevy - Red, CindY v 1.0, Classic_Grafiti,
+  Classic_Sara_Aspen, Classix 10k, CLIENT V3 Winamp5 audio player skin., CLIENT Winamp5 audio player
+  skin., Coca Cola, Coldplay - A Rush of Blood to the Head, cPro - Anunaki, cPro - Bento, cPro -
+  Erbium, cPro - FR-19, cPro - MMD, cPro - MPxi remix, cPro - Steam, cPro - Super Black, cPro -
+  Venus Port v1.3, cPro - Winamp Classic, cPro - WMP12, cPro Zen, ::cPro_Ayon Port ::,
+  cPro_Cyanian2010, cPro_Fluke, cPro_GUNS N' ROSES, cPro_Munchen, cPro_smpldrk, cPro_Winamp Modern,
+  cPro_ZunAmp, Cruz Azul, CTI 2, Customize.RU AMP, dark peace skin, DewyTears (two versions),
+  DewyTears V4, Diablo 4 Skills V2, Dragon Skin v2.0, Electric Guitar Skin, EPS (Egor Petrov
+  Systems), Eve, FIFA World Cup Germany 2006, Final-Fantasy X-2 (two versions), Firefox, Flo,
+  Funktion, Ghost Slate, Gintama__Gintoki_&_Katsura, Gonchi Skin, Grafika, Grind, Hardware,
+  Harmoniagh, Harmonized Water, Hatsune Miku 5 Winamp Skin, Hatsune Miku x Megurine Luka, HP, Ichigo
+  And Rukia Modern 1.0, Intensity 3, iTunes Mini LabelOS, Jeep, Jelly Fingers (two versions), JVC
+  Tape, K-jr, KMS, Laboratory Clinical Art, Love Is War Miku V2, Ludwig_Bemelmans_Madeline, Manutd,
+  Massive Attack, Matrix Online Winamp5 Skin, Megan_Fox, Megurine Luka, micro,
+  Miley_Cyrus_Gray_line_1, MMD3, Mortal Kombat Deadly Alliance Amp, ..::Motorhead::.., Musica,
+  Musique Macabre, My Skin Name, Neon, NIKE TOTAL 90 AEROW, Noir's Kirika, Nokia, Nokia X6 Winamp
+  Skin, Nokia_5220, ocrana skin, PaddPreview, PDU Fridge, PiOnNeR_AMP2, PlastAmp, Pokemon DS, Pure
+  Inspired for Winamp, Qwest, reflexion.mini, Reliance, REVIVAL, S, Samurai Champloo Modern, sh\*t
+  the fuu, Shara Aryo, Sing it, Kitty, Six Feet Under (two versions), Six Flags, Smallville, Sony S2
+  Sports Audio MZ-S2, SpecialClock, Sreet Fighter v2, Study Skinning, Te iubesc (two versions),
+  Technicalium, Tekken Lili, Tom, TOX Milla, Troy, Tutorial Simple Skin, Urban Terror 2.6, VANDREAD
+  WINAMP5 SKIN, Vision, Vista_Player, Vocaloid Miku Hatsune 2.0 Append, White Noise, Wiimote,
+  Winamp3 Base Skin, Winamp5 Base Skin, WMP_Aero, World Cup 2010, Wurlitzer One More Time, X-Slant,
+  XENERGY1, Xploit, YANNI, English Ver. by ramin mousavi (raminmousavi.com), Zelda.
+
+#### Framed windows
+
+- **Windows wearing the skin's frame show all of their content.** In Trance_Critic, Cava, Flow,
+  Spectrum Analyzer, Audio Analyzer and Waveform were mostly hidden under a solid blue band, and
+  Official_Coldplay_skin's Thinger icons were cut off by its status bar. Lists and panels in about
+  60 other skins now fill the space their frame leaves for them, instead of stopping short of it.
+- **Playlists in skin frames show their whole Add/Rem/Sel/Misc/List bar.** In Blogz, HARMONIA,
+  X_Sphere, Probe_V5, the iTunes Mini skins and about 20 others, the list covered the bar or cut it
+  off. Framed windows now end above the frame's status bar.
+- **Center_Fresh's frame shows on every window.** Art, Cava, EQ Studio, Flow, PeppyMeter, the
+  analyzers, Waveform, Sonos Rooms and Stream Ripper opened with no frame, while the Library and
+  Playlist wore it.
+- **Wurlitzer_v2's frame draws its right-hand corner the right way round.** The Library,
+  Visualizations, EQ Studio and other framed windows showed the left corner piece at the top right,
+  with a gap in the rail beneath it.
+- **The EQ Studio keeps its panels apart at every size.** In skins with a thick frame, such as
+  Simple_Amp_, dragging the Studio smaller or switching to a smaller UI Size squeezed its panels
+  over each other. It now stops at the size its panels need, and grows to make room for them when
+  you change UI Size.
+
+#### Playlist
+
+- **Playlist rows are readable when a skin's list text matches its list background** (Manutd,
+  Gintama Gintoki & Katsura).
+- **A Playlist window that is really a web page to the author's site opens a real playlist** in the
+  skin's frame (Red_Pearl, Laboratory Clinical Art and eight others built from the same template).
+
+#### Video
+
+- **Winamp Single GUI's separate Video window behaves.** Windows → Video Player and Escape now hide
+  a film playing there, its close button no longer reopens it, and a new film or leaving fullscreen
+  keeps the film in that window. In skins with no video window of their own (Nokia 7210, Dawson's
+  Creek, jvc.tape and others), the skin's video button now shows and hides NullPlayer's video
+  window.
+- **Switching skins with a film playing draws the new skin's Video window.** Going from cPro-Bento
+  or a Classic skin to Holiday left an empty grey box around the film that clicks went through.
+
+#### Toasts and notifiers
+
+- **The stock skin's track-change toast opens in the bottom-right corner** instead of the
+  bottom-left. Skins that build their own toast the stock way now get the cover art signal they
+  wait for, and NullPlayer no longer shows that toast on top of theirs.
+- **GlassAMPfinal's track-change toast keeps its cover and text inside the frame**; after the first
+  few tracks they sat up and to the left of the box. Skins also no longer see a brief stop between
+  tracks, so GlassAMP stops flashing "Stopped" on every track change.
+- **Pixelated's playlist opens directly under the player.** Its toast took that slot at startup and
+  pushed the playlist down.
+- **Jpod's Notifier Settings work** (#805). Do Not Show hides the song-change toast, Display On Left
+  moves it, and Slide slides it up from the bottom of the screen and back down. Before, it always
+  appeared in the lower right with no animation. CNYforWinamp, WTM, YST and Symplicipod, whose
+  notifiers come from the same author's scripts, behave the same way. Rectangular no longer pops
+  its Notifier Preferences window up in the corner on every song change.
+
+#### Buttons and drawing
+
+- **Buttons that did nothing now work** (#814). EPS High-End System's Open Directory opens the
+  folder picker and its playlist File button opens the New / Load / Save menu. A skin's button for
+  a window it keeps closed at start opens it: Wiimote's home button opens its SpaceCatSamba window,
+  and the same fix reaches M3's downloads window, Opulent Records Player's website window and
+  hm_Touch's album art window. GonchiSkin's Images button opens its window.
+- **An animated layer wider or taller than its artwork strip draws its frames** instead of nothing:
+  SUPER_BLACK's beat-meter styles other than VU Meter now animate, and Live Times Square's volume
+  bar, YoYoBoy's seek arc, Lobe's face and Kyoko Fukada's visor text now show.
 
 ### Classic skins
 
@@ -56,6 +123,14 @@
   playlist editor by default — ADD / REM / SEL / MISC / LIST OPTS, the mini transport, scrollbar,
   running and track time — with rows in the skin's own playlist font and Winamp's playlist hotkeys.
   Right-click → **Playlist Style ▸ NullPlayer** brings back the previous borderless look.
+- **Classic skins keep their own font for accented song titles** (#798): one `é`, `Ⅱ` or curly
+  apostrophe used to switch the whole main-window title to a small system font. Accents are now
+  dropped onto the skin's capitals (`Seán` → `SEAN`, `Ⅱ` → `II`), `Å Ö Ä` draw from the skin's own
+  letters, and Greek, Cyrillic and `♥` draw in a matching pixel font (Tiny5) in the skin's text
+  colour. Only Japanese, Chinese and Korean titles still use the system font. The bundled Silver
+  skin now has `Å Ö Ä` letters, and its `?` and `*` no longer draw blank.
+- **A skin that keeps its bitmaps several folders deep loads** (#819). MERYXMS1 (Merry Christmas
+  Amp) fell back to the unskinned look because only the first folder level was searched.
 
 ### Skin menus
 
@@ -77,87 +152,20 @@
   skin's playlist.
 - **Library row icons no longer flicker** (#800) many times a second, at high CPU, when the Mac is short
   of memory.
-- **The Stream Ripper's progress bar no longer jumps to 95 %** (#799) the moment a download starts.
 - **Opus files can be added to the playlist and the library** (#799; `.opus` was refused).
 - **Splitting a cue album keeps its format** (#799): an Opus, MP3 or M4A album splits into Opus, MP3 or
   M4A tracks without a re-encode, instead of always FLAC. An Opus album's cover is saved as the
   folder's `cover.jpg`.
-- **Winamp Modern (`.wal`) fixes from corpus intake 15**: Playlist rows are readable when a skin's
-  list text matches its list background (Manutd, Gintama Gintoki & Katsura); GonchiSkin's Images
-  button opens its window.
-- **Winamp Modern (`.wal`)**: a skin whose Playlist window is really a web page to the author's site
-  (Red_Pearl, Laboratory Clinical Art and eight others built from the same template) now opens a
-  real playlist in the skin's frame.
-- **Winamp Modern (`.wal`)**: an animated layer wider or taller than its artwork strip draws its frames
-  instead of nothing: SUPER_BLACK's beat-meter styles other than VU Meter now animate, and Live Times
-  Square's volume bar, YoYoBoy's seek arc, Lobe's face and Kyoko Fukada's visor text now show.
 - **The Audio Analyzer's Scope is smooth** (#797): it redraws for every slice of audio, about 75 times a
   second, instead of about 20, and goes flat when playback is paused.
 - **Oscilloscopes stay smooth after a pause** (#797): a Winamp Modern (`.wal`) skin's scope and the
   vis_classic visualizer dropped to about 10 updates a second after pausing and resuming, until the
   next track.
-- **Classic skins keep their own font for accented song titles** (#798): one `é`, `Ⅱ` or curly
-  apostrophe used to switch the whole main-window title to a small system font. Accents are now
-  dropped onto the skin's capitals (`Seán` → `SEAN`, `Ⅱ` → `II`), `Å Ö Ä` draw from the skin's own
-  letters, and Greek, Cyrillic and `♥` draw in a matching pixel font (Tiny5) in the skin's text
-  colour. Only Japanese, Chinese and Korean titles still use the system font. The bundled Silver
-  skin now has `Å Ö Ä` letters, and its `?` and `*` no longer draw blank.
-- **Winamp Modern (`.wal`): Jpod's Notifier Settings work** (#805). Do Not Show hides the song-change
-  toast, Display On Left moves it, and Slide slides it up from the bottom of the screen and back down.
-  Before, it always appeared in the lower right with no animation. CNYforWinamp, WTM, YST and
-  Symplicipod, whose notifiers come from the same author's scripts, behave the same way. Rectangular
-  no longer pops its Notifier Preferences window up in the corner on every song change.
 - **Videos and playlists open from Finder** (#812). Double-clicking or choosing Open With on a video
   (mp4, mov, mkv…) plays it in the video window, and an `.m3u`, `.m3u8` or `.pls` queues its tracks.
   Both used to be refused, and a video opened together with music files was dropped. NullPlayer can
   now also be made the default app for `.cue` and `.alac` files. Opening a file while the player
   window is closed brings the player back, as clicking the Dock icon does.
-- **Winamp Modern (`.wal`): EPS High-End System's Open Directory and playlist File buttons work** (#814).
-  Open Directory opens the folder picker and File opens the playlist's New / Load / Save menu; both
-  did nothing.
-- **Winamp Modern (`.wal`): a skin's button for a window it keeps closed at start opens it** (#814).
-  Wiimote's home button opens its SpaceCatSamba window, and the same fix reaches M3's downloads
-  window, Opulent Records Player's website window and hm_Touch's album art window.
-- **Classic: a skin that keeps its bitmaps several folders deep loads** (#819). MERYXMS1 (Merry Christmas
-  Amp) fell back to the unskinned look because only the first folder level was searched.
-- **Winamp Modern (`.wal`): windows wearing the skin's frame show all of their content.** In
-  Trance_Critic, Cava, Flow, Spectrum Analyzer, Audio Analyzer and Waveform were mostly hidden under a
-  solid blue band, and Official_Coldplay_skin's Thinger icons were cut off by its status bar. Lists
-  and panels in about 60 other skins now fill the space their frame leaves for them, instead of
-  stopping short of it.
-- **Winamp Modern (`.wal`): Wurlitzer_v2's frame draws its right-hand corner the right way round.**
-  The Library, Visualizations, EQ Studio and other framed windows showed the left corner piece at
-  the top right, with a gap in the rail beneath it.
-- **Winamp Modern (`.wal`): the EQ Studio keeps its panels apart at every size.** In skins with a
-  thick frame, such as Simple_Amp_, dragging the Studio smaller or switching to a smaller UI Size
-  squeezed its panels over each other. It now stops at the size its panels need, and grows to make
-  room for them when you change UI Size.
-- **Winamp Modern (`.wal`): playlists in skin frames show their whole Add/Rem/Sel/Misc/List bar.**
-  In Blogz, HARMONIA, X_Sphere, Probe_V5, the iTunes Mini skins and about 20 others, the list
-  covered the bar or cut it off. Framed windows now end above the frame's status bar.
-- **Winamp Modern (`.wal`): Center_Fresh's frame shows on every window.** Art, Cava, EQ Studio, Flow,
-  PeppyMeter, the analyzers, Waveform, Sonos Rooms and Stream Ripper opened with no frame, while the
-  Library and Playlist wore it.
-- **Winamp Modern (`.wal`): Winamp Single GUI's separate Video window behaves.** Windows → Video
-  Player and Escape now hide a film playing there, its close button no longer reopens it, and a new
-  film or leaving fullscreen keeps the film in that window. In skins with no video window of their
-  own (Nokia 7210, Dawson's Creek, jvc.tape and others), the skin's video button now shows and hides
-  NullPlayer's video window.
-- **Winamp Modern (`.wal`): switching skins with a film playing draws the new skin's Video window.**
-  Going from cPro-Bento or a Classic skin to Holiday left an empty grey box around the film that
-  clicks went through.
-- **Winamp Modern (`.wal`): the stock skin's track-change toast opens in the bottom-right corner.**
-  It opened at the bottom-left. Skins that build their own toast the stock way now get the cover
-  art signal they wait for, and NullPlayer no longer shows that toast on top of theirs.
-- **Winamp Modern (`.wal`): GlassAMPfinal's track-change toast keeps its cover and text inside the
-  frame.** After the first few tracks they sat up and to the left of the box. Skins also no longer
-  see a brief stop between tracks, so GlassAMP stops flashing "Stopped" on every track change.
-- **Winamp Modern (`.wal`): Pixelated's playlist opens directly under the player.** Its toast took
-  that slot at startup and pushed the playlist down.
-- **Stream Ripper: ripping one chaptered video twice into the same folder keeps both `.cue`
-  sheets.** A second rip in another format (FLAC, then AAC) replaced the first rip's cue, so the
-  first file no longer split into tracks. The second rip is now saved under a numbered name with
-  its own cue.
 - **The Equalizer opens at each skin family's own size after a family switch.** It kept the
   previous family's size: for example 320 wide in Classic and Audion after a Sonique skin, or
   Classic's width in Audion.
