@@ -105,8 +105,10 @@ PR merges. They go through the same loop:
    pre-PR findings: it gets CodeRabbit's comments verbatim with the § 2 brief, and the author agent
    judges its decisions the same way.
 4. **Test** (§ 3), then commit the fixes in their own commit and push. If every comment was
-   rejected there is nothing to commit or push, and no new pass starts on its own: comment
-   `@coderabbitai review` on the PR and go back to step 1 without an empty commit.
+   rejected there is nothing to commit or push, so make no empty commit. Instead, do steps 5 and 6
+   for the rejected comments first, so the decisions are answered and recorded before the next
+   pass. Then comment `@coderabbitai review` on the PR and go back to step 1. No new pass starts
+   on its own.
 5. **Answer every thread.** Reply to each CodeRabbit comment with its decision: fixed in `<sha>`
    with what changed, or not changed and why, with the evidence. Then resolve the thread. A
    rejection the author agent disagreed with says so in the reply.
