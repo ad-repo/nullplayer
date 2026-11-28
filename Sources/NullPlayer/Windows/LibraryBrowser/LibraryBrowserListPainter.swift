@@ -14,17 +14,17 @@ struct LibraryBrowserListPainter {
         let detailFont: NSFont
         let disclosureFont: NSFont
         let title: NSColor
-        let selectedTitle: NSColor
+        var selectedTitle: NSColor
         /// Every cell but the title.
         let cell: NSColor
-        let selectedCell: NSColor
+        var selectedCell: NSColor
         /// A plain row's info.
         let info: NSColor
-        let selectedInfo: NSColor
+        var selectedInfo: NSColor
         let disclosure: NSColor
         let filledStar: NSColor
         let emptyStar: NSColor
-        let selectedRowFill: NSColor
+        var selectedRowFill: NSColor
         /// Behind every unselected row, when set.
         let rowFill: NSColor?
         /// Under the rows, before the art drawn behind them, when set.
@@ -47,6 +47,16 @@ struct LibraryBrowserListPainter {
         let alphabetFill: NSColor
         let letterWithRows: NSColor
         let letterWithoutRows: NSColor
+
+        /// The selection while the window is not key (M54).
+        func unfocused() -> Style {
+            var style = self
+            style.selectedTitle = UnfocusedSelection.text(selectedTitle, toward: title)
+            style.selectedCell = UnfocusedSelection.text(selectedCell, toward: cell)
+            style.selectedInfo = UnfocusedSelection.text(selectedInfo, toward: info)
+            style.selectedRowFill = UnfocusedSelection.fill(selectedRowFill)
+            return style
+        }
     }
 
     let context: CGContext

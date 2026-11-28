@@ -284,13 +284,15 @@ class ClassicLibraryBrowserView: NSView {
     /// switch. Nil for a browser in a classic window, which resolves its own (see `winampModernStyle`).
     private var embeddedWinampModernStyle: WinampModernSurfaceStyle?
 
-    /// Resolved style for a browser in a window of its own, and whether it has been resolved yet.
+    /// Resolved style for a browser in a window of its own, and the key state it was resolved for
+    /// (nil: not yet).
     ///
     /// Cached because `drawScaledSkinText` asks for it once per string — ~77 times a frame — and
     /// deriving a style converts seven colours through a colour space. The palette only changes on a
-    /// colour-theme switch, which invalidates this through `hostedSurfaceStyleDidChange`.
+    /// colour-theme switch, which invalidates this through `hostedSurfaceStyleDidChange`, and the
+    /// selection on a focus change (M54).
     private var cachedWindowWinampModernStyle: WinampModernSurfaceStyle?
-    private var hasResolvedWindowWinampModernStyle = false
+    private var windowWinampModernStyleIsKey: Bool?
 
     /// How this browser should be painted, or nil for the classic look.
     ///
@@ -299,9 +301,10 @@ class ClassicLibraryBrowserView: NSView {
     /// other mode, leaving the classic drawing exactly as it was.
     var winampModernStyle: WinampModernSurfaceStyle? {
         if isEmbeddedInSkin { return embeddedWinampModernStyle }
-        if !hasResolvedWindowWinampModernStyle {
-            cachedWindowWinampModernStyle = WindowManager.shared.hostedSurfaceStyle
-            hasResolvedWindowWinampModernStyle = true
+        let isKey = window?.isKeyWindow ?? true
+        if windowWinampModernStyleIsKey != isKey {
+            cachedWindowWinampModernStyle = UnfocusedSelection.hostedStyle(in: window)
+            windowWinampModernStyleIsKey = isKey
         }
         return cachedWindowWinampModernStyle
     }
@@ -1304,7 +1307,9 @@ class ClassicLibraryBrowserView: NSView {
             alphabetFill: colors.normalBackground.withAlphaComponent(0.3),
             letterWithRows: colors.currentText,
             letterWithoutRows: colors.normalText.withAlphaComponent(0.3))
-        return LibraryBrowserListPainter(context: context, layout: layout, style: style, model: model, list: list,
+        let dims = UnfocusedSelection.dims(in: window)
+        return LibraryBrowserListPainter(context: context, layout: layout, style: dims ? style.unfocused() : style,
+                                         model: model, list: list,
                                          art: art, youtubeVideos: actions.youtubeVideos, isEQMarked: actions.isEQMarked,
                                          thumbnails: rowThumbnails,
                                          spinnerStep: coordinator.spinnerStep)
@@ -1353,7 +1358,7 @@ class ClassicLibraryBrowserView: NSView {
     /// A `.wal` skin switched colour theme; the style is re-derived on each draw, so a repaint is
     /// the whole job.
     @objc private func hostedSurfaceStyleDidChange() {
-        hasResolvedWindowWinampModernStyle = false
+        windowWinampModernStyleIsKey = nil
         // A colour-theme switch recolours the Data tab too. Classic windows resolve no style, and
         // their Data tab is recoloured by `skinDidChange` instead.
         if winampModernStyle != nil { refreshHistoryHostingColors() }

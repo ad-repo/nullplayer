@@ -171,18 +171,21 @@ final class WMPPlaylistSurfaceView: NSView {
         let truncating = NSMutableParagraphStyle()
         truncating.lineBreakMode = .byTruncatingTail
         let fields = PlaylistRowFields.current
+        let dimsSelection = UnfocusedSelection.dims(in: window)
+        let selectionFill = dimsSelection ? UnfocusedSelection.fill(style.selectionBackground) : style.selectionBackground
+        let selectionText = dimsSelection ? UnfocusedSelection.text(style.selectionText, toward: style.text) : style.selectionText
         var scrolling: (text: String, rect: NSRect, color: NSColor)?
         for index in firstVisibleIndex..<min(rows.count, firstVisibleIndex + visibleRows) {
             let rect = NSRect(x: 0, y: CGFloat(index - firstVisibleIndex) * rowHeight,
                               width: bounds.width, height: rowHeight)
             let selected = selectedRows.contains(index)
             if selected {
-                style.selectionBackground.setFill()
+                selectionFill.setFill()
                 rect.fill()
             }
             // NullPlayer's own playlist row: `N. Artist - Title`, the duration right-aligned.
             let item = rows[index]
-            let color = selected ? style.selectionText : (index == playing ? style.currentText : style.text)
+            let color = selected ? selectionText : (index == playing ? style.currentText : style.text)
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: Self.rowFont, .paragraphStyle: truncating, .foregroundColor: color]
             var textRect = rect.insetBy(dx: 4, dy: 1)
@@ -238,6 +241,20 @@ final class WMPPlaylistSurfaceView: NSView {
         super.viewDidMoveToWindow()
         if window == nil { placeMarquee(nil) }
     }
+
+    /// Redraw on this window's focus changes: the selection dims while it is not key (M54).
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        let center = NotificationCenter.default
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            center.removeObserver(self, name: name, object: window)
+            if let newWindow {
+                center.addObserver(self, selector: #selector(keyStateDidChange), name: name, object: newWindow)
+            }
+        }
+    }
+
+    @objc private func keyStateDidChange() { needsDisplay = true }
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)

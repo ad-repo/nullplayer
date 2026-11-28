@@ -193,6 +193,10 @@ extension PlaylistWindowController: NSWindowDelegate {
         WindowManager.shared.bringAllWindowsToFront(keepingWindowOnTop: window)
     }
 
+    func windowDidResignKey(_ notification: Notification) {
+        playlistView.needsDisplay = true
+    }
+
     func windowWillClose(_ notification: Notification) {
         if let window { WindowManager.shared.handleCenterStackWindowWillClose(window) }
         WindowManager.shared.notifyMainWindowVisibilityChanged()

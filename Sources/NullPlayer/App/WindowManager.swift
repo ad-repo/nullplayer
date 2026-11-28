@@ -1242,10 +1242,12 @@ class WindowManager {
     /// us. `.hostedSurfaceStyleDidChange` prompts consumers to re-read this accessor; its broader
     /// layout and border-growth semantics are documented at the notification declaration.
     var winampModernSurfaceStyle: WinampModernSurfaceStyle? {
-        guard uiMode.controllerFamily == .winampModern,
-              let palette = (mainWindowController as? WinampModernMainWindowController)?.currentPalette
-        else { return nil }
-        return WinampModernSurfaceStyle(palette: palette)
+        winampModernPalette.map { WinampModernSurfaceStyle(palette: $0) }
+    }
+
+    var winampModernPalette: WasabiPalette? {
+        guard uiMode.controllerFamily == .winampModern else { return nil }
+        return (mainWindowController as? WinampModernMainWindowController)?.currentPalette
     }
 
     /// The colours NullPlayer's own windows take from the active `.wmz`, or nil in every other mode

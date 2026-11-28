@@ -132,21 +132,29 @@ class PlaylistView: NSView {
             if selected, let selectedText { return selectedText }
             return playing ? playingText : normalText
         }
+
+        /// The selection while the window is not key (M54).
+        func unfocused() -> RowStyle {
+            RowStyle(font: font, selectionFill: selectionFill.map(UnfocusedSelection.fill),
+                     selectedText: selectedText.map { UnfocusedSelection.text($0, toward: normalText) },
+                     playingText: playingText, normalText: normalText, scrollsTitle: scrollsTitle)
+        }
     }
 
     /// Read once per draw or measure.
     private var rowStyle: RowStyle {
-        let host = WindowManager.shared.hostedSurfaceStyle
+        let host = UnfocusedSelection.hostedStyle(in: window)
         let colors = host?.playlistColors ?? WindowManager.shared.currentSkin?.playlistColors ?? .default
-        if isWinampStyle { return Self.winampRowStyle(colors, fontSize: playlistFontSize) }
         // Selected rows are white, the classic idiom, with no selection fill under them; beside a
         // hosted skin or face whose ground is light, white is corrected against that ground, and a
         // family may pick its own against its row colour, for the playing row too
         // (`SkinnedSurfaceStyle.playlistSelectedText`, `playlistPlayingText`).
-        return RowStyle(font: Self.systemRowFont, selectionFill: nil,
-                        selectedText: host?.playlistSelectedText ?? .white,
-                        playingText: host?.playlistPlayingText ?? colors.currentText,
-                        normalText: colors.normalText, scrollsTitle: true)
+        let rows = isWinampStyle ? Self.winampRowStyle(colors, fontSize: playlistFontSize)
+            : RowStyle(font: Self.systemRowFont, selectionFill: nil,
+                       selectedText: host?.playlistSelectedText ?? .white,
+                       playingText: host?.playlistPlayingText ?? colors.currentText,
+                       normalText: colors.normalText, scrollsTitle: true)
+        return UnfocusedSelection.dims(in: window) ? rows.unfocused() : rows
     }
 
     /// The window frame the hosting skin lends this playlist, when it lends one — a `.wmz` skin that

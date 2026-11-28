@@ -425,7 +425,9 @@ class ModernPlaylistView: NSView {
         let skin = renderer.skin
         
         let font = skin.playlistFont()
-        
+        let dimsSelection = UnfocusedSelection.dims(in: window)
+        let rowText = skin.elementColor(for: "playlist_text", fallback: skin.textDimColor)
+
         guard !tracks.isEmpty else {
             // Draw empty playlist message
             let attrs: [NSAttributedString.Key: Any] = [
@@ -460,7 +462,8 @@ class ModernPlaylistView: NSView {
             // display fill for row state: strong for now-playing, subtler for selection.
             if skin.renderStyle == .metal, isCurrent || isSelected {
                 let fillAlpha: CGFloat = isCurrent ? 0.30 : 0.20
-                let fill = skin.metalMaterial.displayFill.withAlphaComponent(fillAlpha)
+                let display = skin.metalMaterial.displayFill.withAlphaComponent(fillAlpha)
+                let fill = !isCurrent && dimsSelection ? UnfocusedSelection.fill(display) : display
                 context.setFillColor(fill.cgColor)
                 context.fill(itemRect)
             }
@@ -475,9 +478,9 @@ class ModernPlaylistView: NSView {
             } else if isCurrent {
                 titleColor = skin.accentColor
             } else if isSelected {
-                titleColor = skin.textColor
+                titleColor = dimsSelection ? UnfocusedSelection.text(skin.textColor, toward: rowText) : skin.textColor
             } else {
-                titleColor = skin.elementColor(for: "playlist_text", fallback: skin.textDimColor)
+                titleColor = rowText
             }
             
             // Track number uses dataColor (yellow glow)
