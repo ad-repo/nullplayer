@@ -1,13 +1,14 @@
 ---
 name: pre-pr-review
-description: The procedure every PR goes through before it opens, and its CodeRabbit round after. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; the PR description records every finding; then CodeRabbit's comments go through the same decide-and-test loop with a new implementer agent, and every thread is answered and resolved; then the author agent merges it. Use before opening any PR, after opening one, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
+description: The procedure every PR goes through before it opens, and its CodeRabbit round after. A fresh reviewer agent reviews the whole branch; the user decides which findings to fix, or delegates that to a second fresh implementer agent whose decisions and fixes the author agent then judges and tests; the PR description records every finding; then CodeRabbit's comments go through the same decide-and-test loop with a new implementer agent, and every thread is answered and resolved; then, only when the user asks to land or merge the PR, the author agent merges it. Use before opening any PR, after opening one, when asked to "land the plane", or when the user says to have a fresh agent review, triage or implement review findings.
 ---
 
 # Pre-PR Review
 
 Every PR is preceded by a code-quality review of the whole branch, and a PR whose description lacks
 the **Code quality review** section below is not ready to open. Once it is open, CodeRabbit's review
-goes through the same loop (§ 5), and then the author agent merges it (§ 6). The review's lens is the
+goes through the same loop (§ 5), and then, if the user asks to land it, the author agent merges it
+(§ 6). The review's lens is the
 `thermo-nuclear-code-quality-review` skill; this skill is the process around it. The rest of the PR
 description (issue, evidence, proof of testing, a How to test comment) is
 `CONTRIBUTING.md` § *Required PR Description*.
@@ -91,15 +92,21 @@ PR merges. They go through the same loop:
    `Review completed` means it is in. `Review rate limited` means nothing was reviewed: wait and
    comment `@coderabbitai review` to ask again, rather than treating silence as approval. Wait with
    a long interval (minutes), not a tight loop.
-2. **Collect every comment, verbatim:** the inline review threads (`gh api
-   repos/<owner>/<repo>/pulls/<N>/comments`, author `coderabbitai[bot]`, unresolved), plus the
-   nitpicks and "outside diff range" comments CodeRabbit puts in its review body (`gh api
-   repos/<owner>/<repo>/pulls/<N>/reviews`). Skip its walkthrough summary, which asks for nothing.
+2. **Collect every comment, verbatim, across all pages.** Both REST endpoints return 30 items per
+   page by default, so every `gh api` call here takes `--paginate`. The inline comments are
+   `gh api --paginate repos/<owner>/<repo>/pulls/<N>/comments`, author `coderabbitai[bot]`. The
+   nitpicks and "outside diff range" comments CodeRabbit puts in its review body are
+   `gh api --paginate repos/<owner>/<repo>/pulls/<N>/reviews`. The REST comments carry no resolved
+   state, so take the unresolved threads from GraphQL, `reviewThreads` with `isResolved == false`,
+   paginated with `gh api graphql --paginate` and an `$endCursor` variable. Skip its walkthrough
+   summary, which asks for nothing.
 3. **Decide** (§ 2), the same route the user chose for the pre-PR review unless they say otherwise.
    On the delegated route the implementer is a **new** fresh agent, not the one that handled the
    pre-PR findings: it gets CodeRabbit's comments verbatim with the § 2 brief, and the author agent
    judges its decisions the same way.
-4. **Test** (§ 3), then commit the fixes in their own commit and push.
+4. **Test** (§ 3), then commit the fixes in their own commit and push. If every comment was
+   rejected there is nothing to commit or push, and no new pass starts on its own: comment
+   `@coderabbitai review` on the PR and go back to step 1 without an empty commit.
 5. **Answer every thread.** Reply to each CodeRabbit comment with its decision: fixed in `<sha>`
    with what changed, or not changed and why, with the evidence. Then resolve the thread. A
    rejection the author agent disagreed with says so in the reply.
@@ -111,8 +118,10 @@ new.
 
 ## 6. Merge
 
-The author agent merges the PR itself once all of these hold. A PR this process opened needs no
-further go-ahead, because the user's request to land it covers the merge.
+The author agent merges the PR only when the user has asked to land or merge it (for example, "land
+the plane"). A request to open a PR does not ask for a merge: when that is all the user asked, stop
+once the PR is ready, report that state, and wait for the user's merge request. Once the user has
+asked, the author agent merges the PR itself once all of these hold.
 
 - The last CodeRabbit pass raised nothing new, and every review thread (CodeRabbit's and any
   human's) is answered and resolved.
